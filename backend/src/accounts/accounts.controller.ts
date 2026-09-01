@@ -19,6 +19,11 @@ export class AccountsController {
     return this.accounts.getTreasurySummary(user.sub, user.householdId!);
   }
 
+  @Get('quick-add-default')
+  getQuickAddDefault(@CurrentUser() user: AuthenticatedUser) {
+    return this.accounts.getQuickAddDefaultAccount(user.sub, user.householdId!).then((accountId) => ({ accountId }));
+  }
+
   @Post('transfers')
   createTransfer(@Body() dto: CreateTransferDto, @CurrentUser() user: AuthenticatedUser) {
     return this.accounts.createTransfer(user.sub, user.householdId!, dto);
@@ -47,6 +52,11 @@ export class AccountsController {
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.accounts.findOne(user.sub, user.householdId!, id);
+  }
+
+  @Post(':id/favorite')
+  setFavorite(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.accounts.setFavorite(user.sub, user.householdId!, id);
   }
 
   @Post(':id/reconciliations')

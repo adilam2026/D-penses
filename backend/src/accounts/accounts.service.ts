@@ -1,28 +1,18 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
+import { getAccountBalance } from '../common/ledger/ledger.util';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { CreateTransferDto } from './dto/create-transfer.dto';
 import { ReconcileDto } from './dto/reconcile.dto';
 import { AdjustReconciliationDto } from './dto/adjust-reconciliation.dto';
 
-/** Une ligne Decimal renvoyée par $queryRaw (ou un number/string) → number JS. */
-function toNumber(value: unknown): number {
-  if (value === null || value === undefined) return 0;
-  if (typeof value === 'object' && 'toNumber' in (value as any)) return (value as any).toNumber();
-  return Number(value);
-}
-
 @Injectable()
 export class AccountsService {
   constructor(private readonly rlsContext: RlsContextService) {}
 
-  // ---------- G.1 : solde_courant (RG-080) ----------
-  private async getBalance(accountId: string): Promise<number> {
-    const tx = this.rlsContext.getClient();
-    const rows = await tx.$queryRaw<{ solde_courant: unknown }[]>`
-      SELECT solde_courant FROM account_current_balance WHERE account_id = ${accountId}
-    `;
-    return rows.length ? toNumber(rows[0].solde_courant) : 0;
+  // ---------- G.1 : solde_courant (RG-080) — source de vérité unique (common/ledger) ----------
+  private getBalance(accountId: string): Promise<number> {
+    return getAccountBalance(this.rlsContext.getClient(), accountId);
   }
 
   async create(userId: string, householdId: string, dto: CreateAccountDto) {
@@ -70,6 +60,39 @@ export class AccountsService {
       const account = await tx.financialAccount.findFirst({ where: { id, householdId } });
       if (!account) throw new NotFoundException('Compte introuvable');
       return { ...account, soldeCourant: await this.getBalance(account.id) };
+    });
+  }
+
+  /** Un seul compte favori par foyer (index unique partiel) — utilisé par la saisie rapide (§14). */
+  async setFavorite(userId: string, householdId: string, id: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const account = await tx.financialAccount.findFirst({ where: { id, householdId } });
+      if (!account) throw new NotFoundException('Compte introuvable');
+      await tx.financialAccount.updateMany({ where: { householdId, isFavorite: true }, data: { isFavorite: false } });
+      const updated = await tx.financialAccount.update({ where: { id }, data: { isFavorite: true } });
+      return { ...updated, soldeCourant: await this.getBalance(id) };
+    });
+  }
+
+  /**
+   * Compte pré-rempli pour la saisie rapide (§14) : favori, sinon dernier compte
+   * utilisé (LedgerEntry le plus récent du foyer), sinon compte "principal"
+   * (le premier créé). Reste toujours modifiable par l'utilisateur.
+   */
+  async getQuickAddDefaultAccount(userId: string, householdId: string): Promise<string | null> {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const favorite = await tx.financialAccount.findFirst({ where: { householdId, status: 'actif', isFavorite: true } });
+      if (favorite) return favorite.id;
+
+      const lastUsed = await tx.$queryRaw<{ account_id: string }[]>`
+        SELECT account_id FROM ledger_entry WHERE household_id = ${householdId} ORDER BY occurred_at DESC LIMIT 1
+      `;
+      if (lastUsed.length) return lastUsed[0].account_id;
+
+      const first = await tx.financialAccount.findFirst({ where: { householdId, status: 'actif' }, orderBy: { createdAt: 'asc' } });
+      return first ? first.id : null;
     });
   }
 

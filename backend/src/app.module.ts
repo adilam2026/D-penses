@@ -9,6 +9,11 @@ import { HouseholdsModule } from './households/households.module';
 import { ChildrenModule } from './children/children.module';
 import { CategoriesModule } from './categories/categories.module';
 import { AccountsModule } from './accounts/accounts.module';
+import { IncomeModule } from './income/income.module';
+import { ChargePlansModule } from './charge-plans/charge-plans.module';
+import { DeadlinesModule } from './deadlines/deadlines.module';
+import { PaymentsModule } from './payments/payments.module';
+import { TransactionsModule } from './transactions/transactions.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -20,6 +25,11 @@ import { AppController } from './app.controller';
     ChildrenModule,
     CategoriesModule,
     AccountsModule,
+    IncomeModule,
+    ChargePlansModule,
+    DeadlinesModule,
+    PaymentsModule,
+    TransactionsModule,
   ],
   controllers: [AppController],
   providers: [

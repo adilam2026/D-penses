@@ -73,6 +73,81 @@ enum TransferType {
   depot_especes
 }
 
+// ---------- Lot 2 — Revenus & charges de base ----------
+
+enum IncomeSourceStatus {
+  actif
+  inactif
+}
+
+enum IncomeOccurrenceStatus {
+  prevu
+  recu
+  en_retard
+  annule
+}
+
+// Fréquence pilotant la génération automatique des Deadline/IncomeOccurrence
+// (ChargePlan.generation_mode = auto_frequence, doc02 §C.4). Le mode
+// calendrier_manuel (Lot 4) n'utilise pas ce champ.
+enum RecurrenceFrequency {
+  hebdomadaire
+  mensuel
+  trimestriel
+  semestriel
+  annuel
+  ponctuel
+}
+
+enum ChargePlanGenerationMode {
+  auto_frequence
+  calendrier_manuel
+}
+
+enum ObligationStatus {
+  obligatoire
+  optionnelle_envisagee
+  optionnelle_souscrite
+  optionnelle_refusee
+}
+
+enum ChargePlanStatus {
+  actif
+  inactif
+}
+
+// RG-102 : amount_current est NULL si et seulement si amount_status = inconnu.
+enum AmountStatus {
+  inconnu
+  estime
+  confirme
+}
+
+// F.2 (doc02) — état financier persistant, seule source de vérité pour les calculs.
+// L'état temporel (bientôt_due/due/overdue/future) n'est jamais stocké (O.2).
+enum DeadlineFinancialStatus {
+  ouverte
+  partiellement_payee
+  soldee
+  annulee
+}
+
+enum PaymentType {
+  paiement
+  remboursement
+  ajustement
+}
+
+enum PaymentDirection {
+  augmente_paye
+  diminue_paye
+}
+
+enum FundingSource {
+  compte
+  provision
+}
+
 // ---------- SOCLE ----------
 
 model User {
@@ -85,11 +160,14 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  memberships       HouseholdMembership[]
-  sessions          Session[]
-  createdInvites    HouseholdInvite[]     @relation("InviteCreatedBy")
-  redeemedInvite    HouseholdInvite?      @relation("InviteRedeemedBy")
-  ownedAccounts     FinancialAccount[]
+  memberships                HouseholdMembership[]
+  sessions                   Session[]
+  createdInvites             HouseholdInvite[]     @relation("InviteCreatedBy")
+  redeemedInvite             HouseholdInvite?      @relation("InviteRedeemedBy")
+  ownedAccounts              FinancialAccount[]
+  incomeSourcesAsBeneficiary IncomeSource[]
+  confirmedIncomeOccurrences IncomeOccurrence[]
+  recordedPayments           Payment[]
 
   @@map("user")
 }
@@ -101,13 +179,15 @@ model Household {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  memberships HouseholdMembership[]
-  children    Child[]
-  categories  Category[]
-  settings    HouseholdSettings?
-  invites     HouseholdInvite[]
-  accounts    FinancialAccount[]
-  transfers   AccountTransfer[]
+  memberships   HouseholdMembership[]
+  children      Child[]
+  categories    Category[]
+  settings      HouseholdSettings?
+  invites       HouseholdInvite[]
+  accounts      FinancialAccount[]
+  transfers     AccountTransfer[]
+  incomeSources IncomeSource[]
+  chargePlans   ChargePlan[]
 
   @@map("household")
 }
@@ -153,21 +233,23 @@ model Category {
   isSystem    Boolean      @default(false) @map("is_system")
   createdAt   DateTime     @default(now()) @map("created_at")
 
-  household Household? @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  household     Household?     @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  incomeSources IncomeSource[]
+  chargePlans   ChargePlan[]
 
   @@map("category")
 }
 
 model HouseholdSettings {
-  id                            String                       @id @default(uuid())
-  householdId                   String                       @unique @map("household_id")
-  securityMarginAmount          Decimal                      @default(0) @map("security_margin_amount") @db.Decimal(14, 2)
-  seuilAVenirDays               Int                          @default(30) @map("seuil_a_venir_days")
-  seuilAPayerDays               Int                          @default(7) @map("seuil_a_payer_days")
-  variableBudgetProjectionMode  VariableBudgetProjectionMode @default(prudent_max) @map("variable_budget_projection_mode")
-  weekStartDay                  Int                          @default(1) @map("week_start_day") // 1=lundi (RG-098)
-  createdAt                     DateTime                     @default(now()) @map("created_at")
-  updatedAt                     DateTime                     @updatedAt @map("updated_at")
+  id                           String                       @id @default(uuid())
+  householdId                  String                       @unique @map("household_id")
+  securityMarginAmount         Decimal                      @default(0) @map("security_margin_amount") @db.Decimal(14, 2)
+  seuilAVenirDays              Int                          @default(30) @map("seuil_a_venir_days")
+  seuilAPayerDays              Int                          @default(7) @map("seuil_a_payer_days")
+  variableBudgetProjectionMode VariableBudgetProjectionMode @default(prudent_max) @map("variable_budget_projection_mode")
+  weekStartDay                 Int                          @default(1) @map("week_start_day") // 1=lundi (RG-098)
+  createdAt                    DateTime                     @default(now()) @map("created_at")
+  updatedAt                    DateTime                     @updatedAt @map("updated_at")
 
   household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
 
@@ -214,25 +296,32 @@ model Session {
 // ============================================================
 
 model FinancialAccount {
-  id                            String        @id @default(uuid())
-  householdId                   String        @map("household_id")
-  name                          String
-  type                          AccountType
-  ownerUserId                   String?       @map("owner_user_id")
-  status                        AccountStatus @default(actif)
-  includeInOperationalTreasury  Boolean       @default(true) @map("include_in_operational_treasury")
-  isProtected                   Boolean       @default(false) @map("is_protected")
-  currency                      String        @default("MAD")
-  createdAt                     DateTime      @default(now()) @map("created_at")
-  updatedAt                     DateTime      @updatedAt @map("updated_at")
+  id                           String        @id @default(uuid())
+  householdId                  String        @map("household_id")
+  name                         String
+  type                         AccountType
+  ownerUserId                  String?       @map("owner_user_id")
+  status                       AccountStatus @default(actif)
+  includeInOperationalTreasury Boolean       @default(true) @map("include_in_operational_treasury")
+  isProtected                  Boolean       @default(false) @map("is_protected")
+  // Compte pré-rempli en priorité dans la saisie rapide (§14 Lot 2) — un seul compte
+  // favori par foyer, imposé en base (cf. index unique partiel dans la migration).
+  isFavorite                   Boolean       @default(false) @map("is_favorite")
+  currency                     String        @default("MAD")
+  createdAt                    DateTime      @default(now()) @map("created_at")
+  updatedAt                    DateTime      @updatedAt @map("updated_at")
 
-  household         Household               @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  owner              User?                   @relation(fields: [ownerUserId], references: [id])
-  snapshots          AccountBalanceSnapshot[]
-  reconciliations    Reconciliation[]
-  adjustments        Adjustment[]
-  transfersFrom      AccountTransfer[]       @relation("TransferFrom")
-  transfersTo        AccountTransfer[]       @relation("TransferTo")
+  household              Household                @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  owner                  User?                    @relation(fields: [ownerUserId], references: [id])
+  snapshots              AccountBalanceSnapshot[]
+  reconciliations        Reconciliation[]
+  adjustments            Adjustment[]
+  transfersFrom          AccountTransfer[]        @relation("TransferFrom")
+  transfersTo            AccountTransfer[]        @relation("TransferTo")
+  incomeSourcesAsDefault IncomeSource[]           @relation("IncomeSourceDefaultAccount")
+  incomeOccurrences      IncomeOccurrence[]       @relation("IncomeOccurrenceAccount")
+  chargePlansAsDefault   ChargePlan[]             @relation("ChargePlanDefaultAccount")
+  payments               Payment[]                @relation("PaymentAccount")
 
   @@map("financial_account")
 }
@@ -270,38 +359,166 @@ model Reconciliation {
 
 // RG-084 : mouvement réel typé et historisé — jamais une réécriture silencieuse du solde de référence.
 model Adjustment {
-  id                    String         @id @default(uuid())
-  accountId             String         @map("account_id")
-  amount                Decimal        @map("amount") @db.Decimal(14, 2) // signé
-  reason                String?
-  type                  AdjustmentType @default(autre)
-  linkedReconciliationId String?       @map("linked_reconciliation_id")
-  createdById           String         @map("created_by_id")
-  occurredAt            DateTime       @default(now()) @map("occurred_at")
+  id                     String         @id @default(uuid())
+  accountId              String         @map("account_id")
+  amount                 Decimal        @map("amount") @db.Decimal(14, 2) // signé
+  reason                 String?
+  type                   AdjustmentType @default(autre)
+  linkedReconciliationId String?        @map("linked_reconciliation_id")
+  createdById            String         @map("created_by_id")
+  occurredAt             DateTime       @default(now()) @map("occurred_at")
 
-  account       FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  reconciliation Reconciliation? @relation(fields: [linkedReconciliationId], references: [id])
+  account        FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  reconciliation Reconciliation?  @relation(fields: [linkedReconciliationId], references: [id])
 
   @@map("adjustment")
 }
 
 // RG-085 : sortie du compte source + entrée du compte destination, impact net foyer = 0 si interne.
 model AccountTransfer {
-  id              String         @id @default(uuid())
-  householdId     String         @map("household_id")
-  fromAccountId   String?        @map("from_account_id")
-  toAccountId     String?        @map("to_account_id")
-  amount          Decimal        @map("amount") @db.Decimal(14, 2)
-  plannedDate     DateTime       @map("planned_date")
-  actualDate      DateTime?      @map("actual_date")
-  status          TransferStatus @default(prevu)
-  type            TransferType   @default(interne)
-  confirmedById   String?        @map("confirmed_by_id")
-  createdAt       DateTime       @default(now()) @map("created_at")
+  id            String         @id @default(uuid())
+  householdId   String         @map("household_id")
+  fromAccountId String?        @map("from_account_id")
+  toAccountId   String?        @map("to_account_id")
+  amount        Decimal        @map("amount") @db.Decimal(14, 2)
+  plannedDate   DateTime       @map("planned_date")
+  actualDate    DateTime?      @map("actual_date")
+  status        TransferStatus @default(prevu)
+  type          TransferType   @default(interne)
+  confirmedById String?        @map("confirmed_by_id")
+  createdAt     DateTime       @default(now()) @map("created_at")
 
   household   Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
   fromAccount FinancialAccount? @relation("TransferFrom", fields: [fromAccountId], references: [id])
   toAccount   FinancialAccount? @relation("TransferTo", fields: [toAccountId], references: [id])
 
   @@map("account_transfer")
+}
+
+// ============================================================
+// Lot 2 — Revenus & charges de base (docs/02 §C.3/C.4, §E.2/E.3, docs/04 §P)
+// ============================================================
+
+model IncomeSource {
+  id                String               @id @default(uuid())
+  householdId       String               @map("household_id")
+  label             String
+  beneficiaryUserId String?              @map("beneficiary_user_id")
+  categoryId        String?              @map("category_id")
+  recurrenceRule    RecurrenceFrequency? @map("recurrence_rule")
+  usualAmount       Decimal              @map("usual_amount") @db.Decimal(14, 2)
+  isRecurring       Boolean              @default(true) @map("is_recurring")
+  defaultAccountId  String               @map("default_account_id")
+  status            IncomeSourceStatus   @default(actif)
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+
+  household      Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  beneficiary    User?              @relation(fields: [beneficiaryUserId], references: [id])
+  category       Category?          @relation(fields: [categoryId], references: [id])
+  defaultAccount FinancialAccount   @relation("IncomeSourceDefaultAccount", fields: [defaultAccountId], references: [id])
+  occurrences    IncomeOccurrence[]
+
+  @@map("income_source")
+}
+
+// RG-014bis : account_id devient obligatoire seulement à la confirmation (statut reçu) ;
+// une occurrence "prévue" ne modifie jamais un solde réel (F.1, LedgerEntry ne lit que status=recu).
+model IncomeOccurrence {
+  id                String                 @id @default(uuid())
+  incomeSourceId    String                 @map("income_source_id")
+  usualDate         DateTime               @map("usual_date") @db.Date
+  actualDate        DateTime?              @map("actual_date")
+  plannedAmount     Decimal                @map("planned_amount") @db.Decimal(14, 2)
+  actualAmount      Decimal?               @map("actual_amount") @db.Decimal(14, 2)
+  accountId         String?                @map("account_id")
+  status            IncomeOccurrenceStatus @default(prevu)
+  confirmedByUserId String?                @map("confirmed_by_user_id")
+  confirmedAt       DateTime?              @map("confirmed_at")
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
+
+  incomeSource IncomeSource      @relation(fields: [incomeSourceId], references: [id], onDelete: Cascade)
+  account      FinancialAccount? @relation("IncomeOccurrenceAccount", fields: [accountId], references: [id])
+  confirmedBy  User?             @relation(fields: [confirmedByUserId], references: [id])
+
+  @@map("income_occurrence")
+}
+
+// generation_mode = auto_frequence pour le Lot 2 (le calendrier_manuel du Lot 4
+// réutilisera le même modèle sans jamais nécessiter de refonte, cf. doc02 §C.4).
+model ChargePlan {
+  id               String                   @id @default(uuid())
+  householdId      String                   @map("household_id")
+  label            String
+  categoryId       String?                  @map("category_id")
+  generationMode   ChargePlanGenerationMode @default(auto_frequence) @map("generation_mode")
+  recurrenceRule   RecurrenceFrequency?     @map("recurrence_rule")
+  defaultAccountId String?                  @map("default_account_id")
+  obligationStatus ObligationStatus         @default(obligatoire) @map("obligation_status")
+  startDate        DateTime                 @map("start_date") @db.Date
+  endDate          DateTime?                @map("end_date") @db.Date
+  priorityLevel    Int                      @default(1) @map("priority_level")
+  status           ChargePlanStatus         @default(actif)
+  createdAt        DateTime                 @default(now()) @map("created_at")
+  updatedAt        DateTime                 @updatedAt @map("updated_at")
+
+  household      Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  category       Category?         @relation(fields: [categoryId], references: [id])
+  defaultAccount FinancialAccount? @relation("ChargePlanDefaultAccount", fields: [defaultAccountId], references: [id])
+  deadlines      Deadline[]
+
+  @@map("charge_plan")
+}
+
+// F.2 (doc02) : état financier persistant seul stocké — l'état temporel (bientôt_due/
+// due/overdue/future) est toujours calculé à la lecture, jamais une colonne (O.2).
+// reste_a_payer n'est jamais une colonne : uniquement dérivé de amount_current - Σ Payment
+// signés (vue deadline_with_balance, RG-016) — source de vérité unique, cf. DeadlinesService.
+model Deadline {
+  id                     String                  @id @default(uuid())
+  chargePlanId           String                  @map("charge_plan_id")
+  dueDate                DateTime                @map("due_date") @db.Date
+  expectedBillingDate    DateTime?               @map("expected_billing_date") @db.Date
+  billingDate            DateTime?               @map("billing_date") @db.Date
+  // NULL ssi amount_status = inconnu (RG-102/RG-103) — jamais 0 dans ce cas.
+  amountCurrent          Decimal?                @map("amount_current") @db.Decimal(14, 2)
+  amountStatus           AmountStatus            @default(estime) @map("amount_status")
+  amountInitialEstimated Decimal?                @map("amount_initial_estimated") @db.Decimal(14, 2)
+  confirmedAt            DateTime?               @map("confirmed_at")
+  financialStatus        DeadlineFinancialStatus @default(ouverte) @map("financial_status")
+  // Lot 6 (Provision) — champ prévu par le modèle final (doc04 §P), pas de FK tant que
+  // la table Provision n'existe pas, pour ne pas nécessiter de refonte au Lot 6.
+  provisionId            String?                 @map("provision_id")
+  createdAt              DateTime                @default(now()) @map("created_at")
+  updatedAt              DateTime                @updatedAt @map("updated_at")
+
+  chargePlan ChargePlan @relation(fields: [chargePlanId], references: [id], onDelete: Cascade)
+  payments   Payment[]
+
+  @@map("deadline")
+}
+
+// RG-015 : amount toujours > 0, le signe comptable est déduit du type par le moteur,
+// jamais saisi directement (contrainte CHECK ajoutée en SQL brut dans la migration).
+model Payment {
+  id            String            @id @default(uuid())
+  deadlineId    String            @map("deadline_id")
+  amount        Decimal           @map("amount") @db.Decimal(14, 2)
+  paidDate      DateTime          @map("paid_date")
+  accountId     String            @map("account_id")
+  type          PaymentType       @default(paiement)
+  direction     PaymentDirection? @map("direction")
+  fundingSource FundingSource     @default(compte) @map("funding_source")
+  // Lot 6 (Provision) — cf. commentaire Deadline.provisionId.
+  provisionId   String?           @map("provision_id")
+  recordedById  String            @map("recorded_by_id")
+  notes         String?
+  createdAt     DateTime          @default(now()) @map("created_at")
+
+  deadline   Deadline         @relation(fields: [deadlineId], references: [id], onDelete: Cascade)
+  account    FinancialAccount @relation("PaymentAccount", fields: [accountId], references: [id])
+  recordedBy User             @relation(fields: [recordedById], references: [id])
+
+  @@map("payment")
 }
