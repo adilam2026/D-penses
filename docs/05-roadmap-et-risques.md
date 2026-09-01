@@ -64,6 +64,7 @@ IncomeSource/Occurrence (avec `account_id`), ChargePlan/Deadline (mode `auto_fre
 - Remboursement (`type=remboursement`) → `reste_a_payer` augmente correctement, jamais de valeur négative interdite par erreur.
 - Modification du montant d'une échéance déjà partiellement payée → `reste_a_payer` recalculé sur le nouveau montant, pas l'ancien.
 - Annulation d'une échéance → exclusion immédiate de toutes les projections.
+- **(V2.1)** Un `Payment` de type `paiement` sur un compte de 10 000 DH pour 1 000 DH → `solde_courant` = 9 000 DH, jamais 11 000 DH (test de régression du signe dans `LedgerEntry`, document 04 §P.2).
 
 ### Lot 3 — Budgets variables & dépenses ponctuelles
 VariableBudget + prorata (G.7), BudgetExpense, AdHocExpense, `Projection_prudente_restante` (G.8).
@@ -71,6 +72,7 @@ VariableBudget + prorata (G.7), BudgetExpense, AdHocExpense, `Projection_prudent
 - Le consommé réel n'apparaît jamais une seconde fois dans le restant projeté (IF-13).
 - Prorata correct sur un mois de 28, 30 et 31 jours (pas de calcul naïf ×4).
 - Budget modifié en cours de période → recalcul au prorata des jours restants uniquement.
+- **(V2.1)** Budget hebdomadaire : une semaine calendaire complète comprise dans une fenêtre de calcul vaut le montant plein (pas de prorata) ; une fenêtre non alignée sur les semaines réelles (ex. horizon `Montants_engagés`) proratise correctement les seules semaines partielles en bord de fenêtre, sans jamais mélanger la fréquence du budget avec la date du prochain salaire (RG-098/RG-099).
 
 ### Lot 4 — Charges planifiées & module scolaire/abonnements
 ChargePlan `calendrier_manuel`, fiche enfant + vues filtrées scolarité/abonnements, justificatifs.
@@ -89,6 +91,10 @@ SavingsPocket/Provision (`allocation_mode`), PocketMovement, calcul temporel de 
 - Une poche `backed_by_account` : son solde égale exactement le solde courant de son compte lié (IF-08), et son montant n'apparaît jamais dans Montants réservés.
 - Provision liée à 3+ échéances de dates différentes → le versement recommandé couvre bien le palier intermédiaire le plus contraignant, pas seulement le total final (le scénario exact du document 06).
 - Le moteur d'arbitrage ne propose jamais une épargne enfant protégée pour financer un objectif de priorité inférieure sans action utilisateur explicite (RG-047).
+- **(V2.1)** Couverture provision/échéance : `couverture_affectée + engagement_non_couvert = reste_a_payer` exactement, sur une provision virtuelle comme sur une provision `backed_by_account` (RG-090→093, IF-16).
+- **(V2.1)** Provision liée à 2 échéances chronologiques : la couverture s'affecte à la plus proche en premier jusqu'à épuisement, jamais réparties au prorata des deux (IF-17/IF-18).
+- **(V2.1)** « Payer avec la provision » (RG-095/RG-096) : une seule confirmation crée atomiquement le `Payment` et le retrait de provision (poche virtuelle) ou débite directement le compte dédié (poche adossée) ; cas provision suffisante, insuffisante, et combinaison provision + compte courant.
+- **(V2.1)** Un paiement réglé sans passer par « payer avec la provision » ne décrémente jamais la provision (RG-097), même une fois l'échéance soldée.
 
 ### Lot 7 — Moteur de projection & alertes
 G.6a/G.6b (deux projections distinctes), détection de trou de trésorerie sur chacune, alertes retard/dépassement/oubli/anomalie, Actions à traiter, notifications.

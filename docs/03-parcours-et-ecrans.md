@@ -21,9 +21,23 @@ Onboarding financier :
 Un foyer qui ne déclare qu'un seul compte n'est jamais bloqué — le modèle à plusieurs comptes est disponible, jamais imposé.
 
 ### I.2 – I.10 (V1)
-Inchangés — saisie rapide d'une dépense, confirmation d'échéance à sa date, paiement anticipé, paiement partiel, confirmation de revenu, versement d'épargne/provision, création d'objectif, traiter « Actions à traiter ». Un seul ajustement transversal : chaque dépense/paiement utilise désormais implicitement un compte (RG-095 ci-dessous), sans jamais l'exposer par défaut à l'utilisateur.
+Inchangés — saisie rapide d'une dépense, confirmation d'échéance à sa date, paiement anticipé, paiement partiel, confirmation de revenu, versement d'épargne/provision, création d'objectif, traiter « Actions à traiter ». Un seul ajustement transversal : chaque dépense/paiement utilise désormais implicitement un compte (RG-uxA ci-dessous), sans jamais l'exposer par défaut à l'utilisateur.
 
-**RG-095 (UX)** — Toute saisie de dépense/paiement pré-remplit le compte avec, dans l'ordre : le compte favori déclaré par l'utilisateur, sinon le dernier compte utilisé pour cette catégorie, sinon le compte principal du foyer. Le champ compte reste modifiable en un tap mais n'exige jamais une décision explicite pour une saisie courante (cf. §23, point 23 des remarques).
+**RG-uxA (UX, ex-RG-095 V2)** — Toute saisie de dépense/paiement pré-remplit le compte avec, dans l'ordre : le compte favori déclaré par l'utilisateur, sinon le dernier compte utilisé pour cette catégorie, sinon le compte principal du foyer. Le champ compte reste modifiable en un tap mais n'exige jamais une décision explicite pour une saisie courante (cf. §23, point 23 des remarques).
+
+### I.3bis — Payer une échéance avec une provision *(nouveau V2.1, résout le point 4 des remarques)*
+
+Quand une `Deadline` est liée à une `Provision` disposant d'un solde, l'action « Marquer comme payée » (I.3) propose une étape supplémentaire, en une seule confirmation :
+```
+« Marquer comme payée » → montant réel + date (comme en I.3)
+   → « Source du paiement ? »
+        ○ Compte courant (ou compte favori, pré-sélectionné)
+        ○ Un autre compte
+        ○ Provision Scolarité (12 000 DH disponibles)         ← si la provision liée a un solde > 0
+        ○ Répartir (ex. 10 000 DH depuis la provision + 5 000 DH depuis le compte courant)
+   → [Confirmer] — une seule validation, quel que soit le nombre de sources choisies
+```
+Derrière cette unique confirmation (document 02, RG-095/RG-096) : le `Payment` est créé (un ou deux enregistrements si répartition), la provision est décrémentée du montant utilisé (si `virtual_allocation` : retrait confirmé automatique ; si `backed_by_account` : simple conséquence du compte dédié débité), et l'échéance passe `soldée` ou `partiellement_payée` selon le montant couvert. Si la provision est **insuffisante** pour couvrir la totalité, l'écran propose directement le complément par un compte, sans étape supplémentaire ni double confirmation.
 
 ### I.11 — Rapprochement bancaire *(nouveau)*
 ```

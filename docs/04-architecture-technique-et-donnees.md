@@ -70,12 +70,16 @@ deadline(id, charge_plan_id, due_date, amount_due, is_estimated,
 payment(id, deadline_id, amount /* toujours > 0 */, paid_date, account_id,
         type ENUM(paiement,remboursement,ajustement),
         direction ENUM(augmente_paye,diminue_paye)? /* requis seulement si type=ajustement */,
+        funding_source ENUM(compte,provision) DEFAULT 'compte',           -- V2.1
+        provision_id? /* requis si funding_source=provision, cf. RG-095 */, -- V2.1
         recorded_by_user_id, notes?)
 -- reste_a_payer(deadline) : vue/fonction SQL, pas une colonne (RG-016)
+-- couverture_affectée / engagement_non_couvert (deadline) : vue/fonction SQL, cf. P.3 (V2.1)
 
 -- BUDGETS VARIABLES / DÉPENSES
 variable_budget(id, household_id, category_id, reference_amount,
-                 reference_period, start_date, end_date?)
+                 reference_period, week_start_day ENUM(lundi..dimanche) DEFAULT 'lundi', -- V2.1, cf. RG-098
+                 start_date, end_date?)
 budget_expense(id, variable_budget_id, amount, spent_date, category_id,
                account_id, recorded_by_user_id)
 adhoc_expense(id, household_id, category_id, amount, spent_date,
@@ -145,12 +149,22 @@ FROM savings_pocket sp;
 ```
 
 ### P.2 `LedgerEntry` — vue comptable consolidée (résout le point 16)
+
+> **Correction V2.1** — la V2 comptait à tort tout `Payment` de type `paiement` comme une **entrée** (`+amount`) sur le compte payeur. C'est l'inverse : un paiement réel fait **sortir** l'argent du compte. Le signe utilisé ici (impact sur le **solde du compte**) est indépendant du signe utilisé par `reste_a_payer` (RG-015, impact sur la **dette de l'échéance**) — les deux ne doivent jamais être confondus (IF-20).
+
 ```sql
 CREATE VIEW ledger_entry AS
   SELECT 'income' AS kind, id, household_id, actual_date AS occurred_at, actual_amount AS amount, account_id FROM income_occurrence WHERE status='reçu'
   UNION ALL
   SELECT 'payment', id, (SELECT household_id FROM charge_plan cp JOIN deadline d ON d.charge_plan_id=cp.id WHERE d.id=deadline_id),
-         paid_date, CASE type WHEN 'remboursement' THEN -amount ELSE amount END, account_id FROM payment
+         paid_date,
+         CASE
+           WHEN type = 'paiement' THEN -amount                                                  -- sortie du compte payeur
+           WHEN type = 'remboursement' THEN amount                                               -- entrée sur le compte receveur
+           WHEN type = 'ajustement' AND direction = 'augmente_paye' THEN -amount                 -- se comporte comme un paiement
+           WHEN type = 'ajustement' AND direction = 'diminue_paye' THEN amount                   -- se comporte comme un remboursement
+         END,
+         account_id FROM payment
   UNION ALL
   SELECT 'adhoc_expense', id, household_id, spent_date, -amount, account_id FROM adhoc_expense
   UNION ALL
@@ -164,6 +178,39 @@ CREATE VIEW ledger_entry AS
   SELECT 'adjustment', id, (SELECT household_id FROM financial_account fa WHERE fa.id=account_id), occurred_at, amount, account_id FROM adjustment;
 ```
 Reste purement dérivée (lecture seule) — utilisée pour l'écran Transactions **et** pour recalculer `solde_courant` (G.1). Aucune écriture ne cible jamais cette vue directement.
+
+**Test de régression obligatoire (à automatiser, cf. document 05 Lot 2)** :
+```
+Étant donné : Compte = 10 000 DH
+Quand : Payment(deadline=Facture X, amount=1 000, type='paiement', account_id=Compte)
+Alors : solde_courant(Compte) = 9 000 DH   (et non 11 000 DH)
+```
+
+### P.3 Couverture provision/échéance — `engagement_non_couvert` (V2.1, RG-090)
+
+Calcul procédural (allocation chronologique séquentielle), exprimé ici en fonction/requête à fenêtrage plutôt qu'en simple vue déclarative :
+
+```sql
+CREATE FUNCTION engagement_non_couvert(p_deadline_id UUID) RETURNS NUMERIC AS $$
+  WITH linked AS (
+    SELECT d.id, d.due_date, deadline_with_balance.reste_a_payer,
+           SUM(deadline_with_balance.reste_a_payer) OVER (ORDER BY d.due_date, d.id
+               ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS deja_couvert_par_precedentes
+    FROM deadline d
+    JOIN deadline_with_balance ON deadline_with_balance.id = d.id
+    WHERE d.provision_id = (SELECT provision_id FROM deadline WHERE id = p_deadline_id)
+      AND d.financial_status IN ('ouverte','partiellement_payée')
+  ),
+  provision_amount AS (
+    SELECT current_amount FROM provision_balance
+    WHERE provision_id = (SELECT provision_id FROM deadline WHERE id = p_deadline_id)
+  )
+  SELECT GREATEST(0, reste_a_payer -
+           GREATEST(0, LEAST(reste_a_payer, (SELECT current_amount FROM provision_amount) - COALESCE(deja_couvert_par_precedentes, 0))))
+  FROM linked WHERE id = p_deadline_id;
+$$ LANGUAGE SQL STABLE;
+```
+Traduit directement RG-090 : la fenêtre cumule le `reste_a_payer` des échéances liées **antérieures** (triées par `due_date`) pour déterminer combien de la provision est déjà « consommée » avant d'atteindre l'échéance considérée, puis calcule ce qu'il reste de disponible pour elle.
 
 ---
 

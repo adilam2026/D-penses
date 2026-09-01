@@ -137,7 +137,9 @@ RG-021, RG-022, RG-023 inchangées.
   - **Budget contractuel restant** = `budget_période − consommé_à_date`
   - **Prévision au rythme actuel restant** = `(consommé_à_date / jours_écoulés × jours_totaux_période) − consommé_à_date`
   Le montant utilisé dans la **projection** (G.6) et le **simulateur** (G.11) est le maximum prudent des deux (`RG-024bis`), jamais les deux additionnés (ce qui doublonnerait le réel et le futur), et jamais le consommé_à_date une seconde fois.
-- **RG-024bis** — `Projection_prudente_restante = MAX(Budget_contractuel_restant, Prévision_rythme_restant, 0)`. Ce choix est un paramètre foyer (`variable_budget_projection_mode`), défaut = `prudent_max` ; alternatives `contractuel` ou `rythme_reel` restent disponibles pour un foyer qui préfère une projection plus optimiste ou plus fidèle au budget engagé.
+- **RG-024bis** — `Projection_prudente_restante = MAX(Budget_contractuel_restant, Prévision_rythme_restant, 0)`. Ce choix est un paramètre foyer (`variable_budget_projection_mode`), défaut = `prudent_max` ; alternatives `contractuel` ou `rythme_reel` restent disponibles pour un foyer qui préfère une projection plus optimiste ou plus fidèle au budget engagé. Les deux valeurs (budget contractuel restant / projection au rythme actuel) restent **toujours affichées séparément** dans l'interface — jamais fusionnées silencieusement en un seul chiffre qui remplacerait le budget fixé par l'utilisateur (cf. document 03).
+- **RG-098 — Semaine budgétaire = semaine calendaire réelle** *(V2.1, résout le point 6 des remarques)* — Pour un `VariableBudget` en `reference_period = semaine`, la période de suivi n'est **pas** une fenêtre glissante de 7 jours arbitraire : ce sont de vraies semaines calendaires successives, démarrant à `week_start_day` (paramètre foyer, défaut lundi). Une semaine complète comprise dans une fenêtre de calcul vaut `reference_amount` en entier (pas de prorata) ; seule une semaine **partielle** (bord de la fenêtre de calcul, ou tout début du budget) est proratée au nombre réel de jours qu'elle occupe dans cette fenêtre : `montant = (reference_amount / 7) × jours_de_cette_semaine_dans_la_fenêtre`. Un budget mensuel suit la même logique avec des mois calendaires réels (RG-022, inchangée).
+- **RG-099 — Le prochain revenu ne redéfinit jamais la période du budget** *(V2.1)* — L'horizon `H*` (date de la prochaine rentrée significative, utilisé dans `Montants_engagés`, G.4/G.5) sert uniquement à déterminer **combien** de semaines/mois de budget variable tombent dans la fenêtre `[T, H*]` — il ne modifie jamais le découpage propre du budget (ses semaines/mois restent alignés sur `week_start_day`, indépendamment des dates de salaire). Chaque `VariableBudget` garde sa fréquence propre, jamais mélangée avec celle d'un autre.
 
 ### E.5 Épargne et provisions
 - **RG-030, RG-031, RG-034, RG-035** inchangées dans leur principe.
@@ -159,6 +161,35 @@ RG-021, RG-022, RG-023 inchangées.
 - **RG-072 — Garantie anti-double-comptage** — Un compte ne peut être `linked_account_id` que d'**une seule** poche/provision `backed_by_account` à la fois (contrainte d'unicité en base). Le montant d'une poche `backed_by_account` **n'est jamais additionné** dans **Montants réservés** (G.3) : il est déjà retiré de la **Trésorerie opérationnelle** par l'exclusion de son compte dédié. Additionner les deux reviendrait à déduire le même dirham deux fois — interdit par construction (cf. formule G.3 et Invariant IF-06).
 - **RG-073** — Un `AccountTransfer` confirmé vers un compte `backed_by_account` d'une poche est le seul mécanisme qui **fait grandir réellement** cette poche ; un `PocketMovement` confirmé est le seul mécanisme qui fait grandir une poche `virtual_allocation`. Les deux ne se mélangent jamais sur une même poche.
 - **RG-074** — Le passage d'une poche de `virtual_allocation` à `backed_by_account` (ou l'inverse) est une action explicite, historisée, qui exige la création (ou suppression) du lien vers un compte dédié — jamais un simple changement de champ silencieux.
+
+### E.5ter — Couverture d'une échéance par une provision *(V2.1 — corrige un double comptage résiduel)*
+
+Le modèle V2 empêchait déjà le double comptage entre compte, poche virtuelle et poche adossée (RG-070→074). Il restait un double comptage possible entre **une provision déjà constituée et l'échéance qu'elle finance** : compter la provision dans `Montants_réservés` (G.3) **et** le montant dû complet de l'échéance dans `Montants_engagés` (G.4) revient à retirer deux fois le même argent de la trésorerie opérationnelle.
+
+- **RG-090 — Couverture chronologique** — Pour une `Provision` liée à une ou plusieurs `Deadline` non soldées/non annulées, triées par `due_date` croissante (d₁…dₙ, `reste_a_payer` r₁…rₙ), la provision couvre ses échéances liées **dans l'ordre chronologique**, jusqu'à épuisement :
+  ```
+  disponible_provision ← provision.current_amount
+  pour i = 1 à n (ordre chronologique) :
+      couverture_affectée(dᵢ) = MIN(rᵢ, disponible_provision)
+      disponible_provision ← disponible_provision − couverture_affectée(dᵢ)
+      engagement_non_couvert(dᵢ) = rᵢ − couverture_affectée(dᵢ)
+  ```
+  Règle identique que la provision soit `virtual_allocation` ou `backed_by_account` — seul le calcul de `current_amount` en amont diffère (RG-071).
+- **RG-091 — Une échéance sans provision liée** a `couverture_affectée = 0` et `engagement_non_couvert = reste_a_payer` — cas particulier de RG-090, aucune formule séparée nécessaire.
+- **RG-092 — Non-double-comptage par construction** — `Montants_réservés` (G.3) continue de compter la **totalité** du `current_amount` d'une provision `virtual_allocation` ; `Montants_engagés` (G.4) utilise désormais `engagement_non_couvert` (et non `reste_a_payer` brut) pour toute échéance liée à une provision. La somme des deux reste toujours exactement égale au besoin réel total (`couverture_affectée + engagement_non_couvert = reste_a_payer`, jamais plus, jamais moins) — cf. Invariant IF-16.
+- **RG-093 — Une provision `backed_by_account`** est déjà exclue de `Montants_réservés` (RG-072) ; sa couverture réduit néanmoins `engagement_non_couvert` de la même façon (RG-090), ce qui évite de redemander à la trésorerie opérationnelle un montant déjà mis de côté sur le compte dédié.
+- **RG-094 — Réallocation naturelle** — Quand une échéance couverte devient `soldée` (payée, avec ou sans consommation explicite de la provision, cf. RG-096), elle sort du tri chronologique de RG-090 dès le calcul suivant. Si la provision n'a pas été explicitement consommée pour ce paiement (RG-096), sa capacité de couverture se reporte naturellement sur l'échéance liée suivante — comportement voulu, pas une anomalie : la provision n'a jamais été physiquement entamée, elle reste donc disponible pour la suite.
+
+### E.5quater — Paiement financé par une provision *(V2.1, résout le point 4 des remarques)*
+
+- **RG-095 — Un `Payment` porte un `funding_source ∈ {compte, provision}`.** Si `compte`, comportement inchangé (V2). Si `provision`, le paiement référence une `Provision` (ou `SavingsPocket`) liée à la `Deadline`, et déclenche **atomiquement**, dans la même transaction :
+  1. la création du `Payment` (montant, type `paiement`) ;
+  2. si la provision est `virtual_allocation` : la création d'un `PocketMovement` de type `retrait`, confirmé, du même montant, réduisant `current_amount` d'autant ;
+  3. si la provision est `backed_by_account` : aucun `PocketMovement` — le `Payment.account_id` est simplement celui du compte dédié (`linked_account_id`), le solde du compte (et donc de la provision) baisse naturellement via G.1 ;
+  4. la mise à jour du statut financier de la `Deadline` (`partiellement_payée` ou `soldée` selon RG-014).
+  Une seule confirmation utilisateur suffit — RG-000 reste respectée puisque l'utilisateur a explicitement choisi et validé cette source de financement.
+- **RG-096 — Financement combiné** — Un même paiement peut se répartir entre plusieurs sources en une seule confirmation (ex. 10 000 DH depuis la provision + 5 000 DH depuis le compte courant si la provision est insuffisante) : cela crée simplement deux `Payment` liés à la même `Deadline`, chacun avec son propre `funding_source`, dans la même transaction atomique — réutilise le mécanisme de paiement partiel déjà existant (RG-014), sans nouvel objet métier.
+- **RG-097 — Hors financement explicite, aucun décrément automatique** — Si l'utilisateur paie une échéance liée à une provision **sans** choisir « payer avec la provision » (paiement depuis un compte classique), la provision n'est **jamais** décrémentée automatiquement (RG-000 inchangée) — cf. RG-094 pour la conséquence sur la couverture des échéances suivantes.
 
 ### E.6 Objectifs / projets
 RG-040 à RG-042 inchangées.
@@ -270,14 +301,18 @@ Montants_réservés(T) = Σ current_amount(SavingsPocket)  où allocation_mode =
 ```
 Les poches/provisions `backed_by_account` sont **explicitement exclues** de cette somme (RG-072) : leur montant est déjà retiré de `Trésorerie_opérationnelle` via l'exclusion de leur compte dédié (G.2). Les additionner ici referait doublonner le même dirham — cf. Invariant IF-06.
 
-### G.4 — Montants engagés *(corrigée — indépendante du statut UX, résout le point 4)*
+### G.4 — Montants engagés *(corrigée V2 — indépendante du statut UX ; corrigée V2.1 — n'engage plus une seconde fois ce qu'une provision couvre déjà)*
 ```
-Montants_engagés(T, H) = Σ reste_a_payer(deadline)  pour toute Deadline dont
+Montants_engagés(T, H) = Σ engagement_non_couvert(deadline)  pour toute Deadline dont
                             état_financier ∈ {ouverte, partiellement_payée}
                             ET due_date ≤ H
                         + Σ Projection_prudente_restante(variable_budget)  pour les périodes se terminant ≤ H
+
+  où engagement_non_couvert(deadline) = reste_a_payer(deadline) − couverture_affectée(deadline)   (RG-090/RG-091)
 ```
 Sélection **uniquement** sur l'état financier et la date d'échéance — jamais sur l'état temporel calculé (`bientôt_due`/`future`), cf. RG-050.
+
+**Pourquoi ce n'est pas un double comptage (ni dans un sens ni dans l'autre)** — `Montants_réservés` (G.3) compte la **totalité** du `current_amount` d'une provision `virtual_allocation`, sans le répartir par échéance. `Montants_engagés` (G.4) ne compte, pour chaque échéance liée, que la part **non couverte** par cette même provision. Ensemble, pour un jeu d'échéances liées à une provision, la somme (`Montants_réservés` attribuable + `Σ engagement_non_couvert`) égale toujours exactement le besoin réel total de ces échéances (`Σ reste_a_payer`) — ni plus, ni moins (cf. IF-16, démontré chiffres en main au document 06 §8bis).
 
 ### G.5 — Disponible libre
 ```
@@ -307,8 +342,14 @@ Projection_capacité_libre(T+k) = Projection_physique(T+k)
 ```
 Le point bas (`min`) de chacune des deux séries sur la fenêtre sert respectivement à détecter une **tension de trésorerie physique** et une **tension de capacité libre** (RG-051) — ce sont deux alertes distinctes, jamais fusionnées en un seul chiffre.
 
-### G.7 — Prorata d'un budget variable
-Inchangée (RG-022) : `budget_période = (montant_référence / jours_référence) × jours_réels_de_la_période`.
+### G.7 — Prorata d'un budget variable *(précisée V2.1 — RG-098)*
+```
+Cas « semaine » : chaque semaine calendaire réelle (du week_start_day au 6ᵉ jour suivant) comprise
+   entièrement dans la fenêtre de calcul vaut reference_amount en entier.
+   Une semaine partielle (bord de fenêtre) vaut (reference_amount / 7) × jours_de_cette_semaine_dans_la_fenêtre.
+Cas « mois » : budget_période = (montant_référence / jours_référence) × jours_réels_du_mois (RG-022, inchangée).
+```
+La formule à taux journalier constant (`montant_référence/jours_référence × jours`) reste un raccourci **valide** quand la fenêtre considérée couvre un nombre entier de semaines/mois complets depuis une origine alignée (ex. un mois complet) — elle ne doit jamais être appliquée telle quelle à une fenêtre arbitraire non alignée sur les semaines réelles (ex. l'horizon `[T, H*]` d'un calcul de `Montants_engagés`), sous peine d'erreur de quelques jours en bord de fenêtre.
 
 ### G.8 — Rythme et projection prudente d'un budget *(précisée, résout le point 14)*
 ```
@@ -416,3 +457,11 @@ Ces invariants deviendront des tests automatisés (cf. document 05, roadmap V2).
 - **IF-13** — La part « réalisée » d'un `VariableBudget` (les `BudgetExpense` déjà enregistrées) n'apparaît jamais une seconde fois dans la part « projetée » (`Projection_prudente_restante`, RG-024bis).
 - **IF-14** — Un compte ne peut être `linked_account_id` que d'une seule poche/provision `backed_by_account` à la fois (contrainte d'unicité, RG-072).
 - **IF-15** — Toute suppression d'une opération financière validée est refusée par construction (seules `annulation`, `contre-écriture` et `ajustement` existent) — cf. RG-064.
+
+**Invariants V2.1 — couverture provision/échéance et signes comptables**
+
+- **IF-16** — Pour toute `Deadline` liée à une `Provision` : `couverture_affectée(deadline) + engagement_non_couvert(deadline) = reste_a_payer(deadline)`, exactement — jamais moins (argent non compté), jamais plus (argent compté en trop). (RG-090/RG-092)
+- **IF-17** — Une même unité de `current_amount` d'une provision ne couvre jamais deux échéances simultanément — l'allocation chronologique de RG-090 est strictement séquentielle et exclusive (`disponible_provision` décroît de façon monotone au fil du tri par `due_date`).
+- **IF-18** — L'affectation d'une provision à ses échéances liées se fait par défaut dans l'ordre chronologique des `due_date`, jamais par ordre de création ni par montant.
+- **IF-19** — Un `Payment` avec `funding_source = provision` sur une provision `virtual_allocation` crée toujours, dans la même transaction, un `PocketMovement` de retrait du même montant — jamais l'un sans l'autre (RG-095).
+- **IF-20** — Dans `LedgerEntry`, un `Payment` de type `paiement` (ou `ajustement` à direction `augmente_paye`) est toujours une **sortie** (montant négatif) sur le compte payeur ; un `Payment` de type `remboursement` (ou `ajustement` à direction `diminue_paye`) est toujours une **entrée** (montant positif) — ce signe est indépendant du signe utilisé pour `reste_a_payer` (RG-015), qui répond à une question différente (l'effet sur la dette de l'échéance, pas sur le solde du compte). Ne jamais réutiliser l'un pour l'autre.

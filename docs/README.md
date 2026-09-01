@@ -1,6 +1,8 @@
-# Application financière familiale — Analyse fonctionnelle et architecture (V2)
+# Application financière familiale — Analyse fonctionnelle et architecture (V2.1)
 
 Ce dossier constitue le **livrable d'analyse préalable au développement**. Aucune ligne de code applicative n'est écrite à ce stade.
+
+**V2.1** corrige un double comptage résiduel entre une provision déjà constituée et l'échéance qu'elle finance (nouvelle notion `engagement_non_couvert`, document 02 §E.5ter, formule G.4), ajoute le paiement atomique « avec la provision » (§E.5quater), corrige un bug de signe dans la vue `LedgerEntry` (document 04 §P.2), clarifie le budget hebdomadaire sur des semaines calendaires réelles (RG-098/RG-099), et met à jour le test oracle chiffré (document 06) en conséquence — dates calendaires corrigées, checkpoints recalculés, deux nouveaux cas de preuve (provision virtuelle et provision adossée à un compte).
 
 ## Philosophie retenue (inchangée)
 

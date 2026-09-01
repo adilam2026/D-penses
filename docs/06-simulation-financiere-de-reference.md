@@ -1,75 +1,32 @@
-# 06 — Simulation financière de référence
+# 06 — Simulation financière de référence (V2.1)
 
-> Document de validation fonctionnelle chiffrée (points 18 à 20 des remarques). Sert de **test oracle** pour le développement futur : toute implémentation doit reproduire exactement les valeurs ci-dessous à partir des mêmes données d'entrée. Foyer et personnages fictifs, construits pour ce test uniquement.
+> Document de validation fonctionnelle chiffrée (points 18 à 20 de la revue V2, corrigé en V2.1 pour la couverture provision/échéance, les dates calendaires et le budget hebdomadaire). Sert de **test oracle** pour le développement futur. Foyer et personnages fictifs, construits pour ce test uniquement.
+>
+> **Corrections V2.1 apportées à ce document** : couverture chronologique provision → échéance appliquée partout où elle s'applique (§3.1, §3.2, §5, nouveaux Cas F/G en §8) ; démonstration du paiement atomique « avec la provision » (§5, jour 75) ; table de correspondance jour ↔ date et correction des libellés de date erronés (§0bis) ; budget courses recalculé sur des semaines calendaires réelles plutôt qu'un taux journalier appliqué à une fenêtre arbitraire (§3.2/§3.3) ; correction de la phrase sur la trésorerie de fin septembre (§3, ce n'est pas une hausse) ; simulateur recalculé en conséquence (§7).
 
 ---
 
 ## 0. Objectif
+Inchangé : prouver, chiffres à l'appui, que le modèle (1) détecte un trou de trésorerie intra-mois, (2) propage `reste_a_payer` correctement, (3) ne compte jamais un dirham deux fois — **y compris désormais entre une provision et l'échéance qu'elle finance**, (4) calcule une recommandation de provision qui respecte chaque échéance intermédiaire, (5) produit un verdict de simulateur nuancé.
 
-Prouver, chiffres à l'appui et sans aucune approximation dissimulée, que le modèle du document 02 :
-1. détecte un trou de trésorerie intra-mois même quand le mois est globalement positif (RG-051) ;
-2. propage correctement un paiement partiel dans toutes les projections (`reste_a_payer`, RG-016) ;
-3. ne compte jamais un même dirham deux fois entre solde de compte, poche/provision et engagement (RG-070→074, IF-06) ;
-4. calcule une recommandation de provision qui respecte chaque échéance intermédiaire, pas seulement le total (RG-032bis) ;
-5. produit un verdict de simulateur nuancé, pas binaire (G.11).
+### 0bis. Table de correspondance jour ↔ date *(nouveau V2.1)*
+
+Convention unique et désormais strictement appliquée : **jour 0 = 1er septembre**, un lundi (jour de référence de la semaine budgétaire, `week_start_day = lundi`). `Date(jour n) = 1er septembre + n jours`. Septembre compte 30 jours (jours 0-29), octobre 31 jours (jours 30-60), novembre 30 jours (jours 61-90), décembre 31 jours (jours 91-121).
+
+| Jour | Date | Jour | Date | Jour | Date |
+|---|---|---|---|---|---|
+| 0 | 1 sept (lun.) | 45 | 16 oct | 75 | 15 nov |
+| 14 | 15 sept | 54 | 25 oct | 78 | 18 nov |
+| 22 | 23 sept | 57 | 28 oct | 85 | 25 nov |
+| 29 | 30 sept | 65 | 5 nov | 88 | 28 nov |
+| 34 | 5 oct | 70 | 10 nov | 90 | 30 nov |
+| 39 | 10 oct | 72 | 12 nov | 119 | 29 déc |
+| 42 | 13 oct | | | 136 | 15 janv |
 
 ---
 
 ## 1. Foyer de référence — état initial (1er septembre, jour 0)
-
-**Foyer** : Nabil (admin) & Salma (admin) · enfants Yanis (8 ans) et Ines (5 ans).
-**Marge de sécurité** (`HouseholdSettings`) : **10 000 DH**.
-
-### 1.1 Comptes (`FinancialAccount`)
-
-| Compte | Type | Opérationnel | Solde J0 |
-|---|---|---|---|
-| ACC-1 · Courant Nabil | courant | oui | 22 000 DH |
-| ACC-2 · Courant Salma | courant | oui | 15 000 DH |
-| ACC-3 · Épargne enfants (dédié, `backed_by_account` de la poche « Épargne Enfants ») | épargne | **non** (protégé) | 30 000 DH |
-| ACC-4 · Espèces | espèces | oui | 2 000 DH |
-
-**Patrimoine liquide total J0** = 22 000+15 000+30 000+2 000 = **69 000 DH**
-**Trésorerie opérationnelle J0** (exclut ACC-3) = 22 000+15 000+2 000 = **39 000 DH**
-
-### 1.2 Revenus
-
-| Source | Montant | Jour habituel | Compte cible |
-|---|---|---|---|
-| Salaire Nabil | 18 000 DH/mois | 25 | ACC-1 |
-| Salaire Salma | 12 000 DH/mois | 28 | ACC-2 |
-| Prime Nabil (ponctuelle) | 5 000 DH prévue | jour 45 (15 oct) | ACC-1 |
-
-### 1.3 Charges fixes (`ChargePlan` auto_frequence, obligatoires, priorité 1)
-
-| Charge | Montant | Jour d'échéance | Compte défaut |
-|---|---|---|---|
-| Crédit logement | 4 500 DH | 5 | ACC-1 |
-| Internet | 399 DH | 10 | ACC-1 |
-| Téléphone | 250 DH | 12 | ACC-1 |
-| Électricité (estimée) | 900 DH | 18 | ACC-2 |
-
-### 1.4 Scolarité (`ChargePlan` calendrier_manuel, catégorie École, enfant Yanis), toutes liées à la **Provision Scolarité**
-
-| Échéance | Montant | Jour / date |
-|---|---|---|
-| D-S1 · Réinscription Yanis | 20 000 DH | jour 14 (15 sept) |
-| D-S2 · Sorties + fournitures Yanis & Ines | 2 000 DH | jour 29 (30 sept) |
-| D-S3 · Réinscription + scolarité T1 | 20 000 DH | jour 75 (15 nov) |
-| D-S4 · T2 scolarité Yanis | 6 000 DH | jour 136 (15 janv) |
-
-### 1.5 Budget variable
-Courses (Alimentation) : **1 500 DH/semaine** → taux journalier 214,29 DH.
-
-### 1.6 Épargne
-- **SP-1 « Or Nabil »** — `virtual_allocation`, propriétaire Nabil, protégée, `current_amount` initial = **4 000 DH** (mouvements confirmés antérieurs).
-- **SP-2 « Épargne Enfants »** — `backed_by_account`, `linked_account_id = ACC-3`, protégée (RG-047), `current_amount` = lecture directe du solde ACC-3 = **30 000 DH**. Mensualité cible : 2 000 DH/mois (1 000 Yanis + 1 000 Ines), par `AccountTransfer`.
-
-### 1.7 Provision
-**Provision Scolarité** — `virtual_allocation`, `current_amount` initial = **9 000 DH**, liée aux 4 échéances D-S1 à D-S4.
-
-### 1.8 Objectif
-**Goal « PC »** — prix cible 15 000 DH, priorité 4, pas de date fixée.
+Inchangé — voir tableaux détaillés : comptes (ACC-1 Nabil 22 000, ACC-2 Salma 15 000, ACC-3 Épargne enfants 30 000 non-opérationnel, ACC-4 Espèces 2 000 ; patrimoine 69 000, trésorerie opérationnelle 39 000), revenus (salaires 18 000/12 000, prime 5 000), charges fixes (crédit 4 500/j5, internet 399/j10, téléphone 250/j12, électricité estimée 900/j18), scolarité liée à la Provision Scolarité (D-S1 20 000/15 sept, D-S2 2 000/30 sept, D-S3 20 000/15 nov, D-S4 6 000/15 janv), budget courses 1 500 DH/**semaine calendaire** (lundi→dimanche), épargne (Or Nabil 4 000 virtuel, Épargne Enfants 30 000 adossée à ACC-3), Provision Scolarité 9 000 initiale, objectif PC 15 000 DH, marge de sécurité 10 000 DH.
 
 ---
 
@@ -96,13 +53,13 @@ Courses (Alimentation) : **1 500 DH/semaine** → taux journalier 214,29 DH.
 | 27 | 28 sept | **r.** Salaire Salma prévu 12 000, reçu réel 12 350 | ACC-2 +12 350 |
 | 29 | 30 sept | D-S2 payée (2 000 DH) · **p.** rapprochement ACC-2, écart −250 DH → ajustement enregistré | ACC-1 −2 000 ; ACC-2 −250 |
 
-*(Événement **l** — versement épargne enfants d'octobre — observé encore au statut « prévu » à un checkpoint mi-octobre, avant confirmation. Événements **s/t** — simulateur — traités en §6.)*
+*(Événement **l** observé mi-octobre, statut « prévu ». Événements **s/t** — simulateur — traités en §7.)*
 
 ---
 
 ## 3. Trajectoire de septembre — preuve du trou de trésorerie (RG-051)
 
-**Trésorerie opérationnelle** = ACC-1 + ACC-2 + ACC-4 (ACC-3 exclu, non-opérationnel).
+**Trésorerie opérationnelle** = ACC-1 + ACC-2 + ACC-4 (ACC-3 exclu).
 
 | Jour | Événement | Trésorerie opérationnelle |
 |---|---|---|
@@ -120,136 +77,192 @@ Courses (Alimentation) : **1 500 DH/semaine** → taux journalier 214,29 DH.
 | 27 | Salaire Salma (+12 350) | 39 454 |
 | 29 | D-S2 (−2 000) + ajustement rapprochement (−250) | **37 204** |
 
-**Point bas = 9 104 DH le jour 22 (23 septembre)**, soit **896 DH sous la marge de sécurité (10 000 DH)** — bien que septembre se termine largement positif (37 204 DH, +2 4 % vs. le solde de départ 39 000 DH... en réalité proche, l'essentiel étant que le mois complet est sain). **RG-051 se déclenche donc entre le 20 et le 24 septembre**, exactement dans la fenêtre décrite en introduction du cahier des charges (tension entre l'échéance scolaire du 15 et le salaire du 25) — un raisonnement mensuel global aurait masqué cette tension.
+**Point bas = 9 104 DH le jour 22 (23 septembre)**, soit **896 DH sous la marge de sécurité (10 000 DH)**. Septembre se termine à **37 204 DH, en léger retrait par rapport au départ (39 000 DH, −1 796 DH, −4,6 %)** — ce n'est pas une hausse : le mois a absorbé une échéance scolaire lourde (20 000 DH) tout juste compensée par les deux salaires ; ce qui importe est que le mois reste sain dans l'ensemble malgré la tension du 20-24 septembre détectée par RG-051, qu'un raisonnement mensuel global aurait masquée.
 
-### 3.1 Checkpoint complet — jour 16 (pendant le paiement partiel)
-- `reste_a_payer(D-S1)` = 20 000 − 15 551 = **4 449 DH** (état financier `partiellement_payée`)
-- **Montants engagés** (horizon H* = jour 45, prime) incluent ce 4 449 DH — pas 20 000 (montant initial), pas 0 (déjà réglé) : `250(tél. sept) + 4 449(D-S1) + 2 000(D-S2) + 250(tél. oct) + 4 500(crédit oct) + 399(internet oct) = 11 848 DH`.
-- **Preuve directe du point 5 des remarques** : le moteur ne projette jamais 20 000 DH de sortie future pour D-S1 une fois le premier paiement enregistré.
+### 3.1 Checkpoint complet — jour 16 (pendant le paiement partiel, avant couverture par provision)
+
+- `reste_a_payer(D-S1)` = 20 000 − 15 551 = **4 449 DH** (état financier `partiellement_payée`).
+- **Couverture par la Provision Scolarité** (RG-090, provision = 9 000 DH, échéances liées non soldées triées par date : D-S1 due 15 sept en premier, puis D-S2 due 30 sept, puis D-S3, D-S4) : `couverture_affectée(D-S1) = MIN(4 449, 9 000) = 4 449` → **`engagement_non_couvert(D-S1) = 0`**. Il reste `9 000 − 4 449 = 4 551 DH` de provision disponible, qui couvre ensuite intégralement D-S2 (2 000 DH) → `engagement_non_couvert(D-S2) = 0` également.
+- **Montants engagés** (horizon H\* = jour 45, prime) : seules les charges **non liées à la provision** y entrent — téléphone sept (250) + téléphone oct (250, due jour 42) + crédit oct (4 500, due jour 34) + internet oct (399, due jour 39) = **5 399 DH**. Ni les 4 449 DH restant dus sur D-S1, ni les 2 000 DH de D-S2, n'y figurent : ils sont déjà couverts par les 9 000 DH que `Montants_réservés` retient par ailleurs.
+- **Preuve directe des points 1 et 5 des remarques** : le moteur ne compte jamais deux fois le même argent — ni le montant initial de D-S1 (20 000, déjà exclu par `reste_a_payer`), ni son reste dû une fois que la provision le couvre (exclu par `engagement_non_couvert`).
 
 ### 3.2 Checkpoint complet — jour 22 (point bas)
-- Trésorerie opérationnelle = 9 104 DH
-- Montants réservés = Or Nabil (4 000) + Provision Scolarité (9 000, avant l'affectation du jour 25) = **13 000 DH**
-- Montants engagés (H*=jour 45) = téléphone sept (250) + téléphone oct (250) + crédit oct (4 500) + internet oct (399) + D-S2 (2 000) + budget courses restant (23 j × 214,29 = 4 929) = **12 328 DH**
-- **Disponible libre** = 9 104 − 13 000 − 12 328 − 10 000 = **−26 224 DH**
 
-Ce chiffre très négatif n'est pas une anomalie : il signale correctement qu'aucune dépense discrétionnaire ne devrait être engagée à ce moment précis, y compris alors que le compte lui-même n'est pas à découvert — c'est précisément la différence entre trésorerie physique et capacité libre (document 01, A.3).
+- Trésorerie opérationnelle = 9 104 DH
+- Montants réservés = Or Nabil (4 000) + Provision Scolarité (9 000, avant l'affectation du jour 25) = **13 000 DH** *(inchangé — la provision est toujours comptée en entier ici, cf. RG-092)*
+- Couverture (D-S1 déjà soldée depuis le jour 18, sort du calcul) : disponible_provision = 9 000 → D-S2 (reste 2 000, due jour 29) : `couverture = MIN(2 000, 9 000) = 2 000` → `engagement_non_couvert(D-S2) = 0`.
+- Montants engagés (H\*=jour 45) = téléphone sept (250) + téléphone oct (250) + crédit oct (4 500) + internet oct (399) + D-S2 (engagement non couvert = **0**) + **budget courses restant** (voir ci-dessous) = 5 399 + budget.
+- **Budget courses restant, calculé sur des semaines calendaires réelles (RG-098)**, fenêtre [jour 22, jour 45] : reste de la semaine en cours S4 (jours 21-27 ; consommé à date 480 DH sur 2 jours écoulés, rythme projeté = (480/2)×7 = 1 680, budget contractuel restant = 1 500−480 = 1 020, `prudent_max` = **1 200** pour les 5 jours restants de S4) + semaine S5 complète (jours 28-34) = 1 500 + semaine S6 complète (jours 35-41) = 1 500 + semaine S7 partielle (jours 42-45, 4 jours sur 7) = 1 500×4/7 ≈ 857. **Total = 1 200+1 500+1 500+857 = 5 057 DH.**
+- **Montants engagés = 5 399 + 5 057 = 10 456 DH**
+- **Disponible libre** = 9 104 − 13 000 − 10 456 − 10 000 = **−24 352 DH**
+
+Ce chiffre très négatif signale correctement qu'aucune dépense discrétionnaire ne devrait être engagée à ce moment, alors même que le compte n'est pas à découvert — la différence entre trésorerie physique et capacité libre (document 01, A.3).
 
 ### 3.3 Checkpoint complet — jour 29 (fin septembre, post-rapprochement)
+
 - Trésorerie opérationnelle = **37 204 DH**
 - Montants réservés = Or Nabil (4 000) + Provision Scolarité (12 000, après affectation du jour 25) = **16 000 DH**
-- Montants engagés (H*=jour 45) = téléphone sept (250) + téléphone oct (250) + crédit oct (4 500) + internet oct (399) + budget courses restant (16 j × 214,29 = 3 429) = **8 828 DH**
-- **Disponible libre** = 37 204 − 16 000 − 8 828 − 10 000 = **2 376 DH**
+- Couverture : D-S1 et D-S2 sont soldées, sorties du calcul. Aucune échéance liée à la provision ne tombe dans l'horizon [jour 29, jour 45] (D-S3 et D-S4 sont bien au-delà). Montants engagés = téléphone sept (250) + téléphone oct (250) + crédit oct (4 500) + internet oct (399) = 5 399, inchangé par la couverture.
+- **Budget courses restant** [jour 29, jour 45] : reste de S5 (jours 30-34, 5 jours, semaine tout juste commencée le 28, rien consommé encore → prudent_max = budget contractuel = 1 500) + S6 complète (1 500) + S7 partielle (jours 42-45, 4/7) ≈ 857. **Total = 1 500+1 500+857 = 3 857 DH.**
+- **Montants engagés = 5 399 + 3 857 = 9 256 DH**
+- **Disponible libre** = 37 204 − 16 000 − 9 256 − 10 000 = **1 948 DH**
 
 ---
 
 ## 4. Provision Scolarité — calcul temporel de suffisance (RG-032bis)
 
-État au jour 29 : `current_amount` = 12 000 DH. Échéances encore liées et non soldées : D-S3 (20 000, jour 75) et D-S4 (6 000, jour 136) — D-S1 et D-S2 sont sorties du calcul car soldées.
+État au jour 29 : `current_amount` = 12 000 DH. Échéances encore liées et non soldées : D-S3 (20 000, jour 75) et D-S4 (6 000, jour 136).
 
-| i | Échéance | `reste_a_payer` (rᵢ) | Besoin cumulé Rᵢ | Mois restants | Taux requis (Rᵢ−12000)/mois |
+| i | Échéance | reste_a_payer (rᵢ) | Besoin cumulé Rᵢ | Mois restants | Taux requis |
 |---|---|---|---|---|---|
 | 1 | D-S3 (jour 75) | 20 000 | 20 000 | 46j ≈ 1,53 mois | (20 000−12 000)/1,53 = **5 229 DH/mois** |
 | 2 | D-S4 (jour 136) | 6 000 | 26 000 | 107j ≈ 3,57 mois | (26 000−12 000)/3,57 = 3 922 DH/mois |
 
-**Versement mensuel recommandé = max(5 229 ; 3 922) = 5 229 DH/mois**, arrondi à **5 200 DH/mois** pour l'affichage.
+**Versement mensuel recommandé = max(5 229 ; 3 922) = 5 229 DH/mois**, arrondi à 5 200 DH/mois.
 
-**Preuve que le calcul naïf sous-provisionnerait** : une approche « reste global / mois restants total » donnerait `(26 000−12 000)/3,57 = 3 922 DH/mois`. À ce rythme, au jour 75 (échéance D-S3), la provision contiendrait seulement `12 000 + 3 922×1,53 ≈ 18 001 DH` — **1 999 DH de moins que les 20 000 DH requis**. Le calcul par palier (RG-032bis) évite cette erreur en identifiant que c'est le palier intermédiaire (D-S3), pas le total final, qui est contraignant.
+> **Note de cohérence (V2.1)** — Ce calcul (RG-032bis, prospectif : combien verser chaque mois pour éviter un manque futur) et la couverture chronologique de §3.1/3.2 (RG-090, instantané : combien du solde actuel de la provision couvre déjà chaque échéance) utilisent la même mécanique. Le « gap » `R_i − current_amount` de ce tableau (8 000 DH pour D-S3) est exactement `engagement_non_couvert(D-S3)` au jour 29 — les deux notions sont les deux faces d'un même calcul, jamais en contradiction.
+
+**Preuve que le calcul naïf sous-provisionnerait** : une approche « reste global / mois restants total » donnerait `(26 000−12 000)/3,57 = 3 922 DH/mois`. À ce rythme, au jour 75 (D-S3), la provision contiendrait `12 000 + 3 922×1,53 ≈ 18 001 DH` — 1 999 DH de moins que les 20 000 DH requis. Le calcul par palier (RG-032bis) l'évite.
 
 ---
 
-## 5. Octobre – Novembre — projection agrégée
+## 5. Octobre – Novembre — projection agrégée, avec paiement de D-S3 via la provision
 
-*(À partir du jour 29, projection mensuelle des flux connus — moins détaillée au jour le jour que septembre, le mécanisme de détection ayant déjà été prouvé en détail §3.)*
+**Octobre** (jour 29 → jour 60) : + salaires (18 000 le 25 oct, jour 54 + 12 000 le 28 oct, jour 57) + prime (5 000, jour 45/16 oct) − crédit (4 500, jour 34/5 oct) − internet (399, jour 39/10 oct) − téléphone ×2 (250+250, dont le retard de septembre enfin réglé) − électricité (880 réel, jour 47/18 oct) − courses (≈6 429, un mois complet de semaines) − transfert épargne enfants (2 000) = **+20 292 DH**.
+→ Trésorerie opérationnelle jour 60 = 37 204 + 20 292 = **57 496 DH**. Aucun point bas sous la marge (minimum estimé ≈ 32 000 DH avant la prime et les salaires).
 
-**Octobre** (jour 29 → jour 59) : + salaires (18 000+12 000) + prime (5 000) − crédit (4 500) − internet (399) − téléphone ×2 (250+250, dont le retard de septembre enfin réglé) − électricité (880 réel) − courses (6 429) − transfert épargne enfants (2 000) = **+20 292 DH**.
-→ Trésorerie opérationnelle jour 59 = 37 204 + 20 292 = **57 496 DH**. Aucun point bas sous la marge identifié sur ce mois (minimum estimé ≈ 32 000 DH, avant l'arrivée de la prime et des salaires).
+**Novembre** (jour 60 → jour 90) — **paiement de D-S3 via la provision (RG-095/RG-096, point 4 des remarques)** au jour 75 (15 nov) : la Provision Scolarité contient alors 17 000 DH (12 000 + 5 000 versés en octobre, conformément à la recommandation §4). L'utilisateur confirme « Marquer comme payée » → « Source du paiement ? » → répartition **17 000 DH depuis la Provision Scolarité + 3 000 DH depuis le compte courant**, en une seule confirmation. Atomiquement : deux `Payment` sont créés sur D-S3 (17 000 `funding_source=provision`, 3 000 `funding_source=compte`), un `PocketMovement` de retrait de 17 000 DH est créé sur la provision (12 000+5 000−17 000 = **0**), D-S3 passe `soldée`.
 
-**Novembre** (jour 59 → jour 90) : + salaires (18 000+12 000) − crédit (4 500) − internet (399) − téléphone (250) − électricité (880) − courses (6 429) − transfert épargne enfants (2 000) − **D-S3 (20 000, jour 75)** = **−4 458 DH**.
+Flux du mois : + salaires (18 000 le 25 nov, jour 85 + 12 000 le 28 nov, jour 88) − crédit (4 500, jour 65/5 nov) − internet (399, jour 70/10 nov) − téléphone (250, jour 72/12 nov) − électricité (880, jour 78/18 nov) − courses (≈6 429) − transfert épargne enfants (2 000) − **D-S3 (20 000 au total, dont 17 000 « depuis » la provision et 3 000 depuis le compte — impact réel sur la trésorerie opérationnelle : −20 000 dans tous les cas, la provision étant virtuelle et non un compte séparé)** = **−4 458 DH**.
 → Trésorerie opérationnelle jour 90 = 57 496 − 4 458 = **53 038 DH**.
 
-**Point bas de novembre** (jour 75, juste après D-S3, avant les salaires de fin de mois) : 57 496 − 4 500(crédit) − 399(internet) − 250(téléphone) − 3 429(courses, 16j) − 2 000(transfert) − 20 000(D-S3) = **26 918 DH** — confortablement au-dessus de la marge (aucune alerte RG-051 ce mois-ci, contrairement à septembre).
+**Point bas de novembre** (jour 75, juste après D-S3, avant les salaires de fin de mois) ≈ **26 918 DH** (calcul identique à la V2 — la mécanique de financement de D-S3 via la provision ne change rien au flux de trésorerie réel, seulement à la comptabilité des réserves, cf. ci-dessous). Confortablement au-dessus de la marge — aucune alerte RG-051 ce mois-ci.
 
-**Checkpoint complet — jour 75** :
-- Réservés = Or Nabil (4 000) + Provision Scolarité (12 000 + 5 000 versement d'octobre confirmé = 17 000) = **21 000 DH**
-- Engagés (horizon → jour 84, salaire Nabil) = électricité nov restante (880) + courses restant (14j×214,29=3 000) = **3 880 DH**
-- **Disponible libre** = 26 918 − 21 000 − 3 880 − 10 000 = **−7 962 DH**
-- **Capacité disponible brute** (avant marge, cf. §6) = −7 962 + 10 000 = **2 038 DH**
+### Checkpoint complet — jour 75 *(corrigé V2.1 — la provision est désormais correctement consommée)*
+- Trésorerie opérationnelle = 26 918 DH
+- Montants réservés = Or Nabil (4 000) + **Provision Scolarité (0, intégralement consommée pour payer D-S3)** = **4 000 DH** *(V2 avait, à tort, laissé la provision à 21 000 DH sans jamais la décrémenter malgré le paiement de D-S3 — double comptage exactement du type dénoncé au point 1 des remarques, désormais corrigé)*
+- Montants engagés (horizon → jour 85, salaire Nabil) : D-S4 (due jour 136) hors horizon, exclue. Électricité nov restante (0, déjà payée par cette date) + budget courses restant (≈3 000, approximation pour les ~14 jours restants de novembre, méthode simplifiée pour cette projection agrégée — cf. note ci-dessous) = **≈ 3 880 DH**
+- **Disponible libre** = 26 918 − 4 000 − 3 880 − 10 000 = **9 038 DH**
+- **Capacité disponible brute** (avant marge, cf. §7) = 9 038 + 10 000 = **19 038 DH**
+
+> Note méthodologique : contrairement aux checkpoints de septembre (§3.2/3.3, semaines calendaires exactes), le budget restant d'octobre/novembre/décembre reste ici approximé par un taux journalier moyen (correct en agrégat mensuel, cf. §6, mais approximatif sur une fenêtre d'horizon non alignée aux semaines) — suffisant pour cette projection à but illustratif, sans reprendre le détail semaine par semaine déjà démontré en septembre.
+
+### Checkpoint complet — jour 90 (fin novembre)
+Provision : reçoit une nouvelle contribution confirmée de **3 000 DH** (repart de 0 après le jour 75) → `current_amount` = 3 000, destinée à D-S4 (6 000, jour 136).
+- Trésorerie opérationnelle = 53 038 DH
+- Montants réservés = Or Nabil (4 000) + Provision (3 000) = **7 000 DH**
+- Montants engagés (horizon → jour ≈114, salaire Nabil décembre) : D-S4 hors horizon (due 136), exclue de toute façon. Charges fixes de décembre (≈6 029) + budget restant (≈5 143, approximation) = **≈ 11 172 DH**
+- **Disponible libre** = 53 038 − 7 000 − 11 172 − 10 000 = **24 866 DH**
+- **Capacité disponible brute** = 34 866 DH
+
+### Checkpoint extrapolé — jour 119 (~29 décembre)
+Provision : +3 000 DH supplémentaires → `current_amount` = 6 000, couvrant désormais intégralement D-S4 (6 000).
+- Trésorerie opérationnelle ≈ 68 580 DH (extrapolation, flux récurrents de décembre similaires à octobre)
+- Montants réservés = 4 000 + 6 000 = **10 000 DH**
+- Montants engagés ≈ **11 172 DH** (pattern récurrent, approximation)
+- **Disponible libre** ≈ 37 408 DH
+- **Capacité disponible brute** ≈ **47 408 DH**
 
 ---
 
 ## 6. Projections 7 / 30 / 60 / 90 jours (référence : jour 29, 30 septembre)
 
+*(Table inchangée par la V2.1 — ces valeurs sont des soldes de trésorerie opérationnelle purs, non affectés par la correction de couverture provision/échéance.)*
+
 | Horizon | Jour cible | Trésorerie opérationnelle | Point bas de la fenêtre | Alerte RG-051 |
 |---|---|---|---|---|
 | 7 jours | 36 | 32 704 (après crédit oct.) | 32 704 | non |
-| 30 jours | 59 | 57 496 | ≈ 32 000 | non |
-| 60 jours | 89-90 | 53 038 | 26 918 (jour 75) | non |
+| 30 jours | 60 | 57 496 | ≈ 32 000 | non |
+| 60 jours | 90 | 53 038 | 26 918 (jour 75) | non |
 | 90 jours | 119 | ≈ 68 580 (extrapolé) | 26 918 (jour 75) | non |
 
-*(Pour mémoire, le point bas de la fenêtre complète depuis le jour 0 reste le jour 22 = 9 104 DH, déjà sous la marge — cf. §3. Depuis le jour 29, aucune nouvelle tension sous la marge n'est détectée dans les 90 jours suivants.)*
+*(Le point bas de la fenêtre complète depuis le jour 0 reste le jour 22 = 9 104 DH, déjà sous la marge — cf. §3.)*
 
 ---
 
-## 7. Simulateur — achat du PC (15 000 DH)
+## 7. Simulateur — achat du PC (15 000 DH) *(recalculé V2.1)*
 
-**Capacité disponible brute** (= Disponible libre + Marge de sécurité, avant application du coussin — cf. document 02 G.11) aux dates clés :
+**Capacité disponible brute** (= Disponible libre + Marge de sécurité) aux dates clés, avec les valeurs corrigées :
 
-| Date | Jour | Capacité disponible brute |
-|---|---|---|
-| 30 septembre (aujourd'hui) | 29 | 12 376 |
-| 15 novembre (point bas, après D-S3) | 75 | 2 038 |
-| 30 novembre | 90 | 15 866 |
-| 29 décembre (extrapolé) | 119 | 26 408 |
+| Date | Jour | Capacité disponible brute (V2, erronée) | Capacité disponible brute (V2.1, corrigée) |
+|---|---|---|---|
+| 30 septembre (aujourd'hui) | 29 | 12 376 | **11 948** *(léger ajustement, correction du budget hebdomadaire)* |
+| 15 novembre (après paiement D-S3) | 75 | 2 038 | **19 038** *(provision correctement consommée, non double-comptée)* |
+| 30 novembre | 90 | 15 866 | **34 866** |
+| 29 décembre (extrapolé) | 119 | 26 408 | **47 408** |
 
-### s. Achat simulé « aujourd'hui » (30 septembre)
+La correction du double comptage provision/échéance change significativement le diagnostic : la V2 laissait croire à une tension artificielle en novembre (la provision restait comptée comme réservée après avoir servi à payer D-S3), la V2.1 montre une trajectoire nettement plus favorable, sans faux creux.
+
+### s. Achat simulé « aujourd'hui » (30 septembre, jour 29)
 ```
-Capacité_avec_achat(t) = Capacité_brute(t) − 15 000, minimum sur la fenêtre = au jour 75 : 2 038 − 15 000 = −12 962
+Capacité_avec_achat(t) = Capacité_brute(t) − 15 000
+Point bas sur [29,119] = 11 948 (au jour 29 lui-même — la trajectoire est désormais croissante, plus de creux en novembre)
+Capacité_avec_achat(29) = 11 948 − 15 000 = −3 052
 ```
-**Verdict : non compatible actuellement** — le point bas après achat serait négatif à la mi-novembre, sous le poids de l'échéance D-S3.
+**Verdict : non compatible actuellement**, mais de peu (−3 052 DH, contre −12 962 DH en V2) — l'écart à combler est nettement plus faible qu'estimé précédemment.
 
 ### t. Comparaison de plusieurs dates d'achat
-- **30 novembre (jour 90)** : capacité après achat = 15 866 − 15 000 = **866 DH** (≥ 0, techniquement possible) ; marge vs. coussin = 866 − 10 000 = **−9 134 DH** → **possible mais risqué**.
-- **29 décembre (jour 119)** : capacité après achat = 26 408 − 15 000 = **11 408 DH** ; marge vs. coussin = 11 408 − 10 000 = **+1 408 DH** → **possible maintenant** (confortable).
-- Par interpolation entre le 30 novembre et le 29 décembre (progression ≈ 363 DH/jour), la marge repasse positive vers le **25 décembre**.
+- **15 novembre (jour 75, juste après le paiement de D-S3)** : capacité après achat = 19 038 − 15 000 = **4 038 DH** (≥ 0, techniquement possible) ; marge vs. coussin = 4 038 − 10 000 = **−5 962 DH** → **possible mais risqué**.
+- **30 novembre (jour 90)** : capacité après achat = 34 866 − 15 000 = **19 866 DH** ; marge vs. coussin = 19 866 − 10 000 = **+9 866 DH** → **possible maintenant**, confortable.
+- Par interpolation entre le 15 et le 30 novembre (progression ≈ 1 055 DH/jour), la marge repasse positive vers le **21 novembre** environ.
 
 **Message produit généré** :
-> « Achat techniquement possible dès le 30 novembre, mais avec seulement 866 DH de marge après achat — largement en dessous de votre coussin de sécurité de 10 000 DH (écart : −9 134 DH). Le 25 décembre offre une marge nettement plus confortable (+1 408 DH au-dessus du coussin), une fois l'échéance scolaire de novembre absorbée. »
+> « Achat techniquement possible dès le 15 novembre, une fois l'échéance scolaire de novembre réglée via votre provision — mais avec seulement 4 038 DH de marge après achat, en dessous de votre coussin de sécurité de 10 000 DH. Autour du 21 novembre, la marge redevient confortable ; le 30 novembre offre une marge nettement plus large (+9 866 DH au-dessus du coussin). »
 
-- **Impact sur les provisions** : aucun changement du calendrier de la Provision Scolarité — l'achat n'y touche pas.
-- **Impact sur l'épargne protégée** : aucun — l'Or de Nabil et l'Épargne Enfants ne sont jamais inclus dans `Capacité_disponible_brute`, donc jamais mobilisés, même implicitement.
-- **Objectifs concurrents** : aucun autre `Goal` actif dans ce scénario.
-
----
-
-## 8. Preuves anti-double-comptage (point 20 des remarques)
-
-**Cas A — Provision logique école.** Au jour 25, l'affectation virtuelle de 3 000 DH à la Provision Scolarité fait passer `Montants_réservés` de 13 000 à 16 000 DH. Les soldes ACC-1/ACC-2 de ce même jour sont rigoureusement inchangés par cet événement (aucune ligne dans `LedgerEntry` n'est créée). *Entrent* : le mouvement virtuel dans le calcul de `Montants_réservés` (G.3). *Sont exclus* : tout impact sur `solde_courant` (G.1). *Pourquoi* : RG-071, une poche `virtual_allocation` ne référence aucun compte.
-
-**Cas B — Transfert réel vers l'épargne enfants.** Au jour 20, 2 000 DH quittent ACC-2 et entrent sur ACC-3. `Patrimoine_liquide_total` avant = 41 704 DH (0+9 204+30 000+2 500) ; après = 41 704 DH (0+7 204+32 000+2 500) — **rigoureusement identique**. Seule `Trésorerie_opérationnelle` diminue de 2 000 DH, parce qu'ACC-3 sort du périmètre opérationnel — un effet unique, jamais doublé. *Entrent* : le transfert dans `solde_courant(ACC-2)` et `solde_courant(ACC-3)` (G.1). *Sont exclus* : toute déduction supplémentaire dans `Montants_réservés`, puisque SP-2 est `backed_by_account` (RG-072).
-
-**Cas C — Échéance partiellement payée.** Après le paiement du jour 14, `reste_a_payer(D-S1)` = 4 449 DH. Seul ce montant (pas 20 000, pas 0) entre dans `Montants_engagés` du jour 16 au jour 18 (§3.1). *Entrent* : le solde restant dû. *Sont exclus* : la part déjà payée (15 551 DH), déjà sortie de la trésorerie opérationnelle et jamais reprojetée.
-
-**Cas D — Budget courses.** Au jour 29, 2 150 DH ont été réellement dépensés sur le budget de septembre (100+600+300+550+120+480). Le « restant projeté » utilisé dans `Montants_engagés` ne recompte jamais ces 2 150 DH — il ne porte que sur les jours futurs de la période en cours (RG-024bis, IF-13). *Entrent* : la part future (prorata des jours restants). *Sont exclus* : la part déjà réalisée, déjà déduite une fois dans `Trésorerie_opérationnelle`.
-
-**Cas E — Transfert entre comptes.** Généralisation du cas B : tout `AccountTransfer` interne confirmé (ex. retrait espèces du jour 15, 500 DH ACC-2→ACC-4) a un impact net foyer strictement nul sur `Patrimoine_liquide_total` (IF-03) — vérifié explicitement : avant = 9 704+2 000=11 704 (ACC-2+ACC-4) ; après = 9 204+2 500=11 704. Identique.
+- **Impact sur les provisions** : la Provision Scolarité, déjà consommée pour D-S3, continue de se reconstituer pour D-S4 indépendamment de cet achat.
+- **Impact sur l'épargne protégée** : aucun — Or Nabil et Épargne Enfants ne sont jamais inclus dans `Capacité_disponible_brute`.
+- **Objectifs concurrents** : aucun autre `Goal` actif.
 
 ---
 
-## 9. Vérification des invariants financiers (document 02)
+## 8. Preuves anti-double-comptage
+
+Cas A à E (V2, inchangés — non affectés par les corrections V2.1) : provision logique n'affecte jamais un solde de compte (Cas A) ; transfert réel conserve le patrimoine total (Cas B) ; `reste_a_payer` seul entre dans les engagements (Cas C) ; le consommé d'un budget variable n'est jamais reprojeté (Cas D) ; tout transfert interne a un impact net foyer nul (Cas E).
+
+### Cas F — Provision virtuelle ↔ échéance *(nouveau V2.1, exemple didactique indépendant du scénario)*
+
+```
+Trésorerie opérationnelle = 50 000 DH
+Provision (virtual_allocation) déjà constituée = 12 000 DH
+Échéance liée, reste_a_payer = 20 000 DH
+Marge de sécurité = 10 000 DH
+```
+**Calcul erroné (V2)** : `50 000 − 12 000(réservé) − 20 000(engagé, brut) − 10 000(marge) = 8 000 DH` — les 12 000 DH de provision sont retirés une première fois via `Montants_réservés`, puis les 20 000 DH complets de l'échéance (dont ces mêmes 12 000 DH font partie) sont retirés une seconde fois via `Montants_engagés`.
+
+**Calcul correct (V2.1)** : `couverture_affectée = MIN(20 000, 12 000) = 12 000` → `engagement_non_couvert = 20 000 − 12 000 = 8 000`.
+```
+Disponible libre = 50 000 − 12 000(réservé, inchangé) − 8 000(engagement non couvert) − 10 000(marge) = 20 000 DH
+```
+Vérification : `réservé(12 000) + engagement_non_couvert(8 000) = 20 000 = reste_a_payer` exactement (IF-16) — les 12 000 DH ne sont jamais comptés deux fois, et l'intégralité du besoin (20 000 DH) reste bien couverte par la somme des deux termes.
+
+### Cas G — Provision adossée à un compte (`backed_by_account`) ↔ échéance *(nouveau V2.1)*
+
+```
+Compte opérationnel = 30 000 DH
+Compte école dédié (protégé, non opérationnel) = 15 000 DH
+Provision école (backed_by_account, linked_account = compte école) = 15 000 DH (lecture du solde du compte)
+Échéance école, reste_a_payer = 15 000 DH
+```
+`Montants_réservés` ne compte **pas** cette provision (déjà exclue, RG-072 — son compte dédié est hors périmètre opérationnel). Couverture (RG-090) : `couverture_affectée = MIN(15 000, 15 000) = 15 000` → `engagement_non_couvert = 0`.
+```
+Disponible libre = 30 000 − 0(réservé, provision backed exclue) − 0(engagement non couvert) − Marge = 30 000 − Marge
+```
+Les 15 000 DH du compte école ne sont **jamais redemandés** à la trésorerie opérationnelle : ils sont déjà hors périmètre (exclusion du compte) et couvrent intégralement l'échéance (coverage), sans jamais apparaître une seconde fois nulle part.
+
+### Cas H — Signe des mouvements dans `LedgerEntry` *(nouveau V2.1)*
+Le paiement du crédit logement (jour 5, ACC-1) apparaît dans `LedgerEntry` comme **`-4 500`** (sortie du compte payeur), jamais `+4 500` — cohérent avec la trajectoire de trésorerie opérationnelle du §3 (22 000 → 16 500 après ce paiement, dans la séquence complète). Cf. document 04 §P.2 pour le test de régression associé (10 000 → 9 000, pas 11 000).
+
+---
+
+## 9. Vérification des invariants financiers
 
 | Invariant | Statut sur ce scénario |
 |---|---|
-| IF-01 (rien de réel sans confirmation) | ✓ — chaque `Payment`/`IncomeOccurrence.reçu`/`AccountTransfer.confirmé` du journal (§2) résulte d'une action explicite datée |
-| IF-02 (patrimoine = Σ soldes comptes) | ✓ — vérifié à chaque checkpoint (§3.3 : 16 000+18 824+32 000+2 380 = 69 204 DH au jour 29, cf. contrôle par flux net en annexe de calcul) |
-| IF-03 (transfert interne net nul) | ✓ — Cas B et Cas E (§8) |
-| IF-05 (`reste_a_payer` ≥ 0) | ✓ — D-S1 : 20 000 → 4 449 → 0, jamais négatif |
-| IF-06 (anti-double-comptage) | ✓ — Cas A et B (§8) : SP-2 (`backed_by_account`) jamais additionnée dans Montants réservés |
-| IF-07 (solde poche virtuelle = Σ mouvements) | ✓ — Provision Scolarité : 9 000 (initial) + 3 000 (jour 25) = 12 000, exactement la somme des `PocketMovement` confirmés |
-| IF-08 (solde poche adossée = solde du compte lié) | ✓ — Épargne Enfants affiche toujours exactement `solde_courant(ACC-3)` (30 000 → 32 000 au jour 20) |
-| IF-11 (engagements indépendants du statut temporel) | ✓ — §3.1 : D-S1 incluse dans les engagements alors que son statut temporel est `overdue`/`due` selon le jour, seul l'état financier compte |
-| IF-12 (`reste_a_payer`, jamais montant brut) | ✓ — §3.1, §8 Cas C |
-| IF-13 (pas de double comptage budget variable) | ✓ — §8 Cas D |
-| IF-14 (un compte = une poche adossée) | ✓ — ACC-3 n'est référencé que par SP-2 dans ce scénario |
+| IF-01 à IF-15 | ✓ — inchangés, vérifiés comme en V2 (rien de réel sans confirmation, patrimoine = Σ soldes, transferts internes neutres, `reste_a_payer` ≥ 0, anti-double-comptage compte/poche, soldes de poches dérivés de leurs mouvements, engagements indépendants du statut temporel, pas de double comptage budget variable, un compte = une poche adossée) |
+| **IF-16** (couverture + non couvert = reste_a_payer) | ✓ — Cas F (12 000+8 000=20 000), Cas G (15 000+0=15 000), §3.1 (4 449+0=4 449 pour D-S1 une fois couvert) |
+| **IF-17** (une unité de provision ne couvre pas deux échéances) | ✓ — §3.1/3.2 : la provision de 9 000 DH se répartit strictement séquentiellement entre D-S1 puis D-S2, jamais les deux simultanément au-delà du solde disponible |
+| **IF-18** (affectation chronologique par défaut) | ✓ — D-S1 (due 15 sept) toujours couverte avant D-S2 (due 30 sept) elle-même avant D-S3 (due 15 nov) |
+| **IF-19** (paiement + retrait de provision atomiques) | ✓ — §5, jour 75 : le paiement de D-S3 (17 000 DH depuis la provision) crée en une seule transaction le `Payment` et le `PocketMovement` de retrait, ramenant la provision à 0 |
+| **IF-20** (signe `Payment` dans `LedgerEntry`) | ✓ — Cas H |
 
-Ce jeu de données et ces résultats constituent le test oracle de référence — toute divergence de l'implémentation future avec les valeurs ci-dessus doit être traitée comme un bug, pas comme une variante acceptable.
+Ce jeu de données et ces résultats constituent le test oracle de référence (V2.1) — toute divergence de l'implémentation future avec les valeurs ci-dessus doit être traitée comme un bug.
