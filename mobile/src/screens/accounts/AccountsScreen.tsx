@@ -2,7 +2,6 @@ import React, { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
-import { useAuth } from '../../auth/AuthContext';
 
 interface Account {
   id: string;
@@ -14,7 +13,6 @@ interface Account {
 
 /** Comptes (Lot 1, docs/03 §I.11) — écran secondaire, jamais en navigation principale (§23). */
 export function AccountsScreen() {
-  const { signOut } = useAuth();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState('');
@@ -54,7 +52,6 @@ export function AccountsScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Comptes</Text>
       <FlatList
         data={accounts}
         keyExtractor={(a) => a.id}
@@ -80,17 +77,12 @@ export function AccountsScreen() {
           {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.addButtonText}>+</Text>}
         </TouchableOpacity>
       </View>
-
-      <TouchableOpacity onPress={signOut} style={styles.logout}>
-        <Text style={styles.logoutText}>Se déconnecter</Text>
-      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2', paddingTop: 56, paddingHorizontal: 20 },
-  title: { fontSize: 22, fontWeight: '700', color: '#172436', marginBottom: 16 },
+  container: { flex: 1, backgroundColor: '#F6F5F2', paddingTop: 16, paddingHorizontal: 20 },
   empty: { color: '#6B747C', textAlign: 'center', marginTop: 24 },
   row: {
     flexDirection: 'row',
@@ -118,6 +110,4 @@ const styles = StyleSheet.create({
   },
   addButton: { backgroundColor: '#172436', width: 44, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   addButtonText: { color: '#fff', fontSize: 20, fontWeight: '700' },
-  logout: { marginTop: 20, marginBottom: 20, alignItems: 'center' },
-  logoutText: { color: '#B3261E', fontSize: 13, fontWeight: '600' },
 });

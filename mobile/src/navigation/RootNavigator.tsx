@@ -6,6 +6,10 @@ import { LoginScreen } from '../screens/auth/LoginScreen';
 import { SignupScreen } from '../screens/auth/SignupScreen';
 import { HouseholdSetupScreen } from '../screens/household/HouseholdSetupScreen';
 import { QuickAddScreen } from '../screens/quickadd/QuickAddScreen';
+import { AccountsScreen } from '../screens/accounts/AccountsScreen';
+import { BudgetsScreen } from '../screens/budgets/BudgetsScreen';
+import { BudgetDetailScreen } from '../screens/budgets/BudgetDetailScreen';
+import { CreateBudgetScreen } from '../screens/budgets/CreateBudgetScreen';
 import { RootTabs } from './RootTabs';
 
 const Stack = createNativeStackNavigator();
@@ -46,6 +50,10 @@ export function RootNavigator() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Tabs" component={RootTabs} />
       <Stack.Screen name="QuickAdd" component={QuickAddScreen} options={{ presentation: 'modal' }} />
+      <Stack.Screen name="Accounts" component={AccountsScreen} options={{ headerShown: true, title: 'Comptes' }} />
+      <Stack.Screen name="Budgets" component={BudgetsScreen} options={{ headerShown: true, title: 'Budgets' }} />
+      <Stack.Screen name="BudgetDetail" component={BudgetDetailScreen} options={{ headerShown: true, title: 'Budget' }} />
+      <Stack.Screen name="CreateBudget" component={CreateBudgetScreen} options={{ headerShown: true, title: 'Nouveau budget', presentation: 'modal' }} />
     </Stack.Navigator>
   );
 }

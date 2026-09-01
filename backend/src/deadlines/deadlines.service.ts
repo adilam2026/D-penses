@@ -24,6 +24,28 @@ export class DeadlinesService {
   }
 
   /**
+   * Échéances encore ouvertes du foyer, toutes charges confondues — utilisé par
+   * la saisie rapide « Paiement d'une échéance » (Lot 3 §2) pour choisir une
+   * Deadline EXISTANTE, jamais en créer une artificiellement pour une dépense.
+   */
+  async findAllOpen(userId: string, householdId: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const rows = await tx.deadline.findMany({
+        where: { financialStatus: { in: ['ouverte', 'partiellement_payee'] }, chargePlan: { householdId } },
+        include: { chargePlan: true },
+        orderBy: { dueDate: 'asc' },
+      });
+      return Promise.all(
+        rows.map(async (r) => {
+          const balance = await getDeadlineBalance(tx, r.id);
+          return { ...r, resteAPayer: balance?.resteAPayer ?? null };
+        }),
+      );
+    });
+  }
+
+  /**
    * Révision (§11) : report de due_date (RG-020bis) et/ou révision du montant
    * (RG-104 — conserve amount_initial_estimated, horodate confirmed_at au
    * passage vers "confirmé"). reste_a_payer se recalcule automatiquement sur

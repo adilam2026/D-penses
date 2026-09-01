@@ -14,6 +14,8 @@ import { ChargePlansModule } from './charge-plans/charge-plans.module';
 import { DeadlinesModule } from './deadlines/deadlines.module';
 import { PaymentsModule } from './payments/payments.module';
 import { TransactionsModule } from './transactions/transactions.module';
+import { VariableBudgetsModule } from './variable-budgets/variable-budgets.module';
+import { ExpensesModule } from './expenses/expenses.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -30,6 +32,8 @@ import { AppController } from './app.controller';
     DeadlinesModule,
     PaymentsModule,
     TransactionsModule,
+    VariableBudgetsModule,
+    ExpensesModule,
   ],
   controllers: [AppController],
   providers: [

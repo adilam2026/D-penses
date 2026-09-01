@@ -148,6 +148,13 @@ enum FundingSource {
   provision
 }
 
+// ---------- Lot 3 — Budgets variables & dépenses ponctuelles ----------
+
+enum ReferencePeriod {
+  semaine
+  mois
+}
+
 // ---------- SOCLE ----------
 
 model User {
@@ -168,6 +175,8 @@ model User {
   incomeSourcesAsBeneficiary IncomeSource[]
   confirmedIncomeOccurrences IncomeOccurrence[]
   recordedPayments           Payment[]
+  recordedBudgetExpenses     BudgetExpense[]       @relation("BudgetExpenseRecordedBy")
+  recordedAdHocExpenses      AdHocExpense[]        @relation("AdHocExpenseRecordedBy")
 
   @@map("user")
 }
@@ -179,15 +188,17 @@ model Household {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  memberships   HouseholdMembership[]
-  children      Child[]
-  categories    Category[]
-  settings      HouseholdSettings?
-  invites       HouseholdInvite[]
-  accounts      FinancialAccount[]
-  transfers     AccountTransfer[]
-  incomeSources IncomeSource[]
-  chargePlans   ChargePlan[]
+  memberships     HouseholdMembership[]
+  children        Child[]
+  categories      Category[]
+  settings        HouseholdSettings?
+  invites         HouseholdInvite[]
+  accounts        FinancialAccount[]
+  transfers       AccountTransfer[]
+  incomeSources   IncomeSource[]
+  chargePlans     ChargePlan[]
+  variableBudgets VariableBudget[]
+  adHocExpenses   AdHocExpense[]
 
   @@map("household")
 }
@@ -233,9 +244,12 @@ model Category {
   isSystem    Boolean      @default(false) @map("is_system")
   createdAt   DateTime     @default(now()) @map("created_at")
 
-  household     Household?     @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  incomeSources IncomeSource[]
-  chargePlans   ChargePlan[]
+  household       Household?       @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  incomeSources   IncomeSource[]
+  chargePlans     ChargePlan[]
+  variableBudgets VariableBudget[]
+  budgetExpenses  BudgetExpense[]
+  adHocExpenses   AdHocExpense[]
 
   @@map("category")
 }
@@ -322,6 +336,8 @@ model FinancialAccount {
   incomeOccurrences      IncomeOccurrence[]       @relation("IncomeOccurrenceAccount")
   chargePlansAsDefault   ChargePlan[]             @relation("ChargePlanDefaultAccount")
   payments               Payment[]                @relation("PaymentAccount")
+  budgetExpenses         BudgetExpense[]          @relation("BudgetExpenseAccount")
+  adHocExpenses          AdHocExpense[]           @relation("AdHocExpenseAccount")
 
   @@map("financial_account")
 }
@@ -521,4 +537,75 @@ model Payment {
   recordedBy User             @relation(fields: [recordedById], references: [id])
 
   @@map("payment")
+}
+
+// ============================================================
+// Lot 3 — Budgets variables & dépenses ponctuelles (docs/02 §E.4, docs/04 §P)
+// ============================================================
+
+// RG-098/RG-022 : reference_period utilise de vraies semaines/mois calendaires,
+// jamais un raccourci arbitraire (1 mois ≠ 30 jours, 1 semaine ≠ 4 jours fixes).
+// week_start_day : 1=lundi..7=dimanche, même convention que HouseholdSettings.
+model VariableBudget {
+  id              String          @id @default(uuid())
+  householdId     String          @map("household_id")
+  categoryId      String          @map("category_id")
+  referenceAmount Decimal         @map("reference_amount") @db.Decimal(14, 2)
+  referencePeriod ReferencePeriod @map("reference_period")
+  weekStartDay    Int             @default(1) @map("week_start_day")
+  startDate       DateTime        @map("start_date") @db.Date
+  endDate         DateTime?       @map("end_date") @db.Date
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  household Household       @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  category  Category        @relation(fields: [categoryId], references: [id])
+  expenses  BudgetExpense[]
+
+  @@map("variable_budget")
+}
+
+// Une dépense réelle rattachée à un VariableBudget actif (§6/§8). Ne double
+// jamais AdHocExpense : une dépense est soit l'un, soit l'autre, jamais les deux.
+model BudgetExpense {
+  id               String   @id @default(uuid())
+  variableBudgetId String   @map("variable_budget_id")
+  amount           Decimal  @map("amount") @db.Decimal(14, 2)
+  // Pas de @db.Date : même convention que Payment.paidDate/AccountTransfer.actualDate —
+  // une date de mouvement réel porte l'heure d'enregistrement (RG-080, cf. bug de
+  // comparaison avec AccountBalanceSnapshot.declaredAt sinon, corrigé en Lot 3).
+  spentDate        DateTime @map("spent_date")
+  categoryId       String?  @map("category_id")
+  accountId        String   @map("account_id")
+  recordedById     String   @map("recorded_by_id")
+  notes            String?
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  variableBudget VariableBudget   @relation(fields: [variableBudgetId], references: [id], onDelete: Cascade)
+  category       Category?        @relation(fields: [categoryId], references: [id])
+  account        FinancialAccount @relation("BudgetExpenseAccount", fields: [accountId], references: [id])
+  recordedBy     User             @relation("BudgetExpenseRecordedBy", fields: [recordedById], references: [id])
+
+  @@map("budget_expense")
+}
+
+// Une dépense réelle sans budget variable actif correspondant (§7) — jamais de
+// Deadline ni de ChargePlan créés pour l'enregistrer (§2).
+model AdHocExpense {
+  id           String   @id @default(uuid())
+  householdId  String   @map("household_id")
+  categoryId   String?  @map("category_id")
+  amount       Decimal  @map("amount") @db.Decimal(14, 2)
+  spentDate    DateTime @map("spent_date")
+  accountId    String   @map("account_id")
+  recordedById String   @map("recorded_by_id")
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  household  Household        @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  category   Category?        @relation(fields: [categoryId], references: [id])
+  account    FinancialAccount @relation("AdHocExpenseAccount", fields: [accountId], references: [id])
+  recordedBy User             @relation("AdHocExpenseRecordedBy", fields: [recordedById], references: [id])
+
+  @@map("adhoc_expense")
 }

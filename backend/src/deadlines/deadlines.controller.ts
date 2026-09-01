@@ -9,6 +9,11 @@ import { HouseholdRequiredGuard } from '../common/guards/household-required.guar
 export class DeadlinesController {
   constructor(private readonly deadlines: DeadlinesService) {}
 
+  @Get()
+  findAllOpen(@CurrentUser() user: AuthenticatedUser) {
+    return this.deadlines.findAllOpen(user.sub, user.householdId!);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.deadlines.findOne(user.sub, user.householdId!, id);

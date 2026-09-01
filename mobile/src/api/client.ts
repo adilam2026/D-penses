@@ -137,3 +137,44 @@ export const createPayment = (
   deadlineId: string,
   data: { amount: number; accountId: string; paidDate?: string; type?: string },
 ) => apiFetch(`/deadlines/${deadlineId}/payments`, { method: 'POST', body: data });
+
+/** Échéances encore ouvertes du foyer — saisie rapide « Paiement d'une échéance » (Lot 3 §2/§16). */
+export const listOpenDeadlines = () => apiFetch('/deadlines');
+
+export const createTransfer = (data: { fromAccountId?: string; toAccountId?: string; amount: number; plannedDate?: string }) =>
+  apiFetch('/accounts/transfers', { method: 'POST', body: data });
+
+// ---------- Catégories ----------
+export const listCategories = () => apiFetch('/categories');
+
+// ---------- Budgets variables & dépenses (Lot 3) ----------
+export const listVariableBudgets = () => apiFetch('/variable-budgets');
+
+export const getVariableBudget = (id: string) => apiFetch(`/variable-budgets/${id}`);
+
+export const createVariableBudget = (data: {
+  categoryId: string;
+  referenceAmount: number;
+  referencePeriod: 'semaine' | 'mois';
+  startDate: string;
+  weekStartDay?: number;
+}) => apiFetch('/variable-budgets', { method: 'POST', body: data });
+
+export const updateVariableBudget = (id: string, data: { referenceAmount?: number; endDate?: string }) =>
+  apiFetch(`/variable-budgets/${id}`, { method: 'PATCH', body: data });
+
+export const findActiveBudgetsForCategory = (categoryId: string) => apiFetch(`/variable-budgets/for-category/${categoryId}`);
+
+/**
+ * Saisie rapide « + Dépense » (Lot 3 §2/§16) — une dépense réelle ordinaire ne crée
+ * jamais de ChargePlan/Deadline : uniquement une BudgetExpense (si un budget actif
+ * correspond) ou une AdHocExpense.
+ */
+export const createExpense = (data: {
+  amount: number;
+  accountId: string;
+  categoryId?: string;
+  spentDate?: string;
+  variableBudgetId?: string;
+  notes?: string;
+}) => apiFetch('/expenses', { method: 'POST', body: data });
