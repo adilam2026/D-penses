@@ -232,3 +232,66 @@ export const getCalendar = (params?: { at?: string; from?: string; to?: string }
 
 export const updateHouseholdSettings = (data: { securityMarginAmount?: number; seuilAVenirDays?: number; seuilAPayerDays?: number }) =>
   apiFetch('/households/settings', { method: 'PATCH', body: data });
+
+// ---------- Épargne / Provisions / Objectifs (Lot 6) ----------
+
+export interface CreatePocketBody {
+  name: string;
+  allocationMode: 'virtual_allocation' | 'backed_by_account';
+  linkedAccountId?: string;
+  ownerUserId?: string;
+  beneficiaryChildId?: string;
+  hasRecurringContribution?: boolean;
+  targetAmount?: number;
+  targetDate?: string;
+}
+
+export const listPockets = () => apiFetch('/pockets');
+export const getPocket = (id: string) => apiFetch(`/pockets/${id}`);
+export const createPocket = (data: CreatePocketBody) => apiFetch('/pockets', { method: 'POST', body: data });
+export const contributePocket = (id: string, data: { amount: number; date?: string; intentionLabel?: string; confirmed?: boolean }) =>
+  apiFetch(`/pockets/${id}/contribute`, { method: 'POST', body: data });
+export const withdrawPocket = (id: string, data: { amount: number; date?: string; intentionLabel?: string }) =>
+  apiFetch(`/pockets/${id}/withdraw`, { method: 'POST', body: data });
+export const listPocketMovements = (id: string) => apiFetch(`/pockets/${id}/movements`);
+export const confirmPocketMovement = (movementId: string, data: { actualDate?: string; actualAmount?: number } = {}) =>
+  apiFetch(`/pockets/movements/${movementId}/confirm`, { method: 'POST', body: data });
+
+export interface CreateProvisionBody {
+  name: string;
+  allocationMode: 'virtual_allocation' | 'backed_by_account';
+  linkedAccountId?: string;
+  isFlexible?: boolean;
+}
+
+export const listProvisions = () => apiFetch('/provisions');
+export const getProvision = (id: string) => apiFetch(`/provisions/${id}`);
+export const createProvision = (data: CreateProvisionBody) => apiFetch('/provisions', { method: 'POST', body: data });
+export const contributeProvision = (id: string, data: { amount: number; date?: string; intentionLabel?: string; confirmed?: boolean }) =>
+  apiFetch(`/provisions/${id}/contribute`, { method: 'POST', body: data });
+export const withdrawProvision = (id: string, data: { amount: number; date?: string; intentionLabel?: string }) =>
+  apiFetch(`/provisions/${id}/withdraw`, { method: 'POST', body: data });
+export const listProvisionMovements = (id: string) => apiFetch(`/provisions/${id}/movements`);
+export const confirmProvisionMovement = (movementId: string, data: { actualDate?: string; actualAmount?: number } = {}) =>
+  apiFetch(`/provisions/movements/${movementId}/confirm`, { method: 'POST', body: data });
+export const getProvisionSufficiency = (id: string, at?: string) => apiFetch(`/provisions/${id}/sufficiency${at ? `?at=${at}` : ''}`);
+export const linkProvisionDeadline = (id: string, deadlineId: string) =>
+  apiFetch(`/provisions/${id}/deadlines`, { method: 'POST', body: { deadlineId } });
+export const unlinkProvisionDeadline = (id: string, deadlineId: string) =>
+  apiFetch(`/provisions/${id}/deadlines/${deadlineId}`, { method: 'DELETE' });
+
+/** §18-20 : « Payer avec Provision » — le compte physique réel reste toujours obligatoire (§19). */
+export const payDeadlineWithProvision = (deadlineId: string, data: { amount: number; accountId: string; provisionId: string; paidDate?: string }) =>
+  apiFetch(`/deadlines/${deadlineId}/payments`, { method: 'POST', body: { ...data, fundingSource: 'provision' } });
+
+export const getDeadline = (id: string) => apiFetch(`/deadlines/${id}`);
+
+export const createGoal = (data: { label: string; targetAmount: number; targetDate?: string; linkedPocketId?: string }) =>
+  apiFetch('/goals', { method: 'POST', body: data });
+export const listGoals = () => apiFetch('/goals');
+export const getGoal = (id: string) => apiFetch(`/goals/${id}`);
+export const addGoalContribution = (id: string, data: { plannedDate: string; plannedAmount: number; confirmed?: boolean }) =>
+  apiFetch(`/goals/${id}/contributions`, { method: 'POST', body: data });
+export const listGoalContributions = (id: string) => apiFetch(`/goals/${id}/contributions`);
+export const confirmGoalContribution = (contributionId: string, data: { actualDate?: string; actualAmount?: number } = {}) =>
+  apiFetch(`/goals/contributions/${contributionId}/confirm`, { method: 'POST', body: data });

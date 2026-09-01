@@ -18,6 +18,7 @@ interface DashboardSummary {
   actionsATraiter: Array<{ message: string }>;
   budgetsResume: Array<{ id: string; categoryName: string; referenceAmount: number; referencePeriod: string; status: { budgetContractuelRestant: number } }>;
   financialPlansResume: Array<{ id: string; label: string; knownPlanCost: number; remainingDue: number; completude: string }>;
+  provisionsResume: Array<{ id: string; name: string; currentAmount: number; totalResteAPayer: number; totalUncovered: number }>;
 }
 
 function formatDate(iso: string) {
@@ -156,6 +157,21 @@ export function HomeScreen() {
               <Text style={styles.cardTitle}>{p.label}</Text>
               <Text style={styles.cardMeta}>
                 Connu {p.knownPlanCost.toLocaleString('fr-FR')} DH · Reste {p.remainingDue.toLocaleString('fr-FR')} DH
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </>
+      )}
+
+      {summary.provisionsResume.length > 0 && (
+        <>
+          <Text style={styles.sectionTitle}>Provisions</Text>
+          {summary.provisionsResume.map((p) => (
+            <TouchableOpacity key={p.id} style={styles.card} onPress={() => navigation.getParent()?.navigate('PocketDetail', { kind: 'provision', id: p.id })}>
+              <Text style={styles.cardTitle}>{p.name}</Text>
+              <Text style={styles.cardMeta}>
+                {p.currentAmount.toLocaleString('fr-FR')} DH provisionnés · {p.totalResteAPayer.toLocaleString('fr-FR')} DH à payer
+                {p.totalUncovered > 0 ? ` · ${p.totalUncovered.toLocaleString('fr-FR')} DH encore à couvrir` : ''}
               </Text>
             </TouchableOpacity>
           ))}

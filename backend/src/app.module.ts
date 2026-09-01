@@ -21,6 +21,9 @@ import { ActionsModule } from './actions/actions.module';
 import { SchoolWizardModule } from './school-wizard/school-wizard.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { CalendarModule } from './calendar/calendar.module';
+import { PocketsModule } from './pockets/pockets.module';
+import { ProvisionsModule } from './provisions/provisions.module';
+import { GoalsModule } from './goals/goals.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -44,6 +47,9 @@ import { AppController } from './app.controller';
     SchoolWizardModule,
     DashboardModule,
     CalendarModule,
+    PocketsModule,
+    ProvisionsModule,
+    GoalsModule,
   ],
   controllers: [AppController],
   providers: [

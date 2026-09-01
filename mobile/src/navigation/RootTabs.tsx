@@ -1,9 +1,9 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { HomeScreen } from '../screens/HomeScreen';
-import { PlaceholderScreen } from '../screens/PlaceholderScreen';
 import { TransactionsScreen } from '../screens/transactions/TransactionsScreen';
 import { CalendarScreen } from '../screens/calendar/CalendarScreen';
+import { EpargneScreen } from '../screens/savings/EpargneScreen';
 import { PlusMenuScreen } from '../screens/PlusMenuScreen';
 
 const Tab = createBottomTabNavigator();
@@ -19,9 +19,7 @@ export function RootTabs() {
       <Tab.Screen name="Accueil" component={HomeScreen} />
       <Tab.Screen name="Transactions" component={TransactionsScreen} />
       <Tab.Screen name="Calendrier" component={CalendarScreen} />
-      <Tab.Screen name="Épargne">
-        {() => <PlaceholderScreen title="Épargne" subtitle="Poches, provisions & objectifs — arrivera avec le Lot 6." />}
-      </Tab.Screen>
+      <Tab.Screen name="Épargne" component={EpargneScreen} />
       <Tab.Screen name="Plus" component={PlusMenuScreen} />
     </Tab.Navigator>
   );

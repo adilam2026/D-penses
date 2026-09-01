@@ -1,13 +1,25 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { RlsContextService } from '../common/prisma/rls-context.service';
+import { round2, toNumber } from '../common/ledger/ledger.util';
+import { computeProvisionSufficiency } from '../common/ledger/provision.util';
 
 type TxClient = Prisma.TransactionClient;
 
 export interface ActionItem {
-  kind: 'facture_attendue' | 'montant_inconnu' | 'montant_a_confirmer' | 'option_a_decider';
-  chargePlanId: string;
+  kind:
+    | 'facture_attendue'
+    | 'montant_inconnu'
+    | 'montant_a_confirmer'
+    | 'option_a_decider'
+    | 'provision_insuffisante'
+    | 'contribution_a_confirmer'
+    | 'objectif_en_retard';
+  chargePlanId?: string;
   deadlineId?: string;
+  provisionId?: string;
+  pocketMovementId?: string;
+  goalId?: string;
   message: string;
 }
 
@@ -91,6 +103,62 @@ export class ActionsService {
             message: `${cp.label}${childSuffix} : décision à traiter.`,
           });
         }
+      }
+    }
+
+    // RG-032ter (§29 Lot 6) : tension de court terme sur une Provision liée à des
+    // échéances ouvertes — jamais un simple recalcul du taux mensuel (non actionnable
+    // à si court terme), une alerte qualitative avec le montant manquant.
+    const provisions = await tx.provision.findMany({ where: { householdId } });
+    for (const provision of provisions) {
+      const sufficiency = await computeProvisionSufficiency(tx, provision.id, referenceDate);
+      if (sufficiency.tensionAlert) {
+        items.push({
+          kind: 'provision_insuffisante',
+          provisionId: provision.id,
+          deadlineId: sufficiency.tensionAlert.deadlineId,
+          message: `Provision ${provision.name} insuffisante : ${sufficiency.tensionAlert.manque} DH manquants avant le ${this.formatDate(sufficiency.tensionAlert.dueDate)}.`,
+        });
+      }
+    }
+
+    // §16/17/29 : une contribution planifiée dont la date est atteinte mais jamais
+    // confirmée n'affecte jamais le solde réel (RG-000) — signalée, jamais auto-confirmée.
+    const duePocketMovements = await tx.pocketMovement.findMany({
+      where: {
+        status: 'prevu',
+        movementType: 'contribution',
+        plannedDate: { lte: referenceDate },
+        OR: [
+          { pocketType: 'savings_pocket', savingsPocket: { householdId } },
+          { pocketType: 'provision', provision: { householdId } },
+        ],
+      },
+      include: { savingsPocket: true, provision: true },
+    });
+    for (const m of duePocketMovements) {
+      const label = m.pocketType === 'savings_pocket' ? m.savingsPocket?.name : m.provision?.name;
+      items.push({
+        kind: 'contribution_a_confirmer',
+        pocketMovementId: m.id,
+        provisionId: m.pocketType === 'provision' ? (m.provisionId ?? undefined) : undefined,
+        message: `${label ?? 'Poche'} : contribution de ${toNumber(m.plannedAmount)} DH prévue le ${this.formatDate(m.plannedDate)} à confirmer.`,
+      });
+    }
+
+    // §25/29 : objectif en retard — déterminable sans moteur de recommandation (Lot 8) :
+    // date cible dépassée, pas encore atteint, jamais un rythme/pacing recommandé ici.
+    const goals = await tx.goal.findMany({ where: { householdId, status: 'en_cours', targetDate: { lt: referenceDate } } });
+    for (const goal of goals) {
+      const contributions = await tx.goalContribution.findMany({ where: { goalId: goal.id, status: 'confirme' } });
+      const saved = round2(contributions.reduce((sum, c) => sum + toNumber(c.actualAmount), 0));
+      const target = toNumber(goal.targetAmount);
+      if (saved < target) {
+        items.push({
+          kind: 'objectif_en_retard',
+          goalId: goal.id,
+          message: `Objectif ${goal.label} en retard : ${round2(target - saved)} DH restants, échéance du ${this.formatDate(goal.targetDate!)} dépassée.`,
+        });
       }
     }
 

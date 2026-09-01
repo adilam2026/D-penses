@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
-import { toNumber } from '../common/ledger/ledger.util';
+import { round2, toNumber } from '../common/ledger/ledger.util';
 import { computeDisponibleLibre, computeNextDeadline } from '../common/ledger/treasury.util';
+import { computeProvisionCoverage } from '../common/ledger/provision.util';
 import { ActionsService } from '../actions/actions.service';
 import { VariableBudgetsService } from '../variable-budgets/variable-budgets.service';
 import { FinancialPlansService } from '../financial-plans/financial-plans.service';
@@ -51,6 +52,24 @@ export class DashboardService {
         completude: p.completude,
       }));
 
+      // §26 : « École — 12000 DH provisionnés / 20000 DH à payer / 8000 DH encore à
+      // couvrir » — jamais 12000+20000=32000 (RG-092), la couverture réutilise
+      // EXCLUSIVEMENT provision.util.ts (RG-090).
+      const provisions = await tx.provision.findMany({ where: { householdId } });
+      const provisionsResume = await Promise.all(
+        provisions.map(async (p) => {
+          const coverage = await computeProvisionCoverage(tx, p.id);
+          return {
+            id: p.id,
+            name: p.name,
+            allocationMode: p.allocationMode,
+            currentAmount: coverage.currentAmount,
+            totalResteAPayer: round2(coverage.items.reduce((sum, i) => sum + i.resteAPayer, 0)),
+            totalUncovered: round2(coverage.items.reduce((sum, i) => sum + i.engagementNonCouvert, 0)),
+          };
+        }),
+      );
+
       return {
         reference_date: referenceDate,
 
@@ -82,6 +101,7 @@ export class DashboardService {
         actionsATraiter,
         budgetsResume,
         financialPlansResume,
+        provisionsResume,
       };
     });
   }

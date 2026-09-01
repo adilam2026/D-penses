@@ -26,10 +26,14 @@ export class CreatePaymentDto {
   @IsIn(DIRECTION_VALUES)
   direction?: (typeof DIRECTION_VALUES)[number];
 
-  /** Lot 2 : seul "compte" est implémenté ("provision" = Lot 6). */
   @IsOptional()
   @IsIn(FUNDING_SOURCE_VALUES)
   fundingSource?: (typeof FUNDING_SOURCE_VALUES)[number];
+
+  /** Requis si fundingSource = provision (RG-095) — la Provision doit être liée à la Deadline. */
+  @IsOptional()
+  @IsUUID()
+  provisionId?: string;
 
   @IsOptional()
   @IsString()

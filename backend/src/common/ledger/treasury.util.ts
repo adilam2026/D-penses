@@ -8,6 +8,7 @@ import {
   computeBudgetPeriodStatus,
   getCurrentPeriodWindow,
 } from './variable-budget.util';
+import { CoverageItem, computePocketCurrentAmount, computeProvisionCoverage } from './provision.util';
 
 type TxClient = Prisma.TransactionClient;
 
@@ -37,23 +38,34 @@ export async function computeTreasurySummary(tx: TxClient, householdId: string):
   return { patrimoineLiquideTotal: round2(patrimoineLiquideTotal), tresorerieOperationnelle: round2(tresorerieOperationnelle) };
 }
 
-// ---------- G.3 — Montants réservés (préparation Lot 6, §4/§24 Lot 5) ----------
+// ---------- G.3 — Montants réservés (Lot 6) ----------
 
 export interface ReservedAmounts {
   total: number;
 }
 
 /**
- * Reste à 0 tant que Provision (Lot 6) n'existe pas — jamais de fausse réserve
- * inventée à partir d'un simple solde de compte épargne. Interface extensible :
- * quand Provision existera, seul le total `virtual_allocation` s'additionnera ici
- * (RG-070/071) ; `backed_by_account` ne devra JAMAIS y être réadditionné — déjà
- * retirée de la Trésorerie opérationnelle par l'exclusion de son compte dédié
- * (RG-072/IF-06). Cette fonction ne lit donc, par construction, aucun solde de
- * compte : IF-06 reste garanti par conception le jour où Lot 6 l'implémente.
+ * G.3 : Σ current_amount(SavingsPocket) + Σ current_amount(Provision), UNIQUEMENT
+ * pour allocation_mode = virtual_allocation (RG-070/071). Les poches/provisions
+ * `backed_by_account` sont explicitement exclues — leur montant est déjà retiré de
+ * la Trésorerie opérationnelle par l'exclusion de leur compte dédié (RG-072/IF-06) ;
+ * les additionner ici doublonnerait le même dirham. Cette fonction ne lit donc
+ * jamais de solde de compte pour une poche/provision backed_by_account.
  */
-export async function computeReservedAmounts(_tx: TxClient, _householdId: string): Promise<ReservedAmounts> {
-  return { total: 0 };
+export async function computeReservedAmounts(tx: TxClient, householdId: string): Promise<ReservedAmounts> {
+  let total = 0;
+
+  const pockets = await tx.savingsPocket.findMany({ where: { householdId, allocationMode: 'virtual_allocation' } });
+  for (const p of pockets) {
+    total += await computePocketCurrentAmount(tx, 'savings_pocket', p.id, p.allocationMode, p.linkedAccountId);
+  }
+
+  const provisions = await tx.provision.findMany({ where: { householdId, allocationMode: 'virtual_allocation' } });
+  for (const p of provisions) {
+    total += await computePocketCurrentAmount(tx, 'provision', p.id, p.allocationMode, p.linkedAccountId);
+  }
+
+  return { total: round2(total) };
 }
 
 // ---------- G.5 — Horizon (H*) ----------
@@ -119,13 +131,20 @@ export interface DeadlineCommitments {
 }
 
 /**
- * Part Deadline de G.4 — reste_a_payer, JAMAIS known_plan_cost (un FinancialPlan
- * n'est jamais lu ici, exclusion structurelle du double comptage IF-28). Portée
- * certaine = obligatoire ∪ optionnelle_souscrite (RG-106) ; optionnelle_envisagée
- * calculée séparément (jamais fusionnée, §7) ; optionnelle_refusée et les Deadline
- * annulées/soldées sont exclues (RG-107/RG-050). Une Deadline est engagée dès
- * aujourd'hui si sa due_date tombe dans l'horizon — jamais seulement le jour de
- * son échéance (§5).
+ * Part Deadline de G.4 — engagement_non_couvert (RG-090/RG-092, ex-reste_a_payer avant
+ * Lot 6), JAMAIS known_plan_cost (un FinancialPlan n'est jamais lu ici, exclusion
+ * structurelle du double comptage IF-28). Portée certaine = obligatoire ∪
+ * optionnelle_souscrite (RG-106) ; optionnelle_envisagée calculée séparément (jamais
+ * fusionnée, §7) ; optionnelle_refusée et les Deadline annulées/soldées sont exclues
+ * (RG-107/RG-050). Une Deadline est engagée dès aujourd'hui si sa due_date tombe dans
+ * l'horizon — jamais seulement le jour de son échéance (§5).
+ *
+ * Anti-double-comptage (RG-092/093, IF-16) : une Deadline liée à une Provision n'entre
+ * ici que pour sa part NON couverte (engagement_non_couvert) — la part couverte est
+ * déjà comptée dans Montants_réservés (virtual_allocation) ou déjà hors trésorerie
+ * opérationnelle (backed_by_account, RG-072). La couverture est calculée sur la
+ * TOTALITÉ des Deadline liées à chaque Provision (jamais restreinte à l'horizon,
+ * cf. provision.util.ts) — un cache par provisionId évite de la recalculer par Deadline.
  */
 export async function computeDeadlineCommitments(tx: TxClient, householdId: string, horizon: Date): Promise<DeadlineCommitments> {
   const certainPlans = await tx.chargePlan.findMany({
@@ -137,6 +156,18 @@ export async function computeDeadlineCommitments(tx: TxClient, householdId: stri
   let unknownCount = 0;
   let hasEstimates = false;
   const items: CommittedItem[] = [];
+  const coverageCache = new Map<string, CoverageItem[]>();
+
+  const engagementFor = async (deadlineId: string, provisionId: string | null, resteAPayer: number): Promise<number> => {
+    if (!provisionId) return resteAPayer; // RG-091 : sans provision liée, engagement_non_couvert = reste_a_payer
+    let coverage = coverageCache.get(provisionId);
+    if (!coverage) {
+      coverage = (await computeProvisionCoverage(tx, provisionId)).items;
+      coverageCache.set(provisionId, coverage);
+    }
+    const item = coverage.find((i) => i.deadlineId === deadlineId);
+    return item ? item.engagementNonCouvert : resteAPayer;
+  };
 
   for (const cp of certainPlans) {
     for (const d of cp.deadlines) {
@@ -152,7 +183,8 @@ export async function computeDeadlineCommitments(tx: TxClient, householdId: stri
 
       const balance = await getDeadlineBalance(tx, d.id);
       const resteAPayer = balance?.resteAPayer ?? 0;
-      knownAmount += resteAPayer;
+      const engagement = await engagementFor(d.id, d.provisionId, resteAPayer);
+      knownAmount += engagement;
       items.push({ id: d.id, chargePlanId: cp.id, chargePlanLabel: cp.label, dueDate: d.dueDate, amountStatus: d.amountStatus, resteAPayer });
     }
   }

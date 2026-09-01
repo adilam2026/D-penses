@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { getDeadlineBalance, toNumber } from '../common/ledger/ledger.util';
+import { engagementNonCouvert } from '../common/ledger/provision.util';
 import { CreateFinancialPlanDto } from './dto/create-financial-plan.dto';
 import { AddBeneficiaryDto } from './dto/add-beneficiary.dto';
 
@@ -15,10 +16,10 @@ function round2(value: number): number {
  * (RG-111) : known_plan_cost/paid_amount/remaining_due/provision_coverage/
  * remaining_to_fund sont TOUJOURS recalculés à la lecture — jamais des colonnes.
  *
- * provision_coverage reste à 0 dans ce lot (Provision = Lot 6, pas encore livré) :
- * conformément à RG-091 (une échéance sans provision liée a couverture_affectée=0),
- * remaining_to_fund == remaining_due tant qu'aucune Provision n'existe — jamais un
- * faux calcul qui inventerait une couverture.
+ * provision_coverage (Lot 6) = Σ couverture_affectée (RG-090) des Deadline de la
+ * portée certaine liées à une Provision — réutilise EXCLUSIVEMENT provision.util.ts,
+ * jamais recopié. Sans Provision liée, couverture_affectée=0 (RG-091), donc
+ * remaining_to_fund == remaining_due, inchangé.
  */
 @Injectable()
 export class FinancialPlansService {
@@ -82,6 +83,7 @@ export class FinancialPlansService {
     let knownPlanCost = 0;
     let paidAmount = 0;
     let remainingDue = 0;
+    let provisionCoverage = 0;
     let hasUnknown = false;
     let hasEstimate = false;
     const deadlinesCertain: Array<Record<string, unknown>> = [];
@@ -106,14 +108,15 @@ export class FinancialPlansService {
         paidAmount += paid;
         if (d.financialStatus === 'ouverte' || d.financialStatus === 'partiellement_payee') {
           remainingDue += resteAPayer; // RG-119 : uniquement le besoin encore dû, jamais une échéance soldée
+          if (d.provisionId) {
+            const coverage = await engagementNonCouvert(tx, d.id);
+            provisionCoverage += coverage?.coverageAffectee ?? 0;
+          }
         }
         deadlinesCertain.push({ ...d, chargePlanLabel: cp.label, resteAPayer });
       }
     }
 
-    // provision_coverage reste à 0 (Lot 6 non livré, RG-091 : sans provision liée,
-    // couverture_affectée=0) — remaining_to_fund == remaining_due tant que c'est le cas.
-    const provisionCoverage = 0;
     const remainingToFund = round2(remainingDue - provisionCoverage);
 
     let envisagedTotal = 0;
@@ -141,7 +144,7 @@ export class FinancialPlansService {
       knownPlanCost: round2(knownPlanCost),
       paidAmount: round2(paidAmount),
       remainingDue: round2(remainingDue),
-      provisionCoverage,
+      provisionCoverage: round2(provisionCoverage),
       remainingToFund,
       completude,
       envisagedTotal: round2(envisagedTotal),
