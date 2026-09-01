@@ -1,0 +1,307 @@
+// Lot 0 — Socle (voir docs/05-roadmap-et-risques.md)
+// Reference normative: docs/02-modele-metier.md (metier) et docs/04-architecture-technique-et-donnees.md (schema)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum HouseholdRole {
+  admin
+  member
+  read_only
+}
+
+enum ChildStatus {
+  active
+  inactive
+}
+
+enum CategoryKind {
+  income
+  expense
+  both
+}
+
+enum VariableBudgetProjectionMode {
+  contractuel
+  rythme_reel
+  prudent_max
+}
+
+enum AccountType {
+  courant
+  epargne
+  especes
+  autre
+}
+
+enum AccountStatus {
+  actif
+  archive
+}
+
+enum SnapshotSource {
+  manuel
+  import
+}
+
+enum ReconciliationStatus {
+  pending
+  resolue
+}
+
+enum AdjustmentType {
+  ecart_rapprochement
+  correction
+  autre
+}
+
+enum TransferStatus {
+  prevu
+  confirme
+  annule
+}
+
+enum TransferType {
+  interne
+  retrait_especes
+  depot_especes
+}
+
+// ---------- SOCLE ----------
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  firstName    String   @map("first_name")
+  lastName     String   @map("last_name")
+  avatarUrl    String?  @map("avatar_url")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  memberships       HouseholdMembership[]
+  sessions          Session[]
+  createdInvites    HouseholdInvite[]     @relation("InviteCreatedBy")
+  redeemedInvite    HouseholdInvite?      @relation("InviteRedeemedBy")
+  ownedAccounts     FinancialAccount[]
+
+  @@map("user")
+}
+
+model Household {
+  id        String   @id @default(uuid())
+  name      String
+  currency  String   @default("MAD")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  memberships HouseholdMembership[]
+  children    Child[]
+  categories  Category[]
+  settings    HouseholdSettings?
+  invites     HouseholdInvite[]
+  accounts    FinancialAccount[]
+  transfers   AccountTransfer[]
+
+  @@map("household")
+}
+
+model HouseholdMembership {
+  id          String        @id @default(uuid())
+  householdId String        @map("household_id")
+  userId      String        @map("user_id")
+  role        HouseholdRole
+  joinedAt    DateTime      @default(now()) @map("joined_at")
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([householdId, userId])
+  @@map("household_membership")
+}
+
+model Child {
+  id          String      @id @default(uuid())
+  householdId String      @map("household_id")
+  firstName   String      @map("first_name")
+  lastName    String      @map("last_name")
+  birthDate   DateTime?   @map("birth_date") @db.Date
+  schoolName  String?     @map("school_name")
+  schoolClass String?     @map("school_class")
+  schoolYear  String?     @map("school_year")
+  status      ChildStatus @default(active)
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@map("child")
+}
+
+model Category {
+  id          String       @id @default(uuid())
+  householdId String?      @map("household_id") // NULL = catégorie système, partagée par tous les foyers
+  name        String
+  icon        String?
+  kind        CategoryKind
+  isSystem    Boolean      @default(false) @map("is_system")
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  household Household? @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@map("category")
+}
+
+model HouseholdSettings {
+  id                            String                       @id @default(uuid())
+  householdId                   String                       @unique @map("household_id")
+  securityMarginAmount          Decimal                      @default(0) @map("security_margin_amount") @db.Decimal(14, 2)
+  seuilAVenirDays               Int                          @default(30) @map("seuil_a_venir_days")
+  seuilAPayerDays               Int                          @default(7) @map("seuil_a_payer_days")
+  variableBudgetProjectionMode  VariableBudgetProjectionMode @default(prudent_max) @map("variable_budget_projection_mode")
+  weekStartDay                  Int                          @default(1) @map("week_start_day") // 1=lundi (RG-098)
+  createdAt                     DateTime                     @default(now()) @map("created_at")
+  updatedAt                     DateTime                     @updatedAt @map("updated_at")
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@map("household_settings")
+}
+
+// Mécanique d'authentification / onboarding (non financière, cf. document 03 §I.1)
+
+model HouseholdInvite {
+  id          String        @id @default(uuid())
+  householdId String        @map("household_id")
+  code        String        @unique
+  role        HouseholdRole @default(admin)
+  createdById String        @map("created_by_id")
+  expiresAt   DateTime      @map("expires_at")
+  usedAt      DateTime?     @map("used_at")
+  usedById    String?       @unique @map("used_by_id")
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  createdBy User      @relation("InviteCreatedBy", fields: [createdById], references: [id])
+  usedBy    User?     @relation("InviteRedeemedBy", fields: [usedById], references: [id])
+
+  @@map("household_invite")
+}
+
+// Sessions revocables (document 04 §S.1 — deconnexion multi-appareils)
+model Session {
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id")
+  refreshTokenHash String    @map("refresh_token_hash")
+  userAgent        String?   @map("user_agent")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  lastSeenAt       DateTime  @default(now()) @map("last_seen_at")
+  revokedAt        DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+// ============================================================
+// Lot 1 — Comptes financiers (docs/02-modele-metier.md §E.8, docs/04 §P)
+// ============================================================
+
+model FinancialAccount {
+  id                            String        @id @default(uuid())
+  householdId                   String        @map("household_id")
+  name                          String
+  type                          AccountType
+  ownerUserId                   String?       @map("owner_user_id")
+  status                        AccountStatus @default(actif)
+  includeInOperationalTreasury  Boolean       @default(true) @map("include_in_operational_treasury")
+  isProtected                   Boolean       @default(false) @map("is_protected")
+  currency                      String        @default("MAD")
+  createdAt                     DateTime      @default(now()) @map("created_at")
+  updatedAt                     DateTime      @updatedAt @map("updated_at")
+
+  household         Household               @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  owner              User?                   @relation(fields: [ownerUserId], references: [id])
+  snapshots          AccountBalanceSnapshot[]
+  reconciliations    Reconciliation[]
+  adjustments        Adjustment[]
+  transfersFrom      AccountTransfer[]       @relation("TransferFrom")
+  transfersTo        AccountTransfer[]       @relation("TransferTo")
+
+  @@map("financial_account")
+}
+
+// RG-080 : point d'ancrage du calcul du solde courant — jamais un champ balance autoritaire.
+model AccountBalanceSnapshot {
+  id              String         @id @default(uuid())
+  accountId       String         @map("account_id")
+  declaredBalance Decimal        @map("declared_balance") @db.Decimal(14, 2)
+  declaredAt      DateTime       @default(now()) @map("declared_at")
+  source          SnapshotSource @default(manuel)
+  createdById     String         @map("created_by_id")
+
+  account FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("account_balance_snapshot")
+}
+
+// RG-083 : comparaison solde calculé / solde déclaré — ne corrige jamais automatiquement l'écart.
+model Reconciliation {
+  id              String               @id @default(uuid())
+  accountId       String               @map("account_id")
+  computedBalance Decimal              @map("computed_balance") @db.Decimal(14, 2)
+  declaredBalance Decimal              @map("declared_balance") @db.Decimal(14, 2)
+  discrepancy     Decimal              @map("discrepancy") @db.Decimal(14, 2)
+  status          ReconciliationStatus @default(pending)
+  reconciledAt    DateTime             @default(now()) @map("reconciled_at")
+  createdById     String               @map("created_by_id")
+
+  account     FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  adjustments Adjustment[]
+
+  @@map("reconciliation")
+}
+
+// RG-084 : mouvement réel typé et historisé — jamais une réécriture silencieuse du solde de référence.
+model Adjustment {
+  id                    String         @id @default(uuid())
+  accountId             String         @map("account_id")
+  amount                Decimal        @map("amount") @db.Decimal(14, 2) // signé
+  reason                String?
+  type                  AdjustmentType @default(autre)
+  linkedReconciliationId String?       @map("linked_reconciliation_id")
+  createdById           String         @map("created_by_id")
+  occurredAt            DateTime       @default(now()) @map("occurred_at")
+
+  account       FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  reconciliation Reconciliation? @relation(fields: [linkedReconciliationId], references: [id])
+
+  @@map("adjustment")
+}
+
+// RG-085 : sortie du compte source + entrée du compte destination, impact net foyer = 0 si interne.
+model AccountTransfer {
+  id              String         @id @default(uuid())
+  householdId     String         @map("household_id")
+  fromAccountId   String?        @map("from_account_id")
+  toAccountId     String?        @map("to_account_id")
+  amount          Decimal        @map("amount") @db.Decimal(14, 2)
+  plannedDate     DateTime       @map("planned_date")
+  actualDate      DateTime?      @map("actual_date")
+  status          TransferStatus @default(prevu)
+  type            TransferType   @default(interne)
+  confirmedById   String?        @map("confirmed_by_id")
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  household   Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  fromAccount FinancialAccount? @relation("TransferFrom", fields: [fromAccountId], references: [id])
+  toAccount   FinancialAccount? @relation("TransferTo", fields: [toAccountId], references: [id])
+
+  @@map("account_transfer")
+}
