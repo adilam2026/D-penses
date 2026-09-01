@@ -1,208 +1,186 @@
-# 04 — Architecture technique, modèle de données, notifications, offline, sécurité
+# 04 — Architecture technique, modèle de données, notifications, offline, sécurité (V2)
 
-> Couvre les points **O** (choix techniques), **P** (modèle de données), **Q** (notifications), **R** (offline/sync), **S** (sécurité). S'appuie sur le modèle métier du document 02.
+> Couvre les points O, P, Q, R, S. S'appuie sur le modèle métier V2 (document 02) — comptes financiers, rapprochement, transferts, `reste_a_payer` généralisé, statuts scindés financier/temporel.
 
 ---
 
 ## O. Choix techniques recommandés
 
-### O.1 Stack applicative
+Inchangé dans ses grandes lignes (mobile React Native/Flutter, backend API typée, PostgreSQL, auth OAuth2/OIDC + JWT court + refresh, stockage objet S3-compatible, pas d'IA générative en V1). Deux précisions V2 :
 
-| Couche | Choix recommandé | Justification |
-|---|---|---|
-| **Mobile** | React Native (Expo) ou Flutter — un seul langage/UI pour iOS+Android | Équipe réduite probable (couple/petit projet), time-to-market, écosystème mature pour formulaires financiers |
-| **Backend** | API applicative (Node.js/NestJS ou équivalent typé) + base relationnelle | Le modèle métier (document 02) est fortement relationnel (FK, contraintes d'intégrité, statuts) — un SGBD relationnel est **structurellement** le bon choix, pas un NoSQL document |
-| **Base de données** | PostgreSQL | Contraintes CHECK sur statuts/transitions, transactions ACID indispensables (un paiement + mise à jour de statut doit être atomique), support JSONB pour les champs peu structurés (ex. règles de récurrence RRULE) |
-| **Auth** | OAuth2/OIDC ou service managé (ex. Auth via fournisseur tiers) + JWT courte durée + refresh token | §44 sécurité, déconnexion multi-appareils nécessite une table `Session`/`Device` révocable côté serveur, pas de JWT longue durée non révocable |
-| **Stockage fichiers** | Object storage (S3-compatible) pour `Attachment` | Photos/PDF de justificatifs, jamais en base |
-| **Notifications push** | Service push standard (FCM/APNs via un provider unifié) | Cf. Q |
-| **Offline** | Base locale embarquée (SQLite/WatermelonDB ou équivalent) + synchronisation par événements | Cf. R |
+### O.1 Le calcul du solde de compte est une fonction pure, pas un champ
+`solde_courant(compte, T)` (G.1) doit être implémenté comme une fonction déterministe côté serveur qui lit `AccountBalanceSnapshot` + les mouvements réels depuis cette date — jamais un champ `balance` mis à jour de manière impérative à chaque écriture (source classique de désynchronisation). Un cache matérialisé (vue matérialisée PostgreSQL ou colonne dénormalisée) peut exister pour la performance, mais toujours **recalculable** et jamais considéré comme la vérité — même principe que pour `SavingsPocket.current_amount` (RG-071/IF-07/IF-08).
 
-### O.2 Pourquoi pas d'IA générative en V1 (confirmation du §46)
+### O.2 Statut temporel jamais stocké
+`computed_temporal_status(deadline, today)` (document 02, F.2) est calculé à la requête (SQL `CASE` ou couche applicative), jamais persisté en base — évite un job nocturne qui muterait des milliers de lignes uniquement parce que le temps passe, et élimine toute possibilité qu'une formule financière lise accidentellement ce champ (RG-050/IF-11).
 
-Toute la couche "Conseiller" (document 01, REC-05) doit être un **moteur de règles déterministe** exécuté côté serveur sur les formules du document 02 §G. Aucune donnée financière du foyer n'est envoyée à un modèle génératif en V1. Cela garantit : explicabilité de chaque recommandation, reproductibilité, absence de risque de fuite de données sensibles vers un tiers.
-
-### O.3 Architecture logique (vue composants)
-
-```
-[App mobile] ──HTTPS/JWT──► [API Gateway]
-                                  │
-                 ┌────────────────┼─────────────────┐
-                 ▼                ▼                  ▼
-         [Service Foyer]  [Service Financier]  [Moteur Projection/Alertes]
-         (users, roles,    (income, charges,    (job planifié + calcul
-          children)         épargne, goals)       à la demande, lit seul)
-                 │                │                  │
-                 └────────────────┴──────────────────┘
-                                  │
-                            [PostgreSQL]
-                                  │
-                        ┌─────────┴─────────┐
-                        ▼                   ▼
-                 [Object storage]     [Notification service]
-                 (justificatifs)      (push + agrégation)
-```
-
-Le "Moteur Projection/Alertes" est **read-only** sur les données transactionnelles : il ne modifie jamais une entité financière, il produit des `Alert` (écriture propre, non financière) et sert les calculs du document 02 §G à la demande (dashboard, simulateur) plus un passage planifié (ex. toutes les nuits) pour générer les alertes proactives (retard, oubli, dépassement).
-
-### O.4 Intégrité des calculs : source de vérité unique
-
-Toutes les formules G.1 à G.13 doivent être implémentées **une seule fois**, côté serveur, jamais dupliquées côté client (même approximativement pour un affichage "rapide"). Le client affiche ce que l'API calcule. C'est la garantie contre les incohérences de chiffres entre les deux téléphones du couple (§42).
+### O.3 Source de vérité unique — étendue aux comptes
+Les formules G.1 à G.13 restent implémentées une seule fois côté serveur (inchangé). S'y ajoute désormais : le solde d'un compte, le montant d'une poche/provision, et `reste_a_payer` d'une échéance sont **tous les trois** des valeurs calculées à la demande à partir des mouvements réels/typés — jamais des colonnes qu'un client pourrait modifier directement.
 
 ---
 
-## P. Modèle de données proposé (niveau tables, non exhaustif sur les colonnes techniques standard `id/created_at/updated_at`)
+## P. Modèle de données proposé (V2)
 
 ```sql
--- SOCLE
-household(id, name, security_margin_amount, currency, created_at)
-user(id, email, password_hash, first_name, last_name, avatar_url, created_at)
-household_membership(id, household_id, user_id, role ENUM('admin','member','read_only'), joined_at)
-child(id, household_id, first_name, last_name, birth_date, sex NULL, school_name NULL,
-      school_class NULL, school_year NULL, avatar_url NULL, status ENUM('active','inactive'))
-category(id, household_id NULL, name, icon, kind ENUM('income','expense','both'), is_system BOOL)
+-- SOCLE (inchangé)
+household(id, name, currency)
+user(id, email, password_hash, first_name, last_name, avatar_url)
+household_membership(id, household_id, user_id, role, joined_at)
+child(id, household_id, first_name, last_name, birth_date, school_name,
+      school_class, school_year, status)
+category(id, household_id?, name, icon, kind, is_system)
+household_settings(id, household_id, security_margin_amount, seuil_a_venir_days,
+                    seuil_a_payer_days, variable_budget_projection_mode)
+-- security_margin_amount vit uniquement ici (household_settings), jamais dupliqué sur household
+
+-- COMPTES FINANCIERS (nouveau)
+financial_account(id, household_id, name, type, owner_user_id?,
+                   status ENUM(actif,archivé),
+                   include_in_operational_treasury BOOL DEFAULT true,
+                   is_protected BOOL DEFAULT false, currency DEFAULT 'MAD')
+account_balance_snapshot(id, account_id, declared_balance, declared_at,
+                          source ENUM(manuel,import), created_by_user_id)
+reconciliation(id, account_id, computed_balance, declared_balance,
+                discrepancy, reconciled_at, status ENUM(pending,résolue),
+                created_by_user_id)
+adjustment(id, account_id, amount /* signé */, reason, type ENUM(ecart_rapprochement,correction,autre),
+            linked_reconciliation_id?, created_by_user_id, occurred_at)
+account_transfer(id, household_id, from_account_id?, to_account_id?, amount,
+                  planned_date, actual_date?, status ENUM(prévu,confirmé,annulé),
+                  type ENUM(interne,retrait_especes,depot_especes),
+                  linked_pocket_type?, linked_pocket_id?, confirmed_by_user_id?)
 
 -- REVENUS
-income_source(id, household_id, label, beneficiary_user_id NULL, category_id,
-               recurrence_rule NULL /* RRULE ou NULL si ponctuel */, usual_amount,
-               is_recurring BOOL, notes NULL, status ENUM('active','archived'))
-income_occurrence(id, income_source_id, usual_date, actual_date NULL,
-                   planned_amount, actual_amount NULL,
-                   status ENUM('prévu','reçu','en_retard','annulé','obsolète'),
-                   confirmed_by_user_id NULL, confirmed_at NULL)
+income_source(id, household_id, label, beneficiary_user_id?, category_id,
+              recurrence_rule?, usual_amount, is_recurring, default_account_id, status)
+income_occurrence(id, income_source_id, usual_date, actual_date?,
+                   planned_amount, actual_amount?, account_id,
+                   status, confirmed_by_user_id?, confirmed_at?)
 
 -- CHARGES / ÉCHÉANCES / PAIEMENTS
-charge_plan(id, household_id, label, category_id, generation_mode ENUM('auto_frequence','calendrier_manuel'),
-            recurrence_rule NULL, is_mandatory BOOL, payment_method NULL,
-            default_beneficiary_user_id NULL, start_date, end_date NULL, priority_level SMALLINT)
-charge_plan_child(charge_plan_id, child_id)          -- rattachement multiple enfants
-deadline(id, charge_plan_id, due_date, amount_due, is_estimated BOOL,
-         original_estimated_amount NULL,
-         status ENUM('planifiée','à_venir','à_payer','partiellement_payée','payée',
-                      'en_retard','reportée','annulée'),
-         provision_id NULL REFERENCES provision(id))
-payment(id, deadline_id, amount, paid_date, payment_method NULL, type ENUM('paiement','régularisation','remboursement'),
-        recorded_by_user_id, notes NULL)
+charge_plan(id, household_id, label, category_id, generation_mode,
+            recurrence_rule?, is_mandatory, default_account_id,
+            start_date, end_date?, priority_level)
+charge_plan_child(charge_plan_id, child_id)
+deadline(id, charge_plan_id, due_date, amount_due, is_estimated,
+         original_estimated_amount?,
+         financial_status ENUM(ouverte,partiellement_payée,soldée,annulée),
+         -- pas de colonne de statut temporel : calculé à la lecture (O.2)
+         provision_id?)
+payment(id, deadline_id, amount /* toujours > 0 */, paid_date, account_id,
+        type ENUM(paiement,remboursement,ajustement),
+        direction ENUM(augmente_paye,diminue_paye)? /* requis seulement si type=ajustement */,
+        recorded_by_user_id, notes?)
+-- reste_a_payer(deadline) : vue/fonction SQL, pas une colonne (RG-016)
 
--- BUDGETS VARIABLES
-variable_budget(id, household_id, category_id, reference_amount, reference_period ENUM('week','month'),
-                 start_date, end_date NULL)
-budget_expense(id, variable_budget_id, amount, spent_date, category_id, notes NULL, recorded_by_user_id)
-budget_expense_member(budget_expense_id, member_ref /* user_id ou child_id + type */)
-
--- DÉPENSES PONCTUELLES
-adhoc_expense(id, household_id, category_id, amount, spent_date, notes NULL, recorded_by_user_id)
-adhoc_expense_member(adhoc_expense_id, member_ref)
+-- BUDGETS VARIABLES / DÉPENSES
+variable_budget(id, household_id, category_id, reference_amount,
+                 reference_period, start_date, end_date?)
+budget_expense(id, variable_budget_id, amount, spent_date, category_id,
+               account_id, recorded_by_user_id)
+adhoc_expense(id, household_id, category_id, amount, spent_date,
+              account_id, recorded_by_user_id)
 
 -- ÉPARGNE / PROVISIONS / OBJECTIFS
-savings_pocket(id, household_id, name, owner_user_id NULL, beneficiary_ref NULL,
-                is_protected BOOL, target_amount NULL, target_date NULL,
-                recurring_amount NULL, recurrence_rule NULL,
-                current_amount, holding_mode ENUM('logique','compte_separe'))
-provision(id, household_id, name, current_amount, holding_mode ENUM('logique','compte_separe'),
-          is_protected BOOL DEFAULT false, is_flexible BOOL DEFAULT true)
-pocket_movement(id, pocket_type ENUM('savings_pocket','provision'), pocket_id,
-                 planned_date, planned_amount, actual_date NULL, actual_amount NULL,
-                 status ENUM('prévu','confirmé','en_retard','annulé'), confirmed_by_user_id NULL)
-goal(id, household_id, name, target_price, target_date NULL, priority_level SMALLINT,
-     linked_pocket_id NULL, status ENUM('en_cours','atteint','en_pause','abandonné'))
-goal_contribution(id, goal_id, planned_date, planned_amount, actual_date NULL, actual_amount NULL,
-                   status ENUM('prévu','confirmé'))
+savings_pocket(id, household_id, name, owner_user_id?, is_protected,
+                allocation_mode ENUM(virtual_allocation,backed_by_account),
+                linked_account_id? /* UNIQUE si backed_by_account, cf. IF-14 */,
+                target_amount?, target_date?)
+                -- current_amount : PAS de colonne, calculé (RG-071/IF-07/IF-08)
+provision(id, household_id, name, allocation_mode, linked_account_id?,
+          is_flexible)
+pocket_movement(id, pocket_type, pocket_id, planned_date, planned_amount,
+                 actual_date?, actual_amount?, status,
+                 movement_type ENUM(contribution,retrait))
+                 -- seule table utilisée pour allocation_mode = virtual_allocation ;
+                 -- absente/informative pour backed_by_account (RG-073)
+goal(id, household_id, name, target_price, target_date?, priority_level,
+     linked_pocket_id?, status)
+goal_contribution(id, goal_id, planned_date, planned_amount,
+                    actual_date?, actual_amount?, status)
 
--- INTELLIGENCE
-simulation_scenario(id, household_id, created_by_user_id, name, payload JSONB, created_at, status ENUM('brouillon','sauvegardé'))
-alert(id, household_id, type ENUM('retard','dépassement_budget','anomalie','oubli','tension_tresorerie','prevision'),
-      severity ENUM('info','attention','critique'), entity_type NULL, entity_id NULL,
-      message, created_at, resolved_at NULL, resolved_by_user_id NULL)
-
--- TRANSVERSE
-attachment(id, entity_type ENUM('deadline','payment','adhoc_expense'), entity_id,
-           file_url, file_type, uploaded_by_user_id, uploaded_at)
-audit_event(id, household_id, entity_type, entity_id, action ENUM('create','update','status_change','archive'),
-            field_name NULL, old_value NULL, new_value NULL, actor_user_id, occurred_at)
-notification_preference(id, user_id, alert_type, channel ENUM('push','email','in_app'), threshold_days NULL, enabled BOOL)
-notification_instance(id, user_id, alert_id, sent_at, read_at NULL, channel)
-device(id, user_id, push_token NULL, platform, last_seen_at, revoked_at NULL)
+-- INTELLIGENCE / TRANSVERSE
+simulation_scenario(id, household_id, created_by_user_id, name, payload, status)
+alert(id, household_id, type, severity, entity_type?, entity_id?, message, resolved_at?)
+attachment(id, entity_type, entity_id, file_url, file_type, uploaded_by_user_id)
+audit_event(id, household_id, entity_type, entity_id, action, field_name?,
+            old_value?, new_value?, actor_user_id, occurred_at)
+notification_preference(id, user_id, alert_type, channel, threshold_days?, enabled)
+device(id, user_id, push_token?, platform, last_seen_at, revoked_at?)
 ```
 
-**Notes de conception** :
-- Toutes les tables métier portent `household_id` (directement ou via leur parent) → base de l'isolation stricte (§S.2).
-- `recurrence_rule` en texte RRULE (iCal) plutôt qu'un enum de fréquences fixes (cf. INC-09) : couvre nativement mensuel/hebdo/trimestriel/annuel/personnalisé.
-- Contraintes CHECK PostgreSQL sur les colonnes `status` pour interdire au niveau base les transitions impossibles en complément de la validation applicative (défense en profondeur).
-- Aucune colonne "solde calculé" stockée durablement sur `household` : `Trésorerie_déclarée` est la somme d'un relevé déclaré à une date (table `balance_snapshot(household_id, declared_at, amount)` implicite, à ajouter si le foyer veut un historique de ses relevés) — tout le reste (engagée, réservée, disponible, projection) est **calculé à la demande**, jamais stocké de façon durable (évite la dérive de cache, cf. G.13).
+### P.1 Contraintes d'intégrité clés (V2)
+
+```sql
+-- Anti-double-comptage (IF-14) : un compte ne backe qu'une seule poche/provision
+CREATE UNIQUE INDEX ON savings_pocket(linked_account_id) WHERE allocation_mode = 'backed_by_account';
+CREATE UNIQUE INDEX ON provision(linked_account_id) WHERE allocation_mode = 'backed_by_account';
+
+-- Payment.amount toujours positif (RG-015)
+ALTER TABLE payment ADD CONSTRAINT positive_amount CHECK (amount > 0);
+ALTER TABLE payment ADD CONSTRAINT direction_requires_adjustment
+  CHECK (direction IS NULL OR type = 'ajustement');
+
+-- reste_a_payer comme fonction, exposée en vue pour les lectures fréquentes
+CREATE VIEW deadline_with_balance AS
+SELECT d.*,
+       d.amount_due - COALESCE(SUM(
+         CASE p.type
+           WHEN 'paiement' THEN p.amount
+           WHEN 'remboursement' THEN -p.amount
+           WHEN 'ajustement' THEN CASE p.direction WHEN 'augmente_paye' THEN p.amount ELSE -p.amount END
+         END), 0) AS reste_a_payer
+FROM deadline d LEFT JOIN payment p ON p.deadline_id = d.id
+GROUP BY d.id;
+
+-- Solde de poche virtuelle, calculé (RG-071/IF-07)
+CREATE VIEW savings_pocket_balance AS
+SELECT sp.id,
+  CASE sp.allocation_mode
+    WHEN 'backed_by_account' THEN (SELECT solde_courant FROM account_current_balance WHERE account_id = sp.linked_account_id)
+    ELSE COALESCE((SELECT SUM(CASE movement_type WHEN 'contribution' THEN actual_amount ELSE -actual_amount END)
+                    FROM pocket_movement WHERE pocket_type='savings_pocket' AND pocket_id=sp.id AND status='confirmé'), 0)
+  END AS current_amount
+FROM savings_pocket sp;
+```
+
+### P.2 `LedgerEntry` — vue comptable consolidée (résout le point 16)
+```sql
+CREATE VIEW ledger_entry AS
+  SELECT 'income' AS kind, id, household_id, actual_date AS occurred_at, actual_amount AS amount, account_id FROM income_occurrence WHERE status='reçu'
+  UNION ALL
+  SELECT 'payment', id, (SELECT household_id FROM charge_plan cp JOIN deadline d ON d.charge_plan_id=cp.id WHERE d.id=deadline_id),
+         paid_date, CASE type WHEN 'remboursement' THEN -amount ELSE amount END, account_id FROM payment
+  UNION ALL
+  SELECT 'adhoc_expense', id, household_id, spent_date, -amount, account_id FROM adhoc_expense
+  UNION ALL
+  SELECT 'budget_expense', id, (SELECT household_id FROM variable_budget vb WHERE vb.id=variable_budget_id),
+         spent_date, -amount, account_id FROM budget_expense
+  UNION ALL
+  SELECT 'transfer', id, household_id, actual_date, amount, to_account_id FROM account_transfer WHERE status='confirmé'
+  UNION ALL
+  SELECT 'transfer_out', id, household_id, actual_date, -amount, from_account_id FROM account_transfer WHERE status='confirmé'
+  UNION ALL
+  SELECT 'adjustment', id, (SELECT household_id FROM financial_account fa WHERE fa.id=account_id), occurred_at, amount, account_id FROM adjustment;
+```
+Reste purement dérivée (lecture seule) — utilisée pour l'écran Transactions **et** pour recalculer `solde_courant` (G.1). Aucune écriture ne cible jamais cette vue directement.
 
 ---
 
 ## Q. Stratégie notifications
+Inchangée (agrégation par défaut, plafond quotidien, priorité retard > dépassement > tension > confirmation > conseil), avec deux ajouts :
 
-### Q.1 Principes (§26, §51)
-- Jamais de notification générique/creuse — chaque notification pointe vers une `Alert` ou une `ActionItem` concrète et actionnable.
-- **Agrégation par défaut** : plusieurs échéances proches se regroupent en une notification ("3 échéances sous 7 jours, 14 250 DH au total") plutôt que 3 push séparés.
-- Plafond quotidien paramétrable par foyer (REC-06) avec file de priorité : retard > dépassement de budget > tension de trésorerie prévue > confirmation de revenu > conseils/objectifs.
-
-### Q.2 Types et déclenchement
-
-| Type | Déclencheur | Seuils par défaut (paramétrables) |
+| Type (nouveau) | Déclencheur | Seuil par défaut |
 |---|---|---|
-| Échéance | J-15 / J-7 / J-3 / jour J / retard | via `notification_preference.threshold_days` |
-| Agrégée | ≥ 2 échéances dans les 7 jours | fenêtre 7j |
-| Budget | consommé ≥ 80 % du `variable_budget` | 80 % |
-| Prévision | `Solde_projeté` (G.5) passe sous marge de sécurité dans les 30j | continu, calcul nocturne |
-| Objectif | changement significatif de date d'atteinte estimée (±1 mois) | recalcul mensuel |
-| Provision | reste à constituer croissant à l'approche de l'échéance liée | recalcul mensuel + à J-30 |
-| Anomalie / oubli | RG-052 / RG-053 | calcul nocturne |
-
-### Q.3 Canaux
-Push (par défaut), in-app (`Actions à traiter`, toujours présent même sans push), email (optionnel, résumé hebdomadaire V2). Chaque utilisateur configure ses seuils indépendamment (un couple peut vouloir des sensibilités différentes).
-
-### Q.4 Anti-doublon
-`notification_instance` référence l'`Alert` source ; une même alerte non résolue ne redéclenche pas de nouvelle notification avant un délai de repos (défaut 24h), sauf changement d'état (ex. retard qui s'aggrave).
+| Rapprochement | Aucun `AccountBalanceSnapshot` depuis N jours (H-16) | 60 jours |
+| Tension provision court terme | RG-032ter | mois_restants < 1 |
 
 ---
 
 ## R. Stratégie offline / synchronisation
-
-### R.1 Portée V1
-Le cahier des charges autorise à différer la complexité si nécessaire (§43) en gardant l'architecture prête. Recommandation : **consultation offline complète dès la V1** (cache local des données du foyer, lecture), **saisie offline limitée** à la V1 (nouvelles dépenses/échéances/confirmations mises en file d'attente locale), synchronisation bidirectionnelle complète avec résolution de conflits élaborée en **V2**.
-
-### R.2 Mécanisme
-- Base locale embarquée sur l'appareil, miroir partiel des données du foyer (fenêtre glissante : période courante + N mois, pas tout l'historique).
-- Toute écriture locale est un **événement** horodaté et attribué (`actor_user_id`, `device_id`, `client_timestamp`) mis en file, pas une simple valeur — cohérent avec REC-03 (event sourcing léger) : cela permet de **rejouer** les événements de plusieurs appareils dans l'ordre serveur plutôt que de comparer des snapshots.
-- À la reconnexion, la file est poussée au serveur qui rejoue les événements dans l'ordre de réception serveur (pas l'ordre client, pour éviter la triche d'horloge locale) et détecte les conflits réels (cf. R.3).
-
-### R.3 Résolution de conflits
-- Conflit **sans recouvrement métier réel** (deux dépenses différentes créées offline par les deux membres) : aucun conflit, simple fusion.
-- Conflit **sur la même entité** (H-01, ex. deux confirmations de la même `Deadline`) : la première écriture reçue par le serveur gagne ; la seconde est rejetée avec un message explicite au client concerné (jamais un écrasement silencieux, cf. §42).
-- Conflit de **modification de champ non exclusif** (ex. deux modifications de note sur la même échéance) : dernière écriture par horodatage serveur gagne, mais les deux versions restent visibles dans `audit_event`.
-
-### R.4 Indicateurs UX
-Un badge "en attente de synchronisation" sur toute opération créée offline, retiré dès confirmation serveur ; en cas de rejet de conflit, l'opération repasse dans "Actions à traiter" pour arbitrage manuel plutôt que d'être perdue silencieusement.
+Inchangée dans son principe (consultation offline complète en V1, saisie en file d'attente simple, résolution avancée en V2, événements horodatés et attribués rejoués dans l'ordre serveur). Précision V2 : un `AccountTransfer` ou un `Reconciliation` créés hors-ligne suivent la même mécanique de conflit que les autres écritures (H-01) — en cas de double rapprochement concurrent sur le même compte, le premier reçu par le serveur gagne, le second est proposé comme un rapprochement *complémentaire* plutôt que rejeté silencieusement (un rapprochement n'est pas une simple valeur à écraser, deux déclarations successives peuvent toutes deux être légitimes).
 
 ---
 
-## S. Stratégie de sécurité
-
-### S.1 Authentification
-- Email + mot de passe (hash Argon2id), + PIN local ou biométrie (Face ID/empreinte) comme second facteur de **déverrouillage rapide de l'app** (pas un remplacement de l'auth serveur, cf. §44).
-- Sessions server-side révocables (`device` table) : l'écran Sécurité permet "déconnecter tous les appareils" (§44) = révocation de tous les refresh tokens du user.
-- Verrouillage automatique de l'app après une période d'inactivité configurable, avec ré-authentification PIN/biométrie.
-
-### S.2 Isolation stricte entre foyers
-- Toute requête serveur est scopée par `household_id` dérivé du token de session, jamais transmis en paramètre libre par le client (empêche l'énumération/accès croisé).
-- Contrôle d'accès au niveau service **et** au niveau base (Row-Level Security PostgreSQL en défense en profondeur) sur `household_id`.
-
-### S.3 Chiffrement
-- Chiffrement au repos de la base (chiffrement disque managé) et du stockage objet (justificatifs).
-- TLS en transit pour tout appel API.
-- Pas de stockage de données de paiement bancaire réelles (l'app ne fait pas de connexion bancaire en V1, §46) — le champ "moyen de paiement" est déclaratif (libellé libre : "carte", "virement"…), aucune donnée de carte n'est jamais capturée.
-
-### S.4 Journalisation
-- `audit_event` couvre les modifications de données financières (§29/§S ci-dessus).
-- Journal d'accès séparé (connexions, changements de mot de passe, révocations d'appareil) pour la sécurité du compte, distinct de l'audit métier.
-
-### S.5 Droits et confidentialité intra-foyer
-- Même si le couple partage l'essentiel, une `SavingsPocket` peut être marquée `owner_user_id` sans visibilité en modification pour l'autre admin en V2 (le cahier des charges V1 dit "tout admin peut tout consulter" — cf. K, la confidentialité fine des poches personnelles est documentée comme piste V2, pas promise en V1 pour ne pas complexifier les droits dès le départ, cf. §46 anti-surcharge).
-
-### S.6 Suppression de compte / foyer (§45)
-- Suppression de compte utilisateur : anonymisation des références d'auteur dans `audit_event`/`payment` (`recorded_by_user_id → utilisateur supprimé`), le foyer et les données financières communes ne sont pas affectées si d'autres membres restent.
-- Suppression de foyer : action réservée aux admins, double confirmation explicite (saisie du nom du foyer pour confirmer, pattern standard), purge différée (ex. 30 jours de grâce avant purge définitive) plutôt qu'une suppression immédiate irréversible — réduit le risque d'erreur humaine sur des données financières familiales.
+## S. Sécurité
+Inchangée (auth, isolation stricte par foyer, chiffrement, journalisation, suppression de compte/foyer). Précision V2 : `financial_account`, comme toute entité métier, porte `household_id` et est donc couvert par l'isolation stricte (Row-Level Security) — un compte ne peut jamais être référencé (`linked_account_id`, `account_id`) par une entité d'un autre foyer, contrainte vérifiée en base en plus de l'application.

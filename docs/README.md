@@ -1,37 +1,35 @@
-# Application financière familiale — Analyse fonctionnelle et architecture
+# Application financière familiale — Analyse fonctionnelle et architecture (V2)
 
-Ce dossier constitue le **livrable d'analyse préalable au développement**, tel que demandé dans le cahier des charges : aucune ligne de code applicative n'est écrite à ce stade. L'objectif est de fixer un modèle métier solide, non ambigu, avant toute implémentation.
+Ce dossier constitue le **livrable d'analyse préalable au développement**. Aucune ligne de code applicative n'est écrite à ce stade.
 
-## Philosophie retenue
+## Philosophie retenue (inchangée)
 
-Ce n'est pas un tracker de dépenses. C'est un outil de pilotage de trésorerie familiale, structuré autour d'une règle unique et non négociable : **une donnée prévisionnelle ne devient jamais automatiquement une donnée réelle** — toute confirmation (revenu reçu, échéance payée, versement d'épargne effectué) exige un geste humain explicite. Le système calcule, anticipe, alerte et recommande ; il n'agit jamais seul sur l'argent réel.
+Ce n'est pas un tracker de dépenses. C'est un outil de pilotage de trésorerie familiale, structuré autour d'une règle unique et non négociable : **une donnée prévisionnelle ne devient jamais automatiquement une donnée réelle**. Le système calcule, anticipe, alerte et recommande ; il n'agit jamais seul sur l'argent réel.
+
+## Ce qui change en V2
+
+La V1 posait les bonnes fondations (ChargePlan/Deadline/Payment, séparation prévu/réel, simulateur, Actions à traiter, moteur déterministe) mais s'appuyait sur une notion de trésorerie trop directe. La V2 introduit une vraie couche **comptes financiers**, sépare formellement **trésorerie physique** et **capacité libre**, rend le double comptage épargne/provision impossible par construction, et corrige plusieurs formules qui dépendaient à tort de statuts d'affichage plutôt que de l'état financier réel. Le détail complet est donné dans la synthèse remise en fin d'échange.
 
 ## Sommaire des documents
 
-| Document | Contenu | Points du livrable couverts |
+| Document | Contenu | Points couverts |
 |---|---|---|
-| [`01-vision-et-architecture-fonctionnelle.md`](./01-vision-et-architecture-fonctionnelle.md) | Synthèse produit, architecture fonctionnelle en couches, incohérences du cahier des charges et reformulations, recommandations d'amélioration | A, B, M, N |
-| [`02-modele-metier.md`](./02-modele-metier.md) | Entités métier, modèle relationnel, règles de gestion numérotées (RG-xxx), statuts et transitions, formules de calcul de référence, cas limites | C, D, E, F, G, H |
-| [`03-parcours-et-ecrans.md`](./03-parcours-et-ecrans.md) | Parcours utilisateurs clés (saisie rapide, confirmation d'échéance, simulateur, arbitrage), structure d'écrans challengée et consolidée, navigation | I, J |
-| [`04-architecture-technique-et-donnees.md`](./04-architecture-technique-et-donnees.md) | Stack technique recommandée, schéma de données (tables), stratégie notifications, offline/synchronisation, sécurité | O, P, Q, R, S |
-| [`05-roadmap-et-risques.md`](./05-roadmap-et-risques.md) | Périmètre V1/V2/V3, risques fonctionnels et techniques avec mitigations, plan de développement par lots livrables | K, L, T |
+| [`01-vision-et-architecture-fonctionnelle.md`](./01-vision-et-architecture-fonctionnelle.md) | Synthèse produit, deux projections de trésorerie, état des incohérences, recommandations | A, B, M, N |
+| [`02-modele-metier.md`](./02-modele-metier.md) | **Document normatif.** Entités (dont comptes financiers), modèle relationnel, règles de gestion, statuts (financier/temporel), formules de calcul, cas limites, **Invariants financiers** | C, D, E, F, G, H |
+| [`03-parcours-et-ecrans.md`](./03-parcours-et-ecrans.md) | Parcours utilisateurs (dont rapprochement, transferts, simulateur enrichi), structure d'écrans | I, J |
+| [`04-architecture-technique-et-donnees.md`](./04-architecture-technique-et-donnees.md) | Stack technique, schéma de données complet (comptes, rapprochement, transferts), notifications, offline, sécurité | O, P, Q, R, S |
+| [`05-roadmap-et-risques.md`](./05-roadmap-et-risques.md) | V1/V2/V3, risques (dont nouveaux risques V2), plan par lots **avec tests de calcul obligatoires** | K, L, T |
+| [`06-simulation-financiere-de-reference.md`](./06-simulation-financiere-de-reference.md) | **Test oracle chiffré** — foyer fictif complet, journal d'événements, trou de trésorerie prouvé, calcul de provision temporel prouvé, simulateur d'achat, preuves anti-double-comptage, vérification des invariants | Validation chiffrée |
 
 ## Comment lire ce dossier
 
-1. Commencer par le document 01 pour la vision d'ensemble et comprendre **pourquoi** certains choix de modélisation ont été faits (notamment les fusions d'entités du document 02, motivées par les incohérences identifiées en §M).
-2. Le document 02 est la **référence normative** : toute règle de gestion (RG-xxx) ou formule (G.x) citée ailleurs dans le produit doit pointer vers ce document, jamais être redéfinie localement.
-3. Le document 03 traduit ce modèle en expérience utilisateur concrète.
-4. Le document 04 traduit le tout en architecture technique implémentable.
-5. Le document 05 séquence le développement et liste ce qui reste volontairement hors périmètre.
+1. Document 01 pour la vision d'ensemble et le vocabulaire (Trésorerie opérationnelle / Disponible libre / Patrimoine liquide total — jamais redéfinis ailleurs).
+2. Document 02 est la **référence normative absolue** — toute règle (RG-xxx), tout statut, toute formule (G.x) ou invariant (IF-xxx) cité ailleurs doit y renvoyer.
+3. Document 03 traduit le modèle en parcours et écrans, en gardant la saisie courante aussi simple qu'en V1 malgré la richesse du modèle sous-jacent.
+4. Document 04 traduit le tout en schéma de données et choix techniques implémentables.
+5. Document 05 séquence le développement, avec des tests de calcul obligatoires à chaque lot.
+6. Document 06 prouve, chiffres à l'appui sur un cas réaliste, que le modèle ne double-compte jamais et détecte correctement les tensions de trésorerie.
 
-## Points d'arbitrage nécessitant une validation explicite avant développement
+## Points d'arbitrage nécessitant encore une validation
 
-Ces sujets ont été tranchés par une proposition raisonnée mais méritent une confirmation ou un ajustement de votre part avant le premier lot de code (cf. document 05, Lot 0) :
-
-1. **Fusion des charges fixes/planifiées/scolaires/abonnements** en une seule famille d'entités (`ChargePlan`/`Deadline`) avec des vues filtrées par écran (document 01, INC-03/INC-04 ; document 02, C.3). Recommandé pour éviter la duplication de règles, mais impacte directement le modèle de données du document 04.
-2. **Deux métriques de disponible** ("Disponible maintenant" vs. projection glissante) plutôt qu'un chiffre unique "réellement libre" (document 01, INC-01/REC-02 ; document 02, G.4/G.5).
-3. **Nature du fléchage épargne/provision** (logique sur le même compte vs. compte réellement séparé) à clarifier dans l'onboarding et affichée à l'utilisateur (document 01, INC-02).
-4. **Découpage des écrans** proposé (16 zones au lieu de 28), avec fusions par pattern maître-détail et feuilles modales (document 03, J.1).
-5. **Portée exacte du offline V1** (consultation complète + saisie en file simple, résolution de conflits avancée repoussée en V2) (document 05, K ; document 04, R.1).
-
-Merci de valider ou d'amender ces points avant que le premier lot de développement ne démarre.
+Voir la synthèse remise à l'issue de la V2, section « décisions nécessitant votre validation ».

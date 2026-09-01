@@ -1,374 +1,418 @@
-# 02 — Modèle métier
+# 02 — Modèle métier (V2)
 
-> Couvre les points **C** (entités), **D** (modèle relationnel), **E** (règles de gestion), **F** (statuts/transitions), **G** (formules), **H** (cas limites).
-> Rappel des principes fondateurs : voir `01-vision-et-architecture-fonctionnelle.md`. Le modèle de données technique (tables, types) est en `04-architecture-technique-et-donnees.md` — ce document reste au niveau **métier**.
+> Couvre les points C, D, E, F, G, H. **Document normatif** — toute règle ou formule citée ailleurs doit pointer ici.
+>
+> **V2 — changements structurants par rapport à la V1** : introduction d'une vraie notion de compte financier (`FinancialAccount`), séparation stricte trésorerie physique / capacité libre, correction du calcul des engagements (indépendant du statut UX), généralisation de `reste_a_payer`, refonte du modèle de statuts des échéances (financier persistant vs. temporel calculé), correction de la contradiction sur les remboursements, source de vérité unique pour les soldes d'épargne/provision, mécanique de rapprochement bancaire, transferts inter-comptes, simulateur enrichi, calcul temporel des provisions, et une nouvelle section **Invariants financiers**. Le détail des corrections est synthétisé en fin de réponse.
 
 ---
 
 ## C. Entités métier
 
 ### C.1 Socle
+Inchangé — `User`, `Household`, `HouseholdMembership`, `Child`, `HouseholdSettings`, `Category`, `Beneficiary/MemberTag`.
+
+### C.2 Comptes financiers *(nouveau)*
 
 | Entité | Rôle |
 |---|---|
-| **User** | Compte authentifié (email, mot de passe, profil, photo) |
-| **Household** | Le foyer — unité d'isolation des données |
-| **HouseholdMembership** | Lien User↔Household + rôle (admin / membre / lecture seule) |
-| **Child** | Personne à charge sans compte (prénom, nom, naissance, école, classe) |
-| **HouseholdSettings** | Paramètres du foyer : marge de sécurité, seuils d'alerte, priorités |
-| **Category** | Catégorie de dépense/revenu, standard ou personnalisée |
-| **Beneficiary/MemberTag** | Rattachement d'une opération à 0..n membres/enfants ou au foyer |
+| **FinancialAccount** | Lieu réel où se trouve l'argent — compte courant, compte épargne, espèces. Porte un solde physique. |
+| **AccountBalanceSnapshot** | Solde déclaré par l'utilisateur à une date donnée (rapprochement) — point d'ancrage du calcul du solde courant. |
+| **Reconciliation** | Comparaison solde calculé / solde déclaré à un instant donné, avec écart identifié. |
+| **Adjustment** | Écriture de correction sur un compte (écart de rapprochement, régularisation) — un mouvement réel typé, jamais une réécriture silencieuse. |
+| **AccountTransfer** | Mouvement réel entre deux comptes du foyer (ou entre un compte et l'extérieur pour un retrait/dépôt espèces). Impact net foyer toujours nul pour un transfert interne. |
 
-### C.2 Revenus
+**Principe fondateur (résout le point 15 des remarques)** : un **compte** est un lieu physique où l'argent existe réellement ; une **poche/provision** est une destination logique de cet argent. Un compte peut financer plusieurs poches ; une poche peut éventuellement être adossée à un compte dédié — mais ce sont deux objets distincts, jamais confondus (cf. RG-070).
 
-| Entité | Rôle |
+### C.3 Revenus
+Inchangé dans sa structure — `IncomeSource`, `IncomeOccurrence` — avec un ajout : chaque `IncomeOccurrence` référence désormais un `FinancialAccount` cible (celui qui reçoit réellement l'argent).
+
+### C.4 Charges, échéances, paiements
+
+| Entité | Changement V2 |
 |---|---|
-| **IncomeSource** | Modèle de revenu récurrent ou ponctuel (salaire Lamiaa, prime, loyer perçu…) |
-| **IncomeOccurrence** | Occurrence datée d'un `IncomeSource` : prévue puis confirmée reçue |
+| **ChargePlan** | Inchangé (plan de charge unifié, cf. INC-03/V1). |
+| **Deadline** | Statut **scindé** en état financier persistant + état temporel calculé (cf. F.2). `reste_a_payer` devient une valeur calculée centrale (cf. E.3bis). |
+| **Payment** | `amount` toujours positif ; `type` porte le sens comptable (cf. RG-015 révisée). Référence un `FinancialAccount`. |
+| **VariableBudget / BudgetExpense** | Inchangés structurellement ; `BudgetExpense` référence désormais un `FinancialAccount`. |
+| **AdHocExpense** | Référence désormais un `FinancialAccount`. |
 
-### C.3 Charges, échéances, paiements
+### C.5 Épargne, provisions, objectifs
 
-| Entité | Rôle |
+| Entité | Changement V2 |
 |---|---|
-| **ChargePlan** | Plan de charge unifié (fixe récurrente **ou** planifiée à calendrier manuel **ou** ponctuelle) — remplace la distinction 6.1/6.2 du cahier des charges (cf. INC-03) |
-| **Deadline** *(échéance)* | Occurrence datée d'un `ChargePlan`, montant prévu/estimé ou exact, statut de cycle de vie complet |
-| **Payment** | Mouvement réel de paiement rattaché à une `Deadline` (peut être partiel, plusieurs par échéance) |
-| **VariableBudget** | Budget périodique pour une catégorie variable (courses, essence…) |
-| **BudgetExpense** | Dépense réelle imputée à un `VariableBudget` (ex. "légumes 100 DH") |
-| **AdHocExpense** | Dépense ponctuelle non budgétée et non liée à une échéance (réparation, cadeau…) |
+| **SavingsPocket** | Porte un `allocation_mode` (`virtual_allocation` \| `backed_by_account`). `current_amount` n'est plus une colonne autoritaire (cf. E.5bis). |
+| **Provision** | Même logique que `SavingsPocket` (`allocation_mode`, calcul temporel de suffisance, cf. E.5bis). |
+| **PocketMovement** | Reste la seule source de vérité des mouvements virtuels confirmés (cf. RG-080). |
+| **Goal / GoalContribution** | Inchangés structurellement. |
 
-### C.4 Épargne, provisions, objectifs
+### C.6 Intelligence & transverses
 
-| Entité | Rôle |
+| Entité | Changement V2 |
 |---|---|
-| **SavingsPocket** | Poche d'épargne patrimoniale indépendante (Or Lamiaa, Épargne Wael…) |
-| **Provision** | Réserve dédiée à une ou plusieurs `Deadline` futures connues |
-| **PocketMovement** | Versement/retrait confirmé sur une `SavingsPocket` ou une `Provision` (même logique prévu≠réalisé) |
-| **Goal** *(objectif/projet)* | Achat souhaité avec plan de financement (PC, voyage, travaux…) |
-| **GoalContribution** | Versement confirmé vers un `Goal` |
-
-### C.5 Intelligence / pilotage
-
-| Entité | Rôle |
-|---|---|
-| **CashflowProjection** | Résultat calculé (non stocké durablement, ou cache TTL court) de la projection glissante |
-| **SimulationScenario** | Scénario "et si" / "puis-je me le permettre", sauvegardable, jamais injecté dans le réel |
-| **Alert** | Instance d'alerte générée par le moteur de détection (retard, dépassement, anomalie, oubli, trou de trésorerie) |
-| **ActionItem** | **Vue calculée** (non stockée) agrégeant tout ce qui requiert une décision — voir REC-04 |
-
-### C.6 Transverses
-
-| Entité | Rôle |
-|---|---|
-| **Attachment** | Justificatif (facture, reçu, photo, PDF, contrat) attaché à `Deadline`/`Payment`/`AdHocExpense` |
-| **AuditEvent** | Événement immuable d'audit (qui, quoi, quand, avant/après) — event-sourcing léger, cf. REC-03 |
-| **NotificationPreference** | Paramétrage des seuils/canaux de notification par utilisateur |
-| **NotificationInstance** | Notification effectivement émise (pour historique et anti-doublon) |
-| **Device / Session** | Appareils connectés, pour déconnexion globale (§44) |
-
-**Entités volontairement absentes** (et pourquoi, cf. document 01 §M) : `Transaction` générique (INC-05), `SchoolCharge`/`Subscription` en entités séparées (INC-04) — ce sont des vues filtrées sur `ChargePlan`/`Deadline`.
+| **LedgerEntry** *(vue, ex-« vue calculée » de la V1)* | Renommée et précisée : agrège en lecture seule `IncomeOccurrence.reçu`, `Payment`, `AdHocExpense`, `AccountTransfer.confirmé`, `Adjustment` — sert à afficher l'écran Transactions **et** à recalculer le solde courant d'un compte. Reste dérivée, jamais source de vérité. |
+| **ActionItem** | Inchangé (vue calculée). |
+| **AuditEvent** | Inchangé. |
+| Autres (`Attachment`, `NotificationPreference/Instance`, `Device/Session`, `SimulationScenario`, `Alert`) | Inchangés. |
 
 ---
 
-## D. Modèle relationnel (vue logique)
+## D. Modèle relationnel
 
 ```
+Household 1───n FinancialAccount ────── owner_user_id → User (nullable = commun)
+FinancialAccount 1───n AccountBalanceSnapshot
+FinancialAccount 1───n Reconciliation
+FinancialAccount 1───n Adjustment
+Household 1───n AccountTransfer ──────── from_account_id → FinancialAccount (nullable = externe)
+                                          to_account_id   → FinancialAccount (nullable = externe)
+                                          linked_pocket_id → SavingsPocket|Provision (nullable)
+
 Household 1───n HouseholdMembership n───1 User
 Household 1───n Child
 Household 1───1 HouseholdSettings
-Household 1───n Category                (+ catégories globales système, non rattachées)
+Household 1───n Category
 
-Household 1───n IncomeSource ────────── beneficiary → User (nullable = foyer)
-IncomeSource 1───n IncomeOccurrence
+Household 1───n IncomeSource ─────────── beneficiary → User (nullable = foyer)
+IncomeSource 1───n IncomeOccurrence ───── account_id → FinancialAccount
 
-Household 1───n ChargePlan ───────────── beneficiary_members → [User|Child]* (0..n)
-ChargePlan 1───n Deadline
-Deadline 1───n Payment
+Household 1───n ChargePlan ────────────── beneficiary_members → [User|Child]* (0..n)
+ChargePlan 1───n Deadline ──────────────── provision_id → Provision (nullable)
+Deadline 1───n Payment ──────────────────── account_id → FinancialAccount
 Deadline 0───n Attachment
-ChargePlan }o──o{ Child                  (table de jonction : rattachement multiple)
+ChargePlan }o──o{ Child
 
 Household 1───n VariableBudget ────────── category → Category
-VariableBudget 1───n BudgetExpense ─────── member_tags → [User|Child]* (0..n)
+VariableBudget 1───n BudgetExpense ─────── account_id → FinancialAccount, member_tags → [User|Child]*
 
-Household 1───n AdHocExpense ───────────── category → Category, member_tags → [User|Child]*
+Household 1───n AdHocExpense ───────────── account_id → FinancialAccount, category → Category
 
-Household 1───n SavingsPocket ─────────── owner → User (nullable), beneficiary → [User|Child] (nullable)
+Household 1───n SavingsPocket ─────────── owner → User (nullable)
+                                          allocation_mode ∈ {virtual_allocation, backed_by_account}
+                                          linked_account_id → FinancialAccount (si backed_by_account, sinon NULL)
 Household 1───n Provision ──────────────── linked_deadlines → Deadline (0..n)
-SavingsPocket 1───n PocketMovement
+                                          allocation_mode, linked_account_id (idem)
+SavingsPocket 1───n PocketMovement       (source de vérité si virtual_allocation ; absent/informatif si backed_by_account)
 Provision 1───n PocketMovement
 
 Household 1───n Goal
 Goal 1───n GoalContribution
-Goal 0───1 SavingsPocket                 (financement optionnel via poche dédiée)
+Goal 0───1 SavingsPocket
 
-Household 1───n SimulationScenario ────── created_by → User
+Household 1───n SimulationScenario
 Household 1───n Alert
-(ActionItem = vue calculée, pas de table)
-
-* Attachment  →  polymorphe sur (Deadline | Payment | AdHocExpense)
-* AuditEvent  →  polymorphe sur toute entité financière (entity_type, entity_id)
-* NotificationInstance → User + polymorphe sur l'entité source de l'alerte
+(ActionItem, LedgerEntry = vues calculées, pas de table)
 ```
 
-Règles d'isolation : **toutes** les entités "Household 1───n X" portent un `household_id` obligatoire et non modifiable après création ; toute requête est systématiquement filtrée par le foyer de l'utilisateur courant (cf. document 04 §S, isolation stricte entre foyers).
+**Règle d'intégrité clé (V2)** — une `SavingsPocket`/`Provision` en `backed_by_account` référence un `FinancialAccount` qui lui est **exclusivement dédié** (un compte ne peut être `linked_account_id` que d'une seule poche/provision à la fois) — cf. RG-072, la garantie anti-double-comptage.
 
 ---
 
 ## E. Règles de gestion
 
-Numérotation **RG-xxx**, regroupées par thème. RG-000 est la règle transverse qui chapeaute toutes les autres.
-
 ### E.0 Règle transverse
-
-- **RG-000** — Aucune action financière réelle (paiement confirmé, revenu reçu confirmé, versement d'épargne confirmé, transfert entre poches, report de charge, réduction d'objectif) ne peut être exécutée automatiquement par le système. Toute transition d'un statut "prévu/planifié" vers un statut "réalisé" exige une action utilisateur explicite. Le système peut : calculer, recommander, alerter, proposer, pré-remplir. Il ne peut jamais : valider à la place de l'utilisateur.
+- **RG-000** — inchangée (aucune action financière réelle automatique, cf. document 01).
 
 ### E.1 Foyer, membres, droits
-
-- **RG-001** — Un `User` peut appartenir à un seul `Household` actif à la fois en V1 (multi-foyer = V2, ex. familles recomposées).
-- **RG-002** — Un foyer doit toujours avoir au moins un membre avec le rôle `admin`. Le dernier admin ne peut pas se rétrograder ni quitter le foyer sans transférer le rôle.
-- **RG-003** — Un rôle `lecture_seule` peut consulter toutes les données communes mais ne peut créer/modifier/confirmer aucune opération.
-- **RG-004** — Un `Child` n'est jamais un `User`. Le passage à "enfant majeur avec compte" (V2/V3) crée un `User` + `HouseholdMembership` distinct, éventuellement lié au `Child` historique pour conserver l'historique de dépenses, mais ce n'est pas une mutation du même enregistrement (cf. REC-09).
-- **RG-005** — Toute opération (`Deadline`, `AdHocExpense`, `BudgetExpense`, `PocketMovement`, `GoalContribution`) peut être rattachée à 0, 1 ou n membres/enfants, ou explicitement marquée "foyer global". L'absence de rattachement est une valeur valide, pas une erreur de saisie.
+RG-001 à RG-005 inchangées.
 
 ### E.2 Revenus
-
-- **RG-010** — Une `IncomeOccurrence` naît au statut `prévu`, générée automatiquement à la date habituelle par la récurrence de l'`IncomeSource` (ou saisie manuelle si ponctuel).
-- **RG-011** — Le passage à `reçu` exige une confirmation utilisateur, qui peut modifier le montant réel au moment de la confirmation (le montant prévu initial reste conservé pour le calcul d'écart).
-- **RG-012** — Si la date habituelle est dépassée de plus de N jours (paramétrable, défaut 3) sans confirmation, le statut passe automatiquement à `en_retard` (c'est un changement de **statut d'affichage/alerte**, pas une écriture financière réelle — ne viole pas RG-000).
-- **RG-013** — Un revenu `annulé` reste visible dans l'historique (traçabilité), exclu des calculs de trésorerie futurs.
+RG-010 à RG-013 inchangées, avec ajout :
+- **RG-014bis** — À la confirmation d'un `IncomeOccurrence` (`reçu`), le compte cible (`account_id`) est obligatoire — pré-rempli par défaut (compte habituel de la source de revenu) pour ne jamais alourdir la saisie (cf. §23 / RG-095).
 
 ### E.3 Charges, échéances, paiements
 
-- **RG-014** — Une `Deadline` peut recevoir 0..n `Payment`. Le statut passe à `partiellement_payée` dès qu'un paiement existe avec `Σ(payments) < montant_dû`, et à `payée` uniquement lorsque l'utilisateur **confirme explicitement la clôture** de l'échéance (bouton "Marquer comme soldée"), pas par simple atteinte automatique du cumul — car un montant estimé peut encore être réévalué (cf. INC-06, RG-037).
-- **RG-015** — Un `Payment` ne peut pas être négatif. Un remboursement/avoir se modélise comme un `Payment` de signe négatif explicitement typé `remboursement`, jamais par suppression d'un paiement existant (cf. RG-050, suppression logique).
-- **RG-016** — `montant_dû` d'une `Deadline` = `montant_estimé_ou_exact` initial, éventuellement révisé (`RG-037`), diminué d'aucun paiement (les paiements sont un flux, pas une déduction du montant dû affiché — le "reste à payer" est une valeur calculée = `montant_dû − Σ(payments)`).
-- **RG-017** — Un `ChargePlan` en mode `calendrier_manuel` (ex. scolarité T1/T2/T3) exige la saisie d'au moins une `Deadline` à la création ; chaque `Deadline` est indépendante (statut, paiements, écart propres), aucune ne dépend de l'état des autres échéances du même plan.
-- **RG-018** — Un `ChargePlan` en mode `auto_frequence` (ex. internet mensuel) génère ses `Deadline` futures selon une règle de récurrence (RRULE), avec une fenêtre de génération glissante (ex. les 3 prochaines occurrences toujours matérialisées) plutôt que de générer indéfiniment dans le futur.
-- **RG-019** — Un `ChargePlan` peut avoir une `date_fin` ; passé cette date, plus aucune `Deadline` n'est générée, mais les échéances passées restent intactes.
-- **RG-020** — Le caractère `obligatoire` d'un `ChargePlan` (booléen) sert exclusivement au moteur de priorité (§15) et à l'affichage — il ne modifie aucune règle de statut.
+- **RG-014** *(révisée)* — Une `Deadline` porte un **état financier persistant** (`ouverte`, `partiellement_payée`, `soldée`, `annulée` — cf. F.2). Elle reçoit 0..n `Payment`. L'état passe à `partiellement_payée` dès qu'un paiement net existe avec `reste_a_payer > 0` ; à `soldée` uniquement après confirmation explicite de clôture (le simple atteinte du cumul ne suffit pas, un montant estimé pouvant encore être réévalué).
+- **RG-015** *(corrigée — contradiction résolue)* — Un `Payment.amount` est **toujours strictement positif**. Le signe comptable est déduit du `type` par le moteur, jamais saisi :
+  - `type = paiement` → réduit `reste_a_payer` (signe +)
+  - `type = remboursement` → augmente `reste_a_payer` (signe −, ex. avoir reçu du fournisseur)
+  - `type = ajustement` → porte un champ `direction ∈ {augmente_paye, diminue_paye}` explicite, réservé aux corrections de solde d'une échéance (distinct d'un `Adjustment` de compte, qui corrige un solde bancaire, cf. RG-085)
+- **RG-016** *(généralisée — devient centrale, résout le point 5)* — `reste_a_payer(deadline) = montant_dû_courant − Σ(payments signés selon RG-015)`. C'est **la** valeur utilisée partout : engagements, projections, dashboard, calendrier, alertes, provisions, simulateur, arbitrage — plus aucune formule du produit ne doit utiliser `montant_dû` brut une fois des paiements enregistrés.
+- **RG-016bis** — Invariant : `reste_a_payer ≥ 0`, sauf `type = remboursement` explicitement enregistré comme geste de gestion d'un avoir (auquel cas le `reste_a_payer` peut transitoirement redevenir positif après avoir été soldé — cf. H-02).
+- RG-017 à RG-020 inchangées, avec précision :
+- **RG-020bis** — Le report d'une échéance (« Reporter » dans le parcours de confirmation) **n'est plus un changement de statut** : c'est une modification historisée de `due_date` (nouvel événement d'audit, ancienne date conservée). L'état financier ne bouge pas — cf. F.2.
 
 ### E.4 Budgets variables
-
-- **RG-021** — Un `VariableBudget` définit un montant et une **fréquence de référence** (semaine ou mois). La conversion vers une période calendaire précise suit RG-022 (prorata), jamais un calcul naïf de multiplication (§19).
-- **RG-022 (prorata)** — `budget_periode_calendaire = (montant_reference / nb_jours_reference) × nb_jours_reels_de_la_periode`. Exemple : budget hebdo 1 500 DH → taux journalier 214,29 DH → mois de 30 jours = 6 428,57 DH (jamais `1500 × 4 = 6000`).
-- **RG-023** — Une `BudgetExpense` est toujours rattachée à un `VariableBudget` actif à sa date ; si aucun budget actif n'existe pour la catégorie à cette date, la dépense est enregistrée comme `AdHocExpense` (jamais bloquée en saisie, cf. §51 "pénible à utiliser").
-- **RG-024** — Le "rythme de dépense" (§6.3) se calcule ainsi : `rythme_projete = consommé_a_date / jours_ecoules × jours_totaux_periode`. Un dépassement probable est signalé si `rythme_projete > budget_periode_calendaire × seuil` (seuil paramétrable, défaut 100 %).
+RG-021, RG-022, RG-023 inchangées.
+- **RG-024** *(précisée — résout le point 14)* — Deux vues distinctes, jamais confondues :
+  - **Budget contractuel restant** = `budget_période − consommé_à_date`
+  - **Prévision au rythme actuel restant** = `(consommé_à_date / jours_écoulés × jours_totaux_période) − consommé_à_date`
+  Le montant utilisé dans la **projection** (G.6) et le **simulateur** (G.11) est le maximum prudent des deux (`RG-024bis`), jamais les deux additionnés (ce qui doublonnerait le réel et le futur), et jamais le consommé_à_date une seconde fois.
+- **RG-024bis** — `Projection_prudente_restante = MAX(Budget_contractuel_restant, Prévision_rythme_restant, 0)`. Ce choix est un paramètre foyer (`variable_budget_projection_mode`), défaut = `prudent_max` ; alternatives `contractuel` ou `rythme_reel` restent disponibles pour un foyer qui préfère une projection plus optimiste ou plus fidèle au budget engagé.
 
 ### E.5 Épargne et provisions
+- **RG-030, RG-031, RG-034, RG-035** inchangées dans leur principe.
+- **RG-032** *(révisée — résout le point 2 et le point 13)* — `reste_à_constituer(provision) = Σ reste_a_payer(deadlines liées, non soldées/non annulées) − provision.current_amount`. Utilise donc désormais `reste_a_payer` (qui décroît avec les paiements partiels) et non plus le montant initial.
+- **RG-032bis — Calcul temporel de suffisance** *(nouveau, résout le point 13)* — Quand une provision est liée à plusieurs échéances de dates différentes, le simple `reste / mois restants global` est insuffisant (il peut sous-provisionner une échéance intermédiaire). Algorithme retenu, symétrique de la détection des trous de trésorerie (RG-051) :
+  1. Trier les échéances liées ouvertes par `due_date` croissante : d₁…dₙ, `reste_a_payer` r₁…rₙ.
+  2. Calculer le besoin cumulé à chaque échéance : `R_i = Σ_{k≤i} r_k`.
+  3. `versement_mensuel_recommandé = max_i [ (R_i − current_amount) / mois_restants(aujourd'hui, d_i) ]`, calculé sur tous les i où le numérateur est positif.
+  Ce maximum garantit qu'aucun palier intermédiaire n'est sous-financé, même si le total global paraît suffisant à l'échéance finale.
+- **RG-032ter — Alerte de tension à court terme** *(nouveau)* — Si `mois_restants(d_i) < 1` pour l'échéance la plus proche et que `current_amount < R_i`, le système n'affiche pas un taux mensuel (non actionnable à si court terme) mais une **alerte de tension immédiate** : montant manquant, date, avec actions proposées (versement ponctuel, report de l'échéance si possible, réduction d'un objectif de priorité inférieure) — jamais une exécution automatique.
+- **RG-033** — la formule simple reste la référence pour une provision à échéance unique ; RG-032bis s'applique dès que plusieurs échéances sont liées.
 
-- **RG-030** — Une `SavingsPocket` a un caractère `protégée` ou `flexible` (booléen), déterminant si elle peut être proposée par le moteur d'arbitrage comme source de financement d'un `Goal` tiers.
-- **RG-031** — Un versement planifié sur une poche (mensualité récurrente déclarée) génère une occurrence prévue, jamais un `PocketMovement` réel — même logique que RG-010/011 appliquée à l'épargne (§10, "un versement prévu ne doit pas être comptabilisé automatiquement").
-- **RG-032** — Une `Provision` peut être liée à 1..n `Deadline` futures. Le "reste à constituer" = `Σ(montant_dû des Deadline liées non payées) − montant_actuel_provision`.
-- **RG-033** — Le versement mensuel recommandé pour une `Provision` = `reste_a_constituer / nb_mois_restants_avant_echeance_la_plus_proche` (arrondi au multiple pertinent, ex. dizaine de DH). C'est une **suggestion**, jamais une écriture automatique (RG-000).
-- **RG-034** — Argent d'une `SavingsPocket`/`Provision` **protégée** : exclu par construction des calculs de "capacité de financement" d'un `Goal` (§34, ne jamais mélanger).
-- **RG-035** — Un transfert entre deux poches, ou d'une poche vers le compte courant, est toujours une action explicite à deux écritures liées (retrait poche A + réaffectation), jamais un déplacement automatique inter-objectifs (§38 "ne jamais déplacer automatiquement").
+**E.5bis — Anti-double-comptage (résout le point 2 et le point 8)**
+
+- **RG-070 — Séparation compte / poche** — Un `FinancialAccount` est un lieu physique ; une `SavingsPocket`/`Provision` est une destination logique. Une poche référence *éventuellement* un compte (`backed_by_account`) mais n'en est jamais la même entité.
+- **RG-071 — Deux modes exclusifs**
+  - **`virtual_allocation`** — l'argent reste physiquement dans son(ses) compte(s) d'origine. Le `current_amount` de la poche est une **valeur calculée**, jamais stockée en dur : `current_amount = Σ(PocketMovement confirmés, signés selon leur type)`. Ce montant est déduit dans **Montants réservés** (G.3) et n'affecte jamais un solde de compte.
+  - **`backed_by_account`** — l'argent a été réellement transféré vers un compte dédié. Le `current_amount` de la poche **n'est plus une donnée propre** : c'est une lecture directe du solde courant du compte lié (`current_amount = solde_courant(linked_account_id)`). Ce compte porte `include_in_operational_treasury = false` (ou `true` selon protection voulue, cf. RG-074), ce qui le retire déjà du calcul de la trésorerie opérationnelle.
+- **RG-072 — Garantie anti-double-comptage** — Un compte ne peut être `linked_account_id` que d'**une seule** poche/provision `backed_by_account` à la fois (contrainte d'unicité en base). Le montant d'une poche `backed_by_account` **n'est jamais additionné** dans **Montants réservés** (G.3) : il est déjà retiré de la **Trésorerie opérationnelle** par l'exclusion de son compte dédié. Additionner les deux reviendrait à déduire le même dirham deux fois — interdit par construction (cf. formule G.3 et Invariant IF-06).
+- **RG-073** — Un `AccountTransfer` confirmé vers un compte `backed_by_account` d'une poche est le seul mécanisme qui **fait grandir réellement** cette poche ; un `PocketMovement` confirmé est le seul mécanisme qui fait grandir une poche `virtual_allocation`. Les deux ne se mélangent jamais sur une même poche.
+- **RG-074** — Le passage d'une poche de `virtual_allocation` à `backed_by_account` (ou l'inverse) est une action explicite, historisée, qui exige la création (ou suppression) du lien vers un compte dédié — jamais un simple changement de champ silencieux.
 
 ### E.6 Objectifs / projets
+RG-040 à RG-042 inchangées.
 
-- **RG-040** — Un `Goal` a un statut (`en_cours`, `atteint`, `en_pause`, `abandonné`). Le passage à `atteint` peut être proposé automatiquement par le système dès que `montant_disponible ≥ prix_cible`, mais reste soumis à confirmation utilisateur avant d'être considéré comme "financé et déclenché à l'achat".
-- **RG-041 (arbitrage à priorité égale)** — Quand plusieurs `Goal` de même niveau de priorité sont en concurrence pour la capacité de financement disponible, l'ordre de suggestion est : (1) date cible la plus proche, (2) date de création la plus ancienne. L'utilisateur reste libre de réordonner manuellement.
-- **RG-042** — Un `Goal` peut être financé par des `GoalContribution` directes et/ou par rattachement à une `SavingsPocket` dédiée (`RG` D) — jamais les deux mécanismes ne comptent le même DH deux fois (contrôle d'unicité applicatif).
+### E.7 Priorité des engagements
+RG-045, RG-046 inchangées, avec ajout :
+- **RG-047 — Protection par défaut de l'épargne enfant** *(résout le point 12)* — Toute `SavingsPocket` dont le `beneficiary` est un `Child` avec un versement récurrent déclaré hérite par défaut de `is_protected = true`. Le moteur d'arbitrage (RG-046) ne la propose **jamais** comme source de financement d'un objectif de priorité inférieure ; seule une action utilisateur explicite (suspendre, réduire, réaffecter) peut la mobiliser.
 
-### E.7 Priorité des engagements (§15)
+### E.8 Comptes et rapprochement *(nouveau, résout les points 1, 9, 10)*
 
-- **RG-045** — Chaque engagement financier récurrent porte un niveau de priorité 1 à 4 : (1) obligations incompressibles, (2) épargne protégée, (3) provisions importantes, (4) projets/objectifs. Le niveau est **par défaut déduit du type d'entité** (ex. tout `ChargePlan.obligatoire = true` → priorité 1) mais reste modifiable par l'utilisateur.
-- **RG-046** — Le moteur d'arbitrage, en cas de capacité insuffisante détectée sur une période, ne réordonne ni ne réduit jamais automatiquement un engagement de priorité inférieure ; il **propose textuellement** un ordre de réduction/report, classé priorité 4 → 1, jamais l'inverse.
+- **RG-080 — Solde courant calculé** — `solde_courant(compte, T) = dernier_solde_réconcilié(compte) + Σ mouvements réels nets sur ce compte depuis la date de ce dernier rapprochement jusqu'à T` (Payment, part `IncomeOccurrence.actual_amount` reçue sur ce compte, `AccountTransfer` entrants/sortants, `Adjustment`). L'utilisateur n'a jamais à ressaisir son solde pour chaque dépense — seule une déclaration de solde ponctuelle (rapprochement) crée un nouveau point d'ancrage.
+- **RG-081 — Patrimoine liquide total** = `Σ solde_courant(compte)` pour tous les comptes actifs du foyer.
+- **RG-082 — Trésorerie opérationnelle** = `Σ solde_courant(compte)` pour les comptes actifs où `include_in_operational_treasury = true`.
+- **RG-083 — Rapprochement** — Quand l'utilisateur déclare un nouveau solde réel, le système compare `solde_courant` calculé au solde déclaré. Un écart crée une `Reconciliation` avec 4 actions possibles, jamais automatiques : enregistrer un ajustement (`Adjustment`), identifier une dépense oubliée (créer la `Payment`/`AdHocExpense` manquante), ignorer temporairement (le rapprochement reste `pending`), corriger une transaction existante.
+- **RG-084** — Un `Adjustment` est toujours un mouvement réel typé et historisé (jamais une réécriture du solde de référence) — il apparaît dans `LedgerEntry`.
+- **RG-085 — Transferts internes** — Un `AccountTransfer` confirmé crée une sortie sur `from_account_id` et une entrée sur `to_account_id` (ou l'inverse pour retrait/dépôt espèces, l'un des deux pouvant être NULL pour un flux externe). L'impact net foyer d'un transfert **interne** (deux comptes du foyer) est toujours nul. Un transfert n'est **jamais** un `Payment`, une `AdHocExpense` ni un `PocketMovement` — c'est un type de mouvement distinct dans `LedgerEntry`.
+- **RG-086** — Un transfert vers/depuis un compte `backed_by_account` d'une poche ne crée **aucun** `PocketMovement` supplémentaire : le montant de la poche est déjà à jour par simple lecture du solde du compte (RG-071).
 
-### E.8 Prévisions et alertes
+### E.9 Prévisions et alertes
 
-- **RG-050** — La projection de trésorerie est un calcul **jour par jour** (pas mois par mois), sommant chronologiquement tous les mouvements prévus (`IncomeOccurrence` prévues, `Deadline` non soldées, `BudgetExpense` projetées via rythme, `Provision`/`SavingsPocket` versements planifiés) à partir du solde déclaré actuel (cf. formules G.4-G.5).
-- **RG-051 (trou de trésorerie)** — Une alerte "tension de trésorerie" est déclenchée dès que le solde projeté quotidien passe sous le seuil de marge de sécurité à une date donnée, même si le solde du mois calendaire pris globalement reste positif (§18).
-- **RG-052 (anomalie)** — Une dépense/échéance réalisée est signalée "anormale" si elle dépasse la moyenne historique de sa catégorie (fenêtre glissante, défaut 6 mois) d'un seuil paramétrable (défaut ±40 %). Ce n'est jamais bloquant (§21), uniquement une alerte informative.
-- **RG-053 (charge oubliée)** — Si un `ChargePlan` récurrent a produit une `Deadline` chaque période depuis au moins 3 occurrences consécutives, et qu'aucune `Deadline` n'existe pour la période courante après la date habituelle attendue, une alerte "charge potentiellement oubliée" est levée avec 3 actions possibles : créer une estimation, ignorer cette période, confirmer qu'elle n'est pas due (§22).
-- **RG-054 (suggestion de budget appris)** — Après un historique suffisant (défaut : 3 périodes complètes minimum), le système peut suggérer un budget révisé = moyenne mobile de la consommation réelle. Suggestion seule, jamais appliquée sans acceptation (cf. INC-07).
+- **RG-050** *(corrigée — résout le point 4)* — Les **Montants engagés** (G.4) et toutes les projections se basent **exclusivement** sur l'état financier persistant (`ouverte`, `partiellement_payée`) et la `due_date`, jamais sur l'état temporel calculé (`bientôt_due`, `due`…). Un statut temporel « à_venir »/« future » n'exclut jamais une échéance des engagements si sa `due_date` tombe dans l'horizon considéré — le statut UX n'est **jamais** source de vérité pour un calcul financier.
+- **RG-051** — inchangée (trou de trésorerie, point bas < marge de sécurité), mais s'applique désormais sur les **deux** projections distinctes (physique et capacité libre, cf. G.6).
+- RG-052, RG-053, RG-054 inchangées.
 
-### E.9 Historique, suppression, justificatifs
+### E.10 Statuts et cycle de vie *(nouveau, résout le point 6)*
+Voir F.2 pour le détail. Principe : un état **financier persistant** (stocké) distinct d'un état **temporel** (toujours calculé à la lecture, jamais stocké) — évite de faire muter des milliers d'enregistrements simplement parce que le temps passe, et évite la confusion pointée en INC-06/V1.
 
-- **RG-060 (suppression logique)** — Aucune opération financière validée (`Payment`, `IncomeOccurrence.reçu`, `PocketMovement`, `GoalContribution`) n'est supprimable physiquement par un utilisateur standard. Seules les opérations encore à l'état `prévu`/`planifié` peuvent être supprimées directement (elles n'ont jamais représenté un fait réel). Toute autre suppression = archivage (`statut = annulé` ou `archivé`) tracé dans `AuditEvent`.
-- **RG-061** — Toute modification de champ sensible (montant, date, statut, bénéficiaire) sur une entité financière génère un `AuditEvent` (ancienne valeur, nouvelle valeur, auteur, horodatage) — cf. REC-03.
-- **RG-062** — Un `Attachment` peut être associé à `Deadline`, `Payment` ou `AdHocExpense`, jamais obligatoire, taille et formats limités (image, PDF).
-- **RG-063** — Un montant peut être marqué `est_estime = true`. Quand un montant réel est renseigné (paiement confirmé), le montant estimé initial est conservé en historique et l'écart (`montant_reel − montant_estime`) est calculé et affiché (§36-§37).
+### E.11 Historique, suppression, correction
+- RG-060 à RG-063 inchangées, précisées (résout le point 17) :
+- **RG-064 — Corrections d'opérations réelles** — Une opération réelle confirmée n'est jamais supprimée ni réécrite silencieusement :
+  - `Payment` erroné → nouveau `Payment` de type `ajustement` (contre-écriture), jamais suppression.
+  - `AccountTransfer` confirmé erroné → transfert inverse enregistré (contre-transfert), jamais suppression.
+  - `Reconciliation`/`Adjustment` erronés → nouvel `Adjustment` compensatoire.
+  - `IncomeOccurrence.actual_amount` erroné → correction directe du champ autorisée avec `AuditEvent` obligatoire (ce n'est pas une écriture en partie double, une seule ligne est concernée).
+  - `Deadline` déjà `soldée` rouverte pour régularisation → réservé aux admins, cf. H-02.
 
 ---
 
 ## F. Statuts et transitions
 
 ### F.1 `IncomeOccurrence`
+Inchangé (prévu → reçu / en_retard → reçu ; annulé).
 
+### F.2 `Deadline` — refonte du modèle *(résout le point 6)*
+
+**Ancien modèle (V1)**, contesté par l'utilisateur : `planifiée → à_venir → à_payer → partiellement_payée → payée`, plus `en_retard`, `reportée`, `annulée` — mélangeait un état temporel (le temps qui passe) et un état financier (l'argent qui bouge), ce qui obligeait à faire muter le statut de milliers d'échéances chaque nuit uniquement parce qu'une date était franchie, et rendait le report (`reportée`) ambigu avec une vraie annulation.
+
+**Nouveau modèle (V2) — deux axes indépendants :**
+
+**État financier persistant** (stocké, seule source de vérité pour les calculs) :
 ```
-prévu ──(confirmation utilisateur, montant saisi)──► reçu
-prévu ──(date dépassée + délai de grâce)──► en_retard ──(confirmation tardive)──► reçu
-prévu / en_retard ──(annulation utilisateur)──► annulé
+ouverte ──(paiement partiel)──► partiellement_payée ──(paiement complémentaire + clôture confirmée)──► soldée
+ouverte ──(paiement complet + clôture confirmée)──► soldée
+ouverte / partiellement_payée ──(annulation)──► annulée
 ```
-Aucun retour arrière automatique. `annulé → prévu` possible manuellement (correction de saisie), tracé en audit.
+`due_date` est modifiable à tout moment (report) — c'est un événement audité sur le champ, **pas** une transition de statut.
 
-### F.2 `Deadline` (échéance)
-
-Statuts : `planifiée` → `à_venir` → `à_payer` → {`payée` | `partiellement_payée` → `payée`} ; branches parallèles `en_retard`, `reportée`, `annulée`.
-
-- **planifiée** : date d'échéance à plus de `seuil_a_venir` jours (paramètre foyer, défaut 30j).
-- **à_venir** : dans la fenêtre `seuil_a_venir` mais avant `seuil_a_payer`.
-- **à_payer** : dans la fenêtre `seuil_a_payer` jours avant échéance (défaut 7j) jusqu'à la date d'échéance incluse, statut par défaut qui déclenche la question de confirmation (§7).
-- **partiellement_payée** : au moins un `Payment` existe et `Σ(payments) < montant_dû` (RG-014).
-- **payée** : clôture confirmée par l'utilisateur.
-- **en_retard** : date d'échéance dépassée sans clôture ni paiement complet (transition automatique de *statut d'affichage*, cf. RG-012 par analogie — ne constitue pas une écriture financière).
-- **reportée** : l'utilisateur choisit "Reporter" (§7) → nouvelle date d'échéance saisie, l'ancienne est conservée en historique (audit), le statut revient à `planifiée`/`à_venir`/`à_payer` selon la nouvelle date.
-- **annulée** : l'échéance ne sera pas payée (ex. charge finalement non due) — archivage logique, jamais suppression physique.
-
-Diagramme :
+**État temporel** (toujours **calculé** à la lecture, jamais stocké) :
 ```
-planifiée → à_venir → à_payer ──┬─► payée
-                                 ├─► partiellement_payée ─► payée
-                                 ├─► en_retard ─┬─► payée
-                                 │              └─► partiellement_payée ─► payée
-                                 ├─► reportée ─► (ré-entre le cycle à la nouvelle date)
-                                 └─► annulée  (terminal)
+computed_temporal_status(deadline, today) =
+   si état_financier ∈ {soldée, annulée} → terminal (aucun état temporel affiché)
+   sinon si (due_date − today) > seuil_à_venir  → future
+   sinon si (due_date − today) > seuil_à_payer  → bientôt_due
+   sinon si today ≤ due_date                    → due
+   sinon                                         → overdue
 ```
+`seuil_à_venir` et `seuil_à_payer` sont des paramètres foyer (`HouseholdSettings`). L'affichage combine les deux axes (ex. badge `partiellement_payée · overdue`) mais **seul l'axe financier** entre dans une formule (G.3, G.4, G.6).
 
-### F.3 `VariableBudget` (par période)
+### F.3 – F.6 — autres cycles de vie
+Inchangés : `VariableBudget` (niveau continu sous_budget/proche_limite/dépassé), `PocketMovement` (prévu → confirmé/en_retard/annulé), `Goal` (en_cours ⇄ en_pause → atteint/abandonné), `SimulationScenario` (brouillon → sauvegardé → supprimé).
 
-Pas un statut binaire mais un **niveau calculé en continu** : `sous_budget` / `proche_limite` (≥ seuil paramétrable, défaut 80 %) / `dépassé` (> 100 %). Purement informatif, jamais bloquant.
-
-### F.4 `PocketMovement` (épargne/provision)
-
+### F.7 `AccountTransfer` *(nouveau)*
 ```
-prévu ──(confirmation utilisateur)──► confirmé
-prévu ──(date dépassée)──► en_retard ──(confirmation tardive)──► confirmé
-prévu / en_retard ──(annulation)──► annulé
+prévu ──(confirmation)──► confirmé
+prévu / confirmé ──(annulation avant confirmation)──► annulé
 ```
-Identique en structure à `IncomeOccurrence` (RG-031), volontairement — cohérence de mental model pour l'utilisateur.
+Un `AccountTransfer` `confirmé` est immuable — toute erreur se corrige par un transfert inverse (RG-064).
 
-### F.5 `Goal`
-
+### F.8 `Reconciliation` *(nouveau)*
 ```
-en_cours ──(financement complet + confirmation achat)──► atteint
-en_cours ──(mise en pause manuelle)──► en_pause ──► en_cours
-en_cours / en_pause ──(abandon manuel)──► abandonné
+pending ──(action de l'utilisateur : ajustement | transaction identifiée | correction)──► résolue
+pending ──(ignorer temporairement)──► pending (relance différée)
 ```
-
-### F.6 `SimulationScenario`
-
-```
-brouillon ──(sauvegarde nommée)──► sauvegardé
-sauvegardé ──(suppression manuelle)──► supprimé (physique, car aucune donnée réelle engagée)
-```
-Seul type d'entité pour lequel la suppression physique est admise sans restriction (RG-060 ne s'applique pas : ce n'est jamais un fait financier réel).
 
 ---
 
-## G. Formules de calcul (référence unique — toute autre occurrence dans le produit doit pointer ici)
+## G. Formules de calcul — référence unique
 
-### G.1 Trésorerie déclarée
-```
-Trésorerie_déclarée(T) = Σ soldes des comptes/espèces déclarés par le foyer à la date T
-```
-Saisie manuelle en V1 (pas de connexion bancaire, §46).
+> **Vocabulaire V2**, non ambigu et stable dans tout le dossier (résout le point 3) : **Solde physique** (par compte) → **Patrimoine liquide total** → **Trésorerie opérationnelle** → **Montants réservés** / **Montants engagés** → **Disponible libre**. Aucun de ces termes n'est jamais redéfini différemment ailleurs.
 
-### G.2 Trésorerie engagée (à un instant T, jusqu'à horizon H)
+### G.1 — Solde physique d'un compte
 ```
-Engagée(T, H) = Σ montant_dû des Deadline dont statut ∈ {à_payer, partiellement_payée, en_retard}
-                  et date_échéance ≤ H
-              + Σ (budget_periode_calendaire − consommé_a_date) des VariableBudget actifs
-                  dont la période se termine ≤ H
+solde_courant(compte, T) = dernier_solde_réconcilié(compte)
+   + Σ mouvements réels nets sur ce compte depuis la date du dernier rapprochement jusqu'à T
+   (Payment, IncomeOccurrence.actual_amount, AccountTransfer, Adjustment — cf. RG-080)
 ```
 
-### G.3 Trésorerie réservée
+### G.2 — Patrimoine liquide total & Trésorerie opérationnelle
 ```
-Réservée = Σ montant_actuel des SavingsPocket (protégées + flexibles)
-         + Σ montant_actuel des Provision
-```
-> Rappel INC-02 : ce montant est un **fléchage logique**, pas nécessairement un compte séparé physiquement.
-
-### G.4 Disponible immédiat *(remplace la formule ambiguë du §5, cf. INC-01/REC-02)*
-```
-H* = date de la prochaine IncomeOccurrence "prévue" significative
-Disponible_immédiat = Trésorerie_déclarée(T) − Engagée(T, H*) − Réservée − Marge_sécurité
+Patrimoine_liquide_total(T)   = Σ solde_courant(compte, T)                     pour tous les comptes actifs
+Trésorerie_opérationnelle(T)  = Σ solde_courant(compte, T)                     pour les comptes actifs
+                                    où include_in_operational_treasury = true
 ```
 
-### G.5 Projection glissante quotidienne (pour un horizon N jours)
+### G.3 — Montants réservés *(corrigée — anti-double-comptage, résout le point 2)*
 ```
-Solde_projeté(T+k) = Trésorerie_déclarée(T)
-   + Σ IncomeOccurrence.montant_prévu (statut=prévu, date ∈ [T, T+k])
-   − Σ Deadline.montant_dû            (statut≠payée/annulée, date ∈ [T, T+k])
-   − Σ BudgetExpense projetées         (rythme_projeté réparti au prorata des jours, date ∈ [T, T+k])
-   − Σ PocketMovement.montant_prévu    (versements épargne/provision planifiés, date ∈ [T, T+k])
-   pour k = 0 .. N
+Montants_réservés(T) = Σ current_amount(SavingsPocket)  où allocation_mode = virtual_allocation
+                      + Σ current_amount(Provision)      où allocation_mode = virtual_allocation
 ```
-Le point bas (`min(Solde_projeté)`) sur la fenêtre sert à détecter les trous de trésorerie (RG-051), indépendamment du solde de fin de mois.
+Les poches/provisions `backed_by_account` sont **explicitement exclues** de cette somme (RG-072) : leur montant est déjà retiré de `Trésorerie_opérationnelle` via l'exclusion de leur compte dédié (G.2). Les additionner ici referait doublonner le même dirham — cf. Invariant IF-06.
 
-### G.6 Prorata d'un budget variable (RG-022)
+### G.4 — Montants engagés *(corrigée — indépendante du statut UX, résout le point 4)*
 ```
-taux_journalier = montant_référence / nb_jours_période_référence
-budget_periode_calendaire = taux_journalier × nb_jours_réels_de_la_période
+Montants_engagés(T, H) = Σ reste_a_payer(deadline)  pour toute Deadline dont
+                            état_financier ∈ {ouverte, partiellement_payée}
+                            ET due_date ≤ H
+                        + Σ Projection_prudente_restante(variable_budget)  pour les périodes se terminant ≤ H
 ```
+Sélection **uniquement** sur l'état financier et la date d'échéance — jamais sur l'état temporel calculé (`bientôt_due`/`future`), cf. RG-050.
 
-### G.7 Rythme de consommation d'un budget (RG-024)
+### G.5 — Disponible libre
 ```
-rythme_projeté = (consommé_à_date / jours_écoulés_dans_la_période) × jours_totaux_période
-dépassement_probable = rythme_projeté − budget_periode_calendaire   (si > 0)
+H* = date de la prochaine IncomeOccurrence « prévue » significative
+Disponible_libre(T) = Trésorerie_opérationnelle(T) − Montants_réservés(T) − Montants_engagés(T, H*) − Marge_sécurité
 ```
+*(remplace le « Disponible immédiat » ambigu de la V1 — même formule, vocabulaire clarifié.)*
 
-### G.8 Reste à constituer d'une provision (RG-032/033)
-```
-reste_à_constituer = Σ(montant_dû des Deadline liées, non payées) − montant_actuel_provision
-versement_mensuel_recommandé = reste_à_constituer / nb_mois_restants(date_échéance_la_plus_proche_liée)
-```
+### G.6 — Deux projections distinctes *(résout le point 3)*
 
-### G.9 Capacité d'épargne (période donnée)
+**G.6a — Projection de trésorerie physique** *(vrais flux d'argent uniquement)*
 ```
-Capacité_épargne = Σ Revenus_prévus(période)
-                  − Σ ChargePlan.obligatoire (priorité 1, période)
-                  − Σ Provision.versement_recommandé (priorité 3, période)
-                  − Σ VariableBudget.budget_periode_calendaire (période)
-                  − Δ_marge_sécurité (si la marge cible n'est pas encore atteinte)
+Projection_physique(T+k) = Trésorerie_opérationnelle(T)
+   + Σ IncomeOccurrence.montant           (prévu ou reçu, date ∈ [T, T+k], compte opérationnel)
+   − Σ reste_a_payer(Deadline)            (état_financier ≠ soldée/annulée, due_date ∈ [T, T+k])
+   − Σ Projection_prudente_restante       (part future des budgets variables, prorata des jours restants)
+   ± Σ AccountTransfer                    (uniquement ceux qui font entrer/sortir un compte du périmètre opérationnel)
+   pour k = 0..N
 ```
+Une affectation virtuelle (`PocketMovement` sur poche `virtual_allocation`) **n'apparaît jamais** ici : elle ne déplace aucun argent réel.
 
-### G.10 Capacité de financement d'un objectif
+**G.6b — Projection de capacité libre** *(ce qui reste réellement mobilisable)*
 ```
-Capacité_financement(Goal) = Capacité_épargne(période)
-   − Σ versements déjà engagés vers SavingsPocket protégées (priorité 2)
-   − Σ versements déjà engagés vers d'autres Goal de priorité ≥ (RG-041)
+Projection_capacité_libre(T+k) = Projection_physique(T+k)
+   − Montants_réservés(T+k)   (y compris les PocketMovement virtuels prévus/confirmés jusqu'à T+k)
+   − Marge_sécurité
 ```
+Le point bas (`min`) de chacune des deux séries sur la fenêtre sert respectivement à détecter une **tension de trésorerie physique** et une **tension de capacité libre** (RG-051) — ce sont deux alertes distinctes, jamais fusionnées en un seul chiffre.
 
-### G.11 Simulateur "Puis-je me le permettre ?"
-```
-Pour un achat (montant M, date_souhaitée D) :
-   Solde_projeté_avec_achat(t) = Solde_projeté(t) − M   pour t ≥ D
-   marge_résiduelle_min = min(Solde_projeté_avec_achat(t)) sur [D, D+horizon_analyse]
+### G.7 — Prorata d'un budget variable
+Inchangée (RG-022) : `budget_période = (montant_référence / jours_référence) × jours_réels_de_la_période`.
 
-Verdict :
-   marge_résiduelle_min ≥ Marge_sécurité                        → "possible maintenant"
-   0 ≤ marge_résiduelle_min < Marge_sécurité                     → "possible mais risqué"
-   marge_résiduelle_min < 0 mais devient ≥ Marge_sécurité         → "recommandé plus tard"
-     à une date D' calculée (recherche de la 1ʳᵉ date où la condition "possible" est vraie)
-   Aucune date raisonnable (horizon_analyse) ne satisfait la condition → "non compatible actuellement"
+### G.8 — Rythme et projection prudente d'un budget *(précisée, résout le point 14)*
 ```
-Calcul strictement en lecture : aucune écriture, cf. RG-000 et E.9.
+rythme_projeté           = (consommé_à_date / jours_écoulés) × jours_totaux_période
+Budget_contractuel_restant = budget_période − consommé_à_date
+Prévision_rythme_restant   = rythme_projeté − consommé_à_date
+Projection_prudente_restante = MAX(Budget_contractuel_restant, Prévision_rythme_restant, 0)   [RG-024bis]
+```
+Le `consommé_à_date` n'entre **jamais** une seconde fois dans la partie « restante » — il est déjà compté dans le réalisé (`Trésorerie_opérationnelle` l'a déjà déduit via les `BudgetExpense` passées).
 
-### G.12 Coussin de sécurité en mois de dépenses (§16, REC-08)
+### G.9 — Provisions
+
+**Reste à constituer (échéance unique)**
 ```
-dépenses_mensuelles_moyennes = moyenne mobile 6 mois (ChargePlan obligatoires + budgets variables moyens)
-coussin_en_mois = Marge_sécurité_actuelle / dépenses_mensuelles_moyennes
+reste_à_constituer = Σ reste_a_payer(deadlines liées, non soldées/non annulées) − provision.current_amount
 ```
 
-### G.13 Écart prévu/réel (§37)
+**Calcul temporel de suffisance (plusieurs échéances, RG-032bis)**
 ```
-écart = montant_réel − montant_prévu_ou_estimé
+d₁ ≤ d₂ ≤ … ≤ dₙ (due_date croissantes), r₁, r₂, …, rₙ = reste_a_payer respectifs
+R_i = Σ_{k=1}^{i} r_k
+versement_mensuel_recommandé = max_i [ (R_i − provision.current_amount) / mois_restants(aujourd'hui, d_i) ]
+   calculé sur chaque i où le numérateur est positif ; si mois_restants(d₁) < 1 et le numérateur i=1 est positif,
+   basculer sur l'alerte de tension à court terme (RG-032ter) plutôt qu'afficher ce taux.
 ```
-Déclenche un recalcul immédiat de toute projection en aval (toute lecture de G.5 est toujours faite à la volée sur les données courantes, jamais en cache long — cf. document 04, pas de dénormalisation dangereuse).
+
+### G.10 — Capacité d'épargne et de financement
+```
+Capacité_épargne = Σ Revenus_prévus − Σ ChargePlan.obligatoire (priorité 1)
+                  − Σ Provision.versement_recommandé (priorité 3)
+                  − Σ Projection_prudente_restante (budgets variables)
+                  − Δ_marge_sécurité
+
+Capacité_financement(Goal) = Capacité_épargne
+   − Σ versements engagés vers SavingsPocket protégées (priorité 2, y compris épargne enfant, RG-047)
+   − Σ versements engagés vers d'autres Goal de priorité ≥
+```
+
+### G.11 — Simulateur « Puis-je me le permettre ? » *(enrichi, résout le point 11)*
+
+```
+Capacité_disponible_brute(t) = Projection_physique(t) − Montants_réservés(t)        [avant marge de sécurité]
+
+Pour un achat (montant M, date souhaitée D, horizon d'analyse N jours) :
+   Capacité_avec_achat(t) = Capacité_disponible_brute(t) − M   pour t ≥ D
+   point_bas_après_achat  = min(Capacité_avec_achat(t))  sur [D, D + N]
+   marge_vs_coussin        = point_bas_après_achat − Marge_sécurité
+
+Verdict (quatre issues, comme en V1, mais toujours accompagné des indicateurs ci-dessous) :
+   marge_vs_coussin ≥ 0                                     → possible maintenant
+   point_bas_après_achat ≥ 0  et  marge_vs_coussin < 0        → possible mais risqué
+   point_bas_après_achat < 0, mais une date D' du même horizon satisfait marge_vs_coussin ≥ 0  → recommandé plus tard (date D' = première date satisfaisante)
+   aucune date de l'horizon ne satisfait la condition        → non compatible actuellement
+
+Indicateurs systématiquement calculés et affichés (pas seulement le verdict) :
+   • date techniquement possible (première date où point_bas_après_achat ≥ 0)
+   • date recommandée (première date où marge_vs_coussin ≥ 0)
+   • point bas de trésorerie après achat, et sa date
+   • marge résiduelle par rapport au coussin (chiffrée, pas seulement qualifiée)
+   • impact sur les provisions en cours (une provision liée voit-elle son financement retardé ?)
+   • impact sur l'épargne protégée (par construction : aucun, car exclue de Capacité_disponible_brute — affiché explicitement pour rassurer/expliquer)
+   • impact sur les autres objectifs de priorité ≥ (concurrence RG-041)
+   • horizon d'analyse utilisé
+```
+Calcul strictement en lecture (RG-000) — aucune donnée réelle modifiée, y compris pour un scénario sauvegardé (`SimulationScenario`).
+
+### G.12 — Coussin de sécurité en mois de dépenses
+Inchangée.
+
+### G.13 — Écart prévu/réel
+Inchangée — déclenche un recalcul immédiat de toute projection en aval (jamais de cache long, cf. document 04 §O.4).
 
 ---
 
 ## H. Cas limites
 
-- **H-01 — Deux confirmations simultanées** : Adil et Lamiaa confirment la même `Deadline` en même temps depuis deux appareils. Résolution : le premier `Payment`/confirmation écrit gagne ; le second déclenche un conflit détecté (cf. document 04 §R) affiché à l'auteur du second geste ("cette échéance vient d'être confirmée par Lamiaa, voir détail") plutôt qu'un écrasement silencieux.
-- **H-02 — Paiement réel supérieur au montant estimé après clôture** : l'utilisateur rouvre une `Deadline` `payée` pour corriger — autorisé uniquement en admin, génère un `AuditEvent`, ne supprime jamais le paiement initial (ajoute un `Payment` complémentaire typé `régularisation`).
-- **H-03 — Échéance annulée après provision déjà constituée** : la `Provision` liée reste positive ; l'utilisateur est invité (jamais forcé) à la réaffecter à une autre `Deadline` ou à la convertir en `SavingsPocket` flexible.
-- **H-04 — Revenu prévu jamais confirmé ni annulé pendant des mois** : au-delà d'un délai paramétrable (défaut 60 jours), l'occurrence bascule d'`en_retard` à un état d'affichage `obsolète` (n'entre plus dans les projections actives) sans jamais être supprimée.
-- **H-05 — Budget variable modifié en cours de période** : le nouveau montant s'applique au prorata restant (RG-022 recalculée sur les jours restants), l'historique du montant précédent est conservé pour ne pas fausser l'apprentissage (§20).
-- **H-06 — Enfant retiré du foyer (déménagement, majorité)** : `Child` n'est jamais supprimé si des opérations lui sont rattachées ; passage à un statut `inactif`, conservé pour l'historique et les budgets scolaires passés.
-- **H-07 — Devise unique supposée** : le cahier des charges est mono-devise (DH) ; si un revenu/charge en devise étrangère apparaît (ex. virement depuis l'étranger), V1 l'exclut explicitement (converti manuellement par l'utilisateur à la saisie) — pas de moteur multi-devise en V1 (cf. K, roadmap).
-- **H-08 — Objectif atteint puis le prix cible change** (inflation) : `Goal.prix_cible` reste modifiable manuellement en `en_cours`, ce qui rouvre le calcul de capacité de financement sans changer le statut.
-- **H-09 — Deux `Provision` liées à la même `Deadline`** : interdit par construction (une `Deadline` ne peut être rattachée qu'à une seule `Provision` à la fois) pour éviter un double comptage du "reste à constituer" (cf. §34).
-- **H-10 — Marge de sécurité négative de fait** (dépenses obligatoires dépassant la trésorerie déclarée) : le disponible immédiat (G.4) peut être négatif ; l'UI l'affiche tel quel en rouge plutôt que de le clipper à 0, car masquer un déficit réel serait contraire à la philosophie du produit (§1).
-- **H-11 — Suppression d'un `ChargePlan` ayant des `Deadline` déjà payées** : interdite ; seule la désactivation (`date_fin = aujourd'hui`, plus de génération future) est possible, l'historique des échéances passées reste intact.
+H-01 à H-11 (V1) restent valides, avec deux révisions et cinq ajouts :
+
+- **H-02** *(révisée)* — Paiement réel supérieur à l'estimé après clôture : traité désormais comme un `Payment` de type `ajustement` (direction `augmente_paye`), cf. RG-064 — pas une simple « ligne complémentaire » non typée.
+- **H-09** *(révisée)* — Une `Deadline` ne peut être liée qu'à une seule `Provision` (inchangé) ; **et** une seule `Provision`/`SavingsPocket` `backed_by_account` ne peut référencer qu'un seul compte, et réciproquement (RG-072).
+- **H-12** *(nouveau)* — Rapprochement bancaire révélant un écart : le solde calculé et le solde déclaré divergent (frais bancaires oubliés, dépense non saisie…). Le système ne choisit jamais seul : il propose les 4 actions de RG-083, et tant qu'aucune n'est prise, le compte reste en `Reconciliation.pending` sans bloquer l'usage courant de l'app.
+- **H-13** *(nouveau)* — Provision avec échéance imminente sous-financée (`mois_restants < 1`) : le taux mensuel recommandé devient mathématiquement énorme et non actionnable — le système bascule sur l'alerte de tension à court terme (RG-032ter) plutôt que d'afficher un chiffre absurde.
+- **H-14** *(nouveau)* — Transfert vers un compte `backed_by_account` d'un montant qui dépasse la trésorerie opérationnelle disponible du compte source : refusé comme n'importe quel virement bancaire réel insuffisamment provisionné — l'application alerte mais ne bloque pas la saisie rétroactive (l'utilisateur peut avoir transféré par un autre canal et vient seulement l'enregistrer).
+- **H-15** *(nouveau)* — Poche `virtual_allocation` que l'utilisateur souhaite transformer en `backed_by_account` : exige la création du compte dédié et, si un montant équivalent existe déjà ailleurs, un `AccountTransfer` réel vers ce compte — jamais un simple changement de mode qui ferait apparaître de l'argent par magie (RG-074).
+- **H-16** *(nouveau)* — Deux comptes déclarés par les deux membres du couple sans jamais être rapprochés (aucune `AccountBalanceSnapshot` récente) : le `solde_courant` calculé dérive silencieusement de la réalité au fil des mois. Le système doit alerter (« Ce compte n'a pas été rapproché depuis 60 jours ») plutôt que de présenter un chiffre calculé comme s'il était certain.
+
+---
+
+## Invariants financiers *(nouveau, résout le point 21)*
+
+Ces invariants deviendront des tests automatisés (cf. document 05, roadmap V2). Toute implémentation doit les respecter à tout instant.
+
+- **IF-01** — Aucun `Payment`, `IncomeOccurrence.reçu`, `PocketMovement.confirmé` ou `AccountTransfer.confirmé` ne naît d'un enregistrement prévisionnel sans confirmation explicite d'un utilisateur (RG-000).
+- **IF-02** — À tout instant, `Patrimoine_liquide_total = Σ solde_courant(compte)` sur l'ensemble des comptes actifs du foyer (G.2) — aucune autre source ne peut prétendre représenter le patrimoine liquide.
+- **IF-03** — Un `AccountTransfer` interne (deux comptes du même foyer) a un impact net foyer strictement nul sur `Patrimoine_liquide_total`.
+- **IF-04** — Un mouvement réel (`Payment`, `IncomeOccurrence.actual_amount`, `AccountTransfer`, `Adjustment`) n'est comptabilisé qu'une seule fois dans le calcul du solde d'un compte donné (pas de double lecture dans `LedgerEntry`).
+- **IF-05** — `reste_a_payer(deadline) ≥ 0` sauf gestion explicite d'un avoir/remboursement (RG-016bis).
+- **IF-06 — Anti-double-comptage** — Le montant d'une `SavingsPocket`/`Provision` `virtual_allocation` n'affecte jamais un `solde_courant` de compte ; le montant d'une `SavingsPocket`/`Provision` `backed_by_account` n'est jamais additionné dans `Montants_réservés` (RG-072). Aucun dirham n'est simultanément (a) présent dans un solde de compte opérationnel, (b) compté comme réserve, et (c) déduit une seconde fois.
+- **IF-07** — Le solde d'une poche/provision `virtual_allocation` égale à tout instant `Σ(PocketMovement confirmés, signés)` — jamais une valeur stockée indépendamment (RG-071).
+- **IF-08** — Le solde d'une poche/provision `backed_by_account` égale à tout instant `solde_courant(linked_account_id)` — jamais une valeur stockée indépendamment.
+- **IF-09** — Toute correction d'une opération réelle est auditée (`AuditEvent`) et jamais silencieuse (RG-064).
+- **IF-10** — Un `SimulationScenario` n'altère jamais, directement ou indirectement, une donnée du registre réel (comptes, échéances, poches, provisions, objectifs) — vérifiable en prouvant qu'aucune écriture n'est émise hors de la table `simulation_scenario` pendant son exécution.
+- **IF-11** — La sélection des échéances entrant dans `Montants_engagés` (G.4) ne dépend jamais de l'état temporel calculé, uniquement de l'état financier persistant et de `due_date` (RG-050).
+- **IF-12** — `Montants_engagés` (G.4) utilise systématiquement `reste_a_payer`, jamais `montant_dû` brut, dès qu'un `Payment` existe sur la `Deadline` (RG-016).
+- **IF-13** — La part « réalisée » d'un `VariableBudget` (les `BudgetExpense` déjà enregistrées) n'apparaît jamais une seconde fois dans la part « projetée » (`Projection_prudente_restante`, RG-024bis).
+- **IF-14** — Un compte ne peut être `linked_account_id` que d'une seule poche/provision `backed_by_account` à la fois (contrainte d'unicité, RG-072).
+- **IF-15** — Toute suppression d'une opération financière validée est refusée par construction (seules `annulation`, `contre-écriture` et `ajustement` existent) — cf. RG-064.
