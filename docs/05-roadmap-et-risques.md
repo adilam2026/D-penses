@@ -1,6 +1,8 @@
-# 05 — Roadmap, risques, plan de développement (V2)
+# 05 — Roadmap, risques, plan de développement (V2.2)
 
-> Couvre les points K, L, T. La portée V1/V2/V3 (K) reste globalement valide ; ce document V2 met à jour la présence des comptes financiers dès le lot 0/1, ajoute des risques issus de la revue de cohérence, et surtout ajoute des **tests de calcul obligatoires par lot** (point 22 des remarques) — le développement n'est plus découpé uniquement par écrans.
+> Couvre les points K, L, T. La portée V1/V2/V3 (K) reste globalement valide ; ce document met à jour la présence des comptes financiers dès le lot 0/1, ajoute des risques issus des revues de cohérence, et ajoute des **tests de calcul obligatoires par lot** (point 22 des remarques V2) — le développement n'est plus découpé uniquement par écrans. **V2.2** ajoute au Lot 4 les tests liés à la facturation différée, aux montants inconnus/estimés, aux charges optionnelles et aux charges communes à plusieurs enfants.
+
+**Nouveau risque V2.2** — un `FinancialPlan` mal compris comme « le budget total définitif » malgré des montants `inconnu` en son sein romprait la promesse « INCONNU ≠ 0 DH » (document 02, RG-103/RG-113). Mitigation : aucun écran n'affiche un total de `FinancialPlan` sans son statut de complétude accolé (document 03, I.10ter) — vérifié comme critère d'acceptation du Lot 4.
 
 ---
 
@@ -75,8 +77,13 @@ VariableBudget + prorata (G.7), BudgetExpense, AdHocExpense, `Projection_prudent
 - **(V2.1)** Budget hebdomadaire : une semaine calendaire complète comprise dans une fenêtre de calcul vaut le montant plein (pas de prorata) ; une fenêtre non alignée sur les semaines réelles (ex. horizon `Montants_engagés`) proratise correctement les seules semaines partielles en bord de fenêtre, sans jamais mélanger la fréquence du budget avec la date du prochain salaire (RG-098/RG-099).
 
 ### Lot 4 — Charges planifiées & module scolaire/abonnements
-ChargePlan `calendrier_manuel`, fiche enfant + vues filtrées scolarité/abonnements, justificatifs.
-**Tests obligatoires :** identiques au Lot 2 appliqués à une charge à calendrier manuel (aucune duplication de règle).
+ChargePlan `calendrier_manuel`, fiche enfant + vues filtrées scolarité/abonnements, justificatifs. **(V2.2)** `expected_billing_date`/`billing_date`, `amount_status` (inconnu/estimé/confirmé), `obligation_status`, `FinancialPlan` générique, ventilation analytique par enfant, assistant « Ajouter les frais scolaires ».
+**Tests obligatoires :** identiques au Lot 2 appliqués à une charge à calendrier manuel (aucune duplication de règle), plus :
+- **(V2.2)** `billing_date = 12 janvier`, `due_date = 28 janvier` → facture attendue le 12, paiement exigible au plus tard le 28 ; aucun paiement automatique à l'une ou l'autre date.
+- **(V2.2)** Échéance estimée (20 000) puis facture réelle confirmée (21 300) → estimation initiale conservée, `reste_a_payer` et projections recalculés sur 21 300.
+- **(V2.2)** Charge à montant `inconnu` (ex. restauration) → jamais convertie en 0, exclue des sommes numériques, plan/projection marqués `incomplet`.
+- **(V2.2)** Charge optionnelle `envisagée` (ex. garderie non souscrite) → visible comme option, jamais comptée dans les Dépenses certaines ni dans Montants engagés (IF-25) ; passage à `souscrite` → devient un engagement certain au recalcul suivant.
+- **(V2.2)** Charge de 40 000 DH commune à deux enfants → un seul `Payment` réel, ventilation analytique 20 000/20 000 n'en crée jamais un second (IF-26).
 
 ### Lot 5 — Trésorerie & dashboard
 G.2 à G.5 (patrimoine liquide, trésorerie opérationnelle, montants réservés, montants engagés, disponible libre), Dashboard v1, Calendrier financier.
@@ -95,6 +102,7 @@ SavingsPocket/Provision (`allocation_mode`), PocketMovement, calcul temporel de 
 - **(V2.1)** Provision liée à 2 échéances chronologiques : la couverture s'affecte à la plus proche en premier jusqu'à épuisement, jamais réparties au prorata des deux (IF-17/IF-18).
 - **(V2.1)** « Payer avec la provision » (RG-095/RG-096) : une seule confirmation crée atomiquement le `Payment` et le retrait de provision (poche virtuelle) ou débite directement le compte dédié (poche adossée) ; cas provision suffisante, insuffisante, et combinaison provision + compte courant.
 - **(V2.1)** Un paiement réglé sans passer par « payer avec la provision » ne décrémente jamais la provision (RG-097), même une fois l'échéance soldée.
+- **(V2.2)** Un `intention_label` (« destiné à T2 ») sur un versement de provision n'affecte aucune formule — la couverture réelle reste déterminée uniquement par l'allocation chronologique (RG-090, IF-22), même si deux versements portent la même intention.
 
 ### Lot 7 — Moteur de projection & alertes
 G.6a/G.6b (deux projections distinctes), détection de trou de trésorerie sur chacune, alertes retard/dépassement/oubli/anomalie, Actions à traiter, notifications.
@@ -111,6 +119,7 @@ G.11 enrichi (verdict + indicateurs multiples), coussin de sécurité, sauvegard
 - Achat à reporter (point bas négatif à la date souhaitée, mais une date ultérieure satisfait la condition — la date recommandée doit être correctement identifiée).
 - Plusieurs objectifs concurrents de même priorité → l'ordre de suggestion respecte RG-041.
 - Aucune écriture réelle n'est produite pendant l'exécution d'une simulation, y compris sauvegardée (IF-10).
+- **(V2.2)** Simulation dont une échéance pertinente pour l'horizon est à montant `inconnu`/`estimé` → verdict calculé sur les données connues, accompagné d'un avertissement explicite d'incertitude (IF-27), jamais une fausse certitude silencieuse.
 
 ### Lot 9 — Historique, audit, robustesse multi-utilisateur
 AuditEvent complet, synchronisation quasi temps réel, gestion de conflits (H-01), corrections d'opérations réelles par contre-écriture (RG-064).

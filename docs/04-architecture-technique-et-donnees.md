@@ -59,14 +59,27 @@ income_occurrence(id, income_source_id, usual_date, actual_date?,
 
 -- CHARGES / ÉCHÉANCES / PAIEMENTS
 charge_plan(id, household_id, label, category_id, generation_mode,
-            recurrence_rule?, is_mandatory, default_account_id,
+            recurrence_rule?, default_account_id,
+            obligation_status ENUM(obligatoire,optionnelle_envisagée,optionnelle_souscrite,optionnelle_refusée)
+              DEFAULT 'obligatoire',                                        -- V2.2, remplace is_mandatory (RG-105)
+            financial_plan_id?,                                             -- V2.2 (RG-110)
             start_date, end_date?, priority_level)
 charge_plan_child(charge_plan_id, child_id)
-deadline(id, charge_plan_id, due_date, amount_due, is_estimated,
-         original_estimated_amount?,
+deadline(id, charge_plan_id,
+         expected_billing_date?, billing_date?, due_date,                   -- V2.2 (RG-100)
+         amount_due /* alias amount_current */,
+         amount_status ENUM(inconnu,estimé,confirmé) DEFAULT 'estimé',      -- V2.2, remplace is_estimated (RG-102)
+         amount_initial_estimated?, confirmed_at?,                          -- V2.2 (RG-104)
          financial_status ENUM(ouverte,partiellement_payée,soldée,annulée),
          -- pas de colonne de statut temporel : calculé à la lecture (O.2)
          provision_id?)
+-- amount_due est NULL si et seulement si amount_status = 'inconnu' (RG-103, IF-24) — jamais 0 dans ce cas
+deadline_child_allocation(deadline_id, child_id, allocation_amount)         -- V2.2, purement analytique (RG-116)
+
+-- FinancialPlan (nouveau V2.2, résout le point 7)
+financial_plan(id, household_id, label, period_start, period_end, linked_provision_id?)
+financial_plan_beneficiary(financial_plan_id, beneficiary_ref /* user_id ou child_id + type */)
+-- Aucune colonne d'agrégat : tout est calculé à la lecture (RG-111/IF-23, cf. G.15)
 payment(id, deadline_id, amount /* toujours > 0 */, paid_date, account_id,
         type ENUM(paiement,remboursement,ajustement),
         direction ENUM(augmente_paye,diminue_paye)? /* requis seulement si type=ajustement */,
@@ -95,7 +108,8 @@ provision(id, household_id, name, allocation_mode, linked_account_id?,
           is_flexible)
 pocket_movement(id, pocket_type, pocket_id, planned_date, planned_amount,
                  actual_date?, actual_amount?, status,
-                 movement_type ENUM(contribution,retrait))
+                 movement_type ENUM(contribution,retrait),
+                 intention_label? /* libre, purement informatif, V2.2 (RG-109/IF-22) */)
                  -- seule table utilisée pour allocation_mode = virtual_allocation ;
                  -- absente/informative pour backed_by_account (RG-073)
 goal(id, household_id, name, target_price, target_date?, priority_level,
@@ -136,6 +150,10 @@ SELECT d.*,
          END), 0) AS reste_a_payer
 FROM deadline d LEFT JOIN payment p ON p.deadline_id = d.id
 GROUP BY d.id;
+-- Si d.amount_due EST NULL (amount_status='inconnu'), reste_a_payer est NULL par propagation SQL naturelle —
+-- jamais 0 (RG-103/IF-24). Les agrégations (SUM) qui l'utilisent ignorent nativement les NULL : une Deadline
+-- inconnue sort donc des sommes numériques sans jamais y être comptée comme 0. La couche applicative doit
+-- séparément signaler cette exclusion (G.14) plutôt que la laisser silencieuse.
 
 -- Solde de poche virtuelle, calculé (RG-071/IF-07)
 CREATE VIEW savings_pocket_balance AS
@@ -221,6 +239,8 @@ Inchangée (agrégation par défaut, plafond quotidien, priorité retard > dépa
 |---|---|---|
 | Rapprochement | Aucun `AccountBalanceSnapshot` depuis N jours (H-16) | 60 jours |
 | Tension provision court terme | RG-032ter | mois_restants < 1 |
+| Facture attendue non reçue *(V2.2)* | `today > expected_billing_date` et `billing_date` vide (RG-101) | dès dépassement, dans la fenêtre `seuil_à_venir` |
+| Donnée manquante pertinente *(V2.2)* | Montant `inconnu` ou option en attente dont la `due_date`/date de décision entre dans l'horizon (RG-117) | fenêtre `seuil_à_venir`, jamais plus tôt |
 
 ---
 

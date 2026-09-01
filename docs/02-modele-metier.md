@@ -30,11 +30,12 @@ Inchangé dans sa structure — `IncomeSource`, `IncomeOccurrence` — avec un a
 
 | Entité | Changement V2 |
 |---|---|
-| **ChargePlan** | Inchangé (plan de charge unifié, cf. INC-03/V1). |
-| **Deadline** | Statut **scindé** en état financier persistant + état temporel calculé (cf. F.2). `reste_a_payer` devient une valeur calculée centrale (cf. E.3bis). |
+| **ChargePlan** | Plan de charge unifié (INC-03/V1). **V2.2** : `obligation_status` remplace `is_mandatory` (RG-105) ; rattachable à 0..1 `FinancialPlan` (RG-110). |
+| **Deadline** | Statut **scindé** en état financier persistant + état temporel calculé (cf. F.2). `reste_a_payer` devient une valeur calculée centrale (cf. E.3bis). **V2.2** : `expected_billing_date`/`billing_date` distincts de `due_date` (RG-100) ; `amount_status ∈ {inconnu, estimé, confirmé}` remplace `is_estimated` (RG-102) ; ventilation analytique optionnelle par enfant (RG-116). |
 | **Payment** | `amount` toujours positif ; `type` porte le sens comptable (cf. RG-015 révisée). Référence un `FinancialAccount`. |
 | **VariableBudget / BudgetExpense** | Inchangés structurellement ; `BudgetExpense` référence désormais un `FinancialAccount`. |
 | **AdHocExpense** | Référence désormais un `FinancialAccount`. |
+| **FinancialPlan** *(nouveau V2.2)* | Regroupement générique thématique de `ChargePlan` sur une période, pour un ou plusieurs bénéficiaires — aucun agrégat stocké (RG-110/111). Le module scolaire en est une vue filtrée. |
 
 ### C.5 Épargne, provisions, objectifs
 
@@ -76,10 +77,15 @@ Household 1───n IncomeSource ─────────── beneficiary
 IncomeSource 1───n IncomeOccurrence ───── account_id → FinancialAccount
 
 Household 1───n ChargePlan ────────────── beneficiary_members → [User|Child]* (0..n)
+                                          financial_plan_id → FinancialPlan (nullable, V2.2)
 ChargePlan 1───n Deadline ──────────────── provision_id → Provision (nullable)
 Deadline 1───n Payment ──────────────────── account_id → FinancialAccount
 Deadline 0───n Attachment
+Deadline 0───n DeadlineChildAllocation ──── child_id → Child  (ventilation analytique, V2.2, RG-116)
 ChargePlan }o──o{ Child
+
+Household 1───n FinancialPlan ──────────── beneficiaries → [User|Child]* (0..n)   -- V2.2
+                                          linked_provision_id → Provision (nullable)
 
 Household 1───n VariableBudget ────────── category → Category
 VariableBudget 1───n BudgetExpense ─────── account_id → FinancialAccount, member_tags → [User|Child]*
@@ -92,7 +98,8 @@ Household 1───n SavingsPocket ─────────── owner → 
 Household 1───n Provision ──────────────── linked_deadlines → Deadline (0..n)
                                           allocation_mode, linked_account_id (idem)
 SavingsPocket 1───n PocketMovement       (source de vérité si virtual_allocation ; absent/informatif si backed_by_account)
-Provision 1───n PocketMovement
+                                          intention_label optionnel, purement informatif (V2.2, RG-109)
+Provision 1───n PocketMovement           (idem)
 
 Household 1───n Goal
 Goal 1───n GoalContribution
@@ -191,6 +198,47 @@ Le modèle V2 empêchait déjà le double comptage entre compte, poche virtuelle
 - **RG-096 — Financement combiné** — Un même paiement peut se répartir entre plusieurs sources en une seule confirmation (ex. 10 000 DH depuis la provision + 5 000 DH depuis le compte courant si la provision est insuffisante) : cela crée simplement deux `Payment` liés à la même `Deadline`, chacun avec son propre `funding_source`, dans la même transaction atomique — réutilise le mécanisme de paiement partiel déjà existant (RG-014), sans nouvel objet métier.
 - **RG-097 — Hors financement explicite, aucun décrément automatique** — Si l'utilisateur paie une échéance liée à une provision **sans** choisir « payer avec la provision » (paiement depuis un compte classique), la provision n'est **jamais** décrémentée automatiquement (RG-000 inchangée) — cf. RG-094 pour la conséquence sur la couverture des échéances suivantes.
 
+### E.3ter — Facturation, montant inconnu et charges optionnelles *(V2.2)*
+
+**Date de facturation ≠ date d'échéance**
+
+- **RG-100** — Une `Deadline` porte trois dates indépendantes : `expected_billing_date` (date attendue de réception de la facture, optionnelle), `billing_date` (date réelle de réception, renseignée à la confirmation), `due_date` (date limite de paiement, inchangée). Aucune de ces dates ne déclenche automatiquement un paiement (RG-000 inchangée) — `billing_date` déclenche au plus une question de confirmation du montant (RG-102), jamais un paiement.
+- **RG-101 — Facture attendue non reçue** — Si `today > expected_billing_date` et `billing_date` est toujours vide, une `Action à traiter` qualitative est levée (« Facture T2 attendue mais non encore confirmée »), sans aucun effet sur `reste_a_payer` ni les projections (RG-101 ne rend jamais une facture certaine par simple écoulement du temps).
+
+**Montant inconnu, estimé, confirmé — trois états, pas deux**
+
+- **RG-102** — `Deadline.amount_status ∈ {inconnu, estimé, confirmé}` (remplace le simple booléen `is_estimated` de la V2 — migration : `is_estimated=true → estimé`, `is_estimated=false → confirmé`, `inconnu` est un état nouveau). `amount_current` est **nullable**, et n'est `NULL` que lorsque `amount_status = inconnu`.
+- **RG-103 — `NULL` ≠ 0** — Un montant `inconnu` n'est **jamais** traité comme 0 DH, et n'est **jamais** silencieusement omis d'un calcul comme s'il n'existait pas : il est exclu de toute somme numérique (G.4, G.6, G.9, G.11 — cf. G.14) **et** signalé qualitativement partout où cette somme est affichée (« budget incomplet », cf. RG-113).
+- **RG-104 — Confirmation de montant, distincte du paiement** — L'action « Facture reçue — confirmer le montant » fait passer `amount_status` de `inconnu`/`estimé` à `confirmé`, met à jour `amount_current`, horodate `confirmed_at`, et **conserve** `amount_initial_estimated` si un montant estimé existait. Cette confirmation peut intervenir **avant** tout paiement (au moment de la réception de facture) — elle n'est pas une conséquence du paiement, contrairement à la confirmation de clôture (RG-014). Toute confirmation de montant déclenche immédiatement le recalcul de `reste_a_payer`, `engagement_non_couvert`, des projections (G.6) et de la couverture provision (RG-090) — cf. G.13, IF-21.
+
+**Charges obligatoires et optionnelles**
+
+- **RG-105** — `ChargePlan.obligation_status ∈ {obligatoire, optionnelle_envisagée, optionnelle_souscrite, optionnelle_refusée}` (remplace le booléen `is_mandatory` de la V2 — migration : `is_mandatory=true → obligatoire`, `is_mandatory=false → optionnelle_souscrite` par défaut, à réévaluer au cas par cas).
+- **RG-106 — Deux portées de projection, jamais fusionnées silencieusement** :
+  - **Dépenses certaines** = échéances de `ChargePlan` en `obligatoire` ou `optionnelle_souscrite`, à montant connu (`estimé` ou `confirmé`). C'est la portée par défaut de `Montants_engagés` (G.4) et de toutes les projections/simulations (G.6, G.11) — inchangé par rapport à la V2.1.
+  - **Options envisagées** = échéances de `ChargePlan` en `optionnelle_envisagée`, à montant connu. Calculées et affichées **séparément**, jamais additionnées par défaut aux Dépenses certaines.
+  - **Projection prudente** = Dépenses certaines + Options envisagées — disponible à la demande (bascule explicite dans l'UX, jamais la valeur par défaut du dashboard).
+- **RG-107** — Une charge `optionnelle_refusée` est conservée en historique (traçabilité) mais exclue de toute projection, comme une `Deadline` `annulée`.
+- **RG-108** — Le passage d'`optionnelle_envisagée` à `optionnelle_souscrite` (ou `refusée`) est une action utilisateur explicite (RG-000) ; dès `optionnelle_souscrite`, la charge intègre les Dépenses certaines au recalcul suivant.
+
+### E.5quinquies — Affectation indicative d'une provision *(V2.2, résout le point 6 des remarques)*
+
+- **RG-109** — Un `PocketMovement` (contribution à une provision) peut porter un `intention_label` optionnel, libre ou lié à une `Deadline` (« destiné à T2 ») — **purement informatif**, à but de pilotage et de compréhension utilisateur. Ce label n'entre dans **aucune** formule : la couverture réelle d'une échéance par une provision reste exclusivement déterminée par l'allocation chronologique de RG-090, qui ignore totalement les `intention_label`. Deux intentions contradictoires (ex. deux versements tous deux « destinés à T2 ») ne créent donc jamais de double réservation — il n'existe qu'une seule provision, une seule couverture calculée (IF-22).
+
+### E.12 — Plan financier thématique *(nouveau, V2.2, résout le point 7 des remarques)*
+
+Structure générique regroupant un ensemble cohérent de charges/dépenses sur une période et pour un ou plusieurs bénéficiaires — sert aussi bien à « École 2026/2027 » qu'à « Vacances été 2027 » ou « Travaux maison ». Le module scolaire (document 01, INC-04) reste une **vue filtrée** au-dessus de cette structure générique, jamais une entité séparée.
+
+- **RG-110** — Un `FinancialPlan` porte : libellé, période (`period_start`/`period_end`), bénéficiaires (0..n `Child`/`User`), et une liste de `ChargePlan` rattachés (0..n). Un `ChargePlan` peut être rattaché à 0 ou 1 `FinancialPlan`.
+- **RG-111 — Aucun agrégat stocké** — Tous les indicateurs d'un `FinancialPlan` (budget connu, payé, reste à payer, provisionné, reste à financer, prochaine échéance, couverture de la prochaine échéance, projection jusqu'à `period_end`, éléments inconnus, options) sont **calculés à la demande** à partir des `ChargePlan`/`Deadline`/`Provision` liés — jamais dupliqués en colonnes propres (cf. G.15, IF-23).
+- **RG-112** — Un `FinancialPlan` peut référencer une `Provision` associée (ex. « Provision Scolarité » pour le plan « École 2026/2027 ») — relation informative pour l'affichage consolidé, la couverture réelle restant régie par RG-090 indépendamment du `FinancialPlan`.
+- **RG-113 — Complétude d'un plan** — Un `FinancialPlan` est `complet` si toutes ses `Deadline` liées ont `amount_status ∈ {estimé, confirmé}` et qu'aucune `ChargePlan` en `optionnelle_envisagée` n'attend de décision dont l'échéance de décision est dépassée ; sinon `incomplet`. Le « budget connu » d'un plan incomplet est **toujours** présenté comme un plancher (« Au moins 134 730 DH de dépenses sont déjà identifiées »), jamais comme un total définitif (cf. G.14).
+
+### E.3quater — Charges communes à plusieurs enfants *(V2.2, résout le point 11 des remarques)*
+
+- **RG-115** — Une `Deadline`/`ChargePlan` reste rattachable à 0, 1 ou n `Child` (inchangé, `charge_plan_child`, V1/V2). Une charge commune (ex. 40 000 DH pour Wael + Dina) génère **une seule** `Deadline` et **un seul** `Payment` réel — jamais deux paiements artificiels pour une seule facture.
+- **RG-116 — Ventilation analytique optionnelle** — Une `Deadline` rattachée à plusieurs enfants peut porter une ventilation informative (`deadline_child_allocation`, ex. Wael 20 000 / Dina 20 000), utilisée uniquement pour les vues par enfant (document 03, §I.10bis) — **jamais** pour dédoubler l'écriture réelle. La somme des ventilations n'est pas contrainte à égaler `amount_current` (une ventilation partielle est valide, ex. seule la part de Wael est connue).
+
 ### E.6 Objectifs / projets
 RG-040 à RG-042 inchangées.
 
@@ -213,6 +261,8 @@ RG-045, RG-046 inchangées, avec ajout :
 - **RG-050** *(corrigée — résout le point 4)* — Les **Montants engagés** (G.4) et toutes les projections se basent **exclusivement** sur l'état financier persistant (`ouverte`, `partiellement_payée`) et la `due_date`, jamais sur l'état temporel calculé (`bientôt_due`, `due`…). Un statut temporel « à_venir »/« future » n'exclut jamais une échéance des engagements si sa `due_date` tombe dans l'horizon considéré — le statut UX n'est **jamais** source de vérité pour un calcul financier.
 - **RG-051** — inchangée (trou de trésorerie, point bas < marge de sécurité), mais s'applique désormais sur les **deux** projections distinctes (physique et capacité libre, cf. G.6).
 - RG-052, RG-053, RG-054 inchangées.
+- **RG-117 — Alertes sur données manquantes, sans bruit** *(V2.2, résout le point 9 des remarques)* — Un montant `inconnu` (RG-102) ou une charge `optionnelle_envisagée` (RG-105) en attente de décision ne génère une `Action à traiter` que lorsque sa `due_date` (ou, pour une option, la date jugée structurante pour la décision) entre dans la fenêtre `seuil_à_venir` du foyer — jamais plusieurs mois à l'avance. Une information non encore pertinente pour l'horizon courant reste silencieusement en attente.
+- **RG-118 — Pas de relance répétitive** *(V2.2)* — Une `Action à traiter` sur une donnée manquante suit la même règle anti-doublon que les autres notifications (document 04 §Q.4) : pas de nouvelle relance avant un délai de repos, sauf changement d'état (ex. `expected_billing_date` dépassée d'un délai supplémentaire).
 
 ### E.10 Statuts et cycle de vie *(nouveau, résout le point 6)*
 Voir F.2 pour le détail. Principe : un état **financier persistant** (stocké) distinct d'un état **temporel** (toujours calculé à la lecture, jamais stocké) — évite de faire muter des milliers d'enregistrements simplement parce que le temps passe, et évite la confusion pointée en INC-06/V1.
@@ -413,6 +463,10 @@ Indicateurs systématiquement calculés et affichés (pas seulement le verdict) 
    • impact sur l'épargne protégée (par construction : aucun, car exclue de Capacité_disponible_brute — affiché explicitement pour rassurer/expliquer)
    • impact sur les autres objectifs de priorité ≥ (concurrence RG-041)
    • horizon d'analyse utilisé
+   • niveau d'incertitude (G.14) : si une Deadline pertinente pour l'horizon [D, D+N] est à amount_status
+     ∈ {estimé, inconnu} ou correspond à une option envisagée en attente, le verdict est accompagné d'une
+     mention explicite (ex. « le montant de la restauration T2 n'est pas encore connu ») — jamais une
+     fausse certitude silencieuse (V2.2, résout les points 12 et 13 des remarques, IF-27)
 ```
 Calcul strictement en lecture (RG-000) — aucune donnée réelle modifiée, y compris pour un scénario sauvegardé (`SimulationScenario`).
 
@@ -421,6 +475,39 @@ Inchangée.
 
 ### G.13 — Écart prévu/réel
 Inchangée — déclenche un recalcul immédiat de toute projection en aval (jamais de cache long, cf. document 04 §O.4).
+
+### G.14 — Complétude d'une projection ou d'un plan *(nouveau V2.2, résout les points 8, 12, 13 des remarques)*
+```
+Pour un ensemble de Deadline considéré (un FinancialPlan, un horizon de projection, un simulateur) :
+
+Dépenses_certaines_connues = Σ amount_current  pour les Deadline à amount_status ∈ {estimé, confirmé}
+                                                    et ChargePlan.obligation_status ∈ {obligatoire, optionnelle_souscrite}
+Options_envisagées_connues = Σ amount_current  pour les Deadline à amount_status ∈ {estimé, confirmé}
+                                                    et ChargePlan.obligation_status = optionnelle_envisagée
+Projection_prudente = Dépenses_certaines_connues + Options_envisagées_connues
+
+Éléments_inconnus = liste des Deadline à amount_status = inconnu (qualitative, jamais un montant)
+Complétude ∈ {complet, contient_estimations, contient_inconnues}
+   complet              si aucune Deadline pertinente n'est à amount_status ∈ {inconnu} ni en option en attente
+   contient_estimations si au moins une Deadline pertinente est à amount_status = estimé (montant connu mais non confirmé)
+   contient_inconnues   si au moins une Deadline pertinente est à amount_status = inconnu, ou une option envisagée est en attente de décision
+```
+`Dépenses_certaines_connues` n'est **jamais** présenté comme un total définitif quand `Complétude ≠ complet` — toujours accompagné du statut (RG-113) : « Au moins X DH de dépenses sont déjà identifiées » plutôt que « Budget total = X DH ».
+
+### G.15 — Agrégats d'un `FinancialPlan` ou d'une vue par enfant *(nouveau V2.2, résout les points 7 et 10 des remarques)*
+```
+Pour un FinancialPlan (ou un Child, en filtrant les Deadline par bénéficiaire) :
+
+Budget_connu          = Dépenses_certaines_connues (G.14)                     [+ options si vue « prudente »]
+Payé                  = Σ Payment.amount (signé)  sur les Deadline concernées
+Reste_à_payer          = Σ reste_a_payer(deadline)  sur les Deadline concernées, ouvertes/partiellement payées
+Provisionné            = Σ couverture_affectée(deadline)  sur les Deadline concernées (RG-090)
+Reste_à_financer        = Σ engagement_non_couvert(deadline)  sur les Deadline concernées
+Prochaine_échéance      = MIN(due_date) parmi les Deadline ouvertes/partiellement payées concernées
+Couverture_prochaine    = couverture_affectée(Prochaine_échéance) / reste_a_payer(Prochaine_échéance)
+Complétude              = G.14 restreinte à ces mêmes Deadline
+```
+Purement des agrégations en lecture sur les entités existantes (`ChargePlan`, `Deadline`, `Payment`, `Provision`) — aucune donnée dupliquée (IF-23). Une vue par enfant est le cas particulier où le filtre porte sur le bénéficiaire plutôt que sur le `FinancialPlan` ; une charge commune à plusieurs enfants (RG-115) contribue à chacune des vues concernées sans dédoubler le `Payment` réel sous-jacent — seule sa ventilation analytique (RG-116), quand elle existe, répartit visuellement le montant entre les vues.
 
 ---
 
@@ -465,3 +552,13 @@ Ces invariants deviendront des tests automatisés (cf. document 05, roadmap V2).
 - **IF-18** — L'affectation d'une provision à ses échéances liées se fait par défaut dans l'ordre chronologique des `due_date`, jamais par ordre de création ni par montant.
 - **IF-19** — Un `Payment` avec `funding_source = provision` sur une provision `virtual_allocation` crée toujours, dans la même transaction, un `PocketMovement` de retrait du même montant — jamais l'un sans l'autre (RG-095).
 - **IF-20** — Dans `LedgerEntry`, un `Payment` de type `paiement` (ou `ajustement` à direction `augmente_paye`) est toujours une **sortie** (montant négatif) sur le compte payeur ; un `Payment` de type `remboursement` (ou `ajustement` à direction `diminue_paye`) est toujours une **entrée** (montant positif) — ce signe est indépendant du signe utilisé pour `reste_a_payer` (RG-015), qui répond à une question différente (l'effet sur la dette de l'échéance, pas sur le solde du compte). Ne jamais réutiliser l'un pour l'autre.
+
+**Invariants V2.2 — données manquantes, options, plans financiers**
+
+- **IF-21** — Une confirmation de montant (RG-104) déclenche le même recalcul immédiat que tout écart prévu/réel (G.13) — aucune formule en aval ne reste calculée sur l'ancien montant après confirmation.
+- **IF-22** — Un `intention_label` sur un `PocketMovement` n'entre dans aucune formule (G.3, G.4, G.9) — la couverture réelle d'une échéance par une provision reste exclusivement déterminée par RG-090, jamais influencée par une intention déclarée.
+- **IF-23** — Aucun agrégat d'un `FinancialPlan` (budget connu, payé, reste à financer…) n'est stocké : toute lecture recalcule à partir des `ChargePlan`/`Deadline`/`Provision` liés au moment de la requête.
+- **IF-24** — Un montant `inconnu` (`amount_current IS NULL`) n'est jamais compté comme 0 DH dans une somme, et n'est jamais omis silencieusement de l'affichage : toute somme qui l'exclut est accompagnée d'un indicateur de complétude explicite (RG-113, G.14).
+- **IF-25** — Une charge `optionnelle_envisagée` n'entre jamais dans `Montants_engagés` (G.4) ni dans le disponible libre (G.5) par défaut — uniquement dans la Projection prudente affichée séparément (RG-106).
+- **IF-26** — Une charge/`Deadline` commune à plusieurs enfants ne génère jamais plus d'un `Payment` réel pour un même règlement, quelle que soit sa ventilation analytique (RG-115/116).
+- **IF-27** — Un plan financier ou une projection contenant au moins un montant `inconnu` ou une option `envisagée` pertinente pour l'horizon étudié ne peut jamais être présenté comme un total définitif ou un verdict de simulateur sans mention explicite de cette incertitude (RG-113, G.14, document 03 §I.13bis).

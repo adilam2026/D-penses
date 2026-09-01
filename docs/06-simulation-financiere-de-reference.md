@@ -1,4 +1,7 @@
-# 06 — Simulation financière de référence (V2.1)
+# 06 — Simulation financière de référence (V2.2)
+
+> **V2.2** ajoute §10-§11 (mini-cas scolaire et tests des nouvelles capacités : facturation différée, montants inconnus/estimés, charges optionnelles, plan financier générique, charges communes à plusieurs enfants). Le scénario 90 jours (§0-§9) n'est pas retouché.
+
 
 > Document de validation fonctionnelle chiffrée (points 18 à 20 de la revue V2, corrigé en V2.1 pour la couverture provision/échéance, les dates calendaires et le budget hebdomadaire). Sert de **test oracle** pour le développement futur. Foyer et personnages fictifs, construits pour ce test uniquement.
 >
@@ -265,4 +268,96 @@ Le paiement du crédit logement (jour 5, ACC-1) apparaît dans `LedgerEntry` com
 | **IF-19** (paiement + retrait de provision atomiques) | ✓ — §5, jour 75 : le paiement de D-S3 (17 000 DH depuis la provision) crée en une seule transaction le `Payment` et le `PocketMovement` de retrait, ramenant la provision à 0 |
 | **IF-20** (signe `Payment` dans `LedgerEntry`) | ✓ — Cas H |
 
-Ce jeu de données et ces résultats constituent le test oracle de référence (V2.1) — toute divergence de l'implémentation future avec les valeurs ci-dessus doit être traitée comme un bug.
+Ce jeu de données et ces résultats constituent le test oracle de référence — toute divergence de l'implémentation future avec les valeurs ci-dessus doit être traitée comme un bug.
+
+**Invariants V2.2 (données manquantes, options, plan financier, charges communes)** :
+
+| Invariant | Statut sur le mini-cas §10 |
+|---|---|
+| IF-21 (confirmation de montant → recalcul immédiat) | ✓ — §10, Scolarité T2 : 20 000 → 21 300, `reste_a_payer`/projections recalculés au même instant (TEST 2, §11) |
+| IF-22 (`intention_label` hors formule) | ✓ — §10, contribution « préparation T2 » : aucune formule ne la lit (TEST 8, §11) |
+| IF-23 (aucun agrégat de `FinancialPlan` stocké) | ✓ — le Budget connu du plan « École 2026/2027 » (§10) est recalculé à chaque lecture depuis les `ChargePlan`/`Deadline` liés |
+| IF-24 (`inconnu` ≠ 0, jamais omis) | ✓ — Restauration T2 : exclue de la somme, mais listée explicitement dans les « éléments inconnus » (§10, TEST 3) |
+| IF-25 (option envisagée hors Dépenses certaines) | ✓ — Garderie Ines : dans « Options envisagées » (2 500 DH), jamais dans « Dépenses certaines » (§10, TEST 4) |
+| IF-26 (charge commune = un seul Payment réel) | ✓ — TEST 6, §11 |
+| IF-27 (incertitude signalée, jamais silencieuse) | ✓ — TEST 7, §11 |
+
+---
+
+## 10. Mini-cas scolaire — `FinancialPlan` « École 2026/2027 » (V2.2)
+
+Vient compléter le foyer de référence (§1) : Yanis et Ines ont chacun leurs frais scolaires regroupés dans un `FinancialPlan` unique, lié à la `Provision Scolarité` déjà existante (§1.7). Ce mini-cas ne redémarre pas la simulation 90 jours — c'est un jeu de données autonome, à la même date de référence (aujourd'hui = jour 29, 30 septembre).
+
+### 10.1 Charges du plan
+
+| Charge | Enfant(s) | Montant | `amount_status` | `obligation_status` | `expected_billing_date` | `due_date` |
+|---|---|---|---|---|---|---|
+| Scolarité T1 | Yanis | 20 000 DH | confirmé | obligatoire | 14 sept (reçue) | 30 sept |
+| Scolarité T2 | Yanis | 21 300 DH *(initialement estimé 20 000)* | confirmé *(après facture)* | obligatoire | 12 janv | 28 janv |
+| Scolarité T3 | Yanis | 14 500 DH | estimé | obligatoire | — | 15 avril |
+| Restauration T1 | Yanis | 1 800 DH | confirmé (forfait trimestriel réel, **pas** un calcul par repas) | obligatoire | — | 30 sept |
+| Restauration T2 | Yanis | **inconnu** (forfait pas encore communiqué par l'établissement) | inconnu | obligatoire | 5 janv | 28 janv |
+| Assurance continuité scolaire | Yanis | 1 575 DH | confirmé | **optionnelle_souscrite** (décision prise) | — | 30 sept |
+| Uniforme | Yanis / Ines | 600 DH / 500 DH | confirmé | obligatoire | — | 15 sept |
+| Fournitures | Yanis / Ines | 400 DH / 350 DH | confirmé | obligatoire | — | 15 sept |
+| Garderie | Ines | 250 DH/mois | confirmé (le tarif est connu) | **optionnelle_envisagée** (utilisation pas encore décidée) | — | mensuel |
+| Sorties scolaires *(charge commune)* | Yanis + Ines | 1 000 DH *(un seul règlement)* | confirmé | obligatoire | — | 20 oct |
+
+Scolarité Yanis : 20 000 + 21 300 + 14 500 = **54 500 DH/an**, conforme au montant annuel global connu dès le départ, dont la ventilation T1/T2/T3 s'est affinée avec le temps (§10.2, exactement le cas d'usage du point 2 des remarques).
+
+### 10.2 Confirmation du montant T2 (TEST 2)
+Au jour 29, Scolarité T2 est encore `estimé` à 20 000 DH. À réception de la facture (12 janvier, `billing_date` renseignée), l'utilisateur confirme un montant réel de **21 300 DH** : `amount_initial_estimated = 20 000` (conservé), `amount_current = 21 300`, `amount_status = confirmé`, `confirmed_at` horodaté. `reste_a_payer`, la couverture par la Provision Scolarité (RG-090) et toutes les projections en aval sont recalculés immédiatement sur 21 300 (IF-21) — jamais sur l'estimation initiale, jamais perdue pour autant.
+
+### 10.3 Budget connu, options, inconnues (TEST 3, TEST 4, TEST 5)
+
+```
+Dépenses certaines connues (G.14) =
+   20 000 (T1) + 21 300 (T2) + 14 500 (T3, estimé) + 1 800 (restauration T1)
+   + 1 575 (assurance, optionnelle_souscrite → comptée, RG-108)
+   + 600 + 500 (uniformes) + 400 + 350 (fournitures) + 1 000 (sorties communes)
+   = 62 025 DH
+
+Options envisagées connues = 250 × 10 mois (garderie Ines, année scolaire) = 2 500 DH   (jamais dans les 62 025 ci-dessus, IF-25)
+
+Éléments inconnus = { Restauration T2 (Yanis) }                                          (jamais comptée 0, IF-24)
+
+Complétude = contient_inconnues
+```
+**Affichage produit** : « Au moins **62 025 DH** de dépenses sont déjà identifiées pour École 2026/2027. + 2 500 DH d'options envisagées (garderie Ines). **Budget total : incomplet** — la restauration T2 de Yanis n'est pas encore chiffrée. »
+
+Jamais : « Budget total = 62 025 DH » présenté comme définitif.
+
+### 10.4 Charge commune Yanis + Ines (TEST 6, illustration dédiée)
+```
+Deadline « Réinscription groupée 2026/2027 » = 40 000 DH, bénéficiaires = {Yanis, Ines}
+Payment réel = un seul enregistrement de 40 000 DH (un seul virement, une seule facture)
+Ventilation analytique (deadline_child_allocation, informative) : Yanis 20 000 / Ines 20 000
+```
+La vue « Coûts » de la fiche Yanis affiche 20 000 DH pour cette ligne, celle d'Ines également — mais un seul `Payment` de 40 000 DH existe dans `LedgerEntry`, jamais deux (IF-26). Modifier ou supprimer la ventilation analytique ne touche jamais au montant réel payé.
+
+### 10.5 Provision — affectation indicative (TEST 8)
+Le foyer verse 833 DH/mois (≈10 000 DH/an) sur la Provision Scolarité, en étiquetant mentalement chaque versement : juillet-août → « préparation T1 », septembre-décembre → « préparation T2 », janvier-mars → « préparation T3 ». Le versement de septembre porte `intention_label = "préparation T2"`. Cette étiquette n'apparaît dans **aucune** formule (IF-22) : la couverture réelle de Scolarité T2 (21 300 DH) par la provision reste exclusivement déterminée par l'allocation chronologique de RG-090, appliquée à l'ensemble des échéances liées (Scolarité T1/T2/T3, Restauration T1 — Restauration T2 étant `inconnu`, elle n'entre dans aucun calcul de couverture tant qu'elle ne l'est pas, RG-103), quelle que soit l'intention affichée à l'utilisateur.
+
+### 10.6 Simulateur avec incertitude (TEST 7)
+Une simulation d'achat dont l'horizon d'analyse couvre le 28 janvier (due_date de Scolarité T2 et de la Restauration T2 encore inconnue) produit :
+```
+Verdict calculé normalement sur les 62 025 DH de dépenses certaines connues (Restauration T2 exclue des sommes, jamais à 0)
++ avertissement explicite :
+  « Selon les dépenses actuellement renseignées, ce résultat est valable, mais le montant de la
+     restauration scolaire T2 (Yanis) n'est pas encore connu et pourrait faire évoluer cette projection. »
+```
+
+---
+
+## 11. Tests métier minimum ajoutés (V2.2)
+
+| # | Test | Résultat attendu |
+|---|---|---|
+| 1 | `billing_date` = 12 janvier, `due_date` = 28 janvier (Scolarité T2, §10.1) | Facture attendue le 12 ; paiement exigible au plus tard le 28 ; aucune des deux dates ne déclenche un paiement automatique (RG-100). |
+| 2 | Échéance estimée 20 000 → facture réelle 21 300 (§10.2) | `amount_initial_estimated` conservé à 20 000 ; projections recalculées immédiatement sur 21 300 (RG-104, IF-21). |
+| 3 | Restauration T2 connue mais montant non communiqué (§10.1) | `amount_status = inconnu`, `amount_current = NULL` ; budget marqué incomplet ; jamais converti en 0 (RG-102/103, IF-24). |
+| 4 | Garderie Ines 250 DH/mois, non souscrite (§10.1) | Visible comme option envisagée ; jamais comptée comme engagement ferme dans Montants engagés (RG-106, IF-25). |
+| 5 | Assurance continuité Yanis, optionnelle souscrite (§10.1) | Devient un engagement certain, intégré aux Dépenses certaines et à Montants engagés au recalcul suivant (RG-108). |
+| 6 | Charge de 40 000 DH concernant deux enfants (§10.4) | Un seul `Payment` réel de 40 000 DH ; ventilation analytique 20 000+20 000 informative uniquement ; aucun double comptage (RG-115/116, IF-26). |
+| 7 | Simulateur avec restauration T2 non chiffrée (§10.6) | Verdict calculé sur les données connues, accompagné d'un avertissement explicite d'incomplétude (G.11, G.14, IF-27) — jamais une fausse certitude silencieuse. |
+| 8 | Provision mensuelle étiquetée « préparation T2 » (§10.5) | Aucune seconde réservation financière créée par l'étiquette ; la couverture réelle reste exclusivement celle calculée par RG-090 (IF-22). |

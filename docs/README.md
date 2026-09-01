@@ -1,8 +1,10 @@
-# Application financière familiale — Analyse fonctionnelle et architecture (V2.1)
+# Application financière familiale — Analyse fonctionnelle et architecture (V2.2)
 
 Ce dossier constitue le **livrable d'analyse préalable au développement**. Aucune ligne de code applicative n'est écrite à ce stade.
 
-**V2.1** corrige un double comptage résiduel entre une provision déjà constituée et l'échéance qu'elle finance (nouvelle notion `engagement_non_couvert`, document 02 §E.5ter, formule G.4), ajoute le paiement atomique « avec la provision » (§E.5quater), corrige un bug de signe dans la vue `LedgerEntry` (document 04 §P.2), clarifie le budget hebdomadaire sur des semaines calendaires réelles (RG-098/RG-099), et met à jour le test oracle chiffré (document 06) en conséquence — dates calendaires corrigées, checkpoints recalculés, deux nouveaux cas de preuve (provision virtuelle et provision adossée à un compte).
+**V2.1** corrige un double comptage résiduel entre une provision déjà constituée et l'échéance qu'elle finance (nouvelle notion `engagement_non_couvert`, document 02 §E.5ter, formule G.4), ajoute le paiement atomique « avec la provision » (§E.5quater), corrige un bug de signe dans la vue `LedgerEntry` (document 04 §P.2), clarifie le budget hebdomadaire sur des semaines calendaires réelles (RG-098/RG-099), et met à jour le test oracle chiffré (document 06) en conséquence.
+
+**V2.2** ajoute, à partir d'un cas réel de suivi des frais scolaires : la distinction facturation/échéance (`billing_date` ≠ `due_date`), le principe **« inconnu ≠ 0 DH »** pour les montants pas encore communiqués (nouveau principe fondateur, document 01 §A.2bis), le cycle estimé→confirmé d'un montant, les charges optionnelles (obligatoire / envisagée / souscrite / refusée), une structure générique `FinancialPlan` (École, Vacances, Voiture…) sans dupliquer d'agrégats, la ventilation analytique d'une charge commune à plusieurs enfants, et un simulateur qui signale explicitement l'incertitude plutôt que de la taire.
 
 ## Philosophie retenue (inchangée)
 

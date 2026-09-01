@@ -1,6 +1,6 @@
-# 01 — Synthèse produit & architecture fonctionnelle (V2)
+# 01 — Synthèse produit & architecture fonctionnelle (V2.2)
 
-> Couvre les points A, B, M, N. **V2** : vocabulaire de trésorerie clarifié en deux projections distinctes (physique / capacité libre), introduction des comptes financiers comme brique de base. Voir document 02 pour les définitions normatives complètes.
+> Couvre les points A, B, M, N. **V2** : vocabulaire de trésorerie clarifié en deux projections distinctes (physique / capacité libre), introduction des comptes financiers comme brique de base. **V2.2** : ajout du principe « une donnée manquante n'est jamais zéro » (A.2bis) et du module Plan financier générique (B.2). Voir document 02 pour les définitions normatives complètes.
 
 ---
 
@@ -8,6 +8,9 @@
 
 ### A.1 – A.2 Ce que ce produit n'est pas / le principe fondateur
 Inchangés (cf. V1) : pas un tracker de dépenses ; séparation stricte Prévu / Réel (RG-000).
+
+### A.2bis — Une donnée manquante n'est jamais zéro *(nouveau V2.2)*
+Second principe fondateur, aussi structurant que Prévu ≠ Réel : **`inconnu` n'est pas `0 DH`.** Une charge dont le principe est connu mais le montant pas encore communiqué (restauration scolaire non facturée, garderie pas encore décidée) ne doit jamais disparaître silencieusement d'un calcul, ni être comptée comme nulle — elle est exclue des sommes numériques et signalée qualitativement partout où ce calcul est affiché (document 02, RG-102/RG-103, G.14). Un budget ou une projection contenant une inconnue pertinente n'est jamais présenté comme un total définitif.
 
 ### A.3 Trésorerie : deux moteurs distincts, pas un solde unique *(révisé V2)*
 
@@ -46,8 +49,9 @@ Inchangé (Suivre / Anticiper / Alerter / Conseiller), avec une précision : la 
 | Module (nouveau) | Rôle | Alimente |
 |---|---|---|
 | **Comptes** | Lieux physiques de l'argent, rapprochement bancaire, transferts internes | Trésorerie physique, toutes les projections |
+| **Plan financier** *(V2.2)* | Regroupement thématique générique de charges sur une période et des bénéficiaires (École, Vacances, Voiture…) — vue de pilotage, aucune donnée propre | Budget scolaire (vue filtrée), vue par enfant, Actions à traiter |
 
-Les autres modules (Revenus, Charges & échéances, Paiements, Épargne, Provisions, Objectifs, Budget scolaire, Abonnements, Moteur de projection, Moteur d'alerte, Simulateur, Historique/audit) restent inchangés dans leur rôle, avec les corrections de calcul détaillées au document 02.
+Le « Budget scolaire » de la V1 n'est donc plus un module à part entière : c'est une **vue filtrée** du module Plan financier générique (catégorie École + enfants bénéficiaires), cohérent avec le principe déjà posé pour Abonnements (INC-04). Les autres modules (Revenus, Charges & échéances, Paiements, Épargne, Provisions, Objectifs, Moteur de projection, Moteur d'alerte, Simulateur, Historique/audit) restent inchangés dans leur rôle, avec les corrections de calcul détaillées au document 02.
 
 ### B.3 – B.4 Flux de données de référence, « Actions à traiter »
 Inchangés dans leur principe. Le flux de référence intègre désormais le rapprochement comme point d'entrée additionnel :

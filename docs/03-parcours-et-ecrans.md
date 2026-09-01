@@ -1,6 +1,6 @@
-# 03 — Parcours utilisateurs & structure des écrans (V2)
+# 03 — Parcours utilisateurs & structure des écrans (V2.2)
 
-> Couvre les points I, J. Les parcours I.2 à I.10 de la V1 restent valides tels quels (saisie rapide, confirmation d'échéance, paiement partiel, revenu, épargne, simulateur, Actions à traiter) — non reproduits ici sauf changement. S'y ajoutent les parcours comptes/rapprochement/transferts et le simulateur enrichi (V2).
+> Couvre les points I, J. Les parcours I.2 à I.10 de la V1 restent valides tels quels (saisie rapide, confirmation d'échéance, paiement partiel, revenu, épargne, simulateur, Actions à traiter) — non reproduits ici sauf changement. S'y ajoutent les parcours comptes/rapprochement/transferts et le simulateur enrichi (V2), puis confirmation de montant, plan financier générique, vue par enfant et assistant scolaire (V2.2).
 
 ---
 
@@ -38,6 +38,56 @@ Quand une `Deadline` est liée à une `Provision` disposant d'un solde, l'action
    → [Confirmer] — une seule validation, quel que soit le nombre de sources choisies
 ```
 Derrière cette unique confirmation (document 02, RG-095/RG-096) : le `Payment` est créé (un ou deux enregistrements si répartition), la provision est décrémentée du montant utilisé (si `virtual_allocation` : retrait confirmé automatique ; si `backed_by_account` : simple conséquence du compte dédié débité), et l'échéance passe `soldée` ou `partiellement_payée` selon le montant couvert. Si la provision est **insuffisante** pour couvrir la totalité, l'écran propose directement le complément par un compte, sans étape supplémentaire ni double confirmation.
+
+### I.10bis — Confirmer le montant d'une facture *(nouveau V2.2, résout le point 2 des remarques)*
+```
+Action à traiter : « Facture T2 attendue mais non encore confirmée » (depuis le jour expected_billing_date)
+   → ouvre la Deadline (montant = « estimé » ou « inconnu »)
+   → « Facture reçue — confirmer le montant »
+        saisie du montant réel (pré-rempli avec l'estimation si elle existe)
+   → [Confirmer] → amount_status → confirmé, billing_date renseignée, montant estimé initial conservé
+```
+Distinct du paiement (I.3) : confirmer un montant ne le paie pas, et payer une échéance n'exige pas d'être passé par cette étape au préalable (une facture peut être payée directement, montant confirmé au même moment).
+
+**Nouveaux types d'Actions à traiter (V2.2, RG-117/118)** — exemples de formulation, générés seulement quand pertinents pour l'horizon courant (jamais des mois à l'avance) : « Restauration T2 : montant non encore renseigné. » · « Garderie Wael : indiquez si le service sera utilisé. » · « Échéance T2 : montant encore estimé, à confirmer si la facture est arrivée. » · « Facture T2 attendue depuis le 12 janvier mais non confirmée. » · « Assurance continuité : décision à prendre. »
+
+### I.13bis — Simulateur : incertitude affichée *(nouveau V2.2, résout les points 12/13)*
+Quand une `Deadline` pertinente pour l'horizon simulé (I.13) est à `amount_status ∈ {estimé, inconnu}` ou correspond à une option `envisagée`, le résultat du simulateur ajoute une ligne explicite, jamais silencieuse :
+```
+« Selon les dépenses actuellement renseignées, cet achat est possible en décembre.
+   ⚠ Le montant de la restauration scolaire T2 n'est pas encore connu — cette projection pourrait évoluer. »
+```
+
+### I.14 — Assistant « Ajouter les frais scolaires » *(nouveau V2.2, résout le point 14 des remarques)*
+Assistant UX uniquement — n'introduit aucun modèle de données propre à l'école (réutilise `FinancialPlan`, `ChargePlan`, `Deadline`, `Child`) :
+```
+1. Année scolaire, établissement
+2. Enfant(s) concerné(s) — crée ou réutilise un FinancialPlan « École 20XX/20XX »
+3. Scolarité annuelle (montant global si connu)
+4. Échéances T1/T2/T3 si connues — sinon « Je ne connais pas encore » → Deadline amount_status=inconnu
+5. Fournitures, uniforme, sorties, réinscription — idem, chaque montant inconnu reste inconnu, jamais 0
+6. Restauration — forfait trimestriel/mensuel/annuel si connu ; sinon amount_status=inconnu
+   (jamais un calcul par prix unitaire × nombre de repas, cf. document 02 §E.3ter)
+7. Garderie — ChargePlan mensuel classique ; ou « pas encore décidé » → obligation_status=optionnelle_envisagée
+8. Assurance — obligatoire ou optionnelle (souscrite/envisagée/refusée)
+9. Autres frais scolaires
+   → [Créer le plan] — chaque étape passable sans donnée, jamais bloquante
+```
+
+### I.10ter — Vue par enfant et vue Plan financier *(nouveau V2.2, résout les points 7 et 10)*
+```
+Fiche enfant → onglet « Coûts » (agrégation G.15, filtrée par bénéficiaire) :
+   Coût connu | Payé | Reste à payer | Provisionné | Reste à financer
+   Répartition par catégorie (scolarité, restauration, garderie, activités, fournitures, sorties, uniforme, assurance…)
+   Bandeau « Budget incomplet » si Complétude ≠ complet (G.14), jamais un total présenté comme définitif
+
+Plan → « École 2026/2027 » (ou tout autre FinancialPlan) :
+   Budget connu (avec statut complet/incomplet) | Payé | Reste à payer | Provisionné | Reste à financer
+   Prochaine échéance + son taux de couverture par la provision associée
+   Projection jusqu'à la fin de la période
+   Éléments encore inconnus (liste qualitative) | Options envisagées (montant séparé, jamais fusionné)
+```
+Une charge commune à plusieurs enfants (ex. facture école 40 000 DH, Wael + Dina) apparaît dans les deux vues enfant sans dédoubler le paiement réel — sa ventilation analytique, quand elle existe, répartit seulement l'affichage (document 02, RG-116).
 
 ### I.11 — Rapprochement bancaire *(nouveau)*
 ```
@@ -85,8 +135,8 @@ Exemple de formulation cible (cf. G.11) : *« Achat possible dès le 30 novembre
 
 ## J. Structure des écrans
 
-### J.1 Fusions V1 — inchangées
-Toutes les fusions de la V1 restent valides (feuille « + » unique, maître-détail charges, calendrier=échéances, Épargne+Provisions, Foyer+Enfant+Scolarité, Notifications=historique d'Actions à traiter, pas d'écran Documents dédié, Paramètres consolidé).
+### J.1 Fusions V1 — inchangées, module scolaire précisé
+Toutes les fusions de la V1 restent valides (feuille « + » unique, maître-détail charges, calendrier=échéances, Épargne+Provisions, Foyer+Enfant+Scolarité, Notifications=historique d'Actions à traiter, pas d'écran Documents dédié, Paramètres consolidé). **V2.2** : l'onglet Scolarité d'une fiche enfant (déjà fusionné en V1) est désormais explicitement une vue filtrée sur `FinancialPlan` (I.10ter) — pas d'écran ni de modèle de données supplémentaire pour l'école.
 
 ### J.2 Écran Comptes *(nouveau, minimal)*
 Ajouté à la section « Plus », **jamais** en onglet de navigation principale (cf. §23 — la complexité des comptes reste secondaire) :
@@ -108,7 +158,7 @@ Montants engagés            [montant]     (échéances ouvertes + budgets resta
 ```
 « Patrimoine liquide total » (incluant l'épargne adossée à un compte dédié) reste accessible en un tap, mais n'est **jamais** le chiffre mis en avant par défaut — conformément à la distinction demandée entre patrimoine total et trésorerie mobilisable.
 
-### J.4 Liste consolidée des écrans (V2 — 17 zones)
-Identique à la liste V1 (16 zones), avec l'ajout de **Comptes** en sous-écran de Paramètres/Plus (pas une zone de navigation principale supplémentaire) :
+### J.4 Liste consolidée des écrans (V2.2 — 17 zones, inchangé en nombre)
+Identique à la liste V2 (17 zones) — la notion de **Plan financier** (École, Vacances, Voiture…) et la **vue par enfant** (V2.2) ne créent pas de zone de navigation supplémentaire : elles vivent respectivement comme sous-écran de « Charges & échéances » / « Foyer » (fiche enfant), conformément à §23 (ne pas transformer l'application en tableur) :
 
-1. Splash · 2. Connexion/Inscription · 3. Créer/rejoindre un foyer · 4. Onboarding financier (inclut désormais la déclaration de comptes) · 5. **Dashboard** · 6. **Transactions** (alimenté par `LedgerEntry`) · 7. Feuille « + » (dépense/revenu/échéance/objectif/**transfert**) · 8. **Charges & échéances** · 9. **Calendrier** · 10. **Budgets variables** · 11. **Épargne, Provisions & Objectifs** · 12. **Simulateur** (enrichi) · 13. **Foyer** · 14. **Actions à traiter** · 15. Historique/Audit · 16. Paramètres (inclut **Comptes** et rapprochement).
+1. Splash · 2. Connexion/Inscription · 3. Créer/rejoindre un foyer · 4. Onboarding financier (inclut désormais la déclaration de comptes) · 5. **Dashboard** · 6. **Transactions** (alimenté par `LedgerEntry`) · 7. Feuille « + » (dépense/revenu/échéance/objectif/**transfert**) · 8. **Charges & échéances** (inclut les **Plans financiers**, ex. « École 2026/2027 ») · 9. **Calendrier** · 10. **Budgets variables** · 11. **Épargne, Provisions & Objectifs** · 12. **Simulateur** (enrichi, signale l'incertitude) · 13. **Foyer** (fiche enfant → onglet Coûts, V2.2) · 14. **Actions à traiter** (inclut les données manquantes, V2.2) · 15. Historique/Audit · 16. Paramètres (inclut **Comptes** et rapprochement).
