@@ -1,13 +1,21 @@
 import { Prisma } from '@prisma/client';
 import { getAccountBalance, getDeadlineBalance, round2, toNumber } from './ledger.util';
+import {
+  BudgetLike,
+  ProjectionMode,
+  addDaysUTC,
+  budgetAmountForWindow,
+  computeBudgetPeriodStatus,
+  getCurrentPeriodWindow,
+} from './variable-budget.util';
 
 type TxClient = Prisma.TransactionClient;
 
 /**
- * Moteur de trésorerie/disponible libre (docs/02-modele-metier.md G.2 à G.5, Lot 5).
- * Toutes les fonctions sont tx-scoped (jamais de rlsContext.run() imbriqué, cf. les
- * bugs de transaction corrigés aux Lots 3/4) et acceptent une referenceDate
- * injectable — jamais de `new Date()` implicite dans le domaine (§22).
+ * Moteur de trésorerie/disponible libre (docs/02-modele-metier.md G.2 à G.5, Lot 5,
+ * corrigé sur retour utilisateur). Toutes les fonctions sont tx-scoped (jamais de
+ * rlsContext.run() imbriqué) et acceptent une referenceDate injectable — jamais de
+ * `new Date()` implicite dans le domaine (§22).
  */
 
 // ---------- G.2/G.3 — Patrimoine liquide total / Trésorerie opérationnelle ----------
@@ -29,21 +37,20 @@ export async function computeTreasurySummary(tx: TxClient, householdId: string):
   return { patrimoineLiquideTotal: round2(patrimoineLiquideTotal), tresorerieOperationnelle: round2(tresorerieOperationnelle) };
 }
 
-// ---------- G.3 — Montants réservés (préparation Lot 6, §4/§24) ----------
+// ---------- G.3 — Montants réservés (préparation Lot 6, §4/§24 Lot 5) ----------
 
 export interface ReservedAmounts {
   total: number;
 }
 
 /**
- * Lot 5 : reste à 0 tant que Provision (Lot 6) n'existe pas — jamais de fausse
- * réserve inventée à partir d'un simple solde de compte épargne (§4). Interface
- * volontairement extensible : quand Provision existera, seul le total des
- * poches/provisions `virtual_allocation` s'additionnera ici (RG-070/071) ;
- * `backed_by_account` ne devra JAMAIS y être réadditionné — elle est déjà
+ * Reste à 0 tant que Provision (Lot 6) n'existe pas — jamais de fausse réserve
+ * inventée à partir d'un simple solde de compte épargne. Interface extensible :
+ * quand Provision existera, seul le total `virtual_allocation` s'additionnera ici
+ * (RG-070/071) ; `backed_by_account` ne devra JAMAIS y être réadditionné — déjà
  * retirée de la Trésorerie opérationnelle par l'exclusion de son compte dédié
  * (RG-072/IF-06). Cette fonction ne lit donc, par construction, aucun solde de
- * compte : le jour où Lot 6 l'implémente, IF-06 reste garanti par conception.
+ * compte : IF-06 reste garanti par conception le jour où Lot 6 l'implémente.
  */
 export async function computeReservedAmounts(_tx: TxClient, _householdId: string): Promise<ReservedAmounts> {
   return { total: 0 };
@@ -56,25 +63,41 @@ function toUtcMidnight(date: Date): Date {
 }
 
 /**
- * H* (doc02 G.5) = date de la prochaine IncomeOccurrence « prévue » significative.
- * À défaut de revenu prévu connu, repli déterministe sur seuil_à_venir (paramètre
- * foyer déjà utilisé par RG-117/Actions à traiter, doc02 §F.2) — jamais une règle
- * arbitraire distincte de celle du modèle (§10).
+ * Fallback TECHNIQUE uniquement (aucune existence dans le modèle normatif) —
+ * utilisé exclusivement quand aucune IncomeOccurrence prévue future n'existe,
+ * pour permettre malgré tout l'affichage du Dashboard. Jamais présenté comme
+ * la définition métier de H* (cf. corrections Lot 5 §4).
  */
-export async function computeHorizon(tx: TxClient, householdId: string, referenceDate: Date): Promise<Date> {
+export const DASHBOARD_FALLBACK_HORIZON_DAYS = 30;
+
+export type HorizonSource = 'income' | 'fallback';
+
+export interface HorizonResult {
+  date: Date;
+  source: HorizonSource;
+  isFallback: boolean;
+}
+
+/**
+ * H* (doc02 G.5) = date de la prochaine IncomeOccurrence « prévue » significative —
+ * SEULE définition normative. Si aucune n'existe, un repli technique déterministe
+ * (DASHBOARD_FALLBACK_HORIZON_DAYS) est utilisé pour ne pas bloquer l'affichage,
+ * mais le résultat porte explicitement `source: 'fallback'`/`isFallback: true` —
+ * jamais une fausse certitude silencieuse. Ne réutilise jamais seuil_à_venir
+ * (HouseholdSettings), qui sert aux alertes temporelles, pas à définir H*.
+ */
+export async function computeHorizon(tx: TxClient, householdId: string, referenceDate: Date): Promise<HorizonResult> {
   const ref = toUtcMidnight(referenceDate);
   const nextIncome = await tx.incomeOccurrence.findFirst({
     where: { status: 'prevu', usualDate: { gt: ref }, incomeSource: { householdId } },
     orderBy: { usualDate: 'asc' },
   });
-  if (nextIncome) return nextIncome.usualDate;
+  if (nextIncome) return { date: nextIncome.usualDate, source: 'income', isFallback: false };
 
-  const settings = await tx.householdSettings.findUnique({ where: { householdId } });
-  const days = settings?.seuilAVenirDays ?? 30;
-  return new Date(ref.getTime() + days * 86400000);
+  return { date: new Date(ref.getTime() + DASHBOARD_FALLBACK_HORIZON_DAYS * 86400000), source: 'fallback', isFallback: true };
 }
 
-// ---------- G.4 — Montants engagés ----------
+// ---------- G.4 — Montants engagés : part Deadline ----------
 
 export interface CommittedItem {
   id: string;
@@ -85,8 +108,7 @@ export interface CommittedItem {
   resteAPayer: number | null;
 }
 
-export interface CommittedAmounts {
-  horizon: Date;
+export interface DeadlineCommitments {
   knownAmount: number; // Σ engagement_non_couvert (= reste_a_payer, couverture_affectée=0 tant que Lot 6 n'existe pas)
   hasUnknown: boolean;
   unknownCount: number;
@@ -97,19 +119,15 @@ export interface CommittedAmounts {
 }
 
 /**
- * G.4 — Montants_engagés(T, H). Base de calcul : reste_a_payer, JAMAIS known_plan_cost
- * (§5/§19 — un FinancialPlan n'est jamais lu ici, exclusion structurelle du double
- * comptage IF-28). Portée certaine = obligatoire ∪ optionnelle_souscrite (RG-106) ;
- * optionnelle_envisagée est calculée séparément (jamais fusionnée, §7) ;
- * optionnelle_refusée et les Deadline annulées/soldées sont exclues (RG-107/RG-050).
- * Une Deadline est engagée dès aujourd'hui si sa due_date tombe dans l'horizon —
- * jamais seulement le jour de son échéance (§5). Le terme "Projection_prudente_restante
- * des budgets variables" de la formule G.4 complète n'est volontairement pas mélangé
- * ici (§20 — pas encore à cet endroit dans ce lot).
+ * Part Deadline de G.4 — reste_a_payer, JAMAIS known_plan_cost (un FinancialPlan
+ * n'est jamais lu ici, exclusion structurelle du double comptage IF-28). Portée
+ * certaine = obligatoire ∪ optionnelle_souscrite (RG-106) ; optionnelle_envisagée
+ * calculée séparément (jamais fusionnée, §7) ; optionnelle_refusée et les Deadline
+ * annulées/soldées sont exclues (RG-107/RG-050). Une Deadline est engagée dès
+ * aujourd'hui si sa due_date tombe dans l'horizon — jamais seulement le jour de
+ * son échéance (§5).
  */
-export async function computeCommittedAmounts(tx: TxClient, householdId: string, referenceDate: Date): Promise<CommittedAmounts> {
-  const horizon = await computeHorizon(tx, householdId, referenceDate);
-
+export async function computeDeadlineCommitments(tx: TxClient, householdId: string, horizon: Date): Promise<DeadlineCommitments> {
   const certainPlans = await tx.chargePlan.findMany({
     where: { householdId, obligationStatus: { in: ['obligatoire', 'optionnelle_souscrite'] } },
     include: { deadlines: true },
@@ -159,7 +177,6 @@ export async function computeCommittedAmounts(tx: TxClient, householdId: string,
   }
 
   return {
-    horizon,
     knownAmount: round2(knownAmount),
     hasUnknown: unknownCount > 0,
     unknownCount,
@@ -168,6 +185,96 @@ export async function computeCommittedAmounts(tx: TxClient, householdId: string,
     envisagedTotal: round2(envisagedTotal),
     envisagedHasUnknown,
   };
+}
+
+// ---------- G.4 — Montants engagés : part VariableBudget (réutilise le moteur Lot 3) ----------
+
+function toBudgetLike(budget: {
+  referenceAmount: unknown;
+  referencePeriod: 'semaine' | 'mois';
+  weekStartDay: number;
+  startDate: Date;
+  endDate: Date | null;
+}): BudgetLike {
+  return {
+    referenceAmount: toNumber(budget.referenceAmount),
+    referencePeriod: budget.referencePeriod,
+    weekStartDay: budget.weekStartDay,
+    startDate: budget.startDate,
+    endDate: budget.endDate,
+  };
+}
+
+async function consommeSurFenetre(tx: TxClient, variableBudgetId: string, start: Date, end: Date): Promise<number> {
+  const result = await tx.budgetExpense.aggregate({
+    where: { variableBudgetId, spentDate: { gte: start, lt: addDaysUTC(end, 1) } }, // borne exclusive : inclut toute la journée de fin
+    _sum: { amount: true },
+  });
+  return toNumber(result._sum.amount);
+}
+
+export interface VariableBudgetCommitmentItem {
+  variableBudgetId: string;
+  amount: number;
+}
+
+export interface VariableBudgetCommitments {
+  total: number;
+  items: VariableBudgetCommitmentItem[];
+}
+
+/**
+ * Part budgets variables de G.4 — « Σ Projection_prudente_restante(variable_budget)
+ * pour les périodes se terminant ≤ H » (doc02 G.4). Réutilise EXCLUSIVEMENT le
+ * moteur Lot 3 (budgetAmountForWindow/computeBudgetPeriodStatus — semaines/mois
+ * calendaires réels, prorata uniquement aux bords, RG-098) — aucune formule
+ * recopiée ici.
+ *
+ * Anti-double-comptage (IF-13, corrections Lot 5) : le réalisé (BudgetExpense déjà
+ * enregistrées) a déjà réduit le solde réel du compte via LedgerEntry — il ne doit
+ * donc JAMAIS être une seconde fois déduit ici. Seule la part FUTURE (restante) est
+ * ajoutée :
+ *  - période courante (contient referenceDate) → projectionPrudenteRestante du
+ *    moteur Lot 3, qui soustrait déjà le consommé réel de cette période (G.8) ;
+ *  - toute portion de fenêtre au-delà de la période courante jusqu'à l'horizon →
+ *    entièrement future (aucune BudgetExpense n'existe encore là), donc
+ *    budgetAmountForWindow proratisé (RG-098) est déjà exactement le restant, sans
+ *    consommation à soustraire.
+ */
+export async function computeVariableBudgetCommitments(
+  tx: TxClient,
+  householdId: string,
+  referenceDate: Date,
+  horizon: Date,
+  mode: ProjectionMode,
+): Promise<VariableBudgetCommitments> {
+  const ref = toUtcMidnight(referenceDate);
+  const budgets = await tx.variableBudget.findMany({
+    where: { householdId, startDate: { lte: horizon }, OR: [{ endDate: null }, { endDate: { gte: ref } }] },
+  });
+
+  let total = 0;
+  const items: VariableBudgetCommitmentItem[] = [];
+
+  for (const row of budgets) {
+    const budget = toBudgetLike(row);
+    const currentWindow = getCurrentPeriodWindow(budget, ref);
+    const consommeCourant = await consommeSurFenetre(tx, row.id, currentWindow.start, currentWindow.end);
+    const currentStatus = computeBudgetPeriodStatus(budget, ref, consommeCourant, mode);
+
+    let amount = currentStatus.projectionPrudenteRestante; // période courante entière — déjà nette du réalisé (G.8)
+
+    if (horizon.getTime() > currentWindow.end.getTime()) {
+      const nextStart = addDaysUTC(currentWindow.end, 1);
+      amount += budgetAmountForWindow(budget, nextStart, horizon); // périodes futures : rien de réalisé, donc = restant intégral proraté (RG-098)
+    }
+
+    amount = round2(amount);
+    total += amount;
+    items.push({ variableBudgetId: row.id, amount });
+  }
+
+  return { total: round2(total), items };
 }
 
 // ---------- Prochaine échéance (§11) ----------
@@ -209,43 +316,61 @@ export async function computeNextDeadline(tx: TxClient, householdId: string, ref
 
 export interface DisponibleLibreResult {
   referenceDate: Date;
-  horizon: Date;
+  horizon: HorizonResult;
   patrimoineLiquideTotal: number;
   tresorerieOperationnelle: number;
   montantsReserves: number;
-  montantsEngages: number;
+  deadlineCommitments: number;
+  variableBudgetCommitments: number;
+  montantsEngages: number; // = deadlineCommitments + variableBudgetCommitments
   coussinSecurite: number;
   disponibleLibre: number; // jamais borné à 0 (§9)
   incomplet: boolean; // au moins un montant inconnu dans l'horizon (§6)
   hasEstimates: boolean;
+  unknownCount: number;
+  deadlineItems: CommittedItem[];
+  envisagedTotal: number;
+  envisagedHasUnknown: boolean;
 }
 
 /**
  * G.5 — Disponible_libre = Trésorerie_opérationnelle − Montants_réservés −
- * Montants_engagés − Coussin_de_sécurité. Point de départ TOUJOURS la trésorerie
- * opérationnelle, jamais le patrimoine liquide total (§9). Le coussin réutilise
- * HouseholdSettings.security_margin_amount (déjà modélisé au Lot 0, doc04 §P) —
- * même concept que le « safety_buffer_amount » de la demande, pas un nouveau champ.
+ * Montants_engagés − Coussin_de_sécurité, où Montants_engagés = part Deadline +
+ * part VariableBudget (G.4 complet, corrections Lot 5). Point de départ TOUJOURS
+ * la trésorerie opérationnelle, jamais le patrimoine liquide total (§9). Le
+ * coussin réutilise HouseholdSettings.security_margin_amount (déjà modélisé au
+ * Lot 0, doc04 §P) — même concept que le « safety_buffer_amount » de la demande.
  */
 export async function computeDisponibleLibre(tx: TxClient, householdId: string, referenceDate: Date): Promise<DisponibleLibreResult> {
   const treasury = await computeTreasurySummary(tx, householdId);
   const reserved = await computeReservedAmounts(tx, householdId);
-  const committed = await computeCommittedAmounts(tx, householdId, referenceDate);
-  const settings = await tx.householdSettings.findUnique({ where: { householdId } });
-  const coussinSecurite = settings ? toNumber(settings.securityMarginAmount) : 0;
+  const horizon = await computeHorizon(tx, householdId, referenceDate);
+  const deadlineCommitments = await computeDeadlineCommitments(tx, householdId, horizon.date);
 
-  const disponibleLibre = round2(treasury.tresorerieOperationnelle - reserved.total - committed.knownAmount - coussinSecurite);
+  const settings = await tx.householdSettings.findUnique({ where: { householdId } });
+  const mode = (settings?.variableBudgetProjectionMode ?? 'prudent_max') as ProjectionMode;
+  const variableBudgetCommitments = await computeVariableBudgetCommitments(tx, householdId, referenceDate, horizon.date, mode);
+
+  const coussinSecurite = settings ? toNumber(settings.securityMarginAmount) : 0;
+  const montantsEngages = round2(deadlineCommitments.knownAmount + variableBudgetCommitments.total);
+  const disponibleLibre = round2(treasury.tresorerieOperationnelle - reserved.total - montantsEngages - coussinSecurite);
 
   return {
     referenceDate,
-    horizon: committed.horizon,
+    horizon,
     patrimoineLiquideTotal: treasury.patrimoineLiquideTotal,
     tresorerieOperationnelle: treasury.tresorerieOperationnelle,
     montantsReserves: reserved.total,
-    montantsEngages: committed.knownAmount,
+    deadlineCommitments: deadlineCommitments.knownAmount,
+    variableBudgetCommitments: variableBudgetCommitments.total,
+    montantsEngages,
     coussinSecurite,
     disponibleLibre,
-    incomplet: committed.hasUnknown,
-    hasEstimates: committed.hasEstimates,
+    incomplet: deadlineCommitments.hasUnknown,
+    hasEstimates: deadlineCommitments.hasEstimates,
+    unknownCount: deadlineCommitments.unknownCount,
+    deadlineItems: deadlineCommitments.items,
+    envisagedTotal: deadlineCommitments.envisagedTotal,
+    envisagedHasUnknown: deadlineCommitments.envisagedHasUnknown,
   };
 }

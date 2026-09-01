@@ -4,15 +4,15 @@ import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, Toucha
 import * as api from '../api/client';
 
 interface DashboardSummary {
-  tresorerieOperationnelle: number;
-  disponibleLibre: number;
-  montantsReserves: number;
-  montantsEngages: number;
-  coussinSecurite: number;
-  patrimoineLiquideTotal: number;
-  calculIncomplet: boolean;
-  contientEstimations: boolean;
-  engagements: { unknownCount: number };
+  operational_treasury: number;
+  free_available: number;
+  reserved_amount: number;
+  committed_amount: number;
+  safety_buffer: number;
+  patrimoine_liquide_total: number;
+  is_complete: boolean;
+  contains_estimates: boolean;
+  unknown_commitments_count: number;
   optionsEnvisagees: { total: number; hasUnknown: boolean };
   prochaineEcheance: { chargePlanLabel: string; dueDate: string; amountStatus: string; resteAPayer: number | null } | null;
   actionsATraiter: Array<{ message: string }>;
@@ -82,25 +82,25 @@ export function HomeScreen() {
 
       <View style={styles.heroCard}>
         <Text style={styles.heroLabel}>Trésorerie opérationnelle</Text>
-        <Text style={styles.heroValue}>{summary.tresorerieOperationnelle.toLocaleString('fr-FR')} DH</Text>
+        <Text style={styles.heroValue}>{summary.operational_treasury.toLocaleString('fr-FR')} DH</Text>
       </View>
 
       <View style={styles.heroCard}>
         <Text style={styles.heroLabel}>Disponible libre</Text>
-        <Text style={[styles.heroValue, summary.disponibleLibre < 0 && styles.negative]}>{summary.disponibleLibre.toLocaleString('fr-FR')} DH</Text>
+        <Text style={[styles.heroValue, summary.free_available < 0 && styles.negative]}>{summary.free_available.toLocaleString('fr-FR')} DH</Text>
         <Text style={styles.heroHelp}>Ce qui reste après vos engagements, réserves et votre coussin de sécurité.</Text>
-        {summary.calculIncomplet && (
-          <Text style={styles.warning}>⚠ Calcul incomplet — {summary.engagements.unknownCount} montant(s) encore inconnu(s) dans l'horizon.</Text>
+        {!summary.is_complete && (
+          <Text style={styles.warning}>⚠ Calcul incomplet — {summary.unknown_commitments_count} montant(s) encore inconnu(s) dans l'horizon.</Text>
         )}
-        {summary.contientEstimations && !summary.calculIncomplet && <Text style={styles.info}>Inclut des montants estimés.</Text>}
+        {summary.contains_estimates && summary.is_complete && <Text style={styles.info}>Inclut des montants estimés.</Text>}
       </View>
 
       <View style={styles.figuresRow}>
-        <Figure label="Montants réservés" value={summary.montantsReserves} />
-        <Figure label="Montants engagés" value={summary.montantsEngages} />
-        <Figure label="Coussin de sécurité" value={summary.coussinSecurite} />
+        <Figure label="Montants réservés" value={summary.reserved_amount} />
+        <Figure label="Montants engagés" value={summary.committed_amount} />
+        <Figure label="Coussin de sécurité" value={summary.safety_buffer} />
       </View>
-      <Text style={styles.secondaryLine}>Patrimoine liquide total : {summary.patrimoineLiquideTotal.toLocaleString('fr-FR')} DH</Text>
+      <Text style={styles.secondaryLine}>Patrimoine liquide total : {summary.patrimoine_liquide_total.toLocaleString('fr-FR')} DH</Text>
 
       <Text style={styles.sectionTitle}>Prochaine échéance</Text>
       {summary.prochaineEcheance ? (

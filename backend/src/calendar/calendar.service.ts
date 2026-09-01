@@ -30,7 +30,7 @@ export class CalendarService {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
       const rangeStart = from ?? referenceDate;
-      const rangeEnd = to ?? (await computeHorizon(tx, householdId, referenceDate));
+      const rangeEnd = to ?? (await computeHorizon(tx, householdId, referenceDate)).date;
 
       const events: CalendarEvent[] = [];
 
