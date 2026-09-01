@@ -78,8 +78,8 @@ deadline_child_allocation(deadline_id, child_id, allocation_amount)         -- V
 
 -- FinancialPlan (nouveau V2.2, résout le point 7)
 financial_plan(id, household_id, label, period_start, period_end, linked_provision_id?)
-financial_plan_beneficiary(financial_plan_id, beneficiary_ref /* user_id ou child_id + type */)
--- Aucune colonne d'agrégat : tout est calculé à la lecture (RG-111/IF-23, cf. G.15)
+-- financial_plan_beneficiary : cf. P.1bis (typée, avec vraies FK — RG-114, corrigé lors de la revue de cohérence finale)
+-- Aucune colonne d'agrégat sur financial_plan : tout est calculé à la lecture (RG-111/IF-23, cf. G.15)
 payment(id, deadline_id, amount /* toujours > 0 */, paid_date, account_id,
         type ENUM(paiement,remboursement,ajustement),
         direction ENUM(augmente_paye,diminue_paye)? /* requis seulement si type=ajustement */,
@@ -164,6 +164,52 @@ SELECT sp.id,
                     FROM pocket_movement WHERE pocket_type='savings_pocket' AND pocket_id=sp.id AND status='confirmé'), 0)
   END AS current_amount
 FROM savings_pocket sp;
+```
+
+### P.1bis — Intégrité référentielle des relations bénéficiaires *(V2.2, résout le point 4 de la revue de cohérence finale)*
+
+> La V2.2 initiale ne modélisait `financial_plan_beneficiary` que par un `beneficiary_ref` polymorphe non typé — insuffisant pour de vraies clés étrangères PostgreSQL. Corrigé ici avec un type explicite, une contrainte d'exclusivité et de vraies FK (RG-114/IF-30). Ce schéma est le patron à réutiliser pour toute future relation bénéficiaire mêlant `User` et `Child`.
+
+```sql
+CREATE TYPE beneficiary_type AS ENUM ('user', 'child');
+
+CREATE TABLE financial_plan_beneficiary (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  financial_plan_id UUID NOT NULL REFERENCES financial_plan(id) ON DELETE CASCADE,
+  beneficiary_type beneficiary_type NOT NULL,
+  user_id UUID REFERENCES "user"(id),
+  child_id UUID REFERENCES child(id),
+  CONSTRAINT beneficiary_type_consistency CHECK (
+    (beneficiary_type = 'user'  AND user_id  IS NOT NULL AND child_id IS NULL) OR
+    (beneficiary_type = 'child' AND child_id IS NOT NULL AND user_id  IS NULL)
+  ),
+  CONSTRAINT unique_beneficiary UNIQUE (financial_plan_id, beneficiary_type, user_id, child_id)
+);
+```
+Deux vraies clés étrangères (`user_id`, `child_id`), jamais un identifiant texte/UUID non typé faisant office de référence implicite. Un enregistrement pointe toujours vers exactement un `User` ou un `Child`, jamais les deux, jamais aucun.
+
+**Contrainte de ventilation analytique** (RG-116bis/IF-29) — un `CHECK` PostgreSQL classique ne peut pas sommer plusieurs lignes ; la contrainte s'implémente en trigger `AFTER INSERT OR UPDATE` :
+```sql
+CREATE FUNCTION check_deadline_allocation_ceiling() RETURNS TRIGGER AS $$
+DECLARE
+  v_amount_current NUMERIC;
+  v_total_allocated NUMERIC;
+BEGIN
+  SELECT amount_due INTO v_amount_current FROM deadline WHERE id = NEW.deadline_id;
+  IF v_amount_current IS NOT NULL THEN               -- amount_status = 'inconnu' : rien à borner (RG-103)
+    SELECT COALESCE(SUM(allocation_amount), 0) INTO v_total_allocated
+    FROM deadline_child_allocation WHERE deadline_id = NEW.deadline_id;
+    IF v_total_allocated > v_amount_current THEN
+      RAISE EXCEPTION 'Ventilation (% DH) supérieure au montant de l''échéance (% DH)', v_total_allocated, v_amount_current;
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_deadline_allocation_ceiling
+  AFTER INSERT OR UPDATE ON deadline_child_allocation
+  FOR EACH ROW EXECUTE FUNCTION check_deadline_allocation_ceiling();
 ```
 
 ### P.2 `LedgerEntry` — vue comptable consolidée (résout le point 16)

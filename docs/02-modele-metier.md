@@ -214,12 +214,18 @@ Le modèle V2 empêchait déjà le double comptage entre compte, poche virtuelle
 **Charges obligatoires et optionnelles**
 
 - **RG-105** — `ChargePlan.obligation_status ∈ {obligatoire, optionnelle_envisagée, optionnelle_souscrite, optionnelle_refusée}` (remplace le booléen `is_mandatory` de la V2 — migration : `is_mandatory=true → obligatoire`, `is_mandatory=false → optionnelle_souscrite` par défaut, à réévaluer au cas par cas).
-- **RG-106 — Deux portées de projection, jamais fusionnées silencieusement** :
-  - **Dépenses certaines** = échéances de `ChargePlan` en `obligatoire` ou `optionnelle_souscrite`, à montant connu (`estimé` ou `confirmé`). C'est la portée par défaut de `Montants_engagés` (G.4) et de toutes les projections/simulations (G.6, G.11) — inchangé par rapport à la V2.1.
-  - **Options envisagées** = échéances de `ChargePlan` en `optionnelle_envisagée`, à montant connu. Calculées et affichées **séparément**, jamais additionnées par défaut aux Dépenses certaines.
-  - **Projection prudente** = Dépenses certaines + Options envisagées — disponible à la demande (bascule explicite dans l'UX, jamais la valeur par défaut du dashboard).
-- **RG-107** — Une charge `optionnelle_refusée` est conservée en historique (traçabilité) mais exclue de toute projection, comme une `Deadline` `annulée`.
-- **RG-108** — Le passage d'`optionnelle_envisagée` à `optionnelle_souscrite` (ou `refusée`) est une action utilisateur explicite (RG-000) ; dès `optionnelle_souscrite`, la charge intègre les Dépenses certaines au recalcul suivant.
+- **RG-106 — Deux *portées* (scope), jamais fusionnées silencieusement** — `obligation_status` définit uniquement quelles `Deadline` **entrent dans le calcul**, pas un montant :
+  - **Portée « certaine »** = `ChargePlan` en `obligatoire` ou `optionnelle_souscrite`. C'est la portée par défaut de `Montants_engagés` (G.4) et de toutes les projections/simulations (G.6, G.11) — inchangé par rapport à la V2.1.
+  - **Portée « envisagée »** = `ChargePlan` en `optionnelle_envisagée`. Calculée et affichée **séparément**, jamais incluse par défaut dans la portée certaine.
+  - **Projection prudente** = portée certaine + portée envisagée — disponible à la demande (bascule explicite dans l'UX), jamais la valeur par défaut.
+  *(cf. RG-119 pour les formules distinctes appliquées à chacune de ces deux portées — un coût historique connu et un besoin futur ne sont jamais la même valeur, même sur la même portée.)*
+- **RG-107** — Une charge `optionnelle_refusée` est conservée en historique (traçabilité) mais exclue de toute portée/projection, comme une `Deadline` `annulée`.
+- **RG-108** — Le passage d'`optionnelle_envisagée` à `optionnelle_souscrite` (ou `refusée`) est une action utilisateur explicite (RG-000) ; dès `optionnelle_souscrite`, la charge intègre la portée certaine au recalcul suivant.
+- **RG-119 — Coût historique connu ≠ besoin futur** *(nouveau, corrige une ambiguïté de nommage identifiée en usage réel)* — Sur une même portée (certaine, envisagée ou prudente), deux familles de valeurs **distinctes**, jamais interchangeables :
+  - **Coût connu** (`known_plan_cost`) = `Σ amount_current` des `Deadline` de la portée, à `amount_status ∈ {estimé, confirmé}`, **quel que soit leur état financier** (payées ou non). C'est un total **historique/descriptif** — « combien coûte ce poste au total, cette année ».
+  - **Besoin futur** (`remaining_due` / `remaining_to_fund`) = `Σ reste_a_payer` / `Σ engagement_non_couvert` des mêmes `Deadline`, restreintes à `état_financier ∈ {ouverte, partiellement_payée}`. C'est ce qui reste réellement à sortir de trésorerie — la seule valeur légitime dans `Montants_engagés` (G.4), le disponible libre (G.5) ou une projection (G.6, G.11).
+  - **`known_plan_cost` ne doit jamais être substitué à `remaining_due`/`remaining_to_fund` dans une formule d'engagement futur** — une `Deadline` intégralement soldée contribue pleinement à `known_plan_cost` (le coût a bien été de ce montant) mais **0 DH** à `remaining_due`/`remaining_to_fund` (rien ne reste à financer). Cf. IF-28, testé chiffres en main au document 06 §11 (TEST 9).
+  - **Convention de nommage explicite** (API/services, pour rendre la confusion impossible dans le code) : `known_plan_cost`, `paid_amount` (`Σ Payment` net), `remaining_due` (= `known_plan_cost − paid_amount`, borné aux échéances à montant connu), `provision_coverage` (= `Σ couverture_affectée`), `remaining_to_fund` (= `Σ engagement_non_couvert`). Aucune fonction/service ne doit porter un nom générique (`budget`, `total`, `amount`) qui masquerait laquelle de ces deux familles elle retourne.
 
 ### E.5quinquies — Affectation indicative d'une provision *(V2.2, résout le point 6 des remarques)*
 
@@ -233,11 +239,13 @@ Structure générique regroupant un ensemble cohérent de charges/dépenses sur 
 - **RG-111 — Aucun agrégat stocké** — Tous les indicateurs d'un `FinancialPlan` (budget connu, payé, reste à payer, provisionné, reste à financer, prochaine échéance, couverture de la prochaine échéance, projection jusqu'à `period_end`, éléments inconnus, options) sont **calculés à la demande** à partir des `ChargePlan`/`Deadline`/`Provision` liés — jamais dupliqués en colonnes propres (cf. G.15, IF-23).
 - **RG-112** — Un `FinancialPlan` peut référencer une `Provision` associée (ex. « Provision Scolarité » pour le plan « École 2026/2027 ») — relation informative pour l'affichage consolidé, la couverture réelle restant régie par RG-090 indépendamment du `FinancialPlan`.
 - **RG-113 — Complétude d'un plan** — Un `FinancialPlan` est `complet` si toutes ses `Deadline` liées ont `amount_status ∈ {estimé, confirmé}` et qu'aucune `ChargePlan` en `optionnelle_envisagée` n'attend de décision dont l'échéance de décision est dépassée ; sinon `incomplet`. Le « budget connu » d'un plan incomplet est **toujours** présenté comme un plancher (« Au moins 134 730 DH de dépenses sont déjà identifiées »), jamais comme un total définitif (cf. G.14).
+- **RG-114 — Intégrité référentielle des bénéficiaires** *(nouveau)* — Le rattachement d'un `FinancialPlan` à ses bénéficiaires (`User` et/ou `Child`) ne s'implémente jamais comme un identifiant polymorphe non typé (« un `ID` qui peut être un `User` ou un `Child` selon un champ texte ») : la table de liaison porte un type explicite (`beneficiary_type ∈ {user, child}`), des colonnes `user_id`/`child_id` **distinctes**, une contrainte garantissant qu'une seule des deux est renseignée selon le type, et de vraies clés étrangères vers `user`/`child` (cf. document 04 §P.1bis, IF-30). Ce principe — type explicite + contrainte + vraies clés étrangères plutôt qu'un identifiant polymorphe non typé — s'applique à toute relation bénéficiaire future construite sur le même besoin (`User`/`Child` mêlés), pas seulement à `FinancialPlan`.
 
 ### E.3quater — Charges communes à plusieurs enfants *(V2.2, résout le point 11 des remarques)*
 
 - **RG-115** — Une `Deadline`/`ChargePlan` reste rattachable à 0, 1 ou n `Child` (inchangé, `charge_plan_child`, V1/V2). Une charge commune (ex. 40 000 DH pour Wael + Dina) génère **une seule** `Deadline` et **un seul** `Payment` réel — jamais deux paiements artificiels pour une seule facture.
-- **RG-116 — Ventilation analytique optionnelle** — Une `Deadline` rattachée à plusieurs enfants peut porter une ventilation informative (`deadline_child_allocation`, ex. Wael 20 000 / Dina 20 000), utilisée uniquement pour les vues par enfant (document 03, §I.10bis) — **jamais** pour dédoubler l'écriture réelle. La somme des ventilations n'est pas contrainte à égaler `amount_current` (une ventilation partielle est valide, ex. seule la part de Wael est connue).
+- **RG-116 — Ventilation analytique optionnelle** — Une `Deadline` rattachée à plusieurs enfants peut porter une ventilation informative (`deadline_child_allocation`, ex. Wael 20 000 / Dina 20 000), utilisée uniquement pour les vues par enfant (document 03, §I.10bis) — **jamais** pour dédoubler l'écriture réelle. Une ventilation **partielle** est valide (ex. seule la part de Wael est connue, celle de Dina non renseignée).
+- **RG-116bis — Plafond de la ventilation** *(nouveau)* — Dès que `amount_current` de la `Deadline` est connu (non `NULL`), `Σ deadline_child_allocation.allocation_amount ≤ amount_current` est une contrainte **stricte** : une ventilation qui dépasserait le montant réel de la facture (ex. 30 000 + 30 000 sur une facture de 40 000) est refusée à la saisie, jamais silencieusement acceptée. Une ventilation incomplète (somme strictement inférieure) reste valide. Cf. IF-29, testé au document 06 §11 (TEST 10).
 
 ### E.6 Objectifs / projets
 RG-040 à RG-042 inchangées.
@@ -476,36 +484,45 @@ Inchangée.
 ### G.13 — Écart prévu/réel
 Inchangée — déclenche un recalcul immédiat de toute projection en aval (jamais de cache long, cf. document 04 §O.4).
 
-### G.14 — Complétude d'une projection ou d'un plan *(nouveau V2.2, résout les points 8, 12, 13 des remarques)*
+### G.14 — Complétude, coût connu et besoin futur *(nouveau V2.2, révisé — résout les points 2, 8, 12, 13 des remarques)*
+
+> **Deux familles de valeurs distinctes, jamais interchangeables (RG-119)** : `known_plan_cost` est un total **historique** (payé ou non) ; `remaining_due`/`remaining_to_fund` sont un besoin **futur** (uniquement ce qui reste ouvert). La portée (certaine/envisagée, RG-106) filtre *quelles* `Deadline` entrent dans le calcul ; l'état financier (`ouverte`/`partiellement_payée`/`soldée`) filtre en plus *lesquelles comptent encore comme besoin futur*.
+
 ```
-Pour un ensemble de Deadline considéré (un FinancialPlan, un horizon de projection, un simulateur) :
+Pour un ensemble de Deadline considéré (un FinancialPlan, un horizon de projection, un simulateur),
+et une portée donnée (certaine = obligatoire/optionnelle_souscrite ; envisagée = optionnelle_envisagée) :
 
-Dépenses_certaines_connues = Σ amount_current  pour les Deadline à amount_status ∈ {estimé, confirmé}
-                                                    et ChargePlan.obligation_status ∈ {obligatoire, optionnelle_souscrite}
-Options_envisagées_connues = Σ amount_current  pour les Deadline à amount_status ∈ {estimé, confirmé}
-                                                    et ChargePlan.obligation_status = optionnelle_envisagée
-Projection_prudente = Dépenses_certaines_connues + Options_envisagées_connues
+known_plan_cost(portée)   = Σ amount_current   pour les Deadline de la portée, à amount_status ∈ {estimé, confirmé}
+                             — quel que soit l'état financier (payée ou non) — coût historique/descriptif
+paid_amount(portée)       = Σ Payment.amount (signé)  sur ces mêmes Deadline
+remaining_due(portée)     = Σ reste_a_payer(deadline)  restreint à état_financier ∈ {ouverte, partiellement_payée}
+                             (équivalent à known_plan_cost − paid_amount sur les Deadline à montant connu)
+provision_coverage(portée) = Σ couverture_affectée(deadline)  sur ces mêmes Deadline, état_financier ouvert (RG-090)
+remaining_to_fund(portée)  = Σ engagement_non_couvert(deadline)  sur ces mêmes Deadline, état_financier ouvert
+   → remaining_to_fund(portée « certaine ») EST la valeur utilisée dans Montants_engagés (G.4) — jamais known_plan_cost.
 
-Éléments_inconnus = liste des Deadline à amount_status = inconnu (qualitative, jamais un montant)
+Projection_prudente = known_plan_cost(certaine) + known_plan_cost(envisagée)   [total historique des deux portées]
+
+Éléments_inconnus = liste des Deadline à amount_status = inconnu (qualitative, jamais un montant, RG-103)
 Complétude ∈ {complet, contient_estimations, contient_inconnues}
-   complet              si aucune Deadline pertinente n'est à amount_status ∈ {inconnu} ni en option en attente
-   contient_estimations si au moins une Deadline pertinente est à amount_status = estimé (montant connu mais non confirmé)
-   contient_inconnues   si au moins une Deadline pertinente est à amount_status = inconnu, ou une option envisagée est en attente de décision
+   complet              si aucune Deadline pertinente n'est à amount_status = inconnu ni en option en attente
+   contient_estimations si au moins une Deadline pertinente est à amount_status = estimé (montant connu, non confirmé)
+   contient_inconnues   si au moins une Deadline pertinente est à amount_status = inconnu, ou une option envisagée en attente
 ```
-`Dépenses_certaines_connues` n'est **jamais** présenté comme un total définitif quand `Complétude ≠ complet` — toujours accompagné du statut (RG-113) : « Au moins X DH de dépenses sont déjà identifiées » plutôt que « Budget total = X DH ».
+`known_plan_cost` n'est **jamais** présenté comme un total définitif quand `Complétude ≠ complet` — toujours accompagné du statut (RG-113) : « Au moins X DH de dépenses sont déjà identifiées » plutôt que « Budget total = X DH ». Une `Deadline` `soldée` continue de contribuer à `known_plan_cost` (son coût a bien existé) mais contribue **0 DH** à `remaining_due`/`remaining_to_fund` (rien n'y reste à financer) — cf. IF-28.
 
-### G.15 — Agrégats d'un `FinancialPlan` ou d'une vue par enfant *(nouveau V2.2, résout les points 7 et 10 des remarques)*
+### G.15 — Agrégats d'un `FinancialPlan` ou d'une vue par enfant *(nouveau V2.2, révisé — résout les points 2, 7 et 10 des remarques)*
 ```
-Pour un FinancialPlan (ou un Child, en filtrant les Deadline par bénéficiaire) :
+Pour un FinancialPlan (ou un Child, en filtrant les Deadline par bénéficiaire), portée « certaine » par défaut :
 
-Budget_connu          = Dépenses_certaines_connues (G.14)                     [+ options si vue « prudente »]
-Payé                  = Σ Payment.amount (signé)  sur les Deadline concernées
-Reste_à_payer          = Σ reste_a_payer(deadline)  sur les Deadline concernées, ouvertes/partiellement payées
-Provisionné            = Σ couverture_affectée(deadline)  sur les Deadline concernées (RG-090)
-Reste_à_financer        = Σ engagement_non_couvert(deadline)  sur les Deadline concernées
-Prochaine_échéance      = MIN(due_date) parmi les Deadline ouvertes/partiellement payées concernées
-Couverture_prochaine    = couverture_affectée(Prochaine_échéance) / reste_a_payer(Prochaine_échéance)
-Complétude              = G.14 restreinte à ces mêmes Deadline
+known_plan_cost         (G.14)
+paid_amount              (G.14)
+remaining_due             (G.14)
+provision_coverage        (G.14)
+remaining_to_fund          (G.14)
+Prochaine_échéance         = MIN(due_date) parmi les Deadline ouvertes/partiellement payées concernées, à montant connu
+Couverture_prochaine       = provision_coverage(Prochaine_échéance) / reste_a_payer(Prochaine_échéance)
+Complétude                 = G.14 restreinte à ces mêmes Deadline
 ```
 Purement des agrégations en lecture sur les entités existantes (`ChargePlan`, `Deadline`, `Payment`, `Provision`) — aucune donnée dupliquée (IF-23). Une vue par enfant est le cas particulier où le filtre porte sur le bénéficiaire plutôt que sur le `FinancialPlan` ; une charge commune à plusieurs enfants (RG-115) contribue à chacune des vues concernées sans dédoubler le `Payment` réel sous-jacent — seule sa ventilation analytique (RG-116), quand elle existe, répartit visuellement le montant entre les vues.
 
@@ -562,3 +579,9 @@ Ces invariants deviendront des tests automatisés (cf. document 05, roadmap V2).
 - **IF-25** — Une charge `optionnelle_envisagée` n'entre jamais dans `Montants_engagés` (G.4) ni dans le disponible libre (G.5) par défaut — uniquement dans la Projection prudente affichée séparément (RG-106).
 - **IF-26** — Une charge/`Deadline` commune à plusieurs enfants ne génère jamais plus d'un `Payment` réel pour un même règlement, quelle que soit sa ventilation analytique (RG-115/116).
 - **IF-27** — Un plan financier ou une projection contenant au moins un montant `inconnu` ou une option `envisagée` pertinente pour l'horizon étudié ne peut jamais être présenté comme un total définitif ou un verdict de simulateur sans mention explicite de cette incertitude (RG-113, G.14, document 03 §I.13bis).
+
+**Invariants de cohérence finale (issus de la confrontation à un cas réel)**
+
+- **IF-28** — `known_plan_cost` (G.14) n'est jamais substitué à `remaining_due`/`remaining_to_fund` dans une formule d'engagement futur (`Montants_engagés` G.4, `Disponible_libre` G.5, toute projection G.6/G.11) : une `Deadline` intégralement soldée contribue pleinement à `known_plan_cost` mais 0 DH à `remaining_due`/`remaining_to_fund` (RG-119).
+- **IF-29** — `Σ deadline_child_allocation.allocation_amount ≤ amount_current` dès que ce montant est connu (non `NULL`) — une ventilation qui dépasserait le montant réel de la facture est refusée à la saisie, jamais silencieusement acceptée (RG-116bis). Une ventilation analytique, quelle qu'elle soit, ne crée jamais de `Payment` supplémentaire (IF-26, inchangé).
+- **IF-30** — Toute relation bénéficiaire polymorphe (`User`/`Child` mêlés, ex. `financial_plan_beneficiary`) porte un type explicite, une contrainte d'exclusivité et de vraies clés étrangères — jamais un identifiant non typé faisant office de FK implicite (RG-114, document 04 §P.1bis).

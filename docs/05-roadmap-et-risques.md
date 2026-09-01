@@ -84,6 +84,9 @@ ChargePlan `calendrier_manuel`, fiche enfant + vues filtrées scolarité/abonnem
 - **(V2.2)** Charge à montant `inconnu` (ex. restauration) → jamais convertie en 0, exclue des sommes numériques, plan/projection marqués `incomplet`.
 - **(V2.2)** Charge optionnelle `envisagée` (ex. garderie non souscrite) → visible comme option, jamais comptée dans les Dépenses certaines ni dans Montants engagés (IF-25) ; passage à `souscrite` → devient un engagement certain au recalcul suivant.
 - **(V2.2)** Charge de 40 000 DH commune à deux enfants → un seul `Payment` réel, ventilation analytique 20 000/20 000 n'en crée jamais un second (IF-26).
+- **(V2.2, revue de cohérence finale)** `known_plan_cost` n'est jamais substitué à `remaining_due`/`remaining_to_fund` : une charge intégralement payée contribue à l'un mais 0 DH à l'autre (RG-119, IF-28).
+- **(V2.2, revue de cohérence finale)** Ventilation analytique dépassant le montant connu d'une échéance (ex. 30 000+30 000 sur 40 000 DH) → refusée par contrainte, jamais silencieusement acceptée (RG-116bis, IF-29).
+- **(V2.2, revue de cohérence finale)** `financial_plan_beneficiary` : intégrité référentielle vérifiée par contrainte + vraies FK, jamais un identifiant polymorphe non typé (RG-114, IF-30, document 04 §P.1bis) — critère d'acceptation du Lot.
 
 ### Lot 5 — Trésorerie & dashboard
 G.2 à G.5 (patrimoine liquide, trésorerie opérationnelle, montants réservés, montants engagés, disponible libre), Dashboard v1, Calendrier financier.

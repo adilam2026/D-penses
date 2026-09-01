@@ -87,6 +87,7 @@ Plan → « École 2026/2027 » (ou tout autre FinancialPlan) :
    Projection jusqu'à la fin de la période
    Éléments encore inconnus (liste qualitative) | Options envisagées (montant séparé, jamais fusionné)
 ```
+Correspondance UX ↔ modèle (document 02, G.14/G.15, RG-119) : « Coût/Budget connu » = `known_plan_cost` (total historique, payé ou non) ; « Payé » = `paid_amount` ; « Reste à payer » = `remaining_due` ; « Provisionné » = `provision_coverage` ; « Reste à financer » = `remaining_to_fund`. Seuls ces deux derniers entrent dans Montants engagés (G.4) — jamais « Coût/Budget connu », qui reste un total descriptif.
 Une charge commune à plusieurs enfants (ex. facture école 40 000 DH, Wael + Dina) apparaît dans les deux vues enfant sans dédoubler le paiement réel — sa ventilation analytique, quand elle existe, répartit seulement l'affichage (document 02, RG-116).
 
 ### I.11 — Rapprochement bancaire *(nouveau)*
