@@ -25,6 +25,11 @@ export class ChildrenController {
     return this.children.findOne(user.sub, user.householdId!, id);
   }
 
+  @Get(':id/costs')
+  getCosts(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.children.getCosts(user.sub, user.householdId!, id);
+  }
+
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateChildDto, @CurrentUser() user: AuthenticatedUser) {
     return this.children.update(user.sub, user.householdId!, id, dto);

@@ -87,6 +87,22 @@ export class DeadlinesService {
         data.amountStatus = newStatus;
       }
 
+      // §12.B (RG-116bis/IF-29) : refuser toute baisse de amount_current qui rendrait la
+      // ventilation déjà enregistrée supérieure au nouveau montant — jamais silencieusement
+      // acceptée. Vérification applicative (message propre) en plus du trigger DB (filet).
+      if (data.amountCurrent !== undefined && data.amountCurrent !== null) {
+        const allocated = await tx.deadlineChildAllocation.aggregate({
+          where: { deadlineId: id },
+          _sum: { allocationAmount: true },
+        });
+        const totalAllocated = allocated._sum.allocationAmount ? Number(allocated._sum.allocationAmount) : 0;
+        if (totalAllocated > (data.amountCurrent as number)) {
+          throw new BadRequestException(
+            `Nouveau montant (${data.amountCurrent} DH) inférieur à la ventilation déjà enregistrée (${totalAllocated} DH) — corrigez la ventilation avant de baisser le montant (RG-116bis)`,
+          );
+        }
+      }
+
       await tx.deadline.update({ where: { id }, data });
       await recalcFinancialStatus(tx, id); // ex. montant revu à la hausse après clôture (RG-016bis)
       return this.withBalance(tx, id);

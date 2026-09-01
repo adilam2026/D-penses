@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ChargePlansService } from './charge-plans.service';
 import { CreateChargePlanDto } from './dto/create-charge-plan.dto';
 import { CreateDeadlineDto } from './dto/create-deadline.dto';
+import { UpdateChargePlanDto } from './dto/update-charge-plan.dto';
 import { CurrentUser, AuthenticatedUser } from '../common/decorators/current-user.decorator';
 import { HouseholdRequiredGuard } from '../common/guards/household-required.guard';
 
@@ -18,6 +19,11 @@ export class ChargePlansController {
   @Get()
   findAll(@CurrentUser() user: AuthenticatedUser) {
     return this.chargePlans.findAll(user.sub, user.householdId!);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateChargePlanDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.chargePlans.update(user.sub, user.householdId!, id, dto);
   }
 
   @Post(':id/deadlines')

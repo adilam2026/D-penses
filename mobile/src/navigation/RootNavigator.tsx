@@ -10,6 +10,12 @@ import { AccountsScreen } from '../screens/accounts/AccountsScreen';
 import { BudgetsScreen } from '../screens/budgets/BudgetsScreen';
 import { BudgetDetailScreen } from '../screens/budgets/BudgetDetailScreen';
 import { CreateBudgetScreen } from '../screens/budgets/CreateBudgetScreen';
+import { ChildrenScreen } from '../screens/children/ChildrenScreen';
+import { ChildCostsScreen } from '../screens/children/ChildCostsScreen';
+import { FinancialPlansScreen } from '../screens/financial-plans/FinancialPlansScreen';
+import { FinancialPlanDetailScreen } from '../screens/financial-plans/FinancialPlanDetailScreen';
+import { ConfirmDeadlineScreen } from '../screens/financial-plans/ConfirmDeadlineScreen';
+import { SchoolWizardScreen } from '../screens/school-wizard/SchoolWizardScreen';
 import { RootTabs } from './RootTabs';
 
 const Stack = createNativeStackNavigator();
@@ -54,6 +60,12 @@ export function RootNavigator() {
       <Stack.Screen name="Budgets" component={BudgetsScreen} options={{ headerShown: true, title: 'Budgets' }} />
       <Stack.Screen name="BudgetDetail" component={BudgetDetailScreen} options={{ headerShown: true, title: 'Budget' }} />
       <Stack.Screen name="CreateBudget" component={CreateBudgetScreen} options={{ headerShown: true, title: 'Nouveau budget', presentation: 'modal' }} />
+      <Stack.Screen name="Children" component={ChildrenScreen} options={{ headerShown: true, title: 'Enfants' }} />
+      <Stack.Screen name="ChildCosts" component={ChildCostsScreen} options={{ headerShown: true, title: 'Coûts' }} />
+      <Stack.Screen name="FinancialPlans" component={FinancialPlansScreen} options={{ headerShown: true, title: 'Plans financiers' }} />
+      <Stack.Screen name="FinancialPlanDetail" component={FinancialPlanDetailScreen} options={{ headerShown: true, title: 'Plan financier' }} />
+      <Stack.Screen name="ConfirmDeadline" component={ConfirmDeadlineScreen} options={{ headerShown: true, title: 'Confirmer la facture', presentation: 'modal' }} />
+      <Stack.Screen name="SchoolWizard" component={SchoolWizardScreen} options={{ presentation: 'modal' }} />
     </Stack.Navigator>
   );
 }

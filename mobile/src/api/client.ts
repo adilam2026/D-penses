@@ -178,3 +178,46 @@ export const createExpense = (data: {
   variableBudgetId?: string;
   notes?: string;
 }) => apiFetch('/expenses', { method: 'POST', body: data });
+
+// ---------- Enfants ----------
+export const listChildren = () => apiFetch('/children');
+
+export const createChild = (data: { firstName: string; lastName: string }) =>
+  apiFetch('/children', { method: 'POST', body: data });
+
+export const getChildCosts = (childId: string) => apiFetch(`/children/${childId}/costs`);
+
+// ---------- Charges planifiées (Lot 4) ----------
+export const updateChargePlan = (id: string, data: { obligationStatus?: string; financialPlanId?: string | null }) =>
+  apiFetch(`/charge-plans/${id}`, { method: 'PATCH', body: data });
+
+export const updateDeadline = (
+  id: string,
+  data: { dueDate?: string; expectedBillingDate?: string; billingDate?: string; amountCurrent?: number; amountStatus?: string },
+) => apiFetch(`/deadlines/${id}`, { method: 'PATCH', body: data });
+
+// ---------- FinancialPlan (Lot 4) ----------
+export const listFinancialPlans = () => apiFetch('/financial-plans');
+
+export const getFinancialPlan = (id: string) => apiFetch(`/financial-plans/${id}`);
+
+export const createFinancialPlan = (data: { label: string; periodStart: string; periodEnd: string }) =>
+  apiFetch('/financial-plans', { method: 'POST', body: data });
+
+export const addFinancialPlanBeneficiary = (planId: string, data: { beneficiaryType: 'user' | 'child'; userId?: string; childId?: string }) =>
+  apiFetch(`/financial-plans/${planId}/beneficiaries`, { method: 'POST', body: data });
+
+// ---------- Assistant frais scolaires (§17) ----------
+export interface SchoolWizardItem {
+  label: string;
+  amount?: number | null;
+  dueDate: string;
+  obligationStatus?: string;
+  childIds?: string[];
+}
+
+export const submitSchoolWizard = (data: { label: string; childIds: string[]; periodStart: string; periodEnd: string; items: SchoolWizardItem[] }) =>
+  apiFetch('/school-wizard', { method: 'POST', body: data });
+
+// ---------- Actions à traiter ----------
+export const listActionsATraiter = () => apiFetch('/actions-a-traiter');

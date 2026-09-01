@@ -155,6 +155,15 @@ enum ReferencePeriod {
   mois
 }
 
+// ---------- Lot 4 — Charges planifiées, FinancialPlan, module scolaire ----------
+
+// doc04 §P.1bis (RG-114) : type explicite + vraies FK, jamais un identifiant
+// polymorphe non typé — patron réutilisable pour toute relation bénéficiaire future.
+enum BeneficiaryType {
+  user
+  child
+}
+
 // ---------- SOCLE ----------
 
 model User {
@@ -169,14 +178,15 @@ model User {
 
   memberships                HouseholdMembership[]
   sessions                   Session[]
-  createdInvites             HouseholdInvite[]     @relation("InviteCreatedBy")
-  redeemedInvite             HouseholdInvite?      @relation("InviteRedeemedBy")
+  createdInvites             HouseholdInvite[]          @relation("InviteCreatedBy")
+  redeemedInvite             HouseholdInvite?           @relation("InviteRedeemedBy")
   ownedAccounts              FinancialAccount[]
   incomeSourcesAsBeneficiary IncomeSource[]
   confirmedIncomeOccurrences IncomeOccurrence[]
   recordedPayments           Payment[]
-  recordedBudgetExpenses     BudgetExpense[]       @relation("BudgetExpenseRecordedBy")
-  recordedAdHocExpenses      AdHocExpense[]        @relation("AdHocExpenseRecordedBy")
+  recordedBudgetExpenses     BudgetExpense[]            @relation("BudgetExpenseRecordedBy")
+  recordedAdHocExpenses      AdHocExpense[]             @relation("AdHocExpenseRecordedBy")
+  financialPlanEntries       FinancialPlanBeneficiary[]
 
   @@map("user")
 }
@@ -199,6 +209,7 @@ model Household {
   chargePlans     ChargePlan[]
   variableBudgets VariableBudget[]
   adHocExpenses   AdHocExpense[]
+  financialPlans  FinancialPlan[]
 
   @@map("household")
 }
@@ -230,7 +241,10 @@ model Child {
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
 
-  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  household            Household                  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  chargePlans          ChargePlanChild[]
+  deadlineAllocations  DeadlineChildAllocation[]
+  financialPlanEntries FinancialPlanBeneficiary[]
 
   @@map("child")
 }
@@ -472,6 +486,9 @@ model ChargePlan {
   recurrenceRule   RecurrenceFrequency?     @map("recurrence_rule")
   defaultAccountId String?                  @map("default_account_id")
   obligationStatus ObligationStatus         @default(obligatoire) @map("obligation_status")
+  // RG-110 : un ChargePlan appartient à 0 ou 1 FinancialPlan — jamais un conteneur
+  // universel obligatoire (§9), une dépense de courses n'y est jamais rattachée.
+  financialPlanId  String?                  @map("financial_plan_id")
   startDate        DateTime                 @map("start_date") @db.Date
   endDate          DateTime?                @map("end_date") @db.Date
   priorityLevel    Int                      @default(1) @map("priority_level")
@@ -482,7 +499,9 @@ model ChargePlan {
   household      Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
   category       Category?         @relation(fields: [categoryId], references: [id])
   defaultAccount FinancialAccount? @relation("ChargePlanDefaultAccount", fields: [defaultAccountId], references: [id])
+  financialPlan  FinancialPlan?    @relation(fields: [financialPlanId], references: [id])
   deadlines      Deadline[]
+  children       ChargePlanChild[]
 
   @@map("charge_plan")
 }
@@ -509,8 +528,9 @@ model Deadline {
   createdAt              DateTime                @default(now()) @map("created_at")
   updatedAt              DateTime                @updatedAt @map("updated_at")
 
-  chargePlan ChargePlan @relation(fields: [chargePlanId], references: [id], onDelete: Cascade)
-  payments   Payment[]
+  chargePlan       ChargePlan                @relation(fields: [chargePlanId], references: [id], onDelete: Cascade)
+  payments         Payment[]
+  childAllocations DeadlineChildAllocation[]
 
   @@map("deadline")
 }
@@ -608,4 +628,79 @@ model AdHocExpense {
   recordedBy User             @relation("AdHocExpenseRecordedBy", fields: [recordedById], references: [id])
 
   @@map("adhoc_expense")
+}
+
+// ============================================================
+// Lot 4 — Charges planifiées & FinancialPlan / module scolaire (docs/02 §E.12/E.3quater,
+// docs/04 §P.1bis)
+// ============================================================
+
+// RG-110/111 : regroupement générique thématique — aucun agrégat stocké (budget_total,
+// paid_total...), tout est calculé à la demande (FinancialPlansService).
+model FinancialPlan {
+  id                String   @id @default(uuid())
+  householdId       String   @map("household_id")
+  label             String
+  periodStart       DateTime @map("period_start") @db.Date
+  periodEnd         DateTime @map("period_end") @db.Date
+  // Lot 6 (Provision) — cf. commentaire Deadline.provisionId, même principe.
+  linkedProvisionId String?  @map("linked_provision_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  household     Household                  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  chargePlans   ChargePlan[]
+  beneficiaries FinancialPlanBeneficiary[]
+
+  @@map("financial_plan")
+}
+
+// RG-114/doc04 §P.1bis : type explicite + colonnes user_id/child_id distinctes + vraies FK
+// + index uniques PARTIELS (jamais une seule UNIQUE(4 colonnes), insuffisante avec des
+// colonnes nullables en PostgreSQL) — cf. migration pour les deux index et le CHECK.
+model FinancialPlanBeneficiary {
+  id              String          @id @default(uuid())
+  financialPlanId String          @map("financial_plan_id")
+  beneficiaryType BeneficiaryType @map("beneficiary_type")
+  userId          String?         @map("user_id")
+  childId         String?         @map("child_id")
+  createdAt       DateTime        @default(now()) @map("created_at")
+
+  financialPlan FinancialPlan @relation(fields: [financialPlanId], references: [id], onDelete: Cascade)
+  user          User?         @relation(fields: [userId], references: [id])
+  child         Child?        @relation(fields: [childId], references: [id])
+
+  @@map("financial_plan_beneficiary")
+}
+
+// doc04 §P (ChargePlan }o──o{ Child) — une charge peut concerner 0, 1 ou n enfants (§10).
+model ChargePlanChild {
+  chargePlanId String @map("charge_plan_id")
+  childId      String @map("child_id")
+
+  chargePlan ChargePlan @relation(fields: [chargePlanId], references: [id], onDelete: Cascade)
+  child      Child      @relation(fields: [childId], references: [id], onDelete: Cascade)
+
+  @@id([chargePlanId, childId])
+  @@map("charge_plan_child")
+}
+
+// RG-115/116 : ventilation analytique optionnelle, purement informative — une charge
+// commune reste UNE Deadline et UN Payment réel, jamais dédoublés (§11). RG-116bis :
+// Σ allocation_amount ≤ amount_current, vérifié par trigger (INSERT/UPDATE d'allocation
+// ET baisse de amount_current, §12) — jamais silencieusement dépassé dans un sens comme
+// dans l'autre.
+model DeadlineChildAllocation {
+  id               String   @id @default(uuid())
+  deadlineId       String   @map("deadline_id")
+  childId          String   @map("child_id")
+  allocationAmount Decimal  @map("allocation_amount") @db.Decimal(14, 2)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  deadline Deadline @relation(fields: [deadlineId], references: [id], onDelete: Cascade)
+  child    Child    @relation(fields: [childId], references: [id], onDelete: Cascade)
+
+  @@unique([deadlineId, childId])
+  @@map("deadline_child_allocation")
 }
