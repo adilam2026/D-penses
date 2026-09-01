@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import * as crypto from 'node:crypto';
 import { RlsContextService } from '../common/prisma/rls-context.service';
+import { UpdateHouseholdSettingsDto } from './dto/update-household-settings.dto';
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 jours
 
@@ -109,5 +110,20 @@ export class HouseholdsService {
 
       return tx.household.findUniqueOrThrow({ where: { id: invite.householdId } });
     });
+  }
+
+  /** §8 — coussin de sécurité et autres paramètres foyer (HouseholdSettings, doc04 §P). */
+  async updateSettings(userId: string, householdId: string, dto: UpdateHouseholdSettingsDto) {
+    return this.rlsContext.run(userId, householdId, () =>
+      this.rlsContext.getClient().householdSettings.update({
+        where: { householdId },
+        data: {
+          securityMarginAmount: dto.securityMarginAmount,
+          seuilAVenirDays: dto.seuilAVenirDays,
+          seuilAPayerDays: dto.seuilAPayerDays,
+          variableBudgetProjectionMode: dto.variableBudgetProjectionMode,
+        },
+      }),
+    );
   }
 }

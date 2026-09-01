@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { getAccountBalance } from '../common/ledger/ledger.util';
+import { computeTreasurySummary } from '../common/ledger/treasury.util';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { CreateTransferDto } from './dto/create-transfer.dto';
 import { ReconcileDto } from './dto/reconcile.dto';
@@ -98,18 +99,7 @@ export class AccountsService {
 
   // ---------- G.2 : Patrimoine liquide total / Trésorerie opérationnelle (RG-081/082) ----------
   async getTreasurySummary(userId: string, householdId: string) {
-    return this.rlsContext.run(userId, householdId, async () => {
-      const tx = this.rlsContext.getClient();
-      const accounts = await tx.financialAccount.findMany({ where: { householdId, status: 'actif' } });
-      let patrimoineLiquideTotal = 0;
-      let tresorerieOperationnelle = 0;
-      for (const a of accounts) {
-        const balance = await this.getBalance(a.id);
-        patrimoineLiquideTotal += balance;
-        if (a.includeInOperationalTreasury) tresorerieOperationnelle += balance;
-      }
-      return { patrimoineLiquideTotal, tresorerieOperationnelle };
-    });
+    return this.rlsContext.run(userId, householdId, () => computeTreasurySummary(this.rlsContext.getClient(), householdId));
   }
 
   // ---------- RG-085 : transferts internes ----------

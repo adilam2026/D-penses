@@ -221,3 +221,14 @@ export const submitSchoolWizard = (data: { label: string; childIds: string[]; pe
 
 // ---------- Actions à traiter ----------
 export const listActionsATraiter = () => apiFetch('/actions-a-traiter');
+
+// ---------- Dashboard & Calendrier (Lot 5) ----------
+export const getDashboardSummary = (at?: string) => apiFetch(`/dashboard/summary${at ? `?at=${at}` : ''}`);
+
+export const getCalendar = (params?: { at?: string; from?: string; to?: string }) => {
+  const qs = new URLSearchParams(params as Record<string, string>).toString();
+  return apiFetch(`/calendar${qs ? `?${qs}` : ''}`);
+};
+
+export const updateHouseholdSettings = (data: { securityMarginAmount?: number; seuilAVenirDays?: number; seuilAPayerDays?: number }) =>
+  apiFetch('/households/settings', { method: 'PATCH', body: data });

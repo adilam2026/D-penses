@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { HouseholdsService } from './households.service';
 import { AuthService } from '../auth/auth.service';
 import { CreateHouseholdDto } from './dto/create-household.dto';
 import { CreateInviteDto } from './dto/create-invite.dto';
 import { JoinHouseholdDto } from './dto/join-household.dto';
+import { UpdateHouseholdSettingsDto } from './dto/update-household-settings.dto';
 import { CurrentUser, AuthenticatedUser } from '../common/decorators/current-user.decorator';
 import { HouseholdRequiredGuard } from '../common/guards/household-required.guard';
 
@@ -39,5 +40,11 @@ export class HouseholdsController {
     const household = await this.households.join(user.sub, user.householdId, dto.code);
     const tokens = await this.auth.reissueForHousehold(user.sub, household.id, req.headers['user-agent']);
     return { household, ...tokens };
+  }
+
+  @Patch('settings')
+  @UseGuards(HouseholdRequiredGuard)
+  updateSettings(@Body() dto: UpdateHouseholdSettingsDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.households.updateSettings(user.sub, user.householdId!, dto);
   }
 }

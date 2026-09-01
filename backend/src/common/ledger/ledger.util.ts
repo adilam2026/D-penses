@@ -7,6 +7,10 @@ export function toNumber(value: unknown): number {
   return Number(value);
 }
 
+export function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 /**
  * solde_courant (RG-080) — source de vérité unique, lue depuis la vue
  * account_current_balance (jamais recalculée à la main dans un service).

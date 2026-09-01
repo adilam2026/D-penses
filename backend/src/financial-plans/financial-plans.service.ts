@@ -39,11 +39,13 @@ export class FinancialPlansService {
   }
 
   async findAll(userId: string, householdId: string) {
-    return this.rlsContext.run(userId, householdId, async () => {
-      const tx = this.rlsContext.getClient();
-      const plans = await tx.financialPlan.findMany({ where: { householdId }, orderBy: { createdAt: 'desc' } });
-      return Promise.all(plans.map((p) => this.detailOnTx(tx, p.id)));
-    });
+    return this.rlsContext.run(userId, householdId, () => this.listOnTx(this.rlsContext.getClient(), householdId));
+  }
+
+  /** Variante réutilisable sur une transaction déjà ouverte (DashboardService) — jamais un second rlsContext.run() imbriqué. */
+  async listOnTx(tx: TxClient, householdId: string) {
+    const plans = await tx.financialPlan.findMany({ where: { householdId }, orderBy: { createdAt: 'desc' } });
+    return Promise.all(plans.map((p) => this.detailOnTx(tx, p.id)));
   }
 
   async findOne(userId: string, householdId: string, id: string) {

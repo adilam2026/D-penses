@@ -19,6 +19,8 @@ import { ExpensesModule } from './expenses/expenses.module';
 import { FinancialPlansModule } from './financial-plans/financial-plans.module';
 import { ActionsModule } from './actions/actions.module';
 import { SchoolWizardModule } from './school-wizard/school-wizard.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { CalendarModule } from './calendar/calendar.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -40,6 +42,8 @@ import { AppController } from './app.controller';
     FinancialPlansModule,
     ActionsModule,
     SchoolWizardModule,
+    DashboardModule,
+    CalendarModule,
   ],
   controllers: [AppController],
   providers: [

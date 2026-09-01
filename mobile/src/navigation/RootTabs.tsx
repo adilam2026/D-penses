@@ -3,6 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { HomeScreen } from '../screens/HomeScreen';
 import { PlaceholderScreen } from '../screens/PlaceholderScreen';
 import { TransactionsScreen } from '../screens/transactions/TransactionsScreen';
+import { CalendarScreen } from '../screens/calendar/CalendarScreen';
 import { PlusMenuScreen } from '../screens/PlusMenuScreen';
 
 const Tab = createBottomTabNavigator();
@@ -17,14 +18,7 @@ export function RootTabs() {
     <Tab.Navigator screenOptions={{ headerShown: false }}>
       <Tab.Screen name="Accueil" component={HomeScreen} />
       <Tab.Screen name="Transactions" component={TransactionsScreen} />
-      <Tab.Screen name="Calendrier">
-        {() => (
-          <PlaceholderScreen
-            title="Calendrier"
-            subtitle="Vue échéances/calendrier financier — arrivera avec le Lot 5 (trésorerie & dashboard)."
-          />
-        )}
-      </Tab.Screen>
+      <Tab.Screen name="Calendrier" component={CalendarScreen} />
       <Tab.Screen name="Épargne">
         {() => <PlaceholderScreen title="Épargne" subtitle="Poches, provisions & objectifs — arrivera avec le Lot 6." />}
       </Tab.Screen>
