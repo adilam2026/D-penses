@@ -296,6 +296,19 @@ export const listGoalContributions = (id: string) => apiFetch(`/goals/${id}/cont
 export const confirmGoalContribution = (contributionId: string, data: { actualDate?: string; actualAmount?: number } = {}) =>
   apiFetch(`/goals/contributions/${contributionId}/confirm`, { method: 'POST', body: data });
 
+// ---------- Simulateur What-if (Lot 8) ----------
+export const simulatePurchase = (data: { amount: number; date: string; accountId: string; horizonDays?: number; includeEnvisagedOptions?: boolean }) =>
+  apiFetch('/simulation/purchase', { method: 'POST', body: data });
+
+export const simulateGoalContribution = (data: { goalId: string; amount: number; date: string; recurring?: boolean; dayOfMonth?: number; horizonDays?: number }) =>
+  apiFetch('/simulation/goal-contribution', { method: 'POST', body: data });
+
+export const getSavingsCapacity = (data: { recurring?: boolean; date?: string; dayOfMonth?: number; horizonDays?: number } = {}) =>
+  apiFetch('/simulation/savings-capacity', { method: 'POST', body: data });
+
+export const analyzeGoal = (goalId: string, horizonDays?: number) =>
+  apiFetch('/simulation/goal', { method: 'POST', body: { goalId, horizonDays } });
+
 // ---------- Projection (Lot 7) ----------
 export const getProjection = (params: { at?: string; horizon?: number; to?: string } = {}) => {
   const qs = new URLSearchParams(

@@ -42,11 +42,26 @@ function dateKey(d: Date): string {
 
 // ---------- Construction des événements (§4/§5/§6/§7/§9/§10/§11/§12/§13/§23/§25) ----------
 
-type EventKind = 'income' | 'pocket_movement' | 'deadline' | 'transfer' | 'variable_budget';
+type EventKind = 'income' | 'pocket_movement' | 'deadline' | 'transfer' | 'variable_budget' | 'simulated_expense';
 
 // Ordre intrajournalier déterministe (§14) : les entrées et réservations arrivent
 // avant les sorties du même jour — hypothèse prudente et stable, jamais ambiguë.
-const KIND_PRIORITY: Record<EventKind, number> = { income: 0, pocket_movement: 1, deadline: 2, transfer: 3, variable_budget: 4 };
+// simulated_expense en dernier : un scénario Lot 8 se lit comme une couche appliquée
+// APRÈS les événements réels/prévus du même jour, jamais mélangée dans leur ordre.
+const KIND_PRIORITY: Record<EventKind, number> = { income: 0, pocket_movement: 1, deadline: 2, transfer: 3, variable_budget: 4, simulated_expense: 5 };
+
+/**
+ * Événement HYPOTHÉTIQUE Lot 8 (simulateur) — jamais lu depuis la base, fourni par
+ * l'appelant, jamais persisté (IF-10). `kind: 'pocket_movement'` réutilise le
+ * traitement réserve-seule déjà correct pour une contribution virtuelle simulée.
+ */
+export interface SimulatedEvent {
+  date: Date;
+  kind: 'simulated_expense' | 'pocket_movement';
+  label: string;
+  physicalImpact: number;
+  reserveImpact: number;
+}
 
 interface RawEvent {
   date: Date;
@@ -196,10 +211,21 @@ interface DeadlineCandidate {
   provisionId: string | null;
 }
 
-async function deadlineCandidates(tx: TxClient, householdId: string, referenceDate: Date, horizonEnd: Date): Promise<DeadlineCandidate[]> {
-  // Portée certaine uniquement (RG-106) — optionnelle_envisagée traitée séparément (§22).
+async function deadlineCandidates(
+  tx: TxClient,
+  householdId: string,
+  referenceDate: Date,
+  horizonEnd: Date,
+  includeEnvisaged: boolean,
+): Promise<DeadlineCandidate[]> {
+  // Portée certaine par défaut (RG-106) — optionnelle_envisagée traitée séparément (§22),
+  // sauf demande explicite du simulateur (Lot 8 §27, include_envisaged_options) : ne modifie
+  // JAMAIS obligation_status réel, seule cette lecture-ci élargit temporairement la portée.
+  const scope: Array<'obligatoire' | 'optionnelle_souscrite' | 'optionnelle_envisagee'> = includeEnvisaged
+    ? ['obligatoire', 'optionnelle_souscrite', 'optionnelle_envisagee']
+    : ['obligatoire', 'optionnelle_souscrite'];
   const plans = await tx.chargePlan.findMany({
-    where: { householdId, obligationStatus: { in: ['obligatoire', 'optionnelle_souscrite'] } },
+    where: { householdId, obligationStatus: { in: scope } },
     include: { deadlines: true },
   });
   const result: DeadlineCandidate[] = [];
@@ -226,10 +252,21 @@ async function deadlineCandidates(tx: TxClient, householdId: string, referenceDa
 }
 
 /**
- * Moteur principal (§1/§31). `referenceDate`/`horizonEnd` toujours injectés — jamais
- * `new Date()` implicite dans le domaine (cohérent avec les Lots 5/6).
+ * Moteur principal (§1/§31, réutilisé tel quel par le simulateur Lot 8 §3). `referenceDate`/
+ * `horizonEnd` toujours injectés — jamais `new Date()` implicite dans le domaine (cohérent
+ * avec les Lots 5/6). `extraEvents` (Lot 8 uniquement) permet d'ajouter des hypothèses de
+ * scénario PUREMENT EN MÉMOIRE — jamais lues ni écrites en base (IF-10) : le simulateur
+ * appelle cette même fonction deux fois (baseline sans extraEvents, scénario avec), jamais
+ * un second moteur financier.
  */
-export async function computeProjection(tx: TxClient, householdId: string, referenceDate: Date, horizonEnd: Date): Promise<ProjectionResult> {
+export async function computeProjection(
+  tx: TxClient,
+  householdId: string,
+  referenceDate: Date,
+  horizonEnd: Date,
+  extraEvents: SimulatedEvent[] = [],
+  includeEnvisagedOptions = false,
+): Promise<ProjectionResult> {
   const ref = toUtcMidnight(referenceDate);
   const end = toUtcMidnight(horizonEnd);
 
@@ -356,7 +393,7 @@ export async function computeProjection(tx: TxClient, householdId: string, refer
 
   // ---------- §5/§6/§7/§9 : Deadline (portée certaine), traitées en ORDRE CHRONOLOGIQUE ----------
   // pour faire évoluer correctement le solde de provision suivi (RG-090, séquentiel et exclusif).
-  const deadlines = (await deadlineCandidates(tx, householdId, ref, end)).sort(
+  const deadlines = (await deadlineCandidates(tx, householdId, ref, end, includeEnvisagedOptions)).sort(
     (a, b) => a.dueDate.getTime() - b.dueDate.getTime() || a.id.localeCompare(b.id),
   );
   let envisagedEventsTotal = 0;
@@ -429,6 +466,11 @@ export async function computeProjection(tx: TxClient, householdId: string, refer
       envisagedEventsTotal += balance?.resteAPayer ?? 0;
     }
   }
+
+  // ---------- Lot 8 §3 : hypothèses de scénario, purement en mémoire (IF-10) ----------
+  extraEvents.forEach((e, i) => {
+    events.push({ date: e.date, kind: e.kind, label: e.label, sortKey: `sim-${i}`, physicalImpact: round2(e.physicalImpact), reserveImpact: round2(e.reserveImpact) });
+  });
 
   // ---------- Construction de la timeline jour par jour (§14) ----------
   events.sort((a, b) => a.date.getTime() - b.date.getTime() || KIND_PRIORITY[a.kind] - KIND_PRIORITY[b.kind] || a.sortKey.localeCompare(b.sortKey));

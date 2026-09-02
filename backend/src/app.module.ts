@@ -25,6 +25,7 @@ import { PocketsModule } from './pockets/pockets.module';
 import { ProvisionsModule } from './provisions/provisions.module';
 import { GoalsModule } from './goals/goals.module';
 import { ProjectionModule } from './projection/projection.module';
+import { SimulationModule } from './simulation/simulation.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -52,6 +53,7 @@ import { AppController } from './app.controller';
     ProvisionsModule,
     GoalsModule,
     ProjectionModule,
+    SimulationModule,
   ],
   controllers: [AppController],
   providers: [

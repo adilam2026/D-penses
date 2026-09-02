@@ -20,6 +20,16 @@ interface Contribution {
   plannedDate: string;
 }
 
+interface GoalTest {
+  remaining_amount: number;
+  necessary_monthly_amount: number | null;
+  prudent_monthly_amount: number;
+  target_date: string | null;
+  realistic_date: string | null;
+  target_status: 'FEASIBLE_AT_REQUESTED_PACE' | 'NOT_FEASIBLE_AT_REQUESTED_PACE' | 'NO_TARGET_DATE';
+  is_complete: boolean;
+}
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -39,6 +49,8 @@ export function GoalDetailScreen() {
   const [amount, setAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [test, setTest] = useState<GoalTest | null>(null);
+  const [testing, setTesting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -75,6 +87,15 @@ export function GoalDetailScreen() {
     }
   }
 
+  async function onTestGoal() {
+    setTesting(true);
+    try {
+      setTest((await api.analyzeGoal(id)) as GoalTest);
+    } finally {
+      setTesting(false);
+    }
+  }
+
   if (loading || !goal) {
     return (
       <View style={styles.center}>
@@ -108,6 +129,26 @@ export function GoalDetailScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      <TouchableOpacity style={styles.testButton} onPress={onTestGoal} disabled={testing}>
+        {testing ? <ActivityIndicator color="#172436" /> : <Text style={styles.testButtonText}>Tester mon objectif</Text>}
+      </TouchableOpacity>
+
+      {test && (
+        <View style={styles.testCard}>
+          {!test.is_complete && <Text style={styles.warning}>Calcul basé sur les montants connus — certains montants restent inconnus.</Text>}
+          <View style={styles.figuresGrid}>
+            <Figure label="Objectif restant" value={test.remaining_amount} />
+            {test.necessary_monthly_amount !== null && <Figure label="Contribution nécessaire" value={test.necessary_monthly_amount} />}
+            <Figure label="Contribution prudente" value={test.prudent_monthly_amount} highlight />
+          </View>
+          {test.target_date && <Text style={styles.testLine}>Date souhaitée : {formatDate(test.target_date)}</Text>}
+          {test.target_status === 'NOT_FEASIBLE_AT_REQUESTED_PACE' && test.realistic_date && (
+            <Text style={[styles.testLine, styles.testLineWarning]}>Date réaliste estimée : {formatDate(test.realistic_date)}</Text>
+          )}
+          {test.target_status === 'FEASIBLE_AT_REQUESTED_PACE' && <Text style={styles.testLineOk}>Compatible avec vos finances actuelles.</Text>}
+        </View>
+      )}
 
       <Text style={styles.sectionTitle}>Contributions</Text>
       <FlatList
@@ -195,4 +236,11 @@ const styles = StyleSheet.create({
   contributionAmount: { fontSize: 13, fontWeight: '700', color: '#172436' },
   confirmLink: { color: '#2E7D5B', fontSize: 11, fontWeight: '600', marginTop: 4 },
   error: { color: '#B3261E', fontSize: 12, marginBottom: 8 },
+  testButton: { backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#172436', paddingVertical: 12, alignItems: 'center', marginBottom: 12 },
+  testButtonText: { color: '#172436', fontWeight: '600', fontSize: 13 },
+  testCard: { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 16 },
+  testLine: { fontSize: 12, color: '#172436', marginTop: 6 },
+  testLineWarning: { color: '#B8860B', fontWeight: '600' },
+  testLineOk: { fontSize: 12, color: '#2E7D5B', fontWeight: '600', marginTop: 6 },
+  warning: { fontSize: 12, color: '#B8860B', fontWeight: '600', marginBottom: 8 },
 });

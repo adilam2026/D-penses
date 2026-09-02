@@ -27,6 +27,9 @@ export function PlusMenuScreen() {
       <TouchableOpacity style={styles.row} onPress={() => navigation.getParent()?.navigate('Projection')}>
         <Text style={styles.rowText}>Projection</Text>
       </TouchableOpacity>
+      <TouchableOpacity style={styles.row} onPress={() => navigation.getParent()?.navigate('Simulator')}>
+        <Text style={styles.rowText}>Simulateur — Puis-je me le permettre ?</Text>
+      </TouchableOpacity>
 
       <TouchableOpacity style={styles.logout} onPress={signOut}>
         <Text style={styles.logoutText}>Se déconnecter</Text>
