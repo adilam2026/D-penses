@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { getDeadlineBalance, round2, toNumber } from './ledger.util';
+import { getDeadlineBalances, round2, toNumber } from './ledger.util';
 import { computeTreasurySummary } from './treasury.util';
 import { computePocketCurrentAmount } from './provision.util';
 import {
@@ -228,6 +228,18 @@ async function deadlineCandidates(
     where: { householdId, obligationStatus: { in: scope } },
     include: { deadlines: true },
   });
+
+  // Lot 9 (§26) : un seul aller-retour SQL pour toutes les Deadline à montant connu,
+  // au lieu d'un par Deadline — deadlineCandidates() est le cœur de computeProjection,
+  // lui-même rappelé jusqu'à 20 fois par requête de capacité d'épargne (recherche
+  // binaire) : c'était la boucle N+1 dominante mesurée en recette de performance.
+  const relevantDeadlines = plans.flatMap((cp) =>
+    cp.deadlines
+      .filter((d) => d.financialStatus !== 'annulee' && d.financialStatus !== 'soldee' && d.dueDate <= horizonEnd && d.amountStatus !== 'inconnu')
+      .map((d) => ({ deadline: d, chargePlanLabel: cp.label })),
+  );
+  const balances = await getDeadlineBalances(tx, relevantDeadlines.map((r) => r.deadline.id));
+
   const result: DeadlineCandidate[] = [];
   for (const cp of plans) {
     for (const d of cp.deadlines) {
@@ -237,7 +249,7 @@ async function deadlineCandidates(
         result.push({ id: d.id, dueDate: d.dueDate, chargePlanLabel: cp.label, resteAPayer: 0, amountStatus: 'inconnu', provisionId: d.provisionId });
         continue;
       }
-      const balance = await getDeadlineBalance(tx, d.id);
+      const balance = balances.get(d.id);
       result.push({
         id: d.id,
         dueDate: d.dueDate,
@@ -457,14 +469,12 @@ export async function computeProjection(
     where: { householdId, obligationStatus: 'optionnelle_envisagee' },
     include: { deadlines: true },
   });
-  for (const cp of envisagedPlans) {
-    for (const d of cp.deadlines) {
-      if (d.financialStatus === 'annulee' || d.financialStatus === 'soldee') continue;
-      if (d.dueDate > end || d.dueDate < ref) continue;
-      if (d.amountStatus === 'inconnu') continue;
-      const balance = await getDeadlineBalance(tx, d.id);
-      envisagedEventsTotal += balance?.resteAPayer ?? 0;
-    }
+  const envisagedDeadlines = envisagedPlans.flatMap((cp) =>
+    cp.deadlines.filter((d) => d.financialStatus !== 'annulee' && d.financialStatus !== 'soldee' && d.dueDate <= end && d.dueDate >= ref && d.amountStatus !== 'inconnu'),
+  );
+  const envisagedBalances = await getDeadlineBalances(tx, envisagedDeadlines.map((d) => d.id));
+  for (const d of envisagedDeadlines) {
+    envisagedEventsTotal += envisagedBalances.get(d.id)?.resteAPayer ?? 0;
   }
 
   // ---------- Lot 8 §3 : hypothèses de scénario, purement en mémoire (IF-10) ----------

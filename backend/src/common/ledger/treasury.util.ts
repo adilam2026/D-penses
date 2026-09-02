@@ -1,5 +1,9 @@
 import { Prisma } from '@prisma/client';
-import { getAccountBalance, getDeadlineBalance, round2, toNumber } from './ledger.util';
+import { getAccountBalances, getDeadlineBalance, round2, toNumber } from './ledger.util';
+// NB (§26 Lot 9) : getDeadlineBalance reste utilisé tel quel dans computeDeadlineCommitments/
+// computeNextDeadline ci-dessous — hors du chemin chaud identifié (computeTreasurySummary,
+// appelé jusqu'à 20 fois par requête de capacité d'épargne). Non touché dans ce lot pour
+// contenir le risque de régression (cf. rapport final §11 sur la dette restante).
 import {
   BudgetLike,
   ProjectionMode,
@@ -28,10 +32,14 @@ export interface TreasurySummary {
 
 export async function computeTreasurySummary(tx: TxClient, householdId: string): Promise<TreasurySummary> {
   const accounts = await tx.financialAccount.findMany({ where: { householdId, status: 'actif' } });
+  // Lot 9 (§26) : un seul aller-retour SQL pour tous les comptes du foyer, au lieu d'un
+  // par compte — cette fonction est appelée à chaque calcul de trésorerie/projection,
+  // donc jusqu'à 20 fois pour une seule requête de capacité d'épargne (recherche binaire).
+  const balances = await getAccountBalances(tx, accounts.map((a) => a.id));
   let patrimoineLiquideTotal = 0;
   let tresorerieOperationnelle = 0;
   for (const account of accounts) {
-    const balance = await getAccountBalance(tx, account.id);
+    const balance = balances.get(account.id) ?? 0;
     patrimoineLiquideTotal += balance;
     if (account.includeInOperationalTreasury) tresorerieOperationnelle += balance;
   }
