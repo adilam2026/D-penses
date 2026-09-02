@@ -295,3 +295,11 @@ export const addGoalContribution = (id: string, data: { plannedDate: string; pla
 export const listGoalContributions = (id: string) => apiFetch(`/goals/${id}/contributions`);
 export const confirmGoalContribution = (contributionId: string, data: { actualDate?: string; actualAmount?: number } = {}) =>
   apiFetch(`/goals/contributions/${contributionId}/confirm`, { method: 'POST', body: data });
+
+// ---------- Projection (Lot 7) ----------
+export const getProjection = (params: { at?: string; horizon?: number; to?: string } = {}) => {
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])),
+  ).toString();
+  return apiFetch(`/projection${qs ? `?${qs}` : ''}`);
+};

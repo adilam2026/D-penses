@@ -19,7 +19,32 @@ interface DashboardSummary {
   budgetsResume: Array<{ id: string; categoryName: string; referenceAmount: number; referencePeriod: string; status: { budgetContractuelRestant: number } }>;
   financialPlansResume: Array<{ id: string; label: string; knownPlanCost: number; remainingDue: number; completude: string }>;
   provisionsResume: Array<{ id: string; name: string; currentAmount: number; totalResteAPayer: number; totalUncovered: number }>;
+  next_30_days: {
+    closing_physical_treasury: number;
+    physical_low_point: number;
+    physical_low_point_date: string;
+    free_capacity_low_point: number;
+    free_capacity_low_point_date: string;
+    first_negative_date: string | null;
+    deficit_at_first_negative: number | null;
+    status: 'OK' | 'TENSION' | 'DEFICIT_PHYSIQUE' | 'INCOMPLETE';
+    is_complete: boolean;
+  };
 }
+
+const PROJECTION_STATUS_LABEL: Record<DashboardSummary['next_30_days']['status'], string> = {
+  OK: 'Stable',
+  TENSION: 'Tension',
+  DEFICIT_PHYSIQUE: 'Déficit prévu',
+  INCOMPLETE: 'Projection incomplète',
+};
+
+const PROJECTION_STATUS_COLOR: Record<DashboardSummary['next_30_days']['status'], string> = {
+  OK: '#2E7D5B',
+  TENSION: '#B8860B',
+  DEFICIT_PHYSIQUE: '#B3261E',
+  INCOMPLETE: '#6B747C',
+};
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
@@ -95,6 +120,24 @@ export function HomeScreen() {
         )}
         {summary.contains_estimates && summary.is_complete && <Text style={styles.info}>Inclut des montants estimés.</Text>}
       </View>
+
+      <TouchableOpacity style={styles.heroCard} onPress={() => navigation.getParent()?.navigate('Projection')}>
+        <Text style={styles.heroLabel}>30 prochains jours</Text>
+        <Text style={styles.heroValue}>{summary.next_30_days.closing_physical_treasury.toLocaleString('fr-FR')} DH</Text>
+        <Text style={styles.heroHelp}>
+          Point bas : {summary.next_30_days.physical_low_point.toLocaleString('fr-FR')} DH · Disponible libre minimum :{' '}
+          {summary.next_30_days.free_capacity_low_point.toLocaleString('fr-FR')} DH
+        </Text>
+        <Text style={[styles.projectionStatus, { color: PROJECTION_STATUS_COLOR[summary.next_30_days.status] }]}>
+          {PROJECTION_STATUS_LABEL[summary.next_30_days.status]}
+        </Text>
+        {summary.next_30_days.status === 'DEFICIT_PHYSIQUE' && summary.next_30_days.first_negative_date && (
+          <Text style={styles.warning}>
+            Risque de {summary.next_30_days.deficit_at_first_negative?.toLocaleString('fr-FR')} DH le{' '}
+            {new Date(summary.next_30_days.first_negative_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long' })}
+          </Text>
+        )}
+      </TouchableOpacity>
 
       <View style={styles.figuresRow}>
         <Figure label="Montants réservés" value={summary.reserved_amount} />
@@ -210,6 +253,7 @@ const styles = StyleSheet.create({
   heroHelp: { fontSize: 11, color: '#6B747C', marginTop: 6, fontStyle: 'italic' },
   warning: { fontSize: 12, color: '#B8860B', marginTop: 8, fontWeight: '600' },
   info: { fontSize: 12, color: '#6B747C', marginTop: 8 },
+  projectionStatus: { fontSize: 12, fontWeight: '800', marginTop: 8 },
   figuresRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   figure: { flex: 1, backgroundColor: '#fff', borderRadius: 10, padding: 12, marginRight: 8 },
   figureLabel: { fontSize: 10, color: '#6B747C' },

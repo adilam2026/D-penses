@@ -24,6 +24,9 @@ export function PlusMenuScreen() {
       <TouchableOpacity style={styles.row} onPress={() => navigation.getParent()?.navigate('FinancialPlans')}>
         <Text style={styles.rowText}>Plans financiers</Text>
       </TouchableOpacity>
+      <TouchableOpacity style={styles.row} onPress={() => navigation.getParent()?.navigate('Projection')}>
+        <Text style={styles.rowText}>Projection</Text>
+      </TouchableOpacity>
 
       <TouchableOpacity style={styles.logout} onPress={signOut}>
         <Text style={styles.logoutText}>Se déconnecter</Text>

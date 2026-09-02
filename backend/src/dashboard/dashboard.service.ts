@@ -6,6 +6,7 @@ import { computeProvisionCoverage } from '../common/ledger/provision.util';
 import { ActionsService } from '../actions/actions.service';
 import { VariableBudgetsService } from '../variable-budgets/variable-budgets.service';
 import { FinancialPlansService } from '../financial-plans/financial-plans.service';
+import { ProjectionService } from '../projection/projection.service';
 
 /**
  * GET /dashboard/summary (§21) — un seul endpoint consolidé : tous les calculs
@@ -26,6 +27,7 @@ export class DashboardService {
     private readonly actions: ActionsService,
     private readonly variableBudgets: VariableBudgetsService,
     private readonly financialPlans: FinancialPlansService,
+    private readonly projection: ProjectionService,
   ) {}
 
   async getSummary(userId: string, householdId: string, referenceDate: Date) {
@@ -70,6 +72,10 @@ export class DashboardService {
         }),
       );
 
+      // §33 (Lot 7) : carte « 30 prochains jours » — même moteur que GET /projection,
+      // jamais une deuxième implémentation (docs/02 G.6, RG-051).
+      const next30Days = await this.projection.getOnTx(tx, householdId, referenceDate, 30);
+
       return {
         reference_date: referenceDate,
 
@@ -102,6 +108,18 @@ export class DashboardService {
         budgetsResume,
         financialPlansResume,
         provisionsResume,
+
+        next_30_days: {
+          closing_physical_treasury: next30Days.closing_physical_treasury,
+          physical_low_point: next30Days.physical_low_point,
+          physical_low_point_date: next30Days.physical_low_point_date,
+          free_capacity_low_point: next30Days.free_capacity_low_point,
+          free_capacity_low_point_date: next30Days.free_capacity_low_point_date,
+          first_negative_date: next30Days.first_negative_date,
+          deficit_at_first_negative: next30Days.deficit_at_first_negative,
+          status: next30Days.status,
+          is_complete: next30Days.is_complete,
+        },
       };
     });
   }

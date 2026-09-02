@@ -24,6 +24,7 @@ import { CalendarModule } from './calendar/calendar.module';
 import { PocketsModule } from './pockets/pockets.module';
 import { ProvisionsModule } from './provisions/provisions.module';
 import { GoalsModule } from './goals/goals.module';
+import { ProjectionModule } from './projection/projection.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -50,6 +51,7 @@ import { AppController } from './app.controller';
     PocketsModule,
     ProvisionsModule,
     GoalsModule,
+    ProjectionModule,
   ],
   controllers: [AppController],
   providers: [

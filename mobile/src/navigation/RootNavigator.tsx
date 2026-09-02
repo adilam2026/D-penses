@@ -21,6 +21,7 @@ import { PocketDetailScreen } from '../screens/savings/PocketDetailScreen';
 import { GoalsScreen } from '../screens/savings/GoalsScreen';
 import { GoalDetailScreen } from '../screens/savings/GoalDetailScreen';
 import { CreateGoalScreen } from '../screens/savings/CreateGoalScreen';
+import { ProjectionScreen } from '../screens/projection/ProjectionScreen';
 import { RootTabs } from './RootTabs';
 
 const Stack = createNativeStackNavigator();
@@ -76,6 +77,7 @@ export function RootNavigator() {
       <Stack.Screen name="Goals" component={GoalsScreen} options={{ headerShown: true, title: 'Objectifs' }} />
       <Stack.Screen name="GoalDetail" component={GoalDetailScreen} options={{ headerShown: true, title: 'Objectif' }} />
       <Stack.Screen name="CreateGoal" component={CreateGoalScreen} options={{ headerShown: true, title: 'Nouvel objectif', presentation: 'modal' }} />
+      <Stack.Screen name="Projection" component={ProjectionScreen} options={{ headerShown: true, title: 'Projection' }} />
     </Stack.Navigator>
   );
 }

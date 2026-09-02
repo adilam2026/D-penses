@@ -304,7 +304,12 @@ describe('Lot 5 — Trésorerie, disponible libre, dashboard & calendrier (e2e)'
     const category = await http.post('/categories').set(...h.auth()).send({ name: 'Courses TestB', kind: 'expense' }).expect(201);
     await createWeeklyBudget(h.auth, category.body.id, 1500);
     // Mercredi 2 septembre 2026 (même semaine du 31 août au 6 septembre) : 600 DH déjà dépensés.
-    await http.post('/expenses').set(...h.auth()).send({ amount: 600, accountId, categoryId: category.body.id, spentDate: '2026-09-02' }).expect(201);
+    // Heure de fin de journée explicite : le compte vient d'être créé avec un AccountBalanceSnapshot
+    // horodaté à l'instant réel de la création (RG-080) ; une date sans heure serait minuit UTC, ce
+    // qui la ferait paraître antérieure à ce snapshot dès que l'horloge réelle du bac à sable atteint
+    // le 2 septembre — comparaison de dates non liée à la logique métier, cf. bug similaire déjà
+    // corrigé au Lot 3 (voir schema.prisma, commentaire sur BudgetExpense.spentDate).
+    await http.post('/expenses').set(...h.auth()).send({ amount: 600, accountId, categoryId: category.body.id, spentDate: '2026-09-02T23:00:00.000Z' }).expect(201);
     // H* fixé au dernier jour de cette même semaine pour isoler exactement la période courante (aucune queue de semaine suivante).
     const source = await http.post('/income-sources').set(...h.auth()).send({ label: 'Salaire', usualAmount: 8000, defaultAccountId: accountId }).expect(201);
     await http.post(`/income-sources/${source.body.id}/occurrences`).set(...h.auth()).send({ usualDate: '2026-09-06' }).expect(201);
