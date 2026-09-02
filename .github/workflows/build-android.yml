@@ -1,0 +1,72 @@
+name: Build Android APK (Lot 9 — recette manuelle)
+
+# Le sandbox Claude Code ne dispose ni du SDK Android ni d'un accès réseau à
+# dl.google.com/api.expo.dev. Ce workflow délègue le VRAI build natif à un
+# runner GitHub Actions standard, qui dispose des deux. Déclenchement manuel
+# uniquement (workflow_dispatch) — ce n'est pas un build à chaque push.
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: >
+          URL publique HTTPS du backend (EXPO_PUBLIC_API_URL) que l'APK doit
+          appeler. Laisser vide pour garder le comportement actuel de l'app
+          (repli sur http://localhost:3000, injoignable depuis un téléphone).
+        required: false
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Installer les dépendances (mobile)
+        run: npm ci
+
+      - name: Typecheck (validation avant build, aucune règle métier)
+        run: npx tsc --noEmit
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Accepter les licences du SDK Android
+        run: yes | sdkmanager --licenses > /dev/null || true
+
+      - name: Générer le projet Android natif (expo prebuild)
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build APK debug (auto-signé, aucun keystore requis)
+        working-directory: mobile/android
+        env:
+          # Vide par défaut = comportement actuel de l'app (localhost, cf. rapport
+          # Lot 9 §13/§14). Renseigné uniquement si l'input api_url est fourni au
+          # déclenchement manuel — jamais une décision d'infrastructure prise ici.
+          EXPO_PUBLIC_API_URL: ${{ github.event.inputs.api_url }}
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Vérifier que l'APK existe et n'est pas vide
+        working-directory: mobile
+        run: |
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK" || (echo "APK manquant ou vide: $APK" && exit 1)
+          ls -la "$APK"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: depenses-android-debug-apk
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
