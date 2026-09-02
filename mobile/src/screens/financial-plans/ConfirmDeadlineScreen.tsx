@@ -1,24 +1,51 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 
+interface DeadlineContext {
+  chargePlan: { label: string };
+  dueDate: string;
+  amountCurrent: number | null;
+  amountStatus: 'inconnu' | 'estime' | 'confirme';
+}
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
 }
 
 /**
  * Confirmation de facture (§5) — « Facture reçue » : saisie du montant réel et de
  * la billing_date. amount_initial_estimated est conservé côté serveur (RG-104),
  * jamais recalculé ici. Fonctionne aussi pour un montant jusque-là inconnu (§4/§17).
+ *
+ * Lot 9 (§20 — audit UX) : affiche QUELLE charge est confirmée (libellé, échéance,
+ * montant estimé) avant de demander le montant réel — une action financière ne
+ * doit jamais être validée à l'aveugle (§37).
  */
 export function ConfirmDeadlineScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const id = route.params?.id as string;
+  const [context, setContext] = useState<DeadlineContext | null>(null);
+  const [loadingContext, setLoadingContext] = useState(true);
   const [amount, setAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .getDeadline(id)
+      .then((d: DeadlineContext) => {
+        setContext(d);
+        if (d.amountCurrent !== null) setAmount(String(d.amountCurrent));
+      })
+      .finally(() => setLoadingContext(false));
+  }, [id]);
 
   async function onSubmit() {
     setError(null);
@@ -41,6 +68,21 @@ export function ConfirmDeadlineScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Facture reçue</Text>
+
+      {loadingContext ? (
+        <ActivityIndicator style={{ marginBottom: 16 }} />
+      ) : context ? (
+        <View style={styles.contextCard}>
+          <Text style={styles.contextLabel}>{context.chargePlan.label}</Text>
+          <Text style={styles.contextLine}>Échéance du {formatDate(context.dueDate)}</Text>
+          <Text style={styles.contextLine}>
+            {context.amountStatus === 'inconnu' || context.amountCurrent === null
+              ? 'Montant jusqu\'ici inconnu'
+              : `Montant estimé : ${context.amountCurrent.toLocaleString('fr-FR')} DH`}
+          </Text>
+        </View>
+      ) : null}
+
       <Text style={styles.subtitle}>Saisissez le montant réel de la facture. L'estimation initiale, si elle existe, est conservée.</Text>
 
       <TextInput style={styles.input} placeholder="Montant réel (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} autoFocus />
@@ -62,6 +104,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F6F5F2', padding: 24, paddingTop: 40 },
   title: { fontSize: 20, fontWeight: '700', color: '#172436', marginBottom: 8, textAlign: 'center' },
   subtitle: { fontSize: 13, color: '#6B747C', textAlign: 'center', marginBottom: 20 },
+  contextCard: { backgroundColor: '#fff', borderRadius: 10, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: '#E3E1DC' },
+  contextLabel: { fontSize: 15, fontWeight: '700', color: '#172436' },
+  contextLine: { fontSize: 12, color: '#6B747C', marginTop: 4 },
   input: {
     backgroundColor: '#fff',
     borderRadius: 10,

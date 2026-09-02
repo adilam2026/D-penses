@@ -13,7 +13,10 @@ export class DeadlinesService {
   constructor(private readonly rlsContext: RlsContextService) {}
 
   private async withBalance(tx: ReturnType<RlsContextService['getClient']>, id: string) {
-    const deadline = await tx.deadline.findFirst({ where: { id } });
+    // Lot 9 (§20 — audit UX) : inclut le ChargePlan (même convention que findAllOpen) —
+    // l'écran mobile de confirmation de facture en a besoin pour montrer QUELLE charge
+    // est confirmée (libellé, montant estimé, échéance) avant de valider un montant réel.
+    const deadline = await tx.deadline.findFirst({ where: { id }, include: { chargePlan: true } });
     if (!deadline) throw new NotFoundException('Échéance introuvable');
     const balance = await getDeadlineBalance(tx, id);
     return { ...deadline, resteAPayer: balance?.resteAPayer ?? null };
