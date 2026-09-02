@@ -2,6 +2,8 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { createTestApp } from './setup-app';
 import { PrismaService } from '../src/common/prisma/prisma.service';
+import { FakeMailer, withFakeMailer } from './support/fake-mailer';
+import { signupVerified } from './support/signup';
 
 /**
  * Tests Lot 6 — Épargne, provisions & objectifs (docs/02 §C.5/E.5/E.5bis-quinquies,
@@ -16,8 +18,9 @@ describe('Lot 6 — Épargne, provisions & objectifs (e2e)', () => {
   const run = Date.now();
   let seq = 0;
 
+  const mailer = new FakeMailer();
   beforeAll(async () => {
-    app = await createTestApp();
+    app = await createTestApp(withFakeMailer(mailer));
     http = request(app.getHttpServer());
     prisma = app.get(PrismaService);
   });
@@ -28,13 +31,10 @@ describe('Lot 6 — Épargne, provisions & objectifs (e2e)', () => {
 
   async function newHousehold() {
     seq += 1;
-    const signup = await http
-      .post('/auth/signup')
-      .send({ email: `lot6+${run}+${seq}@example.com`, password: 'password123', firstName: 'L6', lastName: 'T' })
-      .expect(201);
+    const signupToken = await signupVerified(http, mailer, `lot6+${run}+${seq}@example.com`, 'password123', 'L6', 'T');
     const household = await http
       .post('/households')
-      .set('Authorization', `Bearer ${signup.body.accessToken}`)
+      .set('Authorization', `Bearer ${signupToken}`)
       .send({ name: `Foyer Lot6 ${seq}` })
       .expect(201);
     const accessToken = household.body.accessToken as string;

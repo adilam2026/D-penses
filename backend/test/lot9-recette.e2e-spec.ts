@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { createTestApp } from './setup-app';
+import { FakeMailer, withFakeMailer } from './support/fake-mailer';
 
 /**
  * Lot 9 — Suite de recette V1 (§8/§28-30 : scénarios A-P). Aucune règle métier
@@ -15,9 +16,10 @@ describe('Lot 9 — Recette V1 (scénario familial complet, A-P) (e2e)', () => {
   let http: request.Agent;
   const run = Date.now();
   let seq = 0;
+  const mailer = new FakeMailer();
 
   beforeAll(async () => {
-    app = await createTestApp();
+    app = await createTestApp(withFakeMailer(mailer));
     http = request(app.getHttpServer());
   });
 
@@ -35,11 +37,14 @@ describe('Lot 9 — Recette V1 (scénario familial complet, A-P) (e2e)', () => {
 
   async function signup(label: string) {
     seq += 1;
-    const res = await http
+    const email = `lot9+${run}+${seq}@example.com`;
+    await http
       .post('/auth/signup')
-      .send({ email: `lot9+${run}+${seq}@example.com`, password: 'password123', firstName: label, lastName: 'T' })
+      .send({ email, password: 'password123', firstName: label, lastName: 'T' })
       .expect(201);
-    const accessToken = res.body.accessToken as string;
+    const code = mailer.lastCodeFor(email);
+    const verified = await http.post('/auth/verify-email-otp').send({ email, code }).expect(200);
+    const accessToken = verified.body.accessToken as string;
     return { userId: userIdFromToken(accessToken), accessToken };
   }
 

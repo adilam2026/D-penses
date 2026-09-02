@@ -2,6 +2,8 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { createTestApp } from './setup-app';
 import { PrismaService } from '../src/common/prisma/prisma.service';
+import { FakeMailer, withFakeMailer } from './support/fake-mailer';
+import { signupVerified } from './support/signup';
 
 /**
  * Tests Lot 1 (docs/05-roadmap-et-risques.md, "Tests obligatoires" + TEST A/B/C
@@ -16,19 +18,17 @@ describe('Lot 1 — Comptes financiers (e2e)', () => {
   let accessToken: string;
   let accountA: string;
   let accountB: string;
+  const mailer = new FakeMailer();
 
   beforeAll(async () => {
-    app = await createTestApp();
+    app = await createTestApp(withFakeMailer(mailer));
     http = request(app.getHttpServer());
     prisma = app.get(PrismaService);
 
-    const signup = await http
-      .post('/auth/signup')
-      .send({ email: `lot1+${run}@example.com`, password: 'password123', firstName: 'L1', lastName: 'T' })
-      .expect(201);
+    const signupToken = await signupVerified(http, mailer, `lot1+${run}@example.com`, 'password123', 'L1', 'T');
     const household = await http
       .post('/households')
-      .set('Authorization', `Bearer ${signup.body.accessToken}`)
+      .set('Authorization', `Bearer ${signupToken}`)
       .send({ name: 'Foyer Lot1' })
       .expect(201);
     accessToken = household.body.accessToken;
@@ -144,13 +144,10 @@ describe('Lot 1 — Comptes financiers (e2e)', () => {
   });
 
   it('isolation stricte : un utilisateur extérieur ne voit jamais les comptes du foyer', async () => {
-    const stranger = await http
-      .post('/auth/signup')
-      .send({ email: `strangerL1+${run}@example.com`, password: 'password123', firstName: 'S', lastName: 'T' })
-      .expect(201);
+    const strangerSignupToken = await signupVerified(http, mailer, `strangerL1+${run}@example.com`, 'password123', 'S', 'T');
     const strangerHousehold = await http
       .post('/households')
-      .set('Authorization', `Bearer ${stranger.body.accessToken}`)
+      .set('Authorization', `Bearer ${strangerSignupToken}`)
       .send({ name: 'Foyer étranger L1' })
       .expect(201);
     const strangerToken = strangerHousehold.body.accessToken;

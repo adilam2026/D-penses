@@ -8,6 +8,7 @@ interface AuthState {
   householdId: string | null;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, firstName: string, lastName: string) => Promise<void>;
+  verifyEmail: (email: string, code: string) => Promise<void>;
   signOut: () => Promise<void>;
   createHousehold: (name: string) => Promise<void>;
   joinHousehold: (code: string) => Promise<void>;
@@ -49,8 +50,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await resolveStatus();
   }, [resolveStatus]);
 
+  // Aucune session n'existe tant que l'email n'est pas confirmé (voir verifyEmail) :
+  // signUp n'obtient jamais de token et ne change donc jamais `status`.
   const signUp = useCallback(async (email: string, password: string, firstName: string, lastName: string) => {
-    const tokens = await api.signup(email, password, firstName, lastName);
+    await api.signup(email, password, firstName, lastName);
+  }, []);
+
+  const verifyEmail = useCallback(async (email: string, code: string) => {
+    const tokens = await api.verifyEmailOtp(email, code);
     await api.setTokens(tokens);
     await resolveStatus();
   }, [resolveStatus]);
@@ -76,8 +83,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ status, householdId, signIn, signUp, signOut, createHousehold, joinHousehold }),
-    [status, householdId, signIn, signUp, signOut, createHousehold, joinHousehold],
+    () => ({ status, householdId, signIn, signUp, verifyEmail, signOut, createHousehold, joinHousehold }),
+    [status, householdId, signIn, signUp, verifyEmail, signOut, createHousehold, joinHousehold],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

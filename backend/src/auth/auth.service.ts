@@ -1,8 +1,10 @@
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import * as crypto from 'node:crypto';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { TokenService } from './token.service';
+import { MailerService } from './mailer.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 
@@ -11,30 +13,124 @@ export interface AuthTokens {
   refreshToken: string;
 }
 
+export interface SignupPendingVerification {
+  requiresEmailVerification: true;
+  email: string;
+}
+
+const OTP_TTL_MS = 15 * 60 * 1000;
+const OTP_MAX_ATTEMPTS = 5;
+
+function generateOtpCode(): string {
+  return crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
+}
+
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rlsContext: RlsContextService,
     private readonly tokens: TokenService,
+    private readonly mailer: MailerService,
   ) {}
 
-  async signup(dto: SignupDto, userAgent?: string): Promise<AuthTokens> {
+  /**
+   * Crée le compte (mot de passe conservé — cette application n'est pas
+   * passwordless) mais n'émet AUCUN token : email_verified_at reste NULL tant
+   * que le code OTP à 6 chiffres n'est pas validé (verifyEmailOtp). Ni session
+   * ni foyer ne peuvent donc jamais être créés avant confirmation réelle de
+   * l'adresse email — aucune fenêtre où un état partiel serait exploitable.
+   *
+   * Un email déjà inscrit mais jamais confirmé n'est PAS un conflit : c'est le
+   * même parcours d'inscription repris (mot de passe/nom mis à jour, nouveau
+   * code envoyé) — seul un email déjà confirmé déclenche ConflictException.
+   */
+  async signup(dto: SignupDto): Promise<SignupPendingVerification> {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
-    if (existing) {
+    if (existing && existing.emailVerifiedAt) {
       throw new ConflictException('Un compte existe déjà avec cet email');
     }
+
     const passwordHash = await bcrypt.hash(dto.password, 12);
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        passwordHash,
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-      },
+    const user = existing
+      ? await this.prisma.user.update({
+          where: { id: existing.id },
+          data: { passwordHash, firstName: dto.firstName, lastName: dto.lastName },
+        })
+      : await this.prisma.user.create({
+          data: { email: dto.email, passwordHash, firstName: dto.firstName, lastName: dto.lastName },
+        });
+
+    await this.createAndSendOtp(user.id, user.email);
+    return { requiresEmailVerification: true, email: user.email };
+  }
+
+  /**
+   * Seul point d'entrée qui fait apparaître une session réelle pour un compte
+   * fraîchement inscrit — après ce succès uniquement : email_verified_at posé,
+   * OTP consommé, tokens émis (§4 : jamais de matching fragile sur un message
+   * texte, toujours le code stocké/haché comparé explicitement).
+   */
+  async verifyEmailOtp(email: string, code: string, userAgent?: string): Promise<AuthTokens> {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) throw new NotFoundException('Aucun compte ne correspond à cet email');
+
+    // Idempotent : un compte déjà confirmé qui revalide (double-tap, lien resté ouvert)
+    // obtient simplement une session, sans jamais exiger un second code.
+    if (user.emailVerifiedAt) {
+      return this.issueTokens(user.id, await this.activeHouseholdId(user.id), userAgent);
+    }
+
+    const otp = await this.prisma.emailOtp.findFirst({
+      where: { userId: user.id, consumedAt: null },
+      orderBy: { createdAt: 'desc' },
     });
-    // Un utilisateur qui vient de s'inscrire n'a encore aucun foyer (RG-001).
+    if (!otp) {
+      throw new BadRequestException('Aucun code en attente — demandez un nouveau code');
+    }
+    if (otp.expiresAt.getTime() < Date.now()) {
+      throw new BadRequestException('Ce code est invalide ou a expiré');
+    }
+    if (otp.attempts >= OTP_MAX_ATTEMPTS) {
+      throw new BadRequestException('Trop de tentatives — demandez un nouveau code');
+    }
+
+    const valid = await bcrypt.compare(code, otp.codeHash);
+    if (!valid) {
+      await this.prisma.emailOtp.update({ where: { id: otp.id }, data: { attempts: { increment: 1 } } });
+      throw new BadRequestException('Ce code est invalide ou a expiré');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.emailOtp.update({ where: { id: otp.id }, data: { consumedAt: new Date() } }),
+      this.prisma.user.update({ where: { id: user.id }, data: { emailVerifiedAt: new Date() } }),
+    ]);
+
     return this.issueTokens(user.id, null, userAgent);
+  }
+
+  /** « Renvoyer le code » (§8) — jamais pour un compte déjà confirmé (celui-ci se connecte normalement). */
+  async resendEmailOtp(email: string): Promise<{ email: string }> {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) throw new NotFoundException('Aucun compte ne correspond à cet email');
+    if (user.emailVerifiedAt) {
+      throw new BadRequestException('Cet email est déjà confirmé — connectez-vous avec votre mot de passe');
+    }
+    await this.createAndSendOtp(user.id, user.email);
+    return { email: user.email };
+  }
+
+  private async createAndSendOtp(userId: string, email: string): Promise<void> {
+    // Une seule ligne "vivante" à la fois : un nouveau code invalide silencieusement
+    // les précédents plutôt que de laisser plusieurs codes simultanément valides.
+    await this.prisma.emailOtp.updateMany({ where: { userId, consumedAt: null }, data: { consumedAt: new Date() } });
+
+    const code = generateOtpCode();
+    const codeHash = await bcrypt.hash(code, 10);
+    await this.prisma.emailOtp.create({
+      data: { userId, codeHash, expiresAt: new Date(Date.now() + OTP_TTL_MS) },
+    });
+    await this.mailer.sendOtpEmail(email, code);
   }
 
   async login(dto: LoginDto, userAgent?: string): Promise<AuthTokens> {
@@ -46,18 +142,11 @@ export class AuthService {
     if (!valid) {
       throw new UnauthorizedException('Identifiants invalides');
     }
+    if (!user.emailVerifiedAt) {
+      throw new UnauthorizedException('Adresse email non confirmée — saisissez le code reçu par email');
+    }
 
-    // Recherche du foyer actif de l'utilisateur — nécessite le contexte RLS
-    // (policy hm_self_visibility, cf. migration Lot 0) même sans household_id connu.
-    const householdId = await this.rlsContext.run(user.id, null, async () => {
-      const membership = await this.rlsContext.getClient().householdMembership.findFirst({
-        where: { userId: user.id },
-        orderBy: { joinedAt: 'asc' },
-      });
-      return membership?.householdId ?? null;
-    });
-
-    return this.issueTokens(user.id, householdId, userAgent);
+    return this.issueTokens(user.id, await this.activeHouseholdId(user.id), userAgent);
   }
 
   async refresh(refreshToken: string): Promise<AuthTokens> {
@@ -74,15 +163,7 @@ export class AuthService {
     // Rotation : l'ancien refresh token est révoqué, un nouveau est émis.
     await this.prisma.session.update({ where: { id: session.id }, data: { revokedAt: new Date() } });
 
-    const householdId = await this.rlsContext.run(session.userId, null, async () => {
-      const membership = await this.rlsContext.getClient().householdMembership.findFirst({
-        where: { userId: session.userId },
-        orderBy: { joinedAt: 'asc' },
-      });
-      return membership?.householdId ?? null;
-    });
-
-    return this.issueTokens(session.userId, householdId, session.userAgent ?? undefined);
+    return this.issueTokens(session.userId, await this.activeHouseholdId(session.userId), session.userAgent ?? undefined);
   }
 
   /** Déconnexion — révoque uniquement la session courante (un seul appareil). */
@@ -105,6 +186,18 @@ export class AuthService {
   /** Ré-émet un access token avec le foyer actif à jour, sans repasser par le mot de passe. */
   async reissueForHousehold(userId: string, householdId: string | null, userAgent?: string): Promise<AuthTokens> {
     return this.issueTokens(userId, householdId, userAgent);
+  }
+
+  // Recherche du foyer actif de l'utilisateur — nécessite le contexte RLS
+  // (policy hm_self_visibility, cf. migration Lot 0) même sans household_id connu.
+  private async activeHouseholdId(userId: string): Promise<string | null> {
+    return this.rlsContext.run(userId, null, async () => {
+      const membership = await this.rlsContext.getClient().householdMembership.findFirst({
+        where: { userId },
+        orderBy: { joinedAt: 'asc' },
+      });
+      return membership?.householdId ?? null;
+    });
   }
 
   private async issueTokens(userId: string, householdId: string | null, userAgent?: string): Promise<AuthTokens> {

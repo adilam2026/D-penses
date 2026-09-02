@@ -214,17 +214,21 @@ enum GoalContributionStatus {
 // ---------- SOCLE ----------
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String   @map("password_hash")
-  firstName    String   @map("first_name")
-  lastName     String   @map("last_name")
-  avatarUrl    String?  @map("avatar_url")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id              String    @id @default(uuid())
+  email           String    @unique
+  passwordHash    String    @map("password_hash")
+  firstName       String    @map("first_name")
+  lastName        String    @map("last_name")
+  avatarUrl       String?   @map("avatar_url")
+  // NULL = compte créé mais adresse email pas encore confirmée par code OTP —
+  // aucun token de session émis avant que ce champ soit renseigné (signup).
+  emailVerifiedAt DateTime? @map("email_verified_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   memberships                HouseholdMembership[]
   sessions                   Session[]
+  emailOtps                  EmailOtp[]
   createdInvites             HouseholdInvite[]          @relation("InviteCreatedBy")
   redeemedInvite             HouseholdInvite?           @relation("InviteRedeemedBy")
   ownedAccounts              FinancialAccount[]
@@ -373,6 +377,26 @@ model Session {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("session")
+}
+
+// Code de vérification d'adresse email à 6 chiffres — jamais stocké en clair
+// (codeHash, même convention que passwordHash). Non protégée par RLS : comme
+// Session, elle n'a de sens qu'avant tout foyer actif (userId seul, jamais
+// household_id). Une seule ligne "vivante" par utilisateur à la fois : générer
+// un nouveau code consomme explicitement les précédents (AuthService).
+model EmailOtp {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  codeHash   String    @map("code_hash")
+  expiresAt  DateTime  @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  attempts   Int       @default(0)
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("email_otp")
 }
 
 // ============================================================

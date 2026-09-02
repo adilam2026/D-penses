@@ -18,7 +18,9 @@ export function SignupScreen() {
     setError(null);
     setLoading(true);
     try {
-      await signUp(email.trim(), password, firstName.trim(), lastName.trim());
+      const trimmedEmail = email.trim();
+      await signUp(trimmedEmail, password, firstName.trim(), lastName.trim());
+      navigation.navigate('VerifyEmail', { email: trimmedEmail });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Inscription impossible');
     } finally {

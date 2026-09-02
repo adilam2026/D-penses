@@ -2,6 +2,8 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { createTestApp } from './setup-app';
 import { PrismaService } from '../src/common/prisma/prisma.service';
+import { FakeMailer, withFakeMailer } from './support/fake-mailer';
+import { signupVerified } from './support/signup';
 
 /**
  * Tests Lot 3 (docs/05-roadmap-et-risques.md "Tests obligatoires" Lot 3 + TEST 1-14
@@ -22,18 +24,16 @@ describe('Lot 3 — Budgets variables & dépenses ponctuelles (e2e)', () => {
   let coursesCategoryId: string;
   let reparationsCategoryId: string;
 
+  const mailer = new FakeMailer();
   beforeAll(async () => {
-    app = await createTestApp();
+    app = await createTestApp(withFakeMailer(mailer));
     http = request(app.getHttpServer());
     prisma = app.get(PrismaService);
 
-    const signup = await http
-      .post('/auth/signup')
-      .send({ email: `lot3+${run}@example.com`, password: 'password123', firstName: 'L3', lastName: 'T' })
-      .expect(201);
+    const signupToken = await signupVerified(http, mailer, `lot3+${run}@example.com`, 'password123', 'L3', 'T');
     const household = await http
       .post('/households')
-      .set('Authorization', `Bearer ${signup.body.accessToken}`)
+      .set('Authorization', `Bearer ${signupToken}`)
       .send({ name: 'Foyer Lot3' })
       .expect(201);
     accessToken = household.body.accessToken;
@@ -218,13 +218,10 @@ describe('Lot 3 — Budgets variables & dépenses ponctuelles (e2e)', () => {
     const expenseRes = await http.post('/expenses').set(...auth()).send({ amount: 100, accountId, categoryId: isolationCategory.body.id }).expect(201);
     const adhocRes = await http.post('/expenses').set(...auth()).send({ amount: 50, accountId, categoryId: reparationsCategoryId }).expect(201);
 
-    const stranger = await http
-      .post('/auth/signup')
-      .send({ email: `strangerL3+${run}@example.com`, password: 'password123', firstName: 'S', lastName: 'T' })
-      .expect(201);
+    const strangerToken = await signupVerified(http, mailer, `strangerL3+${run}@example.com`, 'password123', 'S', 'T');
     const strangerHousehold = await http
       .post('/households')
-      .set('Authorization', `Bearer ${stranger.body.accessToken}`)
+      .set('Authorization', `Bearer ${strangerToken}`)
       .send({ name: 'Foyer étranger L3' })
       .expect(201);
     const strangerAuth = ['Authorization', `Bearer ${strangerHousehold.body.accessToken}`] as [string, string];

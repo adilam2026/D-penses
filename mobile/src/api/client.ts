@@ -76,8 +76,15 @@ export function checkHealth() {
 }
 
 // ---------- Auth / onboarding ----------
+/** N'émet jamais de token directement — l'email doit d'abord être confirmé via verifyEmailOtp. */
 export const signup = (email: string, password: string, firstName: string, lastName: string) =>
   apiFetch('/auth/signup', { method: 'POST', body: { email, password, firstName, lastName }, withAuth: false });
+
+export const verifyEmailOtp = (email: string, code: string) =>
+  apiFetch('/auth/verify-email-otp', { method: 'POST', body: { email, code }, withAuth: false });
+
+export const resendEmailOtp = (email: string) =>
+  apiFetch('/auth/resend-email-otp', { method: 'POST', body: { email }, withAuth: false });
 
 export const login = (email: string, password: string) =>
   apiFetch('/auth/login', { method: 'POST', body: { email, password }, withAuth: false });

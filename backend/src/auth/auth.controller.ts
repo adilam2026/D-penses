@@ -4,6 +4,8 @@ import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
+import { VerifyEmailOtpDto } from './dto/verify-email-otp.dto';
+import { ResendEmailOtpDto } from './dto/resend-email-otp.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser, AuthenticatedUser } from '../common/decorators/current-user.decorator';
 
@@ -13,8 +15,22 @@ export class AuthController {
 
   @Public()
   @Post('signup')
-  signup(@Body() dto: SignupDto, @Req() req: Request) {
-    return this.auth.signup(dto, req.headers['user-agent']);
+  signup(@Body() dto: SignupDto) {
+    return this.auth.signup(dto);
+  }
+
+  @Public()
+  @Post('verify-email-otp')
+  @HttpCode(HttpStatus.OK)
+  verifyEmailOtp(@Body() dto: VerifyEmailOtpDto, @Req() req: Request) {
+    return this.auth.verifyEmailOtp(dto.email, dto.code, req.headers['user-agent']);
+  }
+
+  @Public()
+  @Post('resend-email-otp')
+  @HttpCode(HttpStatus.OK)
+  resendEmailOtp(@Body() dto: ResendEmailOtpDto) {
+    return this.auth.resendEmailOtp(dto.email);
   }
 
   @Public()

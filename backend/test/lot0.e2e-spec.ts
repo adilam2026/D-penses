@@ -3,6 +3,8 @@ import request from 'supertest';
 import { createTestApp } from './setup-app';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { RlsContextService } from '../src/common/prisma/rls-context.service';
+import { FakeMailer, withFakeMailer } from './support/fake-mailer';
+import { signupVerified } from './support/signup';
 
 /**
  * Tests Lot 0 (docs/05-roadmap-et-risques.md, "Tests obligatoires").
@@ -23,8 +25,10 @@ describe('Lot 0 — Socle (e2e)', () => {
   let rls: RlsContextService;
   const run = Date.now(); // suffixe unique pour éviter les collisions d'email entre exécutions
 
+  const mailer = new FakeMailer();
+
   beforeAll(async () => {
-    app = await createTestApp();
+    app = await createTestApp(withFakeMailer(mailer));
     http = request(app.getHttpServer());
     prisma = app.get(PrismaService);
     rls = app.get(RlsContextService);
@@ -52,20 +56,27 @@ describe('Lot 0 — Socle (e2e)', () => {
   let dinaId: string;
 
   // ---------- 1. Création d'un utilisateur ----------
-  it('1. crée un utilisateur (signup)', async () => {
+  it('1. crée un utilisateur (signup) puis confirme son email par code OTP avant toute session', async () => {
     const res = await http
       .post('/auth/signup')
       .send({ email: emailLamiaa, password, firstName: 'Lamiaa', lastName: 'B' })
       .expect(201);
-
-    expect(res.body.accessToken).toBeDefined();
-    expect(res.body.refreshToken).toBeDefined();
-    lamiaaAccessToken = res.body.accessToken;
-    lamiaaRefreshToken = res.body.refreshToken;
+    expect(res.body.requiresEmailVerification).toBe(true); // aucun token tant que l'email n'est pas confirmé
 
     const user = await prisma.user.findUnique({ where: { email: emailLamiaa } });
     expect(user).not.toBeNull();
     expect(user!.passwordHash).not.toBe(password); // jamais en clair
+    expect(user!.emailVerifiedAt).toBeNull(); // pas encore confirmé
+
+    const code = mailer.lastCodeFor(emailLamiaa);
+    const verified = await http.post('/auth/verify-email-otp').send({ email: emailLamiaa, code }).expect(200);
+    expect(verified.body.accessToken).toBeDefined();
+    expect(verified.body.refreshToken).toBeDefined();
+    lamiaaAccessToken = verified.body.accessToken;
+    lamiaaRefreshToken = verified.body.refreshToken;
+
+    const verifiedUser = await prisma.user.findUnique({ where: { email: emailLamiaa } });
+    expect(verifiedUser!.emailVerifiedAt).not.toBeNull();
   });
 
   // ---------- 2. Création d'un foyer ----------
@@ -107,7 +118,11 @@ describe('Lot 0 — Socle (e2e)', () => {
       .post('/auth/signup')
       .send({ email: emailAdil, password, firstName: 'Adil', lastName: 'B' })
       .expect(201);
-    adilAccessToken = signupRes.body.accessToken;
+    expect(signupRes.body.requiresEmailVerification).toBe(true);
+    const adilCode = mailer.lastCodeFor(emailAdil);
+    const verified = await http.post('/auth/verify-email-otp').send({ email: emailAdil, code: adilCode }).expect(200);
+    const adilPreJoinToken = verified.body.accessToken as string;
+    adilAccessToken = adilPreJoinToken;
 
     const joinRes = await http
       .post('/households/join')
@@ -129,7 +144,7 @@ describe('Lot 0 — Socle (e2e)', () => {
     // c'est bien le code d'invitation lui-même qui est rejeté comme non disponible).
     await http
       .post('/households/join')
-      .set('Authorization', `Bearer ${signupRes.body.accessToken}`)
+      .set('Authorization', `Bearer ${adilPreJoinToken}`)
       .send({ code: inviteCode })
       .expect(404);
   });
@@ -170,6 +185,9 @@ describe('Lot 0 — Socle (e2e)', () => {
   // ---------- 6. Isolation stricte — utilisateur extérieur ----------
   it('6. un utilisateur extérieur ne peut jamais lire ni modifier les données du foyer', async () => {
     await http.post('/auth/signup').send({ email: emailStranger, password, firstName: 'S', lastName: 'T' }).expect(201);
+    const strangerCode = mailer.lastCodeFor(emailStranger);
+    await http.post('/auth/verify-email-otp').send({ email: emailStranger, code: strangerCode }).expect(200);
+
     const loginRes = await http.post('/auth/login').send({ email: emailStranger, password }).expect(200);
     strangerAccessToken = loginRes.body.accessToken;
 
@@ -254,13 +272,10 @@ describe('Lot 0 — Socle (e2e)', () => {
     await http.post('/auth/login').send({ email: emailAdil, password: 'wrong-password' }).expect(401);
 
     // Code d'invitation invalide (utilisateur sans foyer, sinon RG-001 court-circuite avec 409 avant)
-    const noHouseholdUser = await http
-      .post('/auth/signup')
-      .send({ email: `nohh+${run}@example.com`, password, firstName: 'N', lastName: 'H' })
-      .expect(201);
+    const noHouseholdToken = await signupVerified(http, mailer, `nohh+${run}@example.com`, password, 'N', 'H');
     await http
       .post('/households/join')
-      .set('Authorization', `Bearer ${noHouseholdUser.body.accessToken}`)
+      .set('Authorization', `Bearer ${noHouseholdToken}`)
       .send({ code: 'CODE_INEXISTANT' })
       .expect(404);
 

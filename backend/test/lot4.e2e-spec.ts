@@ -2,6 +2,8 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { createTestApp } from './setup-app';
 import { PrismaService } from '../src/common/prisma/prisma.service';
+import { FakeMailer, withFakeMailer } from './support/fake-mailer';
+import { signupVerified } from './support/signup';
 
 /**
  * Tests Lot 4 (docs/05-roadmap-et-risques.md, TEST 1-15 de la demande + test
@@ -30,18 +32,16 @@ describe('Lot 4 — Charges planifiées & FinancialPlan / module scolaire (e2e)'
   const deadlines: Record<string, string> = {};
   const chargePlans: Record<string, string> = {};
 
+  const mailer = new FakeMailer();
   beforeAll(async () => {
-    app = await createTestApp();
+    app = await createTestApp(withFakeMailer(mailer));
     http = request(app.getHttpServer());
     prisma = app.get(PrismaService);
 
-    const signup = await http
-      .post('/auth/signup')
-      .send({ email: `lot4+${run}@example.com`, password: 'password123', firstName: 'L4', lastName: 'T' })
-      .expect(201);
+    const signupToken = await signupVerified(http, mailer, `lot4+${run}@example.com`, 'password123', 'L4', 'T');
     const household = await http
       .post('/households')
-      .set('Authorization', `Bearer ${signup.body.accessToken}`)
+      .set('Authorization', `Bearer ${signupToken}`)
       .send({ name: 'Foyer Lot4' })
       .expect(201);
     accessToken = household.body.accessToken;
@@ -281,13 +281,10 @@ describe('Lot 4 — Charges planifiées & FinancialPlan / module scolaire (e2e)'
 
   // ---------- TEST 13 — bénéficiaire d'un autre foyer refusé ----------
   it("TEST 13 — un enfant d'un autre foyer ne peut pas devenir bénéficiaire de ce FinancialPlan", async () => {
-    const stranger = await http
-      .post('/auth/signup')
-      .send({ email: `strangerL4+${run}@example.com`, password: 'password123', firstName: 'S', lastName: 'T' })
-      .expect(201);
+    const strangerToken = await signupVerified(http, mailer, `strangerL4+${run}@example.com`, 'password123', 'S', 'T');
     const strangerHousehold = await http
       .post('/households')
-      .set('Authorization', `Bearer ${stranger.body.accessToken}`)
+      .set('Authorization', `Bearer ${strangerToken}`)
       .send({ name: 'Foyer étranger L4' })
       .expect(201);
     const strangerAuth = ['Authorization', `Bearer ${strangerHousehold.body.accessToken}`] as [string, string];
@@ -302,13 +299,10 @@ describe('Lot 4 — Charges planifiées & FinancialPlan / module scolaire (e2e)'
 
   // ---------- Isolation stricte par foyer (RLS) ----------
   it('un utilisateur extérieur ne peut ni lire ni modifier le FinancialPlan, ses ChargePlan ni ses allocations', async () => {
-    const stranger = await http
-      .post('/auth/signup')
-      .send({ email: `strangerL4b+${run}@example.com`, password: 'password123', firstName: 'S', lastName: 'B' })
-      .expect(201);
+    const strangerToken = await signupVerified(http, mailer, `strangerL4b+${run}@example.com`, 'password123', 'S', 'B');
     const strangerHousehold = await http
       .post('/households')
-      .set('Authorization', `Bearer ${stranger.body.accessToken}`)
+      .set('Authorization', `Bearer ${strangerToken}`)
       .send({ name: 'Foyer étranger L4b' })
       .expect(201);
     const strangerAuth = ['Authorization', `Bearer ${strangerHousehold.body.accessToken}`] as [string, string];
