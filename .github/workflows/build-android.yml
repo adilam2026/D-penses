@@ -49,24 +49,48 @@ jobs:
       - name: Générer le projet Android natif (expo prebuild)
         run: npx expo prebuild --platform android --no-install
 
-      - name: Build APK debug (auto-signé, aucun keystore requis)
+      - name: Build APK RELEASE (bundle JS embarqué, signé avec la debug keystore)
+        # RELEASE, pas debug (§1 correctif) : un APK debug charge son JS depuis un
+        # serveur Metro (localhost:8081) au lancement — jamais autonome sur device.
+        # Le plugin Gradle React Native bundle le JS et l'embarque dans les assets
+        # UNIQUEMENT pour le variant release (bundleInRelease=true par défaut,
+        # bundleInDebug=false par défaut) — c'est la cause exacte de l'écran rouge
+        # "Unable to load script" observé avec assembleDebug.
+        # Recette interne (§3) : signingConfigs.release référence déjà
+        # signingConfigs.debug dans le android/app/build.gradle généré par Expo
+        # prebuild — aucun keystore de production à créer pour ce build.
         working-directory: mobile/android
         env:
           # Vide par défaut = comportement actuel de l'app (localhost, cf. rapport
           # Lot 9 §13/§14). Renseigné uniquement si l'input api_url est fourni au
           # déclenchement manuel — jamais une décision d'infrastructure prise ici.
           EXPO_PUBLIC_API_URL: ${{ github.event.inputs.api_url }}
-        run: ./gradlew assembleDebug --no-daemon
+        run: |
+          set -o pipefail
+          ./gradlew assembleRelease --no-daemon | tee build-release.log
 
-      - name: Vérifier que l'APK existe et n'est pas vide
+      - name: Confirmer factuellement que le bundle JS release a été exécuté
+        working-directory: mobile/android
+        run: |
+          grep -Eq ':app:(createBundleReleaseJsAndAssets|bundleReleaseJsAndAssets)' build-release.log \
+            || (echo "Tâche de bundling JS release absente du log — le JS ne serait pas embarqué" && exit 1)
+          grep -E ':app:(createBundleReleaseJsAndAssets|bundleReleaseJsAndAssets)' build-release.log
+
+      - name: Vérifier que l'APK existe, n'est pas vide, et contient réellement le bundle JS
         working-directory: mobile
         run: |
-          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          APK=android/app/build/outputs/apk/release/app-release.apk
           test -s "$APK" || (echo "APK manquant ou vide: $APK" && exit 1)
           ls -la "$APK"
+          # Preuve factuelle (pas seulement "Gradle SUCCESS") : le bundle JS doit
+          # être un fichier réel et non vide DANS l'APK, pas seulement une tâche
+          # Gradle exécutée sans effet.
+          unzip -l "$APK" | grep -E "assets/index\.android\.bundle" \
+            || (echo "assets/index.android.bundle absent de l'APK — JS non embarqué" && exit 1)
+          unzip -l "$APK" | grep -E "assets/index\.android\.bundle"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: depenses-android-debug-apk
-          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          name: depenses-android-release-apk
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
           retention-days: 14
