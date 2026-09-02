@@ -69,16 +69,22 @@ export class AuthService {
    * Seul point d'entrée qui fait apparaître une session réelle pour un compte
    * fraîchement inscrit — après ce succès uniquement : email_verified_at posé,
    * OTP consommé, tokens émis (§4 : jamais de matching fragile sur un message
-   * texte, toujours le code stocké/haché comparé explicitement).
+   * texte, toujours le code stocké/haché comparé explicitement). Un OTP est
+   * strictement à usage unique : une fois consommé, AUCUN appel ultérieur —
+   * même avec le même code, même pour ce même compte — ne peut plus réémettre
+   * de session à partir de lui (correctif sécurité : l'ancienne version
+   * réémettait une session pour tout compte déjà confirmé sans même vérifier
+   * le code fourni).
    */
   async verifyEmailOtp(email: string, code: string, userAgent?: string): Promise<AuthTokens> {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) throw new NotFoundException('Aucun compte ne correspond à cet email');
 
-    // Idempotent : un compte déjà confirmé qui revalide (double-tap, lien resté ouvert)
-    // obtient simplement une session, sans jamais exiger un second code.
+    // Compte déjà confirmé (double-tap, ou tentative de rejouer un OTP consommé) :
+    // jamais de nouvelle session à partir d'un code — réponse métier contrôlée,
+    // le client doit s'appuyer sur la session déjà obtenue au premier succès.
     if (user.emailVerifiedAt) {
-      return this.issueTokens(user.id, await this.activeHouseholdId(user.id), userAgent);
+      throw new BadRequestException('Cet email est déjà confirmé — connectez-vous avec votre mot de passe');
     }
 
     const otp = await this.prisma.emailOtp.findFirst({
@@ -101,10 +107,24 @@ export class AuthService {
       throw new BadRequestException('Ce code est invalide ou a expiré');
     }
 
-    await this.prisma.$transaction([
-      this.prisma.emailOtp.update({ where: { id: otp.id }, data: { consumedAt: new Date() } }),
-      this.prisma.user.update({ where: { id: user.id }, data: { emailVerifiedAt: new Date() } }),
-    ]);
+    // Consommation atomique : l'UPDATE porte la condition consumedAt=NULL dans son
+    // propre WHERE (jamais un SELECT puis UPDATE séparés) — sous Postgres, deux
+    // requêtes concurrentes qui ciblent la même ligne se sérialisent au niveau ligne ;
+    // la seconde ne voit plus consumedAt=NULL une fois la première validée et échoue
+    // avec count=0. Un seul appel peut donc jamais gagner la course, quel que soit le
+    // nombre de requêtes simultanées avec le même code.
+    const verified = await this.prisma.$transaction(async (tx) => {
+      const consumed = await tx.emailOtp.updateMany({
+        where: { id: otp.id, consumedAt: null },
+        data: { consumedAt: new Date() },
+      });
+      if (consumed.count === 0) return false;
+      await tx.user.update({ where: { id: user.id }, data: { emailVerifiedAt: new Date() } });
+      return true;
+    });
+    if (!verified) {
+      throw new BadRequestException('Ce code est invalide ou a expiré');
+    }
 
     return this.issueTokens(user.id, null, userAgent);
   }

@@ -9,9 +9,11 @@ import { signupVerified } from './support/signup';
  * Lot 10 — Vérification d'adresse email par code OTP à 6 chiffres (signup →
  * code envoyé → verify-email-otp → session). Mot de passe conservé (cette
  * application n'est pas passwordless) ; aucune session/foyer ne peut exister
- * avant une vérification réelle. Les 11 scénarios ci-dessous couvrent
- * exactement le comportement demandé, adapté à notre pile NestJS/Prisma/JWT
- * (pas de Supabase, pas de deep link, pas de lien cliquable).
+ * avant une vérification réelle. Un OTP est strictement à usage unique (TEST
+ * A-E ci-dessous) : le premier jet de cette suite laissait un compte déjà
+ * confirmé réémettre une session pour N'IMPORTE QUEL code fourni, sans même
+ * le vérifier — corrigé (AuthService.verifyEmailOtp), plus jamais de session
+ * à partir d'un OTP déjà consommé.
  */
 describe('Lot 10 — Vérification email par code OTP (e2e)', () => {
   let app: INestApplication;
@@ -53,9 +55,11 @@ describe('Lot 10 — Vérification email par code OTP (e2e)', () => {
     await http.post('/households').send({ name: 'Foyer avant confirmation' }).expect(401);
   });
 
-  // ---------- 3 ----------
-  it('3. code OTP valide → session réelle créée (accessToken + refreshToken + Session en base + email_verified_at posé)', async () => {
-    const email = `otp3+${run}@example.com`;
+  // ================== Usage unique de l'OTP (correctif sécurité) ==================
+
+  // ---------- TEST A ----------
+  it('TEST A — OTP valide utilisé une première fois → session créée (accessToken + refreshToken + Session en base)', async () => {
+    const email = `otpA+${run}@example.com`;
     await http.post('/auth/signup').send({ email, password, firstName: 'A', lastName: 'B' }).expect(201);
     const code = mailer.lastCodeFor(email);
 
@@ -69,9 +73,9 @@ describe('Lot 10 — Vérification email par code OTP (e2e)', () => {
     expect(sessions).toHaveLength(1);
   });
 
-  // ---------- 4 ----------
-  it('4. revalider un email déjà confirmé est idempotent : nouvelle session à chaque fois, jamais de double confirmation', async () => {
-    const email = `otp4+${run}@example.com`;
+  // ---------- TEST B ----------
+  it('TEST B — le même OTP réutilisé après succès ne crée jamais de nouvelle session (double-tap sans rejeu)', async () => {
+    const email = `otpB+${run}@example.com`;
     await http.post('/auth/signup').send({ email, password, firstName: 'A', lastName: 'B' }).expect(201);
     const code = mailer.lastCodeFor(email);
     const first = await http.post('/auth/verify-email-otp').send({ email, code }).expect(200);
@@ -79,20 +83,80 @@ describe('Lot 10 — Vérification email par code OTP (e2e)', () => {
     const userAfterFirst = await prisma.user.findUniqueOrThrow({ where: { email } });
     const verifiedAtFirst = userAfterFirst.emailVerifiedAt!.getTime();
 
-    // Même code réutilisé après confirmation (double-tap) : pas d'erreur, nouvelle session,
-    // date de confirmation jamais réécrite.
-    const second = await http.post('/auth/verify-email-otp').send({ email, code }).expect(200);
-    expect(second.body.accessToken).toBeDefined();
-    // Le refresh token est généré aléatoirement à chaque émission (contrairement à
-    // l'access token JWT, déterministe à la seconde près si sub/householdId/iat coïncident).
-    expect(second.body.refreshToken).not.toBe(first.body.refreshToken);
+    // Deuxième appel avec le même code déjà consommé (double-tap) : réponse métier
+    // contrôlée « déjà confirmé », jamais une nouvelle session — le client mobile
+    // s'appuie sur la session déjà obtenue au premier succès.
+    const second = await http.post('/auth/verify-email-otp').send({ email, code }).expect(400);
+    expect(second.body.message).toBe('Cet email est déjà confirmé — connectez-vous avec votre mot de passe');
+    expect(second.body.accessToken).toBeUndefined();
 
     const userAfterSecond = await prisma.user.findUniqueOrThrow({ where: { email } });
-    expect(userAfterSecond.emailVerifiedAt!.getTime()).toBe(verifiedAtFirst);
+    expect(userAfterSecond.emailVerifiedAt!.getTime()).toBe(verifiedAtFirst); // jamais réécrite
 
     const sessions = await prisma.session.findMany({ where: { userId: userAfterSecond.id } });
-    expect(sessions).toHaveLength(2); // une session par appel, aucun compteur de confirmation dupliqué
+    expect(sessions).toHaveLength(1); // uniquement la session du premier succès
+    expect(first.body.accessToken).toBeDefined();
   });
+
+  // ---------- TEST C ----------
+  it('TEST C — deux appels concurrents avec le même OTP : un seul consomme le code, jamais deux validations indépendantes', async () => {
+    const email = `otpC+${run}@example.com`;
+    await http.post('/auth/signup').send({ email, password, firstName: 'A', lastName: 'B' }).expect(201);
+    const code = mailer.lastCodeFor(email);
+
+    const [first, second] = await Promise.all([
+      http.post('/auth/verify-email-otp').send({ email, code }),
+      http.post('/auth/verify-email-otp').send({ email, code }),
+    ]);
+
+    const statuses = [first.status, second.status].sort((a, b) => a - b);
+    expect(statuses).toEqual([200, 400]); // un seul gagne la course de consommation atomique
+
+    const winner = first.status === 200 ? first : second;
+    expect(winner.body.accessToken).toBeDefined();
+
+    const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+    expect(user.emailVerifiedAt).not.toBeNull();
+    const sessions = await prisma.session.findMany({ where: { userId: user.id } });
+    expect(sessions).toHaveLength(1); // jamais deux sessions issues du même OTP consommé en concurrence
+  });
+
+  // ---------- TEST D ----------
+  it('TEST D — resend : ancien OTP immédiatement refusé, nouveau OTP utilisable une seule fois', async () => {
+    const email = `otpD+${run}@example.com`;
+    await http.post('/auth/signup').send({ email, password, firstName: 'A', lastName: 'B' }).expect(201);
+    const firstCode = mailer.lastCodeFor(email);
+
+    await http.post('/auth/resend-email-otp').send({ email }).expect(200);
+    const secondCode = mailer.lastCodeFor(email);
+    expect(secondCode).toBeDefined();
+
+    await http.post('/auth/verify-email-otp').send({ email, code: firstCode }).expect(400);
+    await http.post('/auth/verify-email-otp').send({ email, code: secondCode }).expect(200);
+    // Le nouveau code est lui aussi à usage unique une fois consommé.
+    await http.post('/auth/verify-email-otp').send({ email, code: secondCode }).expect(400);
+  });
+
+  // ---------- TEST E ----------
+  it("TEST E — un OTP consommé ne peut jamais être réactivé, même si le raccourci « déjà confirmé » était contourné", async () => {
+    const email = `otpE+${run}@example.com`;
+    await http.post('/auth/signup').send({ email, password, firstName: 'A', lastName: 'B' }).expect(201);
+    const code = mailer.lastCodeFor(email);
+    await http.post('/auth/verify-email-otp').send({ email, code }).expect(200);
+
+    const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+    const otp = await prisma.emailOtp.findFirstOrThrow({ where: { userId: user.id } });
+    expect(otp.consumedAt).not.toBeNull(); // la garantie single-use vit dans consumedAt
+
+    // Simule un contournement du raccourci « email déjà confirmé » (ex. régression future) :
+    // même si emailVerifiedAt repassait à NULL, l'OTP consommé reste définitivement
+    // inutilisable — la ligne email_otp elle-même ne redevient jamais valide.
+    await prisma.user.update({ where: { id: user.id }, data: { emailVerifiedAt: null } });
+    const res = await http.post('/auth/verify-email-otp').send({ email, code }).expect(400);
+    expect(res.body.message).toBe('Aucun code en attente — demandez un nouveau code');
+  });
+
+  // ==================================================================================
 
   // ---------- 5 ----------
   it('5. un code OTP invalide est rejeté avec un message français, jamais une exception technique brute', async () => {
@@ -131,21 +195,6 @@ describe('Lot 10 — Vérification email par code OTP (e2e)', () => {
     }
     const res = await http.post('/auth/verify-email-otp').send({ email, code }).expect(400);
     expect(res.body.message).toBe('Trop de tentatives — demandez un nouveau code');
-  });
-
-  // ---------- 7 ----------
-  it("7. renvoyer le code (resend) invalide le précédent et permet de valider avec le nouveau", async () => {
-    const email = `otp7+${run}@example.com`;
-    await http.post('/auth/signup').send({ email, password, firstName: 'A', lastName: 'B' }).expect(201);
-    const firstCode = mailer.lastCodeFor(email);
-
-    await http.post('/auth/resend-email-otp').send({ email }).expect(200);
-    const secondCode = mailer.lastCodeFor(email);
-    expect(secondCode).toBeDefined();
-
-    // L'ancien code n'est plus valide, même s'il n'a jamais expiré ni été consommé lui-même.
-    await http.post('/auth/verify-email-otp').send({ email, code: firstCode }).expect(400);
-    await http.post('/auth/verify-email-otp').send({ email, code: secondCode }).expect(200);
   });
 
   // ---------- 8 ----------
