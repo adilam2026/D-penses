@@ -51,6 +51,7 @@ export function GoalDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [test, setTest] = useState<GoalTest | null>(null);
   const [testing, setTesting] = useState(false);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -93,6 +94,17 @@ export function GoalDetailScreen() {
       setTest((await api.analyzeGoal(id)) as GoalTest);
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function onConfirmContribution(contributionId: string) {
+    if (confirmingId) return;
+    setConfirmingId(contributionId);
+    try {
+      await api.confirmGoalContribution(contributionId);
+      await load();
+    } finally {
+      setConfirmingId(null);
     }
   }
 
@@ -165,13 +177,8 @@ export function GoalDetailScreen() {
             <View style={{ alignItems: 'flex-end' }}>
               <Text style={styles.contributionAmount}>{item.plannedAmount.toLocaleString('fr-FR')} DH</Text>
               {item.status === 'prevu' && (
-                <TouchableOpacity
-                  onPress={async () => {
-                    await api.confirmGoalContribution(item.id);
-                    await load();
-                  }}
-                >
-                  <Text style={styles.confirmLink}>Confirmer</Text>
+                <TouchableOpacity onPress={() => onConfirmContribution(item.id)} disabled={confirmingId === item.id}>
+                  {confirmingId === item.id ? <ActivityIndicator size="small" /> : <Text style={styles.confirmLink}>Confirmer</Text>}
                 </TouchableOpacity>
               )}
             </View>

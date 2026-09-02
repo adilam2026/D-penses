@@ -59,6 +59,8 @@ export function PocketDetailScreen() {
   const [payAccountId, setPayAccountId] = useState<string | null>(null);
   const [linkDeadlineId, setLinkDeadlineId] = useState('');
   const [openDeadlines, setOpenDeadlines] = useState<{ id: string; chargePlan: { label: string }; dueDate: string }[]>([]);
+  const [linking, setLinking] = useState(false);
+  const [confirmingMovementId, setConfirmingMovementId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -125,14 +127,31 @@ export function PocketDetailScreen() {
   }
 
   async function onLinkDeadline() {
-    if (!linkDeadlineId) return;
+    if (!linkDeadlineId || linking) return;
     setError(null);
+    setLinking(true);
     try {
       await api.linkProvisionDeadline(id, linkDeadlineId);
       setLinkDeadlineId('');
       await load();
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Liaison impossible');
+    } finally {
+      setLinking(false);
+    }
+  }
+
+  async function onConfirmMovement(movementId: string) {
+    if (confirmingMovementId) return;
+    setConfirmingMovementId(movementId);
+    try {
+      if (isProvision) await api.confirmProvisionMovement(movementId);
+      else await api.confirmPocketMovement(movementId);
+      await load();
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Confirmation impossible');
+    } finally {
+      setConfirmingMovementId(null);
     }
   }
 
@@ -197,8 +216,8 @@ export function PocketDetailScreen() {
           <Text style={styles.sectionTitle}>Échéances liées</Text>
           <View style={styles.linkRow}>
             <TextInput style={[styles.input, styles.linkInput]} placeholder="ID de l'échéance à lier" value={linkDeadlineId} onChangeText={setLinkDeadlineId} />
-            <TouchableOpacity style={styles.linkButton} onPress={onLinkDeadline}>
-              <Text style={styles.linkButtonText}>Lier</Text>
+            <TouchableOpacity style={styles.linkButton} onPress={onLinkDeadline} disabled={linking}>
+              {linking ? <ActivityIndicator color="#fff" /> : <Text style={styles.linkButtonText}>Lier</Text>}
             </TouchableOpacity>
           </View>
           {openDeadlines.length > 0 && (
@@ -272,14 +291,8 @@ export function PocketDetailScreen() {
                 {item.plannedAmount.toLocaleString('fr-FR')} DH
               </Text>
               {item.status === 'prevu' && (
-                <TouchableOpacity
-                  onPress={async () => {
-                    if (isProvision) await api.confirmProvisionMovement(item.id);
-                    else await api.confirmPocketMovement(item.id);
-                    await load();
-                  }}
-                >
-                  <Text style={styles.confirmLink}>Confirmer</Text>
+                <TouchableOpacity onPress={() => onConfirmMovement(item.id)} disabled={confirmingMovementId === item.id}>
+                  {confirmingMovementId === item.id ? <ActivityIndicator size="small" /> : <Text style={styles.confirmLink}>Confirmer</Text>}
                 </TouchableOpacity>
               )}
             </View>
