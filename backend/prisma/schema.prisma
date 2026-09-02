@@ -300,6 +300,7 @@ model Child {
   financialPlanEntries FinancialPlanBeneficiary[]
   savingsPockets       SavingsPocket[]
 
+  @@index([householdId])
   @@map("child")
 }
 
@@ -319,6 +320,7 @@ model Category {
   budgetExpenses  BudgetExpense[]
   adHocExpenses   AdHocExpense[]
 
+  @@index([householdId])
   @@map("category")
 }
 
@@ -409,6 +411,7 @@ model FinancialAccount {
   backedSavingsPockets   SavingsPocket[]          @relation("SavingsPocketLinkedAccount")
   backedProvisions       Provision[]              @relation("ProvisionLinkedAccount")
 
+  @@index([householdId])
   @@map("financial_account")
 }
 
@@ -423,6 +426,9 @@ model AccountBalanceSnapshot {
 
   account FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
+  // Alimente account_current_balance (RG-080) : ORDER BY declared_at DESC LIMIT 1 par compte —
+  // chemin le plus chaud de tout le moteur (appelé à chaque calcul de solde).
+  @@index([accountId, declaredAt])
   @@map("account_balance_snapshot")
 }
 
@@ -440,6 +446,7 @@ model Reconciliation {
   account     FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
   adjustments Adjustment[]
 
+  @@index([accountId])
   @@map("reconciliation")
 }
 
@@ -457,6 +464,7 @@ model Adjustment {
   account        FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
   reconciliation Reconciliation?  @relation(fields: [linkedReconciliationId], references: [id])
 
+  @@index([accountId])
   @@map("adjustment")
 }
 
@@ -478,6 +486,10 @@ model AccountTransfer {
   fromAccount FinancialAccount? @relation("TransferFrom", fields: [fromAccountId], references: [id])
   toAccount   FinancialAccount? @relation("TransferTo", fields: [toAccountId], references: [id])
 
+  @@index([householdId])
+  @@index([fromAccountId])
+  @@index([toAccountId])
+  @@index([plannedDate])
   @@map("account_transfer")
 }
 
@@ -505,6 +517,7 @@ model IncomeSource {
   defaultAccount FinancialAccount   @relation("IncomeSourceDefaultAccount", fields: [defaultAccountId], references: [id])
   occurrences    IncomeOccurrence[]
 
+  @@index([householdId])
   @@map("income_source")
 }
 
@@ -528,6 +541,10 @@ model IncomeOccurrence {
   account      FinancialAccount? @relation("IncomeOccurrenceAccount", fields: [accountId], references: [id])
   confirmedBy  User?             @relation(fields: [confirmedByUserId], references: [id])
 
+  // Filtré par computeHorizon/computeProjection (status='prevu', usualDate dans l'horizon,
+  // §5/§23 Lots 5/7) — la requête la plus fréquente sur cette table.
+  @@index([incomeSourceId])
+  @@index([status, usualDate])
   @@map("income_occurrence")
 }
 
@@ -559,6 +576,8 @@ model ChargePlan {
   deadlines      Deadline[]
   children       ChargePlanChild[]
 
+  @@index([householdId])
+  @@index([financialPlanId])
   @@map("charge_plan")
 }
 
@@ -588,6 +607,9 @@ model Deadline {
   payments         Payment[]
   childAllocations DeadlineChildAllocation[]
 
+  @@index([chargePlanId])
+  @@index([dueDate])
+  @@index([provisionId])
   @@map("deadline")
 }
 
@@ -613,6 +635,9 @@ model Payment {
   provision  Provision?       @relation(fields: [provisionId], references: [id])
   recordedBy User             @relation(fields: [recordedById], references: [id])
 
+  @@index([deadlineId])
+  @@index([accountId])
+  @@index([provisionId])
   @@map("payment")
 }
 
@@ -639,6 +664,7 @@ model VariableBudget {
   category  Category        @relation(fields: [categoryId], references: [id])
   expenses  BudgetExpense[]
 
+  @@index([householdId])
   @@map("variable_budget")
 }
 
@@ -663,6 +689,10 @@ model BudgetExpense {
   account        FinancialAccount @relation("BudgetExpenseAccount", fields: [accountId], references: [id])
   recordedBy     User             @relation("BudgetExpenseRecordedBy", fields: [recordedById], references: [id])
 
+  // consommeSurFenetre (variable-budget.util/projection.util) : WHERE variableBudgetId AND
+  // spentDate BETWEEN — appelé pour chaque période de chaque budget à chaque calcul.
+  @@index([variableBudgetId, spentDate])
+  @@index([accountId])
   @@map("budget_expense")
 }
 
@@ -684,6 +714,9 @@ model AdHocExpense {
   account    FinancialAccount @relation("AdHocExpenseAccount", fields: [accountId], references: [id])
   recordedBy User             @relation("AdHocExpenseRecordedBy", fields: [recordedById], references: [id])
 
+  @@index([householdId])
+  @@index([spentDate])
+  @@index([accountId])
   @@map("adhoc_expense")
 }
 
@@ -711,6 +744,7 @@ model FinancialPlan {
   beneficiaries   FinancialPlanBeneficiary[]
   linkedProvision Provision?                 @relation(fields: [linkedProvisionId], references: [id])
 
+  @@index([householdId])
   @@map("financial_plan")
 }
 
@@ -795,6 +829,7 @@ model SavingsPocket {
   movements        PocketMovement[]  @relation("SavingsPocketMovements")
   goals            Goal[]
 
+  @@index([householdId])
   @@map("savings_pocket")
 }
 
@@ -820,6 +855,7 @@ model Provision {
   payments       Payment[]
   financialPlans FinancialPlan[]
 
+  @@index([householdId])
   @@map("provision")
 }
 
@@ -847,6 +883,11 @@ model PocketMovement {
   provision     Provision?     @relation("ProvisionMovements", fields: [provisionId], references: [id], onDelete: Cascade)
   recordedBy    User           @relation(fields: [recordedByUserId], references: [id])
 
+  // computePocketCurrentAmount (RG-071) et le moteur de projection (§4/§10 Lots 6/7)
+  // filtrent systématiquement par poche/provision + statut, et par date planifiée.
+  @@index([savingsPocketId, status])
+  @@index([provisionId, status])
+  @@index([plannedDate])
   @@map("pocket_movement")
 }
 
@@ -868,6 +909,7 @@ model Goal {
   linkedPocket  SavingsPocket?     @relation(fields: [linkedPocketId], references: [id])
   contributions GoalContribution[]
 
+  @@index([householdId])
   @@map("goal")
 }
 
@@ -887,5 +929,7 @@ model GoalContribution {
   goal       Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
   recordedBy User @relation(fields: [recordedByUserId], references: [id])
 
+  @@index([goalId, status])
+  @@index([plannedDate])
   @@map("goal_contribution")
 }
