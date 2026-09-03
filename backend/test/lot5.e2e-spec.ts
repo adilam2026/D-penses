@@ -75,6 +75,34 @@ describe('Lot 5 — Trésorerie, disponible libre, dashboard & calendrier (e2e)'
     return res.body.id as string;
   }
 
+  /**
+   * Lundi toujours strictement postérieur à `from` (au moins le lendemain, jamais
+   * aujourd'hui) — sert d'ancre de semaine déterministe pour TEST B : le calcul de
+   * période (RG-098, variable-budget.util.ts) ne dépend que des dates passées en
+   * paramètre (`at`, `spentDate`...), jamais de l'horloge murale, donc une semaine
+   * ancrée sur CE lundi produit exactement les mêmes montants quel que soit le jour
+   * réel d'exécution. Contrairement à un littéral historique fixe : le compte de
+   * test a son AccountBalanceSnapshot horodaté par Postgres à l'instant réel de sa
+   * création (RG-080) — la dépense de test doit lui être postérieure, ce qui est
+   * garanti ici par construction puisque `weekStart` est toujours dans le futur réel.
+   */
+  function nextMondayUTC(from: Date): Date {
+    const base = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
+    const isoDay = base.getUTCDay() === 0 ? 7 : base.getUTCDay(); // 1=lundi..7=dimanche
+    base.setUTCDate(base.getUTCDate() + (8 - isoDay));
+    return base;
+  }
+
+  function addDaysUTC(date: Date, days: number): Date {
+    const d = new Date(date);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d;
+  }
+
+  function isoDate(date: Date): string {
+    return date.toISOString().slice(0, 10);
+  }
+
   // ---------- TEST 1 — patrimoine vs trésorerie ----------
   it('TEST 1 — patrimoine liquide total vs trésorerie opérationnelle', async () => {
     const h = await newHousehold();
@@ -303,18 +331,21 @@ describe('Lot 5 — Trésorerie, disponible libre, dashboard & calendrier (e2e)'
     const accountId = await createAccount(h.auth, 'Compte', 20000);
     const category = await http.post('/categories').set(...h.auth()).send({ name: 'Courses TestB', kind: 'expense' }).expect(201);
     await createWeeklyBudget(h.auth, category.body.id, 1500);
-    // Mercredi 2 septembre 2026 (même semaine du 31 août au 6 septembre) : 600 DH déjà dépensés.
-    // Heure de fin de journée explicite : le compte vient d'être créé avec un AccountBalanceSnapshot
-    // horodaté à l'instant réel de la création (RG-080) ; une date sans heure serait minuit UTC, ce
-    // qui la ferait paraître antérieure à ce snapshot dès que l'horloge réelle du bac à sable atteint
-    // le 2 septembre — comparaison de dates non liée à la logique métier, cf. bug similaire déjà
-    // corrigé au Lot 3 (voir schema.prisma, commentaire sur BudgetExpense.spentDate).
-    await http.post('/expenses').set(...h.auth()).send({ amount: 600, accountId, categoryId: category.body.id, spentDate: '2026-09-02T23:00:00.000Z' }).expect(201);
+
+    // Semaine ancrée sur nextMondayUTC (toujours dans le futur réel) plutôt qu'un littéral
+    // historique figé — voir commentaire de nextMondayUTC. Mercredi = 3e jour (lundi = jour 1).
+    const weekStart = nextMondayUTC(new Date());
+    const wednesday = addDaysUTC(weekStart, 2);
+    const sunday = addDaysUTC(weekStart, 6);
+
+    // Mercredi de cette semaine : 600 DH déjà dépensés, forcément postérieur à
+    // l'AccountBalanceSnapshot du compte (créé à l'instant réel juste au-dessus).
+    await http.post('/expenses').set(...h.auth()).send({ amount: 600, accountId, categoryId: category.body.id, spentDate: wednesday.toISOString() }).expect(201);
     // H* fixé au dernier jour de cette même semaine pour isoler exactement la période courante (aucune queue de semaine suivante).
     const source = await http.post('/income-sources').set(...h.auth()).send({ label: 'Salaire', usualAmount: 8000, defaultAccountId: accountId }).expect(201);
-    await http.post(`/income-sources/${source.body.id}/occurrences`).set(...h.auth()).send({ usualDate: '2026-09-06' }).expect(201);
+    await http.post(`/income-sources/${source.body.id}/occurrences`).set(...h.auth()).send({ usualDate: isoDate(sunday) }).expect(201);
 
-    const dashboard = await http.get('/dashboard/summary').set(...h.auth()).query({ at: '2026-09-02' }).expect(200);
+    const dashboard = await http.get('/dashboard/summary').set(...h.auth()).query({ at: isoDate(wednesday) }).expect(200);
     // La trésorerie reflète déjà les 600 dépensés (20000-600=19400) : jamais une seconde fois dans les engagements.
     expect(dashboard.body.operational_treasury).toBe(19400);
     // Reste_contractuel = 1500-600 = 900 ; rythme_restant = (600/3×7)-600 = 800 ; prudent_max = max(900,800,0) = 900.

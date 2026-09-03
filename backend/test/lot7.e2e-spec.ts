@@ -8,11 +8,12 @@ import { signupVerified } from './support/signup';
 /**
  * Tests Lot 7 — Moteur global de projection & trous de trésorerie (docs/02 G.6,
  * RG-051). Chaque scénario utilise un foyer dédié, la date de référence est
- * toujours injectée (`?at=`), jamais l'horloge système. Les mouvements créés le
- * même jour calendaire que la création du compte portent une heure explicite de
- * fin de journée pour ne jamais paraître antérieurs à l'AccountBalanceSnapshot
- * (horodaté à l'instant réel de création, RG-080) — même précaution que le
- * correctif appliqué à test/lot5.e2e-spec.ts TEST B.
+ * toujours injectée (`?at=`), jamais l'horloge système. TEST 7 ancre sa semaine
+ * de test sur nextMondayUTC (toujours dans le futur réel) plutôt qu'un littéral
+ * historique figé, pour qu'un mouvement du même jour calendaire que la création
+ * du compte reste toujours postérieur à l'AccountBalanceSnapshot (horodaté à
+ * l'instant réel de création, RG-080) — même précaution que test/lot5.e2e-spec.ts
+ * TEST B.
  */
 describe('Lot 7 — Moteur global de projection & trous de trésorerie (e2e)', () => {
   let app: INestApplication;
@@ -68,6 +69,24 @@ describe('Lot 7 — Moteur global de projection & trous de trésorerie (e2e)', (
 
   async function getProjection(auth: () => [string, string], query: Record<string, string | number>) {
     return http.get('/projection').set(...auth()).query(query).expect(200);
+  }
+
+  /** Voir test/lot5.e2e-spec.ts (même helper, même raison — TEST B). */
+  function nextMondayUTC(from: Date): Date {
+    const base = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
+    const isoDay = base.getUTCDay() === 0 ? 7 : base.getUTCDay(); // 1=lundi..7=dimanche
+    base.setUTCDate(base.getUTCDate() + (8 - isoDay));
+    return base;
+  }
+
+  function addDaysUTC(date: Date, days: number): Date {
+    const d = new Date(date);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d;
+  }
+
+  function isoDate(date: Date): string {
+    return date.toISOString().slice(0, 10);
   }
 
   // =========================================================
@@ -188,9 +207,15 @@ describe('Lot 7 — Moteur global de projection & trous de trésorerie (e2e)', (
     const accountId = await createAccount(h.auth, 'Compte', 20000);
     const category = await http.post('/categories').set(...h.auth()).send({ name: 'Courses L7', kind: 'expense' }).expect(201);
     await http.post('/variable-budgets').set(...h.auth()).send({ categoryId: category.body.id, referenceAmount: 1500, referencePeriod: 'semaine', startDate: '2020-01-01' }).expect(201);
-    await http.post('/expenses').set(...h.auth()).send({ amount: 600, accountId, categoryId: category.body.id, spentDate: '2026-09-02T23:00:00.000Z' }).expect(201);
 
-    const proj = await getProjection(h.auth, { at: '2026-09-02', to: '2026-09-06' });
+    // Semaine ancrée sur nextMondayUTC (toujours dans le futur réel) — voir commentaire du helper.
+    // Mercredi = 3e jour (lundi = jour 1), même construction que test/lot5.e2e-spec.ts TEST B.
+    const weekStart = nextMondayUTC(new Date());
+    const wednesday = addDaysUTC(weekStart, 2);
+    const sunday = addDaysUTC(weekStart, 6);
+    await http.post('/expenses').set(...h.auth()).send({ amount: 600, accountId, categoryId: category.body.id, spentDate: wednesday.toISOString() }).expect(201);
+
+    const proj = await getProjection(h.auth, { at: isoDate(wednesday), to: isoDate(sunday) });
     // Solde réel déjà à 19400 (20000-600) — la projection ne doit soustraire QUE le restant (900).
     expect(proj.body.opening_physical_treasury).toBe(19400);
     expect(proj.body.closing_physical_treasury).toBe(18500); // 19400 - 900, jamais 19400-1500 ni 19400-2100
