@@ -1,0 +1,55 @@
+name: Railway — Diagnostic (lecture seule)
+
+# Étape 1 de l'autonomisation Railway : ce workflow ne modifie RIEN sur Railway.
+# Il confirme seulement que RAILWAY_TOKEN fonctionne et remonte des faits non
+# sensibles (nom du projet/service/environnement, présence d'un domaine public,
+# NOMS des variables déjà définies — jamais leurs valeurs) pour que la suite
+# de l'automatisation (attacher Postgres, définir les variables, migrer,
+# seed, déployer) soit écrite à partir de faits vérifiés, pas de suppositions.
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Installer Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Statut du projet (nom projet/service/environnement — aucun secret)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway status
+
+      - name: Domaine public (s'il existe déjà)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway domain || echo "Aucun domaine public généré pour l'instant."
+
+      - name: Noms des variables déjà définies (JAMAIS leurs valeurs)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -o pipefail
+          if railway variables --json > vars.json 2>/dev/null; then
+            echo "Variables définies (noms uniquement) :"
+            node -e "console.log(Object.keys(JSON.parse(require('fs').readFileSync('vars.json','utf8'))).join('\n'))"
+          else
+            echo "railway variables --json indisponible — repli sur le format texte, valeurs masquées."
+            railway variables 2>/dev/null | awk -F'=' '{print $1}' | sort -u || echo "Impossible de lister les variables (service/environnement pas encore lié ?)."
+          fi
+          rm -f vars.json
+
+      - name: Services du projet
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway service || true
