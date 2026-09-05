@@ -88,6 +88,20 @@ describe('Lot 9 — Recette V1 (scénario familial complet, A-P) (e2e)', () => {
     return res.body.id as string;
   }
 
+  /**
+   * Date (minuit UTC) toujours au moins 2 jours après l'exécution réelle du test —
+   * voir test/lot5.e2e-spec.ts TEST B et test/lot7.e2e-spec.ts TEST 7 (même bug de
+   * fond : un littéral figé finit par devenir antérieur à l'AccountBalanceSnapshot
+   * du compte, horodaté par Postgres à l'instant réel de création, RG-080). Une
+   * marge de 2 jours (pas juste "demain") absorbe aussi l'heure de la journée.
+   */
+  function futureDateUTC(daysAhead: number): string {
+    const d = new Date();
+    d.setUTCHours(0, 0, 0, 0);
+    d.setUTCDate(d.getUTCDate() + daysAhead);
+    return d.toISOString().slice(0, 10);
+  }
+
   async function createChild(auth: () => [string, string], firstName: string) {
     const res = await http.post('/children').set(...auth()).send({ firstName, lastName: 'Enfant' }).expect(201);
     return res.body.id as string;
@@ -231,10 +245,10 @@ describe('Lot 9 — Recette V1 (scénario familial complet, A-P) (e2e)', () => {
     }).expect(201);
 
     const budgetExpense = await http.post('/expenses').set(...h.auth()).send({
-      amount: 300, accountId, categoryId: alimentation, spentDate: '2026-09-05',
+      amount: 300, accountId, categoryId: alimentation, spentDate: futureDateUTC(2),
     }).expect(201);
     const adhocExpense = await http.post('/expenses').set(...h.auth()).send({
-      amount: 150, accountId, categoryId: loisirs, spentDate: '2026-09-06',
+      amount: 150, accountId, categoryId: loisirs, spentDate: futureDateUTC(3),
     }).expect(201);
 
     expect(budgetExpense.body.kind).toBe('budget_expense');
