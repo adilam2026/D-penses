@@ -10,11 +10,21 @@ interface Category {
   kind: 'income' | 'expense' | 'both';
 }
 
+interface CreatedBudget {
+  categoryName: string;
+  amount: number;
+  period: 'semaine' | 'mois';
+}
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** Création d'un budget variable (§17) — saisie simple, les paramètres avancés restent secondaires. */
+/**
+ * Création d'un budget variable (§12/§17 refonte UX) — pattern CRÉER → VOIR CE QUI
+ * EST CRÉÉ → AJOUTER ENCORE ou CONTINUER (comme Comptes/Revenus/Charges), plutôt
+ * qu'une modale qui se referme après une seule création.
+ */
 export function CreateBudgetScreen() {
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
@@ -26,6 +36,7 @@ export function CreateBudgetScreen() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [created, setCreated] = useState<CreatedBudget[]>([]);
 
   useEffect(() => {
     api
@@ -48,7 +59,10 @@ export function CreateBudgetScreen() {
     setSubmitting(true);
     try {
       await api.createVariableBudget({ categoryId, referenceAmount: numericAmount, referencePeriod: period, startDate });
-      navigation.goBack();
+      const categoryName = categories.find((c) => c.id === categoryId)?.name ?? '';
+      setCreated((prev) => [...prev, { categoryName, amount: numericAmount, period }]);
+      setCategoryId(null);
+      setAmount('');
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Création impossible');
     } finally {
@@ -59,6 +73,19 @@ export function CreateBudgetScreen() {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
+      <Text style={styles.intro}>Fixez une limite pour vos dépenses du quotidien.</Text>
+
+      {created.length > 0 && (
+        <View style={styles.createdBox}>
+          <Text style={styles.sectionLabel}>Budgets ajoutés</Text>
+          {created.map((b, i) => (
+            <Text key={i} style={styles.createdLine}>
+              {b.categoryName} — {b.amount.toLocaleString('fr-FR')} DH / {b.period === 'semaine' ? 'semaine' : 'mois'}
+            </Text>
+          ))}
+        </View>
+      )}
+
       <Text style={styles.sectionLabel}>Catégorie</Text>
       {loading ? (
         <ActivityIndicator />
@@ -91,11 +118,11 @@ export function CreateBudgetScreen() {
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={submitting}>
-        {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Créer le budget</Text>}
+        {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{created.length > 0 ? 'Ajouter un autre budget' : 'Créer le budget'}</Text>}
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Text style={styles.cancel}>Annuler</Text>
+      <TouchableOpacity style={styles.continueButton} onPress={() => navigation.goBack()}>
+        <Text style={styles.continueButtonText}>{created.length > 0 ? 'Continuer' : 'Annuler'}</Text>
       </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -105,6 +132,9 @@ export function CreateBudgetScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F6F5F2' },
   scroll: { padding: 24, paddingTop: 16 },
+  intro: { color: '#6B747C', fontSize: 13, lineHeight: 19, marginBottom: 12 },
+  createdBox: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: '#E3E1DC' },
+  createdLine: { fontSize: 13, color: '#172436', marginTop: 4 },
   sectionLabel: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 8, marginTop: 4 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 },
   chip: {
@@ -137,6 +167,8 @@ const styles = StyleSheet.create({
   segmentTextActive: { color: '#172436' },
   button: { backgroundColor: '#172436', borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
   buttonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
+  continueButton: { borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 12, marginBottom: 24 },
+  continueButtonText: { color: '#172436', fontWeight: '600', fontSize: 14 },
   cancel: { color: '#6B747C', textAlign: 'center', marginTop: 16, fontSize: 13, marginBottom: 24 },
   error: { color: '#B3261E', fontSize: 13, marginBottom: 8 },
 });

@@ -27,6 +27,7 @@ export class IncomeService {
           beneficiaryUserId: dto.beneficiaryUserId,
           categoryId: dto.categoryId,
           recurrenceRule: dto.recurrenceRule,
+          recurrenceAnchorDate: dto.recurrenceAnchorDate ? new Date(dto.recurrenceAnchorDate) : undefined,
           usualAmount: dto.usualAmount,
           isRecurring: dto.isRecurring ?? true,
           defaultAccountId: dto.defaultAccountId,

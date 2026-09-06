@@ -23,6 +23,8 @@ const DISPLAY_KIND: Record<string, string> = {
   transfer_in: 'transfert',
   transfer_out: 'transfert',
   adjustment: 'ajustement',
+  budget_expense: 'dépense',
+  adhoc_expense: 'dépense',
 };
 
 @Injectable()

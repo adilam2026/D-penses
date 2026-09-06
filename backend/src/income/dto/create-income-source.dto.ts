@@ -1,4 +1,4 @@
-import { IsBoolean, IsIn, IsNumber, IsOptional, IsPositive, IsString, IsUUID, MinLength } from 'class-validator';
+import { IsBoolean, IsIn, IsISO8601, IsNumber, IsOptional, IsPositive, IsString, IsUUID, MinLength } from 'class-validator';
 
 const RECURRENCE_VALUES = ['hebdomadaire', 'mensuel', 'trimestriel', 'semestriel', 'annuel', 'ponctuel'] as const;
 
@@ -18,6 +18,11 @@ export class CreateIncomeSourceDto {
   @IsOptional()
   @IsIn(RECURRENCE_VALUES)
   recurrenceRule?: (typeof RECURRENCE_VALUES)[number];
+
+  /** Jour habituel de versement (Lot 11, §1) — ancre de ensureIncomeOccurrencesUntil. Absent = pas de génération automatique. */
+  @IsOptional()
+  @IsISO8601()
+  recurrenceAnchorDate?: string;
 
   @IsNumber()
   @IsPositive()

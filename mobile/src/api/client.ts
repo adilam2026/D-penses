@@ -139,6 +139,7 @@ export const createIncomeSource = (data: {
   defaultAccountId: string;
   isRecurring?: boolean;
   recurrenceRule?: string;
+  recurrenceAnchorDate?: string;
   beneficiaryUserId?: string;
   categoryId?: string;
 }) => apiFetch('/income-sources', { method: 'POST', body: data });

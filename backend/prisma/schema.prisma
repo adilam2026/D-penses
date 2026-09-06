@@ -528,6 +528,11 @@ model IncomeSource {
   beneficiaryUserId String?              @map("beneficiary_user_id")
   categoryId        String?              @map("category_id")
   recurrenceRule    RecurrenceFrequency? @map("recurrence_rule")
+  // Lot 11 (§1) : date d'ancrage de la récurrence (jour habituel de versement) — sert de
+  // référence à recurrence.util.ts::occurrenceDatesInRange, jamais utilisée seule comme
+  // une IncomeOccurrence. NULL = pas encore configuré (ex. source ponctuelle) : aucune
+  // génération automatique tant que ce champ est vide.
+  recurrenceAnchorDate DateTime?         @map("recurrence_anchor_date") @db.Date
   usualAmount       Decimal              @map("usual_amount") @db.Decimal(14, 2)
   isRecurring       Boolean              @default(true) @map("is_recurring")
   defaultAccountId  String               @map("default_account_id")
@@ -569,6 +574,9 @@ model IncomeOccurrence {
   // §5/§23 Lots 5/7) — la requête la plus fréquente sur cette table.
   @@index([incomeSourceId])
   @@index([status, usualDate])
+  // Lot 11 (§1) : anti-doublon pour ensureIncomeOccurrencesUntil (createMany skipDuplicates) —
+  // une même source ne peut jamais avoir deux occurrences à la même usualDate.
+  @@unique([incomeSourceId, usualDate])
   @@map("income_occurrence")
 }
 
@@ -634,6 +642,9 @@ model Deadline {
   @@index([chargePlanId])
   @@index([dueDate])
   @@index([provisionId])
+  // Lot 11 (§1) : anti-doublon pour ensureChargeDeadlinesUntil (createMany skipDuplicates) —
+  // un même ChargePlan ne peut jamais avoir deux échéances à la même due_date.
+  @@unique([chargePlanId, dueDate])
   @@map("deadline")
 }
 

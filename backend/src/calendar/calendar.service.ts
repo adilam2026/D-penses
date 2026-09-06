@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { toNumber } from '../common/ledger/ledger.util';
-import { computeHorizon } from '../common/ledger/treasury.util';
+import { computeHorizon, DASHBOARD_FALLBACK_HORIZON_DAYS } from '../common/ledger/treasury.util';
+import { ensureChargeDeadlinesUntil, ensureIncomeOccurrencesUntil } from '../common/ledger/occurrence-generation.util';
 
 export type CalendarEventKind = 'revenu_prevu' | 'facture_attendue' | 'echeance' | 'montant_inconnu' | 'echeance_payee';
 
@@ -29,6 +30,15 @@ export class CalendarService {
   async listEvents(userId: string, householdId: string, referenceDate: Date, from?: Date, to?: Date) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
+
+      // Lot 11 (§1/§3) : génération AVANT lecture, avec l'horizon que CE consommateur
+      // a réellement besoin — explicite si `to` est fourni, sinon même repli que H*
+      // (DASHBOARD_FALLBACK_HORIZON_DAYS) pour que computeHorizon() voie les
+      // occurrences fraîchement générées avant de calculer son propre horizon.
+      const generationHorizon = to ?? new Date(referenceDate.getTime() + DASHBOARD_FALLBACK_HORIZON_DAYS * 86400000);
+      await ensureIncomeOccurrencesUntil(tx, householdId, generationHorizon);
+      await ensureChargeDeadlinesUntil(tx, householdId, generationHorizon);
+
       const rangeStart = from ?? referenceDate;
       const rangeEnd = to ?? (await computeHorizon(tx, householdId, referenceDate)).date;
 

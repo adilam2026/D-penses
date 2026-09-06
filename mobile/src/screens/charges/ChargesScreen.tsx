@@ -113,6 +113,7 @@ export function ChargesScreen() {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
+        <Text style={styles.intro}>Ajoutez les dépenses que vous connaissez déjà afin que l'application puisse les anticiper.</Text>
         <Text style={styles.sectionTitle}>Échéances ouvertes</Text>
         {loading ? (
           <ActivityIndicator />
@@ -180,6 +181,7 @@ export function ChargesScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F6F5F2' },
   scroll: { padding: 20 },
+  intro: { color: '#6B747C', fontSize: 13, lineHeight: 19, marginBottom: 12 },
   sectionTitle: { fontSize: 14, fontWeight: '700', color: '#172436', marginTop: 8, marginBottom: 8 },
   empty: { color: '#6B747C', fontSize: 13, lineHeight: 20 },
   card: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8 },

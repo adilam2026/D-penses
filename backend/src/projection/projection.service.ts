@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { computeProjection, ProjectionResult } from '../common/ledger/projection.util';
 import { addDaysUTC } from '../common/ledger/variable-budget.util';
+import { ensureChargeDeadlinesUntil, ensureIncomeOccurrencesUntil } from '../common/ledger/occurrence-generation.util';
 
 type TxClient = ReturnType<RlsContextService['getClient']>;
 
@@ -20,13 +21,24 @@ export class ProjectionService {
       const tx = this.rlsContext.getClient();
       const referenceDate = at ? new Date(at) : new Date();
       const horizonEnd = to ? new Date(to) : addDaysUTC(referenceDate, horizonDays ?? DEFAULT_HORIZON_DAYS);
+      // Lot 11 (§1/§3) : génération AVANT lecture, avec l'horizon EXACT demandé par
+      // cet appel — jamais une constante séparée, l'appelant fournit déjà tout.
+      await ensureIncomeOccurrencesUntil(tx, householdId, horizonEnd);
+      await ensureChargeDeadlinesUntil(tx, householdId, horizonEnd);
       return this.toApi(await computeProjection(tx, householdId, referenceDate, horizonEnd));
     });
   }
 
   /** Réutilisable sur une transaction déjà ouverte (DashboardService) — jamais un second rlsContext.run() imbriqué. */
   async getOnTx(tx: TxClient, householdId: string, referenceDate: Date, horizonDays: number) {
-    return this.toApi(await computeProjection(tx, householdId, referenceDate, addDaysUTC(referenceDate, horizonDays)));
+    const horizonEnd = addDaysUTC(referenceDate, horizonDays);
+    // Générée séparément ici aussi : DashboardService appelle getOnTx() directement,
+    // sans passer par get() — l'horizon 30 jours est déjà couvert par la génération
+    // faite en tête de DashboardService.getSummary(), createMany/skipDuplicates rend
+    // ce second passage un no-op sûr, jamais un doublon (idempotence, §1).
+    await ensureIncomeOccurrencesUntil(tx, householdId, horizonEnd);
+    await ensureChargeDeadlinesUntil(tx, householdId, horizonEnd);
+    return this.toApi(await computeProjection(tx, householdId, referenceDate, horizonEnd));
   }
 
   /** Contrat API en snake_case explicite (§31), même convention que la correction Lot 5 §5. */

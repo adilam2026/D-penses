@@ -22,6 +22,7 @@ interface IncomeSource {
   label: string;
   usualAmount: number;
   recurrenceRule: string | null;
+  recurrenceAnchorDate: string | null;
 }
 
 interface Account {
@@ -44,6 +45,16 @@ const RECURRENCE_LABEL: Record<string, string> = {
   ponctuel: 'Ponctuel',
 };
 
+/** Jour habituel → date d'ancrage du mois courant, clampée (règle jour 29/30/31, Lot 11 §1). */
+function anchorDateForDay(day: number): string {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth();
+  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const clamped = Math.min(day, daysInMonth);
+  return new Date(Date.UTC(year, month, clamped)).toISOString().slice(0, 10);
+}
+
 /** Revenus (Lot 1 — recette) : sources de revenu récurrentes, séparées du cycle prévu → reçu (IncomeSourceDetailScreen). */
 export function IncomeScreen() {
   const navigation = useNavigation<any>();
@@ -56,6 +67,7 @@ export function IncomeScreen() {
   const [label, setLabel] = useState('');
   const [amount, setAmount] = useState('');
   const [recurrence, setRecurrence] = useState('mensuel');
+  const [anchorDay, setAnchorDay] = useState('');
   const [accountId, setAccountId] = useState<string | null>(null);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -116,6 +128,11 @@ export function IncomeScreen() {
       promptCreateAccount();
       return;
     }
+    const dayNumber = Number(anchorDay);
+    if (recurrence !== 'ponctuel' && (!dayNumber || dayNumber < 1 || dayNumber > 31)) {
+      setError('Jour habituel invalide (1 à 31)');
+      return;
+    }
     setCreating(true);
     try {
       await api.createIncomeSource({
@@ -124,10 +141,12 @@ export function IncomeScreen() {
         defaultAccountId: accountId,
         isRecurring: recurrence !== 'ponctuel',
         recurrenceRule: recurrence,
+        recurrenceAnchorDate: recurrence !== 'ponctuel' ? anchorDateForDay(dayNumber) : undefined,
         categoryId: categoryId ?? undefined,
       });
       setLabel('');
       setAmount('');
+      setAnchorDay('');
       setCategoryId(null);
       await load();
     } catch (err) {
@@ -143,6 +162,9 @@ export function IncomeScreen() {
         data={sources}
         keyExtractor={(s) => s.id}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
+        ListHeaderComponent={
+          <Text style={styles.intro}>Ajoutez les revenus que vous recevez régulièrement — l'application anticipera automatiquement les prochains versements.</Text>
+        }
         ListEmptyComponent={
           !loading ? <Text style={styles.empty}>Ajoutez votre salaire ou une autre source de revenu pour suivre vos rentrées d'argent.</Text> : null
         }
@@ -151,6 +173,7 @@ export function IncomeScreen() {
             <Text style={styles.rowName}>{item.label}</Text>
             <Text style={styles.rowMeta}>
               {item.usualAmount.toLocaleString('fr-FR')} DH · {RECURRENCE_LABEL[item.recurrenceRule ?? ''] ?? 'Ponctuel'}
+              {item.recurrenceAnchorDate ? ` · le ${new Date(item.recurrenceAnchorDate).getUTCDate()}` : ''}
             </Text>
           </TouchableOpacity>
         )}
@@ -168,6 +191,16 @@ export function IncomeScreen() {
             </TouchableOpacity>
           ))}
         </View>
+        {recurrence !== 'ponctuel' && (
+          <TextInput
+            style={styles.input}
+            placeholder="Jour habituel de versement (1 à 31)"
+            keyboardType="number-pad"
+            maxLength={2}
+            value={anchorDay}
+            onChangeText={setAnchorDay}
+          />
+        )}
         <View style={styles.chipRow}>
           {accounts.map((a) => (
             <TouchableOpacity key={a.id} style={[styles.chip, accountId === a.id && styles.chipActive]} onPress={() => setAccountId(a.id)}>
@@ -202,6 +235,7 @@ export function IncomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F6F5F2', paddingTop: 16, paddingHorizontal: 20 },
+  intro: { color: '#6B747C', fontSize: 13, lineHeight: 19, marginBottom: 12 },
   empty: { color: '#6B747C', textAlign: 'center', marginTop: 24, fontSize: 13, lineHeight: 20 },
   row: { backgroundColor: '#fff', borderRadius: 10, padding: 14, marginBottom: 8 },
   rowName: { fontSize: 15, fontWeight: '600', color: '#172436' },
