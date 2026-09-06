@@ -69,7 +69,7 @@ export function ChildrenScreen() {
           !loading ? <Text style={styles.empty}>Ajoutez vos enfants pour suivre leurs frais (scolarité, activités...) séparément.</Text> : null
         }
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.row} onPress={() => navigation.getParent()?.navigate('ChildCosts', { id: item.id })}>
+          <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('ChildCosts', { id: item.id })}>
             <Text style={styles.rowName}>
               {item.firstName} {item.lastName}
             </Text>

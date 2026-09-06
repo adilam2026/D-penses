@@ -68,16 +68,18 @@ async function renderApp() {
   );
 }
 
-it('la navigation basse propose Accueil, Transactions, [+] et Calendrier', async () => {
+it('la navigation basse propose 5 positions symétriques : Accueil, Transactions, [+], Calendrier, Enveloppes', async () => {
   await renderApp();
   await waitFor(() => screen.getByText('Bienvenue dans D-Penses+'));
   expect(screen.getByText('Accueil')).toBeTruthy();
   expect(screen.getByText('Transactions')).toBeTruthy();
   expect(screen.getByText('Calendrier')).toBeTruthy();
   expect(screen.getByTestId('tab-quick-actions')).toBeTruthy();
-  // §1 — "Plus" et "Enveloppes" ont quitté la barre basse.
+  // Correctif post-Vague 3 (§13) — Enveloppes rejoint la barre basse (accès permanent) :
+  // avec 5 positions, le bouton central [+] occupe mathématiquement le 3e emplacement,
+  // donc le centre exact de la barre (contrairement à 4 positions, jamais centré).
+  expect(screen.getByText('Enveloppes')).toBeTruthy();
   expect(screen.queryByText('Plus')).toBeNull();
-  expect(screen.queryByText('Enveloppes')).toBeNull();
 });
 
 it('le bouton central "+" ouvre la bottom sheet, jamais une navigation d\'onglet', async () => {

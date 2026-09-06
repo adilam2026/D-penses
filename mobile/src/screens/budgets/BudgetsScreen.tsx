@@ -55,7 +55,7 @@ export function BudgetsScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.addButton} onPress={() => navigation.getParent()?.navigate('CreateBudget')}>
+        <TouchableOpacity style={styles.addButton} onPress={() => navigation.navigate('CreateBudget')}>
           <Text style={styles.addButtonText}>+ Nouveau budget</Text>
         </TouchableOpacity>
       </View>
@@ -68,7 +68,7 @@ export function BudgetsScreen() {
         renderItem={({ item }) => {
           const ratio = item.status.budgetPeriode > 0 ? Math.min(item.status.consommeADate / item.status.budgetPeriode, 1) : 0;
           return (
-            <TouchableOpacity style={styles.card} onPress={() => navigation.getParent()?.navigate('BudgetDetail', { id: item.id })}>
+            <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('BudgetDetail', { id: item.id })}>
               <View style={styles.cardHeader}>
                 <Text style={styles.cardTitle}>{item.category.name}</Text>
                 <Text style={[styles.statusBadge, { color: HEALTH_COLOR[item.status.healthStatus] }]}>

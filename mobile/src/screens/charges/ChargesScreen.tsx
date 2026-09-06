@@ -1,76 +1,55 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
-import { DateField } from '../../ui/DateField';
+import { FREQUENCY_LABEL } from '../../ui/frequency';
 
-interface OpenDeadline {
+interface NextDeadline {
   id: string;
   dueDate: string;
   amountStatus: 'inconnu' | 'estime' | 'confirme';
-  resteAPayer: number | null;
-  chargePlan: { label: string };
+  resteAPayer: number | string | null;
 }
 
-interface Category {
+interface ChargePlan {
   id: string;
-  name: string;
-  kind: 'income' | 'expense' | 'both';
+  label: string;
+  recurrenceRule: string | null;
+  status: 'actif' | 'inactif';
+  deadlines: NextDeadline[];
 }
 
-const RECURRENCE_LABEL: Record<string, string> = {
-  hebdomadaire: 'Hebdomadaire',
-  mensuel: 'Mensuel',
-  trimestriel: 'Trimestriel',
-  semestriel: 'Semestriel',
-  annuel: 'Annuel',
-  ponctuel: 'Ponctuel',
-};
+const STATUS_LABEL: Record<string, string> = { inconnu: 'Inconnu', estime: 'Estimé', confirme: 'Confirmé' };
 
-const STATUS_LABEL: Record<string, string> = { inconnu: 'Montant inconnu', estime: 'Estimé', confirme: 'Confirmé' };
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
+function n(v: number | string | null): number | null {
+  if (v === null) return null;
+  return typeof v === 'number' ? v : Number(v);
 }
 
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+function formatShortDate(iso: string) {
+  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
 }
 
-/** Charges récurrentes génériques + échéances ouvertes (Lot 1 — recette). */
+/**
+ * Charges récurrentes (recette post-Vague 3 §6/§7) — liste compacte des
+ * ChargePlan (une ligne = une charge + sa prochaine échéance ouverte, jamais
+ * une carte de 3-4 lignes), séparée de la création (§7 : bouton dédié →
+ * CreateChargeScreen, jamais un formulaire permanent affiché sous la liste).
+ * Les charges arrêtées (status=inactif, §4) restent visibles et gérables —
+ * jamais une entrée fantôme — mais repliées par défaut pour ne pas encombrer.
+ */
 export function ChargesScreen() {
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
-  const [deadlines, setDeadlines] = useState<OpenDeadline[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [plans, setPlans] = useState<ChargePlan[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const [label, setLabel] = useState('');
-  const [recurrence, setRecurrence] = useState('mensuel');
-  const [dueDate, setDueDate] = useState(todayIso());
-  const [amount, setAmount] = useState('');
-  const [amountStatus, setAmountStatus] = useState<'estime' | 'confirme' | 'inconnu'>('estime');
-  const [categoryId, setCategoryId] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [showInactive, setShowInactive] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [deadlineList, categoryList] = await Promise.all([api.listOpenDeadlines(), api.listCategories()]);
-      setDeadlines(deadlineList);
-      setCategories((categoryList as Category[]).filter((c) => c.kind === 'expense' || c.kind === 'both'));
+      setPlans(await api.listChargePlans());
     } finally {
       setLoading(false);
     }
@@ -82,138 +61,81 @@ export function ChargesScreen() {
     }, [load]),
   );
 
-  async function onCreate() {
-    setError(null);
-    if (!label.trim()) {
-      setError('Un libellé est requis');
-      return;
-    }
-    if (amountStatus !== 'inconnu' && (!amount.trim() || Number(amount.replace(',', '.')) <= 0)) {
-      setError('Montant invalide');
-      return;
-    }
-    setCreating(true);
-    try {
-      const plan = await api.createChargePlan({ label: label.trim(), startDate: dueDate, recurrenceRule: recurrence, categoryId: categoryId ?? undefined });
-      await api.createDeadline(plan.id, {
-        dueDate,
-        amountStatus,
-        amountCurrent: amountStatus !== 'inconnu' ? Number(amount.replace(',', '.')) : undefined,
-      });
-      setLabel('');
-      setAmount('');
-      setCategoryId(null);
-      await load();
-    } catch (err) {
-      setError(err instanceof api.ApiError ? err.message : 'Création impossible');
-    } finally {
-      setCreating(false);
-    }
+  const active = plans.filter((p) => p.status === 'actif');
+  const inactive = plans.filter((p) => p.status === 'inactif');
+
+  function renderRow(p: ChargePlan) {
+    const next = p.deadlines[0];
+    return (
+      <TouchableOpacity
+        key={p.id}
+        testID={`charge-row-${p.id}`}
+        style={styles.row}
+        onPress={() => navigation.navigate('ChargePlanDetail', { id: p.id })}
+      >
+        <View style={{ flex: 1 }}>
+          <Text style={styles.rowLabel} numberOfLines={1}>
+            {p.label}
+          </Text>
+          <Text style={styles.rowMeta}>
+            {p.recurrenceRule ? FREQUENCY_LABEL[p.recurrenceRule] : 'Ponctuel'}
+            {next ? ` · ${formatShortDate(next.dueDate)} · ${STATUS_LABEL[next.amountStatus]}` : ' · Aucune échéance ouverte'}
+          </Text>
+        </View>
+        {next && n(next.resteAPayer) !== null && <Text style={styles.rowAmount}>{n(next.resteAPayer)!.toLocaleString('fr-FR')} DH</Text>}
+      </TouchableOpacity>
+    );
   }
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
-        <Text style={styles.intro}>Ajoutez les dépenses que vous connaissez déjà afin que l'application puisse les anticiper.</Text>
-        <Text style={styles.sectionTitle}>Échéances ouvertes</Text>
-        {loading ? (
-          <ActivityIndicator />
-        ) : deadlines.length === 0 ? (
-          <Text style={styles.empty}>Aucune échéance ouverte. Ajoutez une charge récurrente ci-dessous (loyer, internet, école...).</Text>
-        ) : (
-          deadlines.map((d) => (
-            <TouchableOpacity key={d.id} style={styles.card} onPress={() => navigation.navigate('DeadlineDetail', { id: d.id })}>
-              <Text style={styles.cardTitle}>{d.chargePlan.label}</Text>
-              <Text style={styles.cardMeta}>
-                Échéance du {formatDate(d.dueDate)} · {STATUS_LABEL[d.amountStatus]}
-              </Text>
-              <Text style={styles.cardAmount}>
-                {d.resteAPayer !== null ? `${d.resteAPayer.toLocaleString('fr-FR')} DH restants` : 'Montant à confirmer'}
-              </Text>
-            </TouchableOpacity>
-          ))
-        )}
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}
+      refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
+    >
+      <Text style={styles.intro}>Vos dépenses récurrentes (loyer, internet, école...), anticipées automatiquement.</Text>
 
-        <Text style={styles.sectionTitle}>Nouvelle charge récurrente</Text>
-        <TextInput style={styles.input} placeholder="Libellé (ex. Internet, Loyer, École)" value={label} onChangeText={setLabel} />
-        <View style={styles.chipRow}>
-          {Object.keys(RECURRENCE_LABEL).map((r) => (
-            <TouchableOpacity key={r} style={[styles.chip, recurrence === r && styles.chipActive]} onPress={() => setRecurrence(r)}>
-              <Text style={[styles.chipText, recurrence === r && styles.chipTextActive]}>{RECURRENCE_LABEL[r]}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        <DateField label="Date d'échéance" value={dueDate} onChange={setDueDate} />
-        <View style={styles.chipRow}>
-          {(['estime', 'confirme', 'inconnu'] as const).map((s) => (
-            <TouchableOpacity key={s} style={[styles.chip, amountStatus === s && styles.chipActive]} onPress={() => setAmountStatus(s)}>
-              <Text style={[styles.chipText, amountStatus === s && styles.chipTextActive]}>{STATUS_LABEL[s]}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        {amountStatus !== 'inconnu' && (
-          <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} />
-        )}
-        {categories.length > 0 && (
-          <>
-            <Text style={styles.sectionTitle}>Catégorie (facultatif)</Text>
-            <View style={styles.chipRow}>
-              {categories.map((c) => (
-                <TouchableOpacity
-                  key={c.id}
-                  style={[styles.chip, categoryId === c.id && styles.chipActive]}
-                  onPress={() => setCategoryId(categoryId === c.id ? null : c.id)}
-                >
-                  <Text style={[styles.chipText, categoryId === c.id && styles.chipTextActive]}>{c.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </>
-        )}
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        <TouchableOpacity style={styles.button} onPress={onCreate} disabled={creating}>
-          {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Ajouter la charge</Text>}
+      <View style={styles.headerRow}>
+        <Text style={styles.sectionTitle}>CHARGES RÉCURRENTES</Text>
+        <TouchableOpacity testID="add-charge-button" onPress={() => navigation.navigate('CreateCharge')}>
+          <Text style={styles.addLink}>+ Ajouter une charge</Text>
         </TouchableOpacity>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </View>
+
+      {loading && plans.length === 0 ? (
+        <ActivityIndicator />
+      ) : active.length === 0 ? (
+        <Text style={styles.empty}>Aucune charge récurrente. Ajoutez-en une ci-dessus.</Text>
+      ) : (
+        active.map(renderRow)
+      )}
+
+      {inactive.length > 0 && (
+        <>
+          <TouchableOpacity testID="toggle-inactive-charges" style={styles.inactiveToggle} onPress={() => setShowInactive((v) => !v)}>
+            <Text style={styles.inactiveToggleText}>
+              {showInactive ? 'Masquer' : 'Voir'} les charges arrêtées ({inactive.length})
+            </Text>
+          </TouchableOpacity>
+          {showInactive && inactive.map(renderRow)}
+        </>
+      )}
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F6F5F2' },
   scroll: { padding: 20 },
-  intro: { color: '#6B747C', fontSize: 13, lineHeight: 19, marginBottom: 12 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#172436', marginTop: 8, marginBottom: 8 },
+  intro: { color: '#6B747C', fontSize: 13, lineHeight: 19, marginBottom: 16 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  sectionTitle: { fontSize: 11, fontWeight: '700', color: '#6B747C', letterSpacing: 0.5 },
+  addLink: { color: '#2E7D5B', fontSize: 13, fontWeight: '700' },
   empty: { color: '#6B747C', fontSize: 13, lineHeight: 20 },
-  card: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8 },
-  cardTitle: { fontSize: 14, fontWeight: '700', color: '#172436' },
-  cardMeta: { fontSize: 12, color: '#6B747C', marginTop: 2 },
-  cardAmount: { fontSize: 13, fontWeight: '700', color: '#172436', marginTop: 4 },
-  input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: '#E3E1DC',
-    marginBottom: 8,
-  },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
-  chip: {
-    backgroundColor: '#fff',
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginRight: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#E3E1DC',
-  },
-  chipActive: { backgroundColor: '#172436', borderColor: '#172436' },
-  chipText: { fontSize: 12, color: '#172436' },
-  chipTextActive: { color: '#fff', fontWeight: '600' },
-  button: { backgroundColor: '#172436', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  error: { color: '#B3261E', fontSize: 13, marginBottom: 8 },
+  row: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 8 },
+  rowLabel: { fontSize: 14, fontWeight: '600', color: '#172436' },
+  rowMeta: { fontSize: 11, color: '#6B747C', marginTop: 2 },
+  rowAmount: { fontSize: 13, fontWeight: '700', color: '#172436', marginLeft: 8 },
+  inactiveToggle: { marginTop: 8, marginBottom: 4 },
+  inactiveToggleText: { fontSize: 12, fontWeight: '600', color: '#6B747C' },
 });

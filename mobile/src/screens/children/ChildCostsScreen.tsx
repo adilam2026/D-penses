@@ -66,7 +66,7 @@ export function ChildCostsScreen() {
       {costs.prochaineEcheance && (
         <TouchableOpacity
           style={styles.nextCard}
-          onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: costs.prochaineEcheance!.deadlineId })}
+          onPress={() => navigation.navigate('DeadlineDetail', { id: costs.prochaineEcheance!.deadlineId })}
         >
           <Text style={styles.nextLabel}>Prochaine échéance</Text>
           <Text style={styles.nextTitle}>{costs.prochaineEcheance.label}</Text>
@@ -83,7 +83,7 @@ export function ChildCostsScreen() {
             <TouchableOpacity
               key={p.id}
               style={styles.rowSimple}
-              onPress={() => navigation.getParent()?.navigate('FinancialPlanDetail', { id: p.id })}
+              onPress={() => navigation.navigate('FinancialPlanDetail', { id: p.id })}
             >
               <Text style={styles.rowLabel}>{p.label}</Text>
               <Text style={styles.rowLink}>Voir →</Text>
@@ -112,7 +112,7 @@ export function ChildCostsScreen() {
             <TouchableOpacity
               key={c.deadlineId}
               style={styles.rowSimple}
-              onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: c.deadlineId })}
+              onPress={() => navigation.navigate('DeadlineDetail', { id: c.deadlineId })}
             >
               <Text style={styles.rowLabel}>{c.label}</Text>
               <Text style={styles.rowAmount}>Charge commune : {c.amount.toLocaleString('fr-FR')} DH</Text>

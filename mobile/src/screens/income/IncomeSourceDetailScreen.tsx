@@ -1,7 +1,8 @@
 import React, { useCallback, useState } from 'react';
-import { useFocusEffect, useRoute } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -14,6 +15,19 @@ import {
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { DateField } from '../../ui/DateField';
+import { Select } from '../../ui/Select';
+import { frequencyOptions } from '../../ui/frequency';
+import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
+
+const RECURRENCE_VALUES = ['hebdomadaire', 'mensuel', 'trimestriel', 'semestriel', 'annuel', 'ponctuel'] as const;
+
+interface SourceDetail {
+  id: string;
+  label: string;
+  usualAmount: number | string;
+  recurrenceRule: string | null;
+  status: 'actif' | 'inactif';
+}
 
 interface Occurrence {
   id: string;
@@ -40,12 +54,23 @@ function todayIso() {
 /** Cycle prévu → reçu d'une source de revenu (Lot 1 — recette), montant réel pouvant différer du prévu (RG-014bis). */
 export function IncomeSourceDetailScreen() {
   const route = useRoute<any>();
+  const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const sourceId = route.params?.id as string;
-  const label = route.params?.label as string;
+  const routeLabel = route.params?.label as string;
 
+  const [source, setSource] = useState<SourceDetail | null>(null);
   const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [editLabel, setEditLabel] = useState(routeLabel ?? '');
+  const [editAmount, setEditAmount] = useState('');
+  const [editRecurrence, setEditRecurrence] = useState('ponctuel');
+  const [saving, setSaving] = useState(false);
+  const [togglingStatus, setTogglingStatus] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const [plannedDate, setPlannedDate] = useState(todayIso());
   const [plannedAmount, setPlannedAmount] = useState('');
@@ -59,11 +84,78 @@ export function IncomeSourceDetailScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setOccurrences(await api.listIncomeOccurrences(sourceId));
+      const [s, o] = await Promise.all([api.getIncomeSource(sourceId), api.listIncomeOccurrences(sourceId)]);
+      setSource(s);
+      setOccurrences(o);
+      setEditLabel(s.label);
+      setEditAmount(String(n(s.usualAmount)));
+      setEditRecurrence(s.recurrenceRule ?? 'ponctuel');
     } finally {
       setLoading(false);
     }
   }, [sourceId]);
+
+  async function onSaveSource() {
+    setEditError(null);
+    if (!editLabel.trim()) {
+      setEditError('Un libellé est requis');
+      return;
+    }
+    const numericAmount = Number(editAmount.replace(',', '.'));
+    if (!numericAmount || numericAmount <= 0) {
+      setEditError('Montant invalide');
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.updateIncomeSource(sourceId, {
+        label: editLabel.trim(),
+        usualAmount: numericAmount,
+        recurrenceRule: editRecurrence === 'ponctuel' ? undefined : editRecurrence,
+      });
+      await load();
+    } catch (err) {
+      setEditError(err instanceof api.ApiError ? err.message : 'Modification impossible');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function onToggleStatus() {
+    if (!source) return;
+    setEditError(null);
+    setTogglingStatus(true);
+    try {
+      await api.updateIncomeSource(sourceId, { status: source.status === 'actif' ? 'inactif' : 'actif' });
+      await load();
+    } catch (err) {
+      setEditError(err instanceof api.ApiError ? err.message : 'Opération impossible');
+    } finally {
+      setTogglingStatus(false);
+    }
+  }
+
+  function onDeleteSource() {
+    Alert.alert('Supprimer cette source de revenu ?', 'Cette action est définitive.', [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Supprimer',
+        style: 'destructive',
+        onPress: async () => {
+          setEditError(null);
+          setDeleting(true);
+          try {
+            await api.deleteIncomeSource(sourceId);
+            navigation.goBack();
+          } catch (err) {
+            setEditError(err instanceof api.ApiError ? err.message : 'Suppression impossible');
+          } finally {
+            setDeleting(false);
+          }
+        },
+      },
+    ]);
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -109,8 +201,48 @@ export function IncomeSourceDetailScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>{label}</Text>
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
+        <Text style={styles.title}>{routeLabel ?? source?.label}</Text>
+
+        {source?.status === 'inactif' && (
+          <View style={styles.inactiveBanner}>
+            <Text style={styles.inactiveBannerText}>Récurrence arrêtée — aucune nouvelle occurrence ne sera générée.</Text>
+          </View>
+        )}
+
+        <Text style={styles.sectionTitle}>Modifier la source</Text>
+        <TextInput style={styles.input} value={editLabel} onChangeText={setEditLabel} onFocus={handleFocus} />
+        <TextInput
+          style={styles.input}
+          placeholder="Montant habituel (DH)"
+          keyboardType="decimal-pad"
+          value={editAmount}
+          onChangeText={setEditAmount}
+          onFocus={handleFocus}
+        />
+        <Select
+          testID="income-source-frequency-select"
+          label="Fréquence"
+          value={editRecurrence}
+          options={frequencyOptions(RECURRENCE_VALUES)}
+          onChange={setEditRecurrence}
+        />
+        {editError ? <Text style={styles.error}>{editError}</Text> : null}
+        <TouchableOpacity style={styles.button} onPress={onSaveSource} disabled={saving} testID="income-source-save">
+          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Enregistrer</Text>}
+        </TouchableOpacity>
+        <View style={styles.actionsRow}>
+          <TouchableOpacity style={styles.buttonSecondary} onPress={onToggleStatus} disabled={togglingStatus} testID="income-source-toggle-status">
+            {togglingStatus ? (
+              <ActivityIndicator color="#172436" />
+            ) : (
+              <Text style={styles.buttonSecondaryText}>{source?.status === 'actif' ? 'Arrêter la récurrence' : 'Réactiver'}</Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.buttonDanger} onPress={onDeleteSource} disabled={deleting} testID="income-source-delete">
+            {deleting ? <ActivityIndicator color="#B3261E" /> : <Text style={styles.buttonDangerText}>Supprimer</Text>}
+          </TouchableOpacity>
+        </View>
 
         <Text style={styles.sectionTitle}>Prochaine occurrence prévue</Text>
         <DateField label="Date prévue" value={plannedDate} onChange={setPlannedDate} />
@@ -181,6 +313,13 @@ const styles = StyleSheet.create({
   },
   button: { backgroundColor: '#172436', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
   buttonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  inactiveBanner: { backgroundColor: '#FBEAEA', borderRadius: 10, padding: 12, marginBottom: 16 },
+  inactiveBannerText: { color: '#B3261E', fontSize: 12, fontWeight: '600' },
+  actionsRow: { flexDirection: 'row', marginTop: 12, marginBottom: 8, justifyContent: 'space-between' },
+  buttonSecondary: { flex: 1, backgroundColor: '#EEF0F3', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginRight: 8 },
+  buttonSecondaryText: { color: '#172436', fontWeight: '600', fontSize: 13 },
+  buttonDanger: { flex: 1, backgroundColor: '#FBEAEA', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  buttonDangerText: { color: '#B3261E', fontWeight: '600', fontSize: 13 },
   buttonSmall: { backgroundColor: '#172436', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, marginLeft: 8, justifyContent: 'center' },
   buttonSmallText: { color: '#fff', fontWeight: '600', fontSize: 12 },
   card: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#E3E1DC' },

@@ -3,6 +3,7 @@ import { useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { DateField } from '../../ui/DateField';
+import { FREQUENCY_LABEL } from '../../ui/frequency';
 import * as api from '../../api/client';
 
 interface Child {
@@ -11,7 +12,15 @@ interface Child {
   lastName: string;
 }
 
-type Frequency = 'ponctuel' | 'mensuel' | 'trimestriel';
+/**
+ * Recette post-Vague 3 (§8/§9/§10) — les 6 fréquences du moteur générique sont
+ * toutes disponibles ici (ex. Garderie n'était limitée qu'à mensuel/ponctuel,
+ * une restriction métier injustifiée) ; 'trimestriel' reste le cas spécial
+ * historique T1/T2/T3 (mêmes échéances que Scolarité/Restauration, §10), les
+ * autres valeurs deviennent un vrai ChargePlan récurrent (même moteur que les
+ * charges génériques — occurrence-generation.util.ts, jamais dupliqué).
+ */
+type Frequency = 'ponctuel' | 'hebdomadaire' | 'mensuel' | 'trimestriel' | 'semestriel' | 'annuel';
 
 interface TermState {
   amount: string;
@@ -39,7 +48,7 @@ interface BuiltItem {
   amount: number | null;
   dueDate: string;
   obligationStatus?: string;
-  recurrenceRule?: 'mensuel';
+  recurrenceRule?: Exclude<Frequency, 'ponctuel' | 'trimestriel'>;
 }
 
 function todayIso(): string {
@@ -219,7 +228,9 @@ export function SchoolWizardScreen() {
           amount,
           dueDate: poste.dueDate,
           obligationStatus,
-          recurrenceRule: poste.frequency === 'mensuel' ? 'mensuel' : undefined,
+          // §10 : toute fréquence non ponctuelle devient un ChargePlan récurrent réel
+          // (même moteur générique que les charges/revenus, jamais une 2e logique).
+          recurrenceRule: poste.frequency !== 'ponctuel' ? poste.frequency : undefined,
         });
       }
     }
@@ -384,7 +395,13 @@ export function SchoolWizardScreen() {
                 <Text style={styles.toggleLabel}>Déjà souscrite (sinon : option envisagée)</Text>
                 <Switch value={garderie.souscrite} onValueChange={(souscrite) => setGarderie({ ...garderie, souscrite })} />
               </View>
-              <PosteEditor label="Garderie" poste={garderie} onChange={(p) => setGarderie({ ...garderie, ...p })} termMonths={termMonths} allowedFrequencies={['mensuel', 'ponctuel']} />
+              <PosteEditor
+                label="Garderie"
+                poste={garderie}
+                onChange={(p) => setGarderie({ ...garderie, ...p })}
+                termMonths={termMonths}
+                allowedFrequencies={['mensuel', 'trimestriel', 'annuel', 'ponctuel']}
+              />
             </PosteToggle>
           </View>
         );
@@ -406,7 +423,13 @@ export function SchoolWizardScreen() {
         return (
           <View>
             <PosteToggle label="Sorties / activités" included={sorties.included} onToggle={(included) => setSorties({ ...sorties, included })}>
-              <PosteEditor label="Sorties" poste={sorties} onChange={setSorties} termMonths={termMonths} allowedFrequencies={['ponctuel']} />
+              <PosteEditor
+                label="Sorties"
+                poste={sorties}
+                onChange={setSorties}
+                termMonths={termMonths}
+                allowedFrequencies={['mensuel', 'trimestriel', 'ponctuel']}
+              />
             </PosteToggle>
             <PosteToggle label="Réinscription" included={reinscription.included} onToggle={(included) => setReinscription({ ...reinscription, included })}>
               <PosteEditor label="Réinscription" poste={reinscription} onChange={setReinscription} termMonths={termMonths} allowedFrequencies={['ponctuel']} />
@@ -538,7 +561,7 @@ function PosteEditor({
   forceIncluded?: boolean;
   allowedFrequencies?: Frequency[];
 }) {
-  const freqLabels: Record<Frequency, string> = { ponctuel: 'Ponctuel', mensuel: 'Mensuel', trimestriel: 'Trimestriel' };
+  const freqLabels = FREQUENCY_LABEL;
 
   return (
     <View>

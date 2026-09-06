@@ -143,6 +143,25 @@ export const createIncomeSource = (data: {
 
 export const listIncomeSources = () => apiFetch('/income-sources');
 
+export const getIncomeSource = (id: string) => apiFetch(`/income-sources/${id}`);
+
+export const updateIncomeSource = (
+  id: string,
+  data: {
+    label?: string;
+    categoryId?: string | null;
+    recurrenceRule?: string;
+    recurrenceAnchorDate?: string | null;
+    usualAmount?: number;
+    isRecurring?: boolean;
+    defaultAccountId?: string;
+    status?: 'actif' | 'inactif';
+  },
+) => apiFetch(`/income-sources/${id}`, { method: 'PATCH', body: data });
+
+/** Recette post-Vague 3 (§5) — refusé (409) si une occurrence a déjà été reçue ; désactiver (status=inactif) à la place. */
+export const deleteIncomeSource = (id: string) => apiFetch(`/income-sources/${id}`, { method: 'DELETE' });
+
 export const createIncomeOccurrence = (sourceId: string, data: { usualDate: string; plannedAmount?: number }) =>
   apiFetch(`/income-sources/${sourceId}/occurrences`, { method: 'POST', body: data });
 
@@ -251,8 +270,25 @@ export const createChild = (data: { firstName: string; lastName: string }) =>
 export const getChildCosts = (childId: string) => apiFetch(`/children/${childId}/costs`);
 
 // ---------- Charges planifiées (Lot 4) ----------
-export const updateChargePlan = (id: string, data: { obligationStatus?: string; financialPlanId?: string | null }) =>
-  apiFetch(`/charge-plans/${id}`, { method: 'PATCH', body: data });
+export const getChargePlan = (id: string) => apiFetch(`/charge-plans/${id}`);
+
+export const listChargePlans = () => apiFetch('/charge-plans');
+
+export const updateChargePlan = (
+  id: string,
+  data: {
+    label?: string;
+    categoryId?: string | null;
+    recurrenceRule?: string;
+    defaultAccountId?: string | null;
+    obligationStatus?: string;
+    financialPlanId?: string | null;
+    status?: 'actif' | 'inactif';
+  },
+) => apiFetch(`/charge-plans/${id}`, { method: 'PATCH', body: data });
+
+/** Recette post-Vague 3 (§4) — refusé (409) si un historique de paiement existe ; désactiver (status=inactif) à la place. */
+export const deleteChargePlan = (id: string) => apiFetch(`/charge-plans/${id}`, { method: 'DELETE' });
 
 export const updateDeadline = (
   id: string,

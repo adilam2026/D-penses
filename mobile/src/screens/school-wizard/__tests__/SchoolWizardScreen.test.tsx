@@ -194,6 +194,82 @@ describe('E. Inconnu ≠ 0', () => {
   });
 });
 
+describe('G. Garderie/Activités — fréquences élargies (recette post-Vague 3 §8/§9/§10)', () => {
+  it('Garderie propose mensuel/trimestriel/annuel/ponctuel (plus limitée à mensuel/ponctuel)', async () => {
+    mockedApi.listChildren.mockResolvedValue([{ id: 'c1', firstName: 'Dina', lastName: 'TAHA' }]);
+    await render(<SchoolWizardScreen />);
+    await waitFor(() => expect(screen.getByTestId('nav-next')).toBeTruthy());
+
+    await goToStep(2); // Services scolaires
+    await fireEvent(screen.getByTestId('toggle-Garderie'), 'valueChange', true);
+
+    expect(screen.getByTestId('Garderie-freq-mensuel')).toBeTruthy();
+    expect(screen.getByTestId('Garderie-freq-trimestriel')).toBeTruthy();
+    expect(screen.getByTestId('Garderie-freq-annuel')).toBeTruthy();
+    expect(screen.getByTestId('Garderie-freq-ponctuel')).toBeTruthy();
+  });
+
+  it('Garderie annuelle envoie recurrenceRule="annuel" (vrai ChargePlan récurrent, même moteur générique)', async () => {
+    mockedApi.listChildren.mockResolvedValue([{ id: 'c1', firstName: 'Dina', lastName: 'TAHA' }]);
+    mockedApi.submitSchoolWizard.mockResolvedValue({ financialPlan: { id: 'plan1' }, chargePlans: [] });
+
+    await render(<SchoolWizardScreen />);
+    await waitFor(() => expect(screen.getByTestId('nav-next')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('child-chip-c1'));
+
+    await goToStep(2); // Services scolaires
+    await fireEvent(screen.getByTestId('toggle-Garderie'), 'valueChange', true);
+    await fireEvent.press(screen.getByTestId('Garderie-freq-annuel'));
+    await fireEvent.changeText(screen.getByTestId('Garderie-amount'), '6000');
+
+    await goToStep(5); // Récapitulatif
+    await fireEvent.press(screen.getByTestId('nav-submit'));
+
+    await waitFor(() => expect(mockedApi.submitSchoolWizard).toHaveBeenCalled());
+    const payload = mockedApi.submitSchoolWizard.mock.calls[0][0];
+    const garderie = payload.items.find((it: any) => it.label === 'Garderie');
+    expect(garderie!.recurrenceRule).toBe('annuel');
+  });
+
+  it('Garderie trimestrielle réutilise le même mécanisme T1/T2/T3 que Scolarité/Restauration (§10)', async () => {
+    mockedApi.listChildren.mockResolvedValue([{ id: 'c1', firstName: 'Dina', lastName: 'TAHA' }]);
+    await render(<SchoolWizardScreen />);
+    await waitFor(() => expect(screen.getByTestId('nav-next')).toBeTruthy());
+
+    await goToStep(2); // Services scolaires
+    await fireEvent(screen.getByTestId('toggle-Garderie'), 'valueChange', true);
+    await fireEvent.press(screen.getByTestId('Garderie-freq-trimestriel'));
+    await fireEvent.changeText(screen.getByTestId('Garderie-term-0-amount'), '600');
+
+    expect(screen.getByTestId('Garderie-term-1-amount')).toBeTruthy();
+    expect(screen.getByTestId('Garderie-term-2-amount')).toBeTruthy();
+  });
+
+  it('Sorties/activités propose une fréquence (mensuel/trimestriel/ponctuel), plus limitée à un montant/date unique', async () => {
+    mockedApi.listChildren.mockResolvedValue([{ id: 'c1', firstName: 'Dina', lastName: 'TAHA' }]);
+    mockedApi.submitSchoolWizard.mockResolvedValue({ financialPlan: { id: 'plan1' }, chargePlans: [] });
+
+    await render(<SchoolWizardScreen />);
+    await waitFor(() => expect(screen.getByTestId('nav-next')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('child-chip-c1'));
+
+    await goToStep(4); // Vie scolaire
+    await fireEvent(screen.getByTestId('toggle-Sorties / activités'), 'valueChange', true);
+    expect(screen.getByTestId('Sorties-freq-mensuel')).toBeTruthy();
+    expect(screen.getByTestId('Sorties-freq-trimestriel')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('Sorties-freq-mensuel'));
+    await fireEvent.changeText(screen.getByTestId('Sorties-amount'), '250');
+
+    await goToStep(5); // Récapitulatif
+    await fireEvent.press(screen.getByTestId('nav-submit'));
+
+    await waitFor(() => expect(mockedApi.submitSchoolWizard).toHaveBeenCalled());
+    const payload = mockedApi.submitSchoolWizard.mock.calls[0][0];
+    const sorties = payload.items.find((it: any) => it.label === 'Sorties');
+    expect(sorties!.recurrenceRule).toBe('mensuel');
+  });
+});
+
 describe('F. Récapitulatif — 9 lignes attendues', () => {
   it('3 scolarité + 3 restauration + uniforme + fournitures + sorties = 9 lignes, avec montant/date/statut', async () => {
     mockedApi.listChildren.mockResolvedValue([{ id: 'c1', firstName: 'Dina', lastName: 'TAHA' }]);

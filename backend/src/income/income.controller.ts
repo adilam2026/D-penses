@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { IncomeService } from './income.service';
 import { CreateIncomeSourceDto } from './dto/create-income-source.dto';
+import { UpdateIncomeSourceDto } from './dto/update-income-source.dto';
 import { CreateIncomeOccurrenceDto } from './dto/create-income-occurrence.dto';
 import { ConfirmIncomeOccurrenceDto } from './dto/confirm-income-occurrence.dto';
 import { CurrentUser, AuthenticatedUser } from '../common/decorators/current-user.decorator';
@@ -19,6 +20,21 @@ export class IncomeSourcesController {
   @Get()
   findAll(@CurrentUser() user: AuthenticatedUser) {
     return this.income.listSources(user.sub, user.householdId!);
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.income.findOne(user.sub, user.householdId!, id);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateIncomeSourceDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.income.updateSource(user.sub, user.householdId!, id, dto);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.income.removeSource(user.sub, user.householdId!, id);
   }
 
   @Post(':id/occurrences')

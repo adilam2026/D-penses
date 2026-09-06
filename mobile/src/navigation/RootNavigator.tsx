@@ -12,7 +12,10 @@ import { AccountDetailScreen } from '../screens/accounts/AccountDetailScreen';
 import { QuickCreateAccountScreen } from '../screens/accounts/QuickCreateAccountScreen';
 import { IncomeScreen } from '../screens/income/IncomeScreen';
 import { IncomeSourceDetailScreen } from '../screens/income/IncomeSourceDetailScreen';
+import { CreateIncomeScreen } from '../screens/income/CreateIncomeScreen';
 import { ChargesScreen } from '../screens/charges/ChargesScreen';
+import { CreateChargeScreen } from '../screens/charges/CreateChargeScreen';
+import { ChargePlanDetailScreen } from '../screens/charges/ChargePlanDetailScreen';
 import { DeadlineDetailScreen } from '../screens/charges/DeadlineDetailScreen';
 import { BudgetsScreen } from '../screens/budgets/BudgetsScreen';
 import { BudgetDetailScreen } from '../screens/budgets/BudgetDetailScreen';
@@ -101,7 +104,10 @@ export function RootNavigator() {
       />
       <Stack.Screen name="Income" component={IncomeScreen} options={{ headerShown: true, title: 'Revenus' }} />
       <Stack.Screen name="IncomeSourceDetail" component={IncomeSourceDetailScreen} options={{ headerShown: true, title: 'Revenu' }} />
+      <Stack.Screen name="CreateIncome" component={CreateIncomeScreen} options={{ headerShown: true, title: 'Nouveau revenu', presentation: 'modal' }} />
       <Stack.Screen name="Charges" component={ChargesScreen} options={{ headerShown: true, title: 'Charges récurrentes' }} />
+      <Stack.Screen name="CreateCharge" component={CreateChargeScreen} options={{ headerShown: true, title: 'Nouvelle charge', presentation: 'modal' }} />
+      <Stack.Screen name="ChargePlanDetail" component={ChargePlanDetailScreen} options={{ headerShown: true, title: 'Charge récurrente' }} />
       <Stack.Screen name="DeadlineDetail" component={DeadlineDetailScreen} options={{ headerShown: true, title: 'Échéance' }} />
       <Stack.Screen name="Budgets" component={BudgetsScreen} options={{ headerShown: true, title: 'Budgets' }} />
       <Stack.Screen name="BudgetDetail" component={BudgetDetailScreen} options={{ headerShown: true, title: 'Budget' }} />

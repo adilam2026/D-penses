@@ -164,7 +164,7 @@ export function FinancialPlanDetailScreen() {
             <TouchableOpacity
               key={d.id}
               style={styles.row}
-              onPress={() => d.amountStatus !== 'confirme' && navigation.getParent()?.navigate('ConfirmDeadline', { id: d.id })}
+              onPress={() => navigation.navigate(d.amountStatus !== 'confirme' ? 'ConfirmDeadline' : 'DeadlineDetail', { id: d.id })}
             >
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowLabel}>
@@ -185,7 +185,11 @@ export function FinancialPlanDetailScreen() {
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={styles.rowAmount}>{d.resteAPayer !== null ? `${resteAPayerNum.toLocaleString('fr-FR')} DH restants` : '—'}</Text>
                 {isOpen && (
-                  <TouchableOpacity style={styles.payButton} onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: d.id })}>
+                  <TouchableOpacity
+                    testID={`pay-deadline-${d.id}`}
+                    style={styles.payButton}
+                    onPress={() => navigation.navigate('DeadlineDetail', { id: d.id })}
+                  >
                     <Text style={styles.payButtonText}>Payer</Text>
                   </TouchableOpacity>
                 )}
@@ -215,7 +219,7 @@ export function FinancialPlanDetailScreen() {
         <Text style={styles.empty}>Aucun montant inconnu.</Text>
       ) : (
         detail.unknownItems.map((i) => (
-          <TouchableOpacity key={i.deadlineId} style={styles.rowSimple} onPress={() => navigation.getParent()?.navigate('ConfirmDeadline', { id: i.deadlineId })}>
+          <TouchableOpacity key={i.deadlineId} style={styles.rowSimple} onPress={() => navigation.navigate('ConfirmDeadline', { id: i.deadlineId })}>
             <Text style={styles.rowLabel}>{i.label}</Text>
             <Text style={styles.rowMeta}>À confirmer</Text>
           </TouchableOpacity>

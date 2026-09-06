@@ -49,10 +49,10 @@ export function FinancialPlansScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.addButtonOutline} onPress={() => navigation.getParent()?.navigate('SchoolWizard')}>
+        <TouchableOpacity style={styles.addButtonOutline} onPress={() => navigation.navigate('SchoolWizard')}>
           <Text style={styles.addButtonOutlineText}>🎓 Frais scolaires</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.addButtonOutline} onPress={() => navigation.getParent()?.navigate('TravelWizard')}>
+        <TouchableOpacity style={styles.addButtonOutline} onPress={() => navigation.navigate('TravelWizard')}>
           <Text style={styles.addButtonOutlineText}>✈️ Voyage</Text>
         </TouchableOpacity>
       </View>
@@ -63,7 +63,7 @@ export function FinancialPlansScreen() {
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
         ListEmptyComponent={!loading ? <Text style={styles.empty}>Aucun plan financier pour l'instant.</Text> : null}
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.card} onPress={() => navigation.getParent()?.navigate('FinancialPlanDetail', { id: item.id })}>
+          <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('FinancialPlanDetail', { id: item.id })}>
             <Text style={styles.cardTitle}>
               {PLAN_TYPE_ICON[item.planType]} {item.label}
               {item.destination ? ` · ${item.destination}` : ''}

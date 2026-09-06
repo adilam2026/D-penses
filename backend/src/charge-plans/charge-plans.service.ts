@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { CreateChargePlanDto } from './dto/create-charge-plan.dto';
 import { CreateDeadlineDto } from './dto/create-deadline.dto';
@@ -50,9 +50,26 @@ export class ChargePlansService {
     });
   }
 
+  /**
+   * Recette post-Vague 3 (§6) — nextDeadline (une seule, la plus proche encore
+   * ouverte) inclus en une requête (Prisma nested include), jamais un appel
+   * N+1 par plan : permet une liste "Charges récurrentes" compacte (une ligne
+   * = un ChargePlan + sa prochaine échéance), sans dupliquer de calcul.
+   */
   async findAll(userId: string, householdId: string) {
     return this.rlsContext.run(userId, householdId, () =>
-      this.rlsContext.getClient().chargePlan.findMany({ where: { householdId }, orderBy: { createdAt: 'desc' }, include: { children: true } }),
+      this.rlsContext.getClient().chargePlan.findMany({
+        where: { householdId },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          children: true,
+          deadlines: {
+            where: { financialStatus: { in: ['ouverte', 'partiellement_payee'] } },
+            orderBy: { dueDate: 'asc' },
+            take: 1,
+          },
+        },
+      }),
     );
   }
 
@@ -67,14 +84,67 @@ export class ChargePlansService {
         if (!plan) throw new NotFoundException('FinancialPlan introuvable dans ce foyer');
       }
 
+      if (dto.categoryId) {
+        const category = await tx.category.findFirst({ where: { id: dto.categoryId, householdId } });
+        if (!category) throw new NotFoundException('Catégorie introuvable dans ce foyer');
+      }
+      if (dto.defaultAccountId) {
+        const account = await tx.financialAccount.findFirst({ where: { id: dto.defaultAccountId, householdId } });
+        if (!account) throw new NotFoundException('Compte par défaut introuvable dans ce foyer');
+      }
+
       return tx.chargePlan.update({
         where: { id },
         data: {
+          label: dto.label,
+          categoryId: dto.categoryId === undefined ? undefined : dto.categoryId,
+          recurrenceRule: dto.recurrenceRule,
+          defaultAccountId: dto.defaultAccountId === undefined ? undefined : dto.defaultAccountId,
+          endDate: dto.endDate === undefined ? undefined : dto.endDate ? new Date(dto.endDate) : null,
           obligationStatus: dto.obligationStatus,
           financialPlanId: dto.financialPlanId === undefined ? undefined : dto.financialPlanId,
+          status: dto.status,
         },
         include: { children: true },
       });
+    });
+  }
+
+  /**
+   * Recette post-Vague 3 (§4) — suppression réelle interdite dès qu'un historique
+   * financier existe (RG implicite : jamais casser un paiement/historique réel).
+   * Une seule Deadline avec un Payment enregistré, ou dont le statut financier
+   * n'est plus 'ouverte' (partiellement_payee/soldee), bloque la suppression —
+   * proposer status=inactif (désactivation, §4) à la place. Sans historique,
+   * la suppression est autorisée : cascade Prisma sur les Deadline restantes
+   * (toutes 'ouverte' sans paiement, rien à perdre).
+   */
+  async remove(userId: string, householdId: string, id: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      await this.assertOwned(tx, id, householdId);
+
+      const deadlineWithHistory = await tx.deadline.findFirst({
+        where: {
+          chargePlanId: id,
+          OR: [{ financialStatus: { in: ['partiellement_payee', 'soldee'] } }, { payments: { some: {} } }],
+        },
+      });
+      if (deadlineWithHistory) {
+        throw new ConflictException(
+          'Impossible de supprimer : un historique de paiement existe déjà. Désactivez la charge (arrêter la récurrence) à la place.',
+        );
+      }
+
+      await tx.chargePlan.delete({ where: { id } });
+      return { deleted: true };
+    });
+  }
+
+  async findOne(userId: string, householdId: string, id: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      return this.assertOwned(tx, id, householdId);
     });
   }
 

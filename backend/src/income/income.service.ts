@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { getAccountBalance } from '../common/ledger/ledger.util';
 import { CreateIncomeSourceDto } from './dto/create-income-source.dto';
+import { UpdateIncomeSourceDto } from './dto/update-income-source.dto';
 import { CreateIncomeOccurrenceDto } from './dto/create-income-occurrence.dto';
 import { ConfirmIncomeOccurrenceDto } from './dto/confirm-income-occurrence.dto';
 
@@ -36,10 +37,86 @@ export class IncomeService {
     });
   }
 
+  /** Recette post-Vague 3 (§6) — nextOccurrence (la plus proche encore 'prevu') incluse en une requête, jamais un appel N+1. */
   async listSources(userId: string, householdId: string) {
     return this.rlsContext.run(userId, householdId, () =>
-      this.rlsContext.getClient().incomeSource.findMany({ where: { householdId }, orderBy: { createdAt: 'desc' } }),
+      this.rlsContext.getClient().incomeSource.findMany({
+        where: { householdId },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          occurrences: { where: { status: 'prevu' }, orderBy: { usualDate: 'asc' }, take: 1 },
+        },
+      }),
     );
+  }
+
+  async findOne(userId: string, householdId: string, id: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      return this.assertOwned(tx, id, householdId);
+    });
+  }
+
+  /** Recette post-Vague 3 (§5) — modification déclarative + arrêt de récurrence (status). */
+  async updateSource(userId: string, householdId: string, id: string, dto: UpdateIncomeSourceDto) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      await this.assertOwned(tx, id, householdId);
+
+      if (dto.categoryId) {
+        const category = await tx.category.findFirst({ where: { id: dto.categoryId, householdId } });
+        if (!category) throw new NotFoundException('Catégorie introuvable dans ce foyer');
+      }
+      if (dto.defaultAccountId) {
+        const account = await tx.financialAccount.findFirst({ where: { id: dto.defaultAccountId, householdId } });
+        if (!account) throw new NotFoundException('Compte cible introuvable dans ce foyer');
+      }
+
+      return tx.incomeSource.update({
+        where: { id },
+        data: {
+          label: dto.label,
+          beneficiaryUserId: dto.beneficiaryUserId === undefined ? undefined : dto.beneficiaryUserId,
+          categoryId: dto.categoryId === undefined ? undefined : dto.categoryId,
+          recurrenceRule: dto.recurrenceRule,
+          recurrenceAnchorDate: dto.recurrenceAnchorDate === undefined ? undefined : dto.recurrenceAnchorDate ? new Date(dto.recurrenceAnchorDate) : null,
+          usualAmount: dto.usualAmount,
+          isRecurring: dto.isRecurring,
+          defaultAccountId: dto.defaultAccountId,
+          status: dto.status,
+        },
+      });
+    });
+  }
+
+  /**
+   * Recette post-Vague 3 (§5) — suppression réelle interdite dès qu'une
+   * IncomeOccurrence a déjà été reçue (status='recu', historique réel) :
+   * proposer status=inactif (désactivation) à la place. Sans occurrence
+   * reçue, la suppression est autorisée (cascade sur les occurrences
+   * encore 'prevu', rien de réel à perdre).
+   */
+  async removeSource(userId: string, householdId: string, id: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      await this.assertOwned(tx, id, householdId);
+
+      const receivedOccurrence = await tx.incomeOccurrence.findFirst({ where: { incomeSourceId: id, status: 'recu' } });
+      if (receivedOccurrence) {
+        throw new ConflictException(
+          'Impossible de supprimer : des occurrences déjà reçues existent. Désactivez la source (arrêter la récurrence) à la place.',
+        );
+      }
+
+      await tx.incomeSource.delete({ where: { id } });
+      return { deleted: true };
+    });
+  }
+
+  private async assertOwned(tx: ReturnType<RlsContextService['getClient']>, id: string, householdId: string) {
+    const source = await tx.incomeSource.findFirst({ where: { id, householdId } });
+    if (!source) throw new NotFoundException('Source de revenu introuvable');
+    return source;
   }
 
   async createOccurrence(userId: string, householdId: string, sourceId: string, dto: CreateIncomeOccurrenceDto) {

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 
 interface Deadline {
   id: string;
@@ -70,6 +71,7 @@ export function DeadlineDetailScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const id = route.params?.id as string;
 
   const [deadline, setDeadline] = useState<Deadline | null>(null);
@@ -214,7 +216,7 @@ export function DeadlineDetailScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
         <View style={styles.heroCard}>
           <Text style={styles.heroLabel}>{deadline.chargePlan.label}</Text>
           <Text style={styles.heroMeta}>Échéance du {formatDate(deadline.dueDate)}</Text>
@@ -225,7 +227,14 @@ export function DeadlineDetailScreen() {
         {isOpen && deadline.amountStatus !== 'confirme' && (
           <>
             <Text style={styles.sectionTitle}>Confirmer la facture</Text>
-            <TextInput style={styles.input} placeholder="Montant réel (DH)" keyboardType="decimal-pad" value={confirmAmount} onChangeText={setConfirmAmount} />
+            <TextInput
+              style={styles.input}
+              placeholder="Montant réel (DH)"
+              keyboardType="decimal-pad"
+              value={confirmAmount}
+              onChangeText={setConfirmAmount}
+              onFocus={handleFocus}
+            />
             <TouchableOpacity style={styles.button} onPress={onConfirmBilling} disabled={confirming}>
               {confirming ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Confirmer</Text>}
             </TouchableOpacity>
@@ -280,7 +289,14 @@ export function DeadlineDetailScreen() {
             )}
 
             <View style={styles.row}>
-              <TextInput style={[styles.input, { flex: 1 }]} placeholder="Montant (DH)" keyboardType="decimal-pad" value={payAmount} onChangeText={setPayAmount} />
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                placeholder="Montant (DH)"
+                keyboardType="decimal-pad"
+                value={payAmount}
+                onChangeText={setPayAmount}
+                onFocus={handleFocus}
+              />
               <TouchableOpacity style={styles.button} onPress={onPay} disabled={paying}>
                 {paying ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Payer</Text>}
               </TouchableOpacity>
