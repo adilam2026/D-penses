@@ -31,6 +31,15 @@ interface GoalTest {
   is_complete: boolean;
 }
 
+interface ContributionImpact {
+  delta_free_capacity_low_point: number;
+  contribution_dates: string[];
+  reserve_added_total: number;
+  is_complete: boolean;
+  contains_estimates: boolean;
+  scenario: { free_capacity_low_point: number; free_capacity_low_point_date: string; physical_low_point: number };
+}
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -54,6 +63,9 @@ export function GoalDetailScreen() {
   const [test, setTest] = useState<GoalTest | null>(null);
   const [testing, setTesting] = useState(false);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [impact, setImpact] = useState<ContributionImpact | null>(null);
+  const [impactLoading, setImpactLoading] = useState(false);
+  const [impactError, setImpactError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -87,6 +99,23 @@ export function GoalDetailScreen() {
       setError(err instanceof api.ApiError ? err.message : 'Contribution impossible');
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function onSimulateImpact() {
+    setImpactError(null);
+    const value = Number(amount.replace(',', '.'));
+    if (!value || value <= 0) {
+      setImpactError('Montant invalide');
+      return;
+    }
+    setImpactLoading(true);
+    try {
+      setImpact((await api.simulateGoalContribution({ goalId: id, amount: value, date: todayIso() })) as ContributionImpact);
+    } catch (err) {
+      setImpactError(err instanceof api.ApiError ? err.message : 'Simulation impossible');
+    } finally {
+      setImpactLoading(false);
     }
   }
 
@@ -143,6 +172,27 @@ export function GoalDetailScreen() {
             <Text style={[styles.buttonText, styles.buttonTextSecondary]}>Planifier</Text>
           </TouchableOpacity>
         </View>
+        <TouchableOpacity onPress={onSimulateImpact} disabled={impactLoading}>
+          {impactLoading ? (
+            <ActivityIndicator style={{ marginTop: 10 }} size="small" />
+          ) : (
+            <Text style={styles.simulateLink}>Simuler l'impact de ce montant avant de décider</Text>
+          )}
+        </TouchableOpacity>
+        {impactError ? <Text style={styles.error}>{impactError}</Text> : null}
+        {impact && (
+          <View style={styles.impactBox}>
+            {!impact.is_complete && <Text style={styles.warning}>Calcul basé sur les montants connus uniquement.</Text>}
+            <Text style={styles.impactLine}>
+              Disponible libre minimum après cette mise de côté :{' '}
+              <Text style={styles.impactValue}>{impact.scenario.free_capacity_low_point.toLocaleString('fr-FR')} DH</Text>
+            </Text>
+            <Text style={styles.impactLineSub}>
+              {impact.delta_free_capacity_low_point < 0 ? '' : '+'}
+              {impact.delta_free_capacity_low_point.toLocaleString('fr-FR')} DH par rapport à aujourd'hui sans cette mise de côté
+            </Text>
+          </View>
+        )}
       </View>
 
       <TouchableOpacity style={styles.testButton} onPress={onTestGoal} disabled={testing}>
@@ -256,4 +306,9 @@ const styles = StyleSheet.create({
   testLineWarning: { color: '#B8860B', fontWeight: '600' },
   testLineOk: { fontSize: 12, color: '#2E7D5B', fontWeight: '600', marginTop: 6 },
   warning: { fontSize: 12, color: '#B8860B', fontWeight: '600', marginBottom: 8 },
+  simulateLink: { color: '#172436', fontSize: 12, fontWeight: '600', textAlign: 'center', marginTop: 10 },
+  impactBox: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#EDEBE6' },
+  impactLine: { fontSize: 13, color: '#172436' },
+  impactValue: { fontWeight: '700' },
+  impactLineSub: { fontSize: 11, color: '#6B747C', marginTop: 4 },
 });

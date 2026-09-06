@@ -47,6 +47,22 @@ const PROJECTION_STATUS_COLOR: Record<DashboardSummary['next_30_days']['status']
   INCOMPLETE: '#6B747C',
 };
 
+/**
+ * Repli sur la bannière de démarrage (Lot 3 §A) — heuristique purement dérivée
+ * de ce que retourne déjà GET /dashboard/summary, jamais un indicateur stocké :
+ * un foyer avec au moins une échéance, un budget, un plan ou une provision
+ * n'est plus « vide », la bannière disparaît naturellement.
+ */
+function looksEmpty(summary: DashboardSummary): boolean {
+  return (
+    summary.operational_treasury === 0 &&
+    !summary.prochaineEcheance &&
+    summary.budgetsResume.length === 0 &&
+    summary.financialPlansResume.length === 0 &&
+    summary.provisionsResume.length === 0
+  );
+}
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
 }
@@ -111,6 +127,13 @@ export function HomeScreen() {
           <Text style={styles.addButtonText}>+</Text>
         </TouchableOpacity>
       </View>
+
+      {looksEmpty(summary) && (
+        <TouchableOpacity style={styles.onboardingBanner} onPress={() => navigation.getParent()?.navigate('Onboarding')}>
+          <Text style={styles.onboardingBannerTitle}>Bienvenue sur D-Penses+</Text>
+          <Text style={styles.onboardingBannerText}>Configurons ensemble vos comptes, revenus et charges →</Text>
+        </TouchableOpacity>
+      )}
 
       <View style={styles.heroCard}>
         <Text style={styles.heroLabel}>Trésorerie opérationnelle</Text>
@@ -252,6 +275,9 @@ const styles = StyleSheet.create({
   title: { fontSize: 20, fontWeight: '700', color: '#172436' },
   addButton: { backgroundColor: '#172436', width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   addButtonText: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  onboardingBanner: { backgroundColor: '#172436', borderRadius: 14, padding: 16, marginBottom: 16 },
+  onboardingBannerTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  onboardingBannerText: { color: '#C9D2E0', fontSize: 12, marginTop: 4 },
   heroCard: { backgroundColor: '#fff', borderRadius: 14, padding: 18, marginBottom: 12 },
   heroLabel: { fontSize: 13, color: '#6B747C', fontWeight: '600' },
   heroValue: { fontSize: 28, fontWeight: '800', color: '#172436', marginTop: 4 },

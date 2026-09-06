@@ -13,6 +13,10 @@ interface MenuItem {
 
 const SECTIONS: { title: string; items: MenuItem[] }[] = [
   {
+    title: 'Démarrage',
+    items: [{ label: 'Assistant de démarrage', icon: 'rocket-outline', route: 'Onboarding' }],
+  },
+  {
     title: 'Finances',
     items: [
       { label: 'Comptes', icon: 'card-outline', route: 'Accounts' },

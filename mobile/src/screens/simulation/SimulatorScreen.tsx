@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 
@@ -26,6 +26,15 @@ interface CompareRow {
   decision: PurchaseResult['decision'];
   margin: number;
   lowPoint: number;
+}
+
+interface SavingsCapacityResult {
+  max_amount: number;
+  recurring: boolean;
+  horizon_end: string;
+  contribution_dates: string[];
+  is_complete: boolean;
+  contains_estimates: boolean;
 }
 
 const DECISION_LABEL: Record<PurchaseResult['decision'], string> = {
@@ -67,6 +76,7 @@ function formatDate(iso: string) {
 export function SimulatorScreen() {
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
+  const [mode, setMode] = useState<'achat' | 'capacite'>('achat');
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(todayIso());
@@ -75,6 +85,11 @@ export function SimulatorScreen() {
   const [compare, setCompare] = useState<CompareRow[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [capacityRecurring, setCapacityRecurring] = useState(false);
+  const [capacity, setCapacity] = useState<SavingsCapacityResult | null>(null);
+  const [capacityLoading, setCapacityLoading] = useState(false);
+  const [capacityError, setCapacityError] = useState<string | null>(null);
 
   useEffect(() => {
     api.listAccounts().then((list: Account[]) => {
@@ -119,11 +134,62 @@ export function SimulatorScreen() {
     }
   }
 
+  async function onTestCapacity() {
+    setCapacityError(null);
+    setCapacityLoading(true);
+    try {
+      setCapacity((await api.getSavingsCapacity({ recurring: capacityRecurring })) as SavingsCapacityResult);
+    } catch (err) {
+      setCapacityError(err instanceof api.ApiError ? err.message : 'Calcul impossible');
+    } finally {
+      setCapacityLoading(false);
+    }
+  }
+
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
-      <Text style={styles.title}>Puis-je me le permettre ?</Text>
+      <Text style={styles.title}>{mode === 'achat' ? 'Puis-je me le permettre ?' : 'Combien puis-je mettre de côté ?'}</Text>
 
+      <View style={styles.segment}>
+        <TouchableOpacity style={[styles.segmentItem, mode === 'achat' && styles.segmentActive]} onPress={() => setMode('achat')}>
+          <Text style={[styles.segmentText, mode === 'achat' && styles.segmentTextActive]}>Un achat</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.segmentItem, mode === 'capacite' && styles.segmentActive]} onPress={() => setMode('capacite')}>
+          <Text style={[styles.segmentText, mode === 'capacite' && styles.segmentTextActive]}>Capacité d'épargne</Text>
+        </TouchableOpacity>
+      </View>
+
+      {mode === 'capacite' ? (
+        <>
+          <Text style={styles.hint}>Estime, sans rien réserver réellement, le montant que vous pourriez mettre de côté sans risquer votre coussin de sécurité ni votre disponible libre.</Text>
+
+          <View style={styles.toggleRow}>
+            <Text style={styles.toggleLabel}>Versement récurrent (mensuel) plutôt qu'unique</Text>
+            <Switch value={capacityRecurring} onValueChange={setCapacityRecurring} />
+          </View>
+
+          <TouchableOpacity style={styles.button} onPress={onTestCapacity} disabled={capacityLoading}>
+            {capacityLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Calculer</Text>}
+          </TouchableOpacity>
+          {capacityError ? <Text style={styles.error}>{capacityError}</Text> : null}
+
+          {capacity && (
+            <View style={styles.resultCard}>
+              {!capacity.is_complete && <Text style={styles.warning}>Calcul basé sur les montants connus uniquement.</Text>}
+              {capacity.contains_estimates && capacity.is_complete && <Text style={styles.info}>Inclut des montants estimés.</Text>}
+              <Text style={styles.capacityLabel}>{capacity.recurring ? 'Montant mensuel prudent' : 'Montant unique prudent, aujourd\'hui'}</Text>
+              <Text style={styles.capacityValue}>{capacity.max_amount.toLocaleString('fr-FR')} DH</Text>
+              <Text style={styles.dateLine}>
+                {capacity.recurring
+                  ? `Sur ${capacity.contribution_dates.length} versement(s) d'ici le ${formatDate(capacity.horizon_end)}`
+                  : `Sans risque d'ici le ${formatDate(capacity.horizon_end)}`}
+              </Text>
+            </View>
+          )}
+        </>
+      ) : (
+        <>
       <Text style={styles.sectionLabel}>Montant</Text>
       <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} />
 
@@ -186,6 +252,8 @@ export function SimulatorScreen() {
           ))}
         </>
       )}
+        </>
+      )}
 
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text style={styles.cancel}>Retour</Text>
@@ -208,6 +276,16 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F6F5F2' },
   scroll: { padding: 20, paddingTop: 24, paddingBottom: 40 },
   title: { fontSize: 18, fontWeight: '700', color: '#172436', marginBottom: 16 },
+  segment: { flexDirection: 'row', backgroundColor: '#EDEBE6', borderRadius: 10, padding: 4, marginBottom: 16 },
+  segmentItem: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
+  segmentActive: { backgroundColor: '#fff' },
+  segmentText: { fontSize: 13, color: '#6B747C', fontWeight: '600' },
+  segmentTextActive: { color: '#172436' },
+  hint: { fontSize: 12, color: '#6B747C', lineHeight: 18, marginBottom: 16 },
+  toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  toggleLabel: { fontSize: 13, color: '#172436', flex: 1, marginRight: 8 },
+  capacityLabel: { fontSize: 12, color: '#6B747C', fontWeight: '600', marginTop: 4 },
+  capacityValue: { fontSize: 28, fontWeight: '800', color: '#2E7D5B', marginTop: 4 },
   sectionLabel: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 8, marginTop: 12 },
   input: {
     backgroundColor: '#fff',
