@@ -1,7 +1,10 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import * as crypto from 'node:crypto';
+import * as bcrypt from 'bcryptjs';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { UpdateHouseholdSettingsDto } from './dto/update-household-settings.dto';
+import { SkipOnboardingStepDto } from './dto/skip-onboarding-step.dto';
+import { ResetFinancialDataDto } from './dto/reset-financial-data.dto';
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 jours
 
@@ -125,5 +128,68 @@ export class HouseholdsService {
         },
       }),
     );
+  }
+
+  /**
+   * Vague 3 §25/§28 — marque une étape d'onboarding comme volontairement ignorée
+   * ("non applicable" / "plus tard"), partagée entre tous les adultes du foyer.
+   * Idempotent (push seulement si absente) — jamais de doublon dans le tableau.
+   */
+  async skipOnboardingStep(userId: string, householdId: string, dto: SkipOnboardingStepDto) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const settings = await tx.householdSettings.findUniqueOrThrow({ where: { householdId } });
+      if (settings.onboardingSkippedSteps.includes(dto.step)) return settings;
+      return tx.householdSettings.update({
+        where: { householdId },
+        data: { onboardingSkippedSteps: { push: dto.step } },
+      });
+    });
+  }
+
+  /**
+   * §24 — Réinitialiser mes données financières. Action sensible : réservée à un
+   * administrateur du foyer (même garde que createInvite, seul précédent existant —
+   * aucun rôle inventé), exige le mot de passe du compte + confirmation explicite.
+   * Toute l'opération tourne dans la transaction ouverte par rlsContext.run() :
+   * un rejet (mauvais mot de passe, rôle insuffisant) annule tout, sans exception.
+   *
+   * Conservé : compte utilisateur, foyer, membres, enfants, invitations, catégories
+   * (système et personnalisées) + types/sous-types, paramètres du foyer, sessions.
+   * Supprimé : tout ce qui est financier. Ordre de suppression respectant les
+   * contraintes RESTRICT existantes (adhoc_expense/budget_expense/income_source/
+   * payment → financial_account) — chaque table restrictive est vidée par cascade
+   * AVANT le compte, jamais l'inverse.
+   */
+  async resetFinancialData(userId: string, householdId: string, dto: ResetFinancialDataDto) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+
+      const membership = await tx.householdMembership.findUnique({ where: { householdId_userId: { householdId, userId } } });
+      if (!membership || membership.role !== 'admin') {
+        throw new ForbiddenException('Seul un administrateur du foyer peut réinitialiser les données financières');
+      }
+      if (dto.confirm !== true) {
+        throw new ForbiddenException('Confirmation explicite requise');
+      }
+      const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+      const validPassword = await bcrypt.compare(dto.password, user.passwordHash);
+      if (!validPassword) {
+        throw new UnauthorizedException('Mot de passe incorrect');
+      }
+
+      await tx.accountTransfer.deleteMany({ where: { householdId } });
+      await tx.adHocExpense.deleteMany({ where: { householdId } });
+      await tx.goal.deleteMany({ where: { householdId } });
+      await tx.financialPlan.deleteMany({ where: { householdId } }); // cascade → financial_plan_beneficiary
+      await tx.chargePlan.deleteMany({ where: { householdId } }); // cascade → deadline → payment/charge_plan_child/deadline_child_allocation
+      await tx.variableBudget.deleteMany({ where: { householdId } }); // cascade → budget_expense
+      await tx.incomeSource.deleteMany({ where: { householdId } }); // cascade → income_occurrence
+      await tx.savingsPocket.deleteMany({ where: { householdId } }); // cascade → pocket_movement
+      await tx.provision.deleteMany({ where: { householdId } }); // cascade → pocket_movement
+      await tx.financialAccount.deleteMany({ where: { householdId } }); // cascade → account_balance_snapshot/reconciliation/adjustment
+
+      return { success: true };
+    });
   }
 }

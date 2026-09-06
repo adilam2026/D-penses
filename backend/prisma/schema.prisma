@@ -393,6 +393,12 @@ model HouseholdSettings {
   seuilAPayerDays              Int                          @default(7) @map("seuil_a_payer_days")
   variableBudgetProjectionMode VariableBudgetProjectionMode @default(prudent_max) @map("variable_budget_projection_mode")
   weekStartDay                 Int                          @default(1) @map("week_start_day") // 1=lundi (RG-098)
+  // Vague 3 §25 — onboarding : les étapes déjà configurées se déduisent en direct des
+  // données existantes (comptes/revenus/charges/...), jamais stockées ici. Seules les
+  // étapes explicitement marquées "non applicable"/"plus tard" par un adulte du foyer
+  // sont conservées, partagées entre tous les membres (le champ vit sur HouseholdSettings,
+  // déjà household-scoped) — pas 15 booléens, un seul tableau des clés d'étape ignorées.
+  onboardingSkippedSteps       String[]                     @default([]) @map("onboarding_skipped_steps")
   createdAt                    DateTime                     @default(now()) @map("created_at")
   updatedAt                    DateTime                     @updatedAt @map("updated_at")
 

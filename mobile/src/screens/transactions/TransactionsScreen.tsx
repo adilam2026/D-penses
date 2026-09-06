@@ -68,7 +68,17 @@ export function TransactionsScreen() {
         data={entries}
         keyExtractor={(e) => `${e.kind}-${e.id}`}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
-        ListEmptyComponent={!loading ? <Text style={styles.empty}>Aucune opération pour l'instant.</Text> : null}
+        ListEmptyComponent={
+          !loading ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyTitle}>Aucune transaction pour l'instant.</Text>
+              <Text style={styles.emptyText}>Vos dépenses et revenus confirmés apparaîtront ici.</Text>
+              <TouchableOpacity style={styles.emptyButton} onPress={() => navigation.getParent()?.navigate('QuickAdd')}>
+                <Text style={styles.emptyButtonText}>+ Ajouter une transaction</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null
+        }
         renderItem={({ item }) => {
           const positive = item.amount >= 0;
           return (
@@ -102,6 +112,11 @@ const styles = StyleSheet.create({
   addButton: { backgroundColor: '#172436', width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   addButtonText: { color: '#fff', fontSize: 18, fontWeight: '700' },
   empty: { color: '#6B747C', textAlign: 'center', marginTop: 24 },
+  emptyState: { alignItems: 'center', marginTop: 48, paddingHorizontal: 24 },
+  emptyTitle: { fontSize: 15, fontWeight: '700', color: '#172436', textAlign: 'center' },
+  emptyText: { fontSize: 13, color: '#6B747C', textAlign: 'center', marginTop: 6 },
+  emptyButton: { backgroundColor: '#172436', borderRadius: 999, paddingHorizontal: 20, paddingVertical: 12, marginTop: 20 },
+  emptyButtonText: { color: '#fff', fontWeight: '600', fontSize: 13 },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',

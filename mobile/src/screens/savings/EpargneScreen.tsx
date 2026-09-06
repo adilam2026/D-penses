@@ -90,15 +90,14 @@ export function EpargneScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scroll} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
       <View style={styles.headerRow}>
-        <Text style={styles.title}>Enveloppes</Text>
-        <TouchableOpacity style={styles.goalsButton} onPress={() => navigation.getParent()?.navigate('Goals')}>
+        <TouchableOpacity style={styles.goalsButton} onPress={() => navigation.navigate('Goals')}>
           <Text style={styles.goalsButtonText}>Objectifs</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Toutes les enveloppes</Text>
-        <TouchableOpacity onPress={() => navigation.getParent()?.navigate('CreatePocket', {})}>
+        <TouchableOpacity onPress={() => navigation.navigate('CreatePocket', {})}>
           <Text style={styles.addLink}>+ Enveloppe</Text>
         </TouchableOpacity>
       </View>
@@ -106,7 +105,7 @@ export function EpargneScreen() {
         <Text style={styles.empty}>Aucune enveloppe pour l'instant.</Text>
       ) : (
         envelopes.map((e) => (
-          <TouchableOpacity key={`${e.kind}-${e.id}`} style={styles.card} onPress={() => navigation.getParent()?.navigate('PocketDetail', { kind: e.kind, id: e.id })}>
+          <TouchableOpacity key={`${e.kind}-${e.id}`} style={styles.card} onPress={() => navigation.navigate('PocketDetail', { kind: e.kind, id: e.id })}>
             <View style={styles.cardHeader}>
               <Text style={styles.cardTitle}>{e.name}</Text>
               <Text style={styles.natureBadge}>{natureLabel(e)}</Text>
@@ -125,9 +124,8 @@ export function EpargneScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F6F5F2' },
-  scroll: { padding: 20, paddingTop: 56 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  title: { fontSize: 20, fontWeight: '700', color: '#172436' },
+  scroll: { padding: 20 },
+  headerRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 16 },
   goalsButton: { backgroundColor: '#172436', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
   goalsButtonText: { color: '#fff', fontSize: 12, fontWeight: '600' },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, marginBottom: 8 },

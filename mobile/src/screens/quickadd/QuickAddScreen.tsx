@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Alert,
@@ -69,8 +69,12 @@ const MODE_LABEL: Record<Mode, string> = {
  */
 export function QuickAddScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const bottomInset = useBottomInset();
-  const [mode, setMode] = useState<Mode>('depense');
+  // Vague 3 §3 — la bottom sheet "+" peut présélectionner l'action (Dépense/Revenu/
+  // Payer une échéance/Transfert) ; sans paramètre, comportement inchangé (Dépense).
+  const initialMode = (route.params?.mode as Mode | undefined) ?? 'depense';
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [label, setLabel] = useState('');
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');

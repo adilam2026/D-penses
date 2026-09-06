@@ -54,11 +54,16 @@ export class DashboardService {
         }),
       );
 
+      // Vague 3 §13/§14 (accueil) : tauxCouverture/provisionCoverage déjà calculés par
+      // FinancialPlansService.detailOnTx (Vague 2 §8) — jamais recalculés ici, seulement
+      // exposés au résumé pour permettre la priorisation des plans sur l'accueil.
       const financialPlansResume = (await this.financialPlans.listOnTx(tx, householdId)).map((p) => ({
         id: p.id,
         label: p.label,
         knownPlanCost: p.knownPlanCost,
         remainingDue: p.remainingDue,
+        provisionCoverage: p.provisionCoverage,
+        tauxCouverture: p.tauxCouverture,
         completude: p.completude,
       }));
 
@@ -119,6 +124,7 @@ export class DashboardService {
 
         next_30_days: {
           closing_physical_treasury: next30Days.closing_physical_treasury,
+          closing_free_capacity: next30Days.closing_free_capacity,
           physical_low_point: next30Days.physical_low_point,
           physical_low_point_date: next30Days.physical_low_point_date,
           free_capacity_low_point: next30Days.free_capacity_low_point,

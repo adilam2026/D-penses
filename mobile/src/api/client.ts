@@ -189,6 +189,9 @@ export const createTransfer = (data: { fromAccountId?: string; toAccountId?: str
 // ---------- Catégories ----------
 export const listCategories = () => apiFetch('/categories');
 
+export const createCategory = (data: { name: string; kind: 'income' | 'expense' | 'both'; icon?: string }) =>
+  apiFetch('/categories', { method: 'POST', body: data });
+
 // Vague 2 §1/§3 — Type (rattaché à une Catégorie) et Sous-type (rattaché à un Type),
 // facultatifs, jamais requis pour saisir une transaction.
 export const listCategoryTypes = (categoryId: string) => apiFetch(`/categories/${categoryId}/types`);
@@ -309,6 +312,15 @@ export const getCalendar = (params?: { at?: string; from?: string; to?: string }
 
 export const updateHouseholdSettings = (data: { securityMarginAmount?: number; seuilAVenirDays?: number; seuilAPayerDays?: number }) =>
   apiFetch('/households/settings', { method: 'PATCH', body: data });
+
+// Vague 3 §25/§28 — étape d'onboarding marquée "non applicable"/"plus tard", partagée
+// entre les adultes du foyer (HouseholdSettings.onboardingSkippedSteps).
+export const skipOnboardingStep = (step: string) => apiFetch('/households/onboarding/skip', { method: 'PATCH', body: { step } });
+
+// Vague 3 §24 — réinitialisation des données financières : mot de passe + confirmation
+// explicite exigés, action atomique côté backend.
+export const resetFinancialData = (data: { password: string; confirm: true }) =>
+  apiFetch('/households/reset-financial-data', { method: 'POST', body: data });
 
 // ---------- Épargne / Provisions / Objectifs (Lot 6) ----------
 

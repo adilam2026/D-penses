@@ -11,57 +11,70 @@ interface MenuItem {
   route: string;
 }
 
+// Vague 3 §5 — menu structurel (☰), organisé par logique utilisateur. Les actions
+// quotidiennes (dépense, revenu, paiement...) n'y figurent jamais : elles vivent
+// dans la bottom sheet du bouton "+" central (§3).
 const SECTIONS: { title: string; items: MenuItem[] }[] = [
   {
-    title: 'Démarrage',
-    items: [{ label: 'Assistant de démarrage', icon: 'rocket-outline', route: 'Onboarding' }],
-  },
-  {
-    title: 'Finances',
+    title: 'Mon foyer',
     items: [
       { label: 'Comptes', icon: 'card-outline', route: 'Accounts' },
-      { label: 'Revenus', icon: 'trending-up-outline', route: 'Income' },
-      { label: 'Charges récurrentes', icon: 'receipt-outline', route: 'Charges' },
-      { label: 'Budgets variables', icon: 'pie-chart-outline', route: 'Budgets' },
+      { label: 'Membres du foyer', icon: 'people-circle-outline', route: 'HouseholdMembers' },
+      { label: 'Enfants', icon: 'people-outline', route: 'Children' },
     ],
   },
   {
-    title: 'Famille',
-    items: [{ label: 'Enfants', icon: 'people-outline', route: 'Children' }],
+    title: 'Mes finances',
+    items: [
+      { label: 'Revenus réguliers', icon: 'trending-up-outline', route: 'Income' },
+      { label: 'Charges récurrentes', icon: 'receipt-outline', route: 'Charges' },
+      { label: 'Budgets', icon: 'pie-chart-outline', route: 'Budgets' },
+      { label: 'Enveloppes', icon: 'wallet-outline', route: 'Enveloppes' },
+      { label: 'Objectifs', icon: 'flag-outline', route: 'Goals' },
+    ],
   },
   {
-    title: 'Mes projets',
+    title: 'Mes plans',
     items: [
       { label: 'Plans financiers', icon: 'folder-outline', route: 'FinancialPlans' },
-      { label: 'Voyages', icon: 'airplane-outline', route: 'TravelWizard' },
       { label: 'Frais scolaires', icon: 'school-outline', route: 'SchoolWizard' },
-      { label: 'Objectifs', icon: 'flag-outline', route: 'Goals' },
+      { label: 'Voyages', icon: 'airplane-outline', route: 'TravelWizard' },
     ],
   },
   {
     title: 'Anticiper',
     items: [
       { label: 'Projection', icon: 'analytics-outline', route: 'Projection' },
-      { label: 'Simulateur — Puis-je me le permettre ?', icon: 'help-buoy-outline', route: 'Simulator' },
+      { label: 'Simulateur', icon: 'help-buoy-outline', route: 'Simulator' },
+    ],
+  },
+  {
+    title: 'Paramètres',
+    items: [
+      { label: 'Catégories', icon: 'pricetags-outline', route: 'Categories' },
+      { label: 'Types de dépenses', icon: 'list-outline', route: 'CategoryTypes' },
+      { label: 'Préférences', icon: 'options-outline', route: 'Preferences' },
+      { label: 'Configuration du foyer', icon: 'home-outline', route: 'HouseholdConfig' },
+      { label: 'Réinitialiser mes données financières', icon: 'trash-outline', route: 'ResetFinancialData' },
     ],
   },
 ];
 
-/** Menu « Plus » (docs/03 §J.4) — Comptes et Budgets restent des écrans secondaires, jamais en navigation principale (§37 risque L.3). */
-export function PlusMenuScreen() {
+/** Menu ☰ (Vague 3 §1/§5) — remplace l'onglet "Plus" devenu fourre-tout. */
+export function HamburgerMenuScreen() {
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
   const { signOut } = useAuth();
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: bottomInset }}>
-      <Text style={styles.title}>Plus</Text>
+      <Text style={styles.title}>Menu</Text>
 
       {SECTIONS.map((section) => (
         <View key={section.title} style={styles.section}>
           <Text style={styles.sectionTitle}>{section.title}</Text>
           {section.items.map((item) => (
-            <TouchableOpacity key={item.route} style={styles.row} onPress={() => navigation.getParent()?.navigate(item.route)}>
+            <TouchableOpacity key={item.route} style={styles.row} onPress={() => navigation.navigate(item.route)}>
               <Ionicons name={item.icon} size={20} color="#172436" style={styles.rowIcon} />
               <Text style={styles.rowText}>{item.label}</Text>
               <Ionicons name="chevron-forward" size={18} color="#9AA0A6" />
@@ -92,6 +105,6 @@ const styles = StyleSheet.create({
   },
   rowIcon: { marginRight: 12 },
   rowText: { flex: 1, fontSize: 15, fontWeight: '600', color: '#172436' },
-  logout: { marginTop: 8, alignItems: 'center' },
+  logout: { marginTop: 8, marginBottom: 24, alignItems: 'center' },
   logoutText: { color: '#B3261E', fontSize: 13, fontWeight: '600' },
 });

@@ -1,0 +1,184 @@
+import React, { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import * as api from '../../api/client';
+import { useBottomInset } from '../../ui/useBottomInset';
+
+interface Category {
+  id: string;
+  name: string;
+  kind: 'income' | 'expense' | 'both';
+}
+
+interface CategorySubtype {
+  id: string;
+  name: string;
+  active: boolean;
+  isSystem: boolean;
+}
+
+interface CategoryType {
+  id: string;
+  name: string;
+  active: boolean;
+  isSystem: boolean;
+  subtypes: CategorySubtype[];
+}
+
+/**
+ * ☰ Paramètres → Types de dépenses (Vague 2 §3, mis en écran en Vague 3 §5).
+ * Renommer/désactiver — jamais de suppression (aucun endpoint DELETE côté backend) :
+ * l'historique des transactions déjà saisies reste lisible quel que soit l'état "active".
+ */
+export function CategoryTypesScreen() {
+  const bottomInset = useBottomInset();
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [types, setTypes] = useState<CategoryType[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newTypeName, setNewTypeName] = useState('');
+  const [addingType, setAddingType] = useState(false);
+  const [subtypeDrafts, setSubtypeDrafts] = useState<Record<string, string>>({});
+  const [openSubtypesFor, setOpenSubtypesFor] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      api
+        .listCategories()
+        .then((cats: Category[]) => {
+          setCategories(cats);
+          if (!categoryId && cats.length > 0) setCategoryId(cats[0].id);
+        })
+        .finally(() => setLoading(false));
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []),
+  );
+
+  const loadTypes = useCallback(async (catId: string) => {
+    setTypes(await api.listCategoryTypes(catId));
+  }, []);
+
+  useEffect(() => {
+    if (categoryId) loadTypes(categoryId);
+  }, [categoryId, loadTypes]);
+
+  async function onCreateType() {
+    if (!categoryId || !newTypeName.trim()) return;
+    await api.createCategoryType(categoryId, { name: newTypeName.trim() });
+    setNewTypeName('');
+    setAddingType(false);
+    await loadTypes(categoryId);
+  }
+
+  async function onToggleType(type: CategoryType) {
+    if (type.isSystem) return;
+    await api.updateCategoryType(type.id, { active: !type.active });
+    if (categoryId) await loadTypes(categoryId);
+  }
+
+  async function onCreateSubtype(typeId: string) {
+    const name = subtypeDrafts[typeId]?.trim();
+    if (!name) return;
+    await api.createCategorySubtype(typeId, { name });
+    setSubtypeDrafts((prev) => ({ ...prev, [typeId]: '' }));
+    if (categoryId) await loadTypes(categoryId);
+  }
+
+  async function onToggleSubtype(subtype: CategorySubtype) {
+    if (subtype.isSystem) return;
+    await api.updateCategorySubtype(subtype.id, { active: !subtype.active });
+    if (categoryId) await loadTypes(categoryId);
+  }
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
+      <Text style={styles.intro}>Choisissez une catégorie pour gérer ses types (ex. Alimentation → Courses).</Text>
+
+      <View style={styles.chipRow}>
+        {categories.map((c) => (
+          <TouchableOpacity key={c.id} style={[styles.chip, categoryId === c.id && styles.chipActive]} onPress={() => setCategoryId(c.id)}>
+            <Text style={[styles.chipText, categoryId === c.id && styles.chipTextActive]}>{c.name}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {loading ? (
+        <ActivityIndicator />
+      ) : (
+        types.map((t) => (
+          <View key={t.id} style={styles.card}>
+            <View style={styles.typeRow}>
+              <TouchableOpacity style={{ flex: 1 }} onPress={() => setOpenSubtypesFor(openSubtypesFor === t.id ? null : t.id)}>
+                <Text style={styles.typeLabel}>{t.name}</Text>
+                <Text style={styles.typeMeta}>
+                  {t.isSystem ? 'Type système' : 'Personnalisé'} · {t.subtypes.length} sous-type(s)
+                </Text>
+              </TouchableOpacity>
+              {!t.isSystem && <Switch value={t.active} onValueChange={() => onToggleType(t)} />}
+            </View>
+
+            {openSubtypesFor === t.id && (
+              <View style={styles.subtypeBlock}>
+                {t.subtypes.map((s) => (
+                  <View key={s.id} style={styles.subtypeRow}>
+                    <Text style={styles.subtypeLabel}>{s.name}</Text>
+                    {!s.isSystem && <Switch value={s.active} onValueChange={() => onToggleSubtype(s)} />}
+                  </View>
+                ))}
+                <View style={styles.inlineAddRow}>
+                  <TextInput
+                    style={[styles.input, styles.inlineAddInput]}
+                    placeholder="Nouveau sous-type"
+                    value={subtypeDrafts[t.id] ?? ''}
+                    onChangeText={(v) => setSubtypeDrafts((prev) => ({ ...prev, [t.id]: v }))}
+                  />
+                  <TouchableOpacity style={styles.inlineAddButton} onPress={() => onCreateSubtype(t.id)}>
+                    <Text style={styles.inlineAddButtonText}>Ajouter</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
+        ))
+      )}
+
+      {addingType ? (
+        <View style={styles.inlineAddRow}>
+          <TextInput style={[styles.input, styles.inlineAddInput]} placeholder="Nom du type" value={newTypeName} onChangeText={setNewTypeName} />
+          <TouchableOpacity style={styles.inlineAddButton} onPress={onCreateType}>
+            <Text style={styles.inlineAddButtonText}>Ajouter</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <TouchableOpacity onPress={() => setAddingType(true)}>
+          <Text style={styles.addLink}>+ Nouveau type pour cette catégorie</Text>
+        </TouchableOpacity>
+      )}
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#F6F5F2' },
+  scroll: { padding: 20 },
+  intro: { color: '#6B747C', fontSize: 13, lineHeight: 19, marginBottom: 16 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 16 },
+  chip: { backgroundColor: '#fff', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8, marginRight: 8, marginBottom: 8, borderWidth: 1, borderColor: '#E3E1DC' },
+  chipActive: { backgroundColor: '#172436', borderColor: '#172436' },
+  chipText: { fontSize: 13, color: '#172436' },
+  chipTextActive: { color: '#fff', fontWeight: '600' },
+  card: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8 },
+  typeRow: { flexDirection: 'row', alignItems: 'center' },
+  typeLabel: { fontSize: 14, fontWeight: '700', color: '#172436' },
+  typeMeta: { fontSize: 11, color: '#6B747C', marginTop: 2 },
+  subtypeBlock: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#EDEBE6' },
+  subtypeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
+  subtypeLabel: { fontSize: 13, color: '#172436' },
+  inlineAddRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+  inlineAddInput: { flex: 1, marginRight: 8, marginBottom: 0 },
+  inlineAddButton: { backgroundColor: '#172436', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, justifyContent: 'center' },
+  inlineAddButtonText: { color: '#fff', fontWeight: '600', fontSize: 12 },
+  input: { backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, borderWidth: 1, borderColor: '#E3E1DC' },
+  addLink: { color: '#2E7D5B', fontSize: 13, fontWeight: '600', marginTop: 8 },
+});

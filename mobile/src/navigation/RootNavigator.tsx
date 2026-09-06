@@ -32,7 +32,17 @@ import { CreateGoalScreen } from '../screens/savings/CreateGoalScreen';
 import { ProjectionScreen } from '../screens/projection/ProjectionScreen';
 import { SimulatorScreen } from '../screens/simulation/SimulatorScreen';
 import { OnboardingWizardScreen } from '../screens/onboarding/OnboardingWizardScreen';
+import { EpargneScreen } from '../screens/savings/EpargneScreen';
+import { HamburgerMenuScreen } from '../screens/HamburgerMenuScreen';
+import { HouseholdMembersScreen } from '../screens/household/HouseholdMembersScreen';
+import { CategoriesScreen } from '../screens/settings/CategoriesScreen';
+import { CategoryTypesScreen } from '../screens/settings/CategoryTypesScreen';
+import { PreferencesScreen } from '../screens/settings/PreferencesScreen';
+import { HouseholdConfigScreen } from '../screens/settings/HouseholdConfigScreen';
+import { ResetFinancialDataScreen } from '../screens/settings/ResetFinancialDataScreen';
 import { RootTabs } from './RootTabs';
+import { QuickActionsProvider } from '../state/QuickActionsContext';
+import { QuickActionsSheet } from '../ui/QuickActionsSheet';
 
 const Stack = createNativeStackNavigator();
 
@@ -70,8 +80,17 @@ export function RootNavigator() {
   }
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <QuickActionsProvider>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Tabs" component={RootTabs} />
+      <Stack.Screen name="HamburgerMenu" component={HamburgerMenuScreen} />
+      <Stack.Screen name="HouseholdMembers" component={HouseholdMembersScreen} options={{ headerShown: true, title: 'Membres du foyer' }} />
+      <Stack.Screen name="Categories" component={CategoriesScreen} options={{ headerShown: true, title: 'Catégories' }} />
+      <Stack.Screen name="CategoryTypes" component={CategoryTypesScreen} options={{ headerShown: true, title: 'Types de dépenses' }} />
+      <Stack.Screen name="Preferences" component={PreferencesScreen} options={{ headerShown: true, title: 'Préférences' }} />
+      <Stack.Screen name="HouseholdConfig" component={HouseholdConfigScreen} options={{ headerShown: true, title: 'Configuration du foyer' }} />
+      <Stack.Screen name="ResetFinancialData" component={ResetFinancialDataScreen} options={{ headerShown: true, title: 'Réinitialiser mes données' }} />
+      <Stack.Screen name="Enveloppes" component={EpargneScreen} options={{ headerShown: true, title: 'Enveloppes' }} />
       <Stack.Screen name="QuickAdd" component={QuickAddScreen} options={{ presentation: 'modal' }} />
       <Stack.Screen name="Accounts" component={AccountsScreen} options={{ headerShown: true, title: 'Comptes' }} />
       <Stack.Screen name="AccountDetail" component={AccountDetailScreen} options={{ headerShown: true, title: 'Compte' }} />
@@ -102,6 +121,8 @@ export function RootNavigator() {
       <Stack.Screen name="Projection" component={ProjectionScreen} options={{ headerShown: true, title: 'Projection' }} />
       <Stack.Screen name="Simulator" component={SimulatorScreen} options={{ headerShown: true, title: 'Simulateur' }} />
       <Stack.Screen name="Onboarding" component={OnboardingWizardScreen} options={{ headerShown: true, title: 'Assistant de démarrage', presentation: 'modal' }} />
-    </Stack.Navigator>
+      </Stack.Navigator>
+      <QuickActionsSheet />
+    </QuickActionsProvider>
   );
 }

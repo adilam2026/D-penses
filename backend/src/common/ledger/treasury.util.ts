@@ -142,6 +142,12 @@ export async function computeHorizon(tx: TxClient, householdId: string, referenc
 
 // ---------- G.4 — Montants engagés : part Deadline ----------
 
+// Vague 3 §11/§22 — statut de couverture affiché discrètement sur l'accueil ("✓ Couvert"),
+// jamais confondu avec le statut de paiement (financial_status n'est pas exposé ici) :
+// mêmes catégories que FinancialPlansService.detailOnTx, réutilise le même engagement
+// déjà calculé ci-dessous (jamais un second appel à computeProvisionCoverage).
+export type CommittedItemCoverageStatus = 'couverte' | 'partielle' | 'non_couverte' | 'sans_objet';
+
 export interface CommittedItem {
   id: string;
   chargePlanId: string;
@@ -149,6 +155,7 @@ export interface CommittedItem {
   dueDate: Date;
   amountStatus: 'inconnu' | 'estime' | 'confirme';
   resteAPayer: number | null;
+  coverageStatus: CommittedItemCoverageStatus;
 }
 
 export interface DeadlineCommitments {
@@ -207,7 +214,7 @@ export async function computeDeadlineCommitments(tx: TxClient, householdId: stri
 
       if (d.amountStatus === 'inconnu') {
         unknownCount += 1;
-        items.push({ id: d.id, chargePlanId: cp.id, chargePlanLabel: cp.label, dueDate: d.dueDate, amountStatus: 'inconnu', resteAPayer: null });
+        items.push({ id: d.id, chargePlanId: cp.id, chargePlanLabel: cp.label, dueDate: d.dueDate, amountStatus: 'inconnu', resteAPayer: null, coverageStatus: 'sans_objet' });
         continue; // jamais compté 0 (RG-103)
       }
       if (d.amountStatus === 'estime') hasEstimates = true;
@@ -216,7 +223,9 @@ export async function computeDeadlineCommitments(tx: TxClient, householdId: stri
       const resteAPayer = balance?.resteAPayer ?? 0;
       const engagement = await engagementFor(d.id, d.provisionId, resteAPayer);
       knownAmount += engagement;
-      items.push({ id: d.id, chargePlanId: cp.id, chargePlanLabel: cp.label, dueDate: d.dueDate, amountStatus: d.amountStatus, resteAPayer });
+      const coverageStatus: CommittedItemCoverageStatus =
+        resteAPayer <= 0 ? 'sans_objet' : engagement >= resteAPayer ? 'non_couverte' : engagement <= 0 ? 'couverte' : 'partielle';
+      items.push({ id: d.id, chargePlanId: cp.id, chargePlanLabel: cp.label, dueDate: d.dueDate, amountStatus: d.amountStatus, resteAPayer, coverageStatus });
     }
   }
 

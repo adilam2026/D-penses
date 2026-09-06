@@ -4,6 +4,49 @@ import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, Toucha
 import * as api from '../api/client';
 import { useBottomInset } from '../ui/useBottomInset';
 
+interface Account {
+  id: string;
+  name: string;
+  soldeCourant: number;
+}
+
+interface DeadlineItem {
+  id: string;
+  chargePlanId: string;
+  chargePlanLabel: string;
+  dueDate: string;
+  amountStatus: 'inconnu' | 'estime' | 'confirme';
+  resteAPayer: number | null;
+  coverageStatus: 'couverte' | 'partielle' | 'non_couverte' | 'sans_objet';
+}
+
+interface FinancialPlanResume {
+  id: string;
+  label: string;
+  knownPlanCost: number;
+  remainingDue: number;
+  provisionCoverage: number;
+  tauxCouverture: number | null;
+  completude: string;
+}
+
+interface ActionItem {
+  kind:
+    | 'facture_attendue'
+    | 'montant_inconnu'
+    | 'montant_a_confirmer'
+    | 'option_a_decider'
+    | 'provision_insuffisante'
+    | 'contribution_a_confirmer'
+    | 'objectif_en_retard';
+  chargePlanId?: string;
+  deadlineId?: string;
+  provisionId?: string;
+  pocketMovementId?: string;
+  goalId?: string;
+  message: string;
+}
+
 interface DashboardSummary {
   operational_treasury: number;
   free_available: number;
@@ -14,14 +57,15 @@ interface DashboardSummary {
   is_complete: boolean;
   contains_estimates: boolean;
   unknown_commitments_count: number;
+  deadlineItems: DeadlineItem[];
   optionsEnvisagees: { total: number; hasUnknown: boolean };
-  prochaineEcheance: { chargePlanLabel: string; dueDate: string; amountStatus: string; resteAPayer: number | null } | null;
-  actionsATraiter: Array<{ message: string }>;
-  budgetsResume: Array<{ id: string; categoryName: string; referenceAmount: number; referencePeriod: string; status: { budgetContractuelRestant: number } }>;
-  financialPlansResume: Array<{ id: string; label: string; knownPlanCost: number; remainingDue: number; completude: string }>;
+  actionsATraiter: ActionItem[];
+  budgetsResume: Array<{ id: string; categoryName: string }>;
+  financialPlansResume: FinancialPlanResume[];
   provisionsResume: Array<{ id: string; name: string; currentAmount: number; totalResteAPayer: number; totalUncovered: number }>;
   next_30_days: {
     closing_physical_treasury: number;
+    closing_free_capacity: number;
     physical_low_point: number;
     physical_low_point_date: string;
     free_capacity_low_point: number;
@@ -34,9 +78,9 @@ interface DashboardSummary {
 }
 
 const PROJECTION_STATUS_LABEL: Record<DashboardSummary['next_30_days']['status'], string> = {
-  OK: 'Stable',
-  TENSION: 'Tension',
-  DEFICIT_PHYSIQUE: 'Déficit prévu',
+  OK: 'Situation maîtrisée',
+  TENSION: 'Attention : marge faible',
+  DEFICIT_PHYSIQUE: 'Risque de déficit',
   INCOMPLETE: 'Projection incomplète',
 };
 
@@ -48,43 +92,94 @@ const PROJECTION_STATUS_COLOR: Record<DashboardSummary['next_30_days']['status']
 };
 
 /**
- * Repli sur la bannière de démarrage (Lot 3 §A) — heuristique purement dérivée
- * de ce que retourne déjà GET /dashboard/summary, jamais un indicateur stocké :
- * un foyer avec au moins une échéance, un budget, un plan ou une provision
- * n'est plus « vide », la bannière disparaît naturellement.
+ * §19 — un foyer tout juste créé (aucun compte ET aucune autre donnée) n'est plus
+ * "empty" pour un motif technique (ex. un compte à 0 DH volontairement) : on
+ * distingue explicitement l'absence totale de configuration d'une simple valeur nulle.
  */
-function looksEmpty(summary: DashboardSummary): boolean {
+function isFullyEmpty(summary: DashboardSummary, accounts: Account[]): boolean {
   return (
-    summary.operational_treasury === 0 &&
-    !summary.prochaineEcheance &&
+    accounts.length === 0 &&
+    summary.deadlineItems.length === 0 &&
     summary.budgetsResume.length === 0 &&
     summary.financialPlansResume.length === 0 &&
     summary.provisionsResume.length === 0
   );
 }
 
-function formatDate(iso: string) {
+function isPartiallyConfigured(summary: DashboardSummary, accounts: Account[]): boolean {
+  return accounts.length > 0 && !isFullyEmpty(summary, accounts);
+}
+
+function formatShortDate(iso: string) {
   return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
 }
 
+function formatLongDate(iso: string) {
+  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long' });
+}
+
+// §12 — hiérarchie simple, jamais un tableau multicolore : en retard (rouge),
+// très proche ≤7j (orange, valeur par défaut du seuil foyer), à venir (neutre).
+function urgencyColor(dueDate: string): string {
+  const days = Math.floor((new Date(dueDate).getTime() - Date.now()) / 86400000);
+  if (days < 0) return '#B3261E';
+  if (days <= 7) return '#B8860B';
+  return '#172436';
+}
+
+// §14 — règle déterministe et documentée : les plans encore à financer d'abord,
+// triés par taux de couverture croissant (le moins couvert = le plus urgent),
+// puis par reste à financer décroissant en cas d'égalité — jamais l'ordre de création.
+function prioritizePlans(plans: FinancialPlanResume[]): FinancialPlanResume[] {
+  return [...plans].sort((a, b) => {
+    const aFunded = a.remainingDue <= 0;
+    const bFunded = b.remainingDue <= 0;
+    if (aFunded !== bFunded) return aFunded ? 1 : -1;
+    const aCov = a.tauxCouverture ?? 100;
+    const bCov = b.tauxCouverture ?? 100;
+    if (aCov !== bCov) return aCov - bCov;
+    return b.remainingDue - a.remainingDue;
+  });
+}
+
+function actionTarget(a: ActionItem): { route: string; params: Record<string, string> } | null {
+  switch (a.kind) {
+    case 'facture_attendue':
+    case 'montant_inconnu':
+    case 'montant_a_confirmer':
+      return a.deadlineId ? { route: 'ConfirmDeadline', params: { id: a.deadlineId } } : null;
+    case 'option_a_decider':
+      return { route: 'Charges', params: {} };
+    case 'provision_insuffisante':
+      return a.provisionId ? { route: 'PocketDetail', params: { kind: 'provision', id: a.provisionId } } : null;
+    case 'contribution_a_confirmer':
+      return a.provisionId ? { route: 'PocketDetail', params: { kind: 'provision', id: a.provisionId } } : { route: 'Enveloppes', params: {} };
+    case 'objectif_en_retard':
+      return a.goalId ? { route: 'GoalDetail', params: { id: a.goalId } } : null;
+    default:
+      return null;
+  }
+}
+
 /**
- * Dashboard V1 (§12) — ordre : Trésorerie opérationnelle / Disponible libre en
- * premier, puis Montants réservés/engagés/coussin, puis Prochaine échéance,
- * Actions à traiter, résumé Budgets/Plans. Patrimoine liquide total reste
- * accessible mais secondaire. Jamais un tableau comptable.
+ * Accueil = cockpit (Vague 3 §7-17). 2 appels API au chargement : GET
+ * /dashboard/summary (tout le financier) + GET /accounts (bloc "Ma situation",
+ * absent du résumé dashboard) — jamais de boucle N+1, jamais un recalcul mobile
+ * de ce que le backend a déjà calculé.
  */
 export function HomeScreen() {
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
-  const [invite, setInvite] = useState<string | null>(null);
-  const [invitingLoading, setInvitingLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setSummary(await api.getDashboardSummary());
+      const [s, a] = await Promise.all([api.getDashboardSummary(), api.listAccounts()]);
+      setSummary(s);
+      setAccounts(a);
     } finally {
       setLoading(false);
     }
@@ -96,16 +191,6 @@ export function HomeScreen() {
     }, [load]),
   );
 
-  async function onInvite() {
-    setInvitingLoading(true);
-    try {
-      const res = await api.createInvite();
-      setInvite(res.code);
-    } finally {
-      setInvitingLoading(false);
-    }
-  }
-
   if (loading && !summary) {
     return (
       <View style={styles.center}>
@@ -115,6 +200,11 @@ export function HomeScreen() {
   }
   if (!summary) return null;
 
+  const fullyEmpty = isFullyEmpty(summary, accounts);
+  const partiallyConfigured = isPartiallyConfigured(summary, accounts);
+  const upcomingDeadlines = [...summary.deadlineItems].sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3);
+  const topPlans = prioritizePlans(summary.financialPlansResume).slice(0, 3);
+
   return (
     <ScrollView
       style={styles.container}
@@ -122,148 +212,189 @@ export function HomeScreen() {
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
     >
       <View style={styles.headerRow}>
-        <Text style={styles.title}>Accueil</Text>
-        <TouchableOpacity style={styles.addButton} onPress={() => navigation.getParent()?.navigate('QuickAdd')}>
-          <Text style={styles.addButtonText}>+</Text>
+        <TouchableOpacity testID="hamburger-menu-button" style={styles.menuButton} onPress={() => navigation.getParent()?.navigate('HamburgerMenu')}>
+          <Text style={styles.menuButtonText}>☰</Text>
         </TouchableOpacity>
+        <Text style={styles.brand}>D-Penses+</Text>
+        <View style={styles.menuButton} />
       </View>
 
-      {looksEmpty(summary) && (
-        <TouchableOpacity style={styles.onboardingBanner} onPress={() => navigation.getParent()?.navigate('Onboarding')}>
-          <Text style={styles.onboardingBannerTitle}>Bienvenue sur D-Penses+</Text>
-          <Text style={styles.onboardingBannerText}>Configurons ensemble vos comptes, revenus et charges →</Text>
-        </TouchableOpacity>
-      )}
-
-      <View style={styles.heroCard}>
-        <Text style={styles.heroLabel}>Trésorerie opérationnelle</Text>
-        <Text style={styles.heroValue}>{summary.operational_treasury.toLocaleString('fr-FR')} DH</Text>
-      </View>
-
-      <View style={styles.heroCard}>
-        <Text style={styles.heroLabel}>Disponible libre</Text>
-        <Text style={[styles.heroValue, summary.free_available < 0 && styles.negative]}>{summary.free_available.toLocaleString('fr-FR')} DH</Text>
-        <Text style={styles.heroHelp}>Ce qui reste après vos engagements, réserves et votre coussin de sécurité.</Text>
-        {!summary.is_complete && (
-          <Text style={styles.warning}>⚠ Calcul incomplet — {summary.unknown_commitments_count} montant(s) encore inconnu(s) dans l'horizon.</Text>
-        )}
-        {summary.contains_estimates && summary.is_complete && <Text style={styles.info}>Inclut des montants estimés.</Text>}
-      </View>
-
-      <TouchableOpacity style={styles.heroCard} onPress={() => navigation.getParent()?.navigate('Projection')}>
-        <Text style={styles.heroLabel}>30 prochains jours</Text>
-        <Text style={styles.heroValue}>{summary.next_30_days.closing_physical_treasury.toLocaleString('fr-FR')} DH</Text>
-        <Text style={styles.heroHelp}>
-          Point bas : {summary.next_30_days.physical_low_point.toLocaleString('fr-FR')} DH · Disponible libre minimum :{' '}
-          {summary.next_30_days.free_capacity_low_point.toLocaleString('fr-FR')} DH
-        </Text>
-        <Text style={[styles.projectionStatus, { color: PROJECTION_STATUS_COLOR[summary.next_30_days.status] }]}>
-          {PROJECTION_STATUS_LABEL[summary.next_30_days.status]}
-        </Text>
-        {summary.next_30_days.status === 'DEFICIT_PHYSIQUE' && summary.next_30_days.first_negative_date && (
-          <Text style={styles.warning}>
-            Risque de {summary.next_30_days.deficit_at_first_negative?.toLocaleString('fr-FR')} DH le{' '}
-            {new Date(summary.next_30_days.first_negative_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long' })}
-          </Text>
-        )}
-      </TouchableOpacity>
-
-      <View style={styles.figuresRow}>
-        <Figure label="Montants réservés" value={summary.reserved_amount} />
-        <Figure label="Montants engagés" value={summary.committed_amount} />
-        <Figure label="Coussin de sécurité" value={summary.safety_buffer} />
-      </View>
-      <Text style={styles.secondaryLine}>Patrimoine liquide total : {summary.patrimoine_liquide_total.toLocaleString('fr-FR')} DH</Text>
-
-      <Text style={styles.sectionTitle}>Prochaine échéance</Text>
-      {summary.prochaineEcheance ? (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>{summary.prochaineEcheance.chargePlanLabel}</Text>
-          <Text style={styles.cardMeta}>{formatDate(summary.prochaineEcheance.dueDate)}</Text>
-          <Text style={styles.cardAmount}>
-            {summary.prochaineEcheance.amountStatus === 'inconnu' || summary.prochaineEcheance.resteAPayer === null
-              ? 'Montant à confirmer'
-              : `${summary.prochaineEcheance.resteAPayer.toLocaleString('fr-FR')} DH restants`}
-          </Text>
+      {fullyEmpty ? (
+        <View style={styles.welcomeCard}>
+          <Text style={styles.welcomeTitle}>Bienvenue dans D-Penses+</Text>
+          <Text style={styles.welcomeText}>Commençons par configurer vos finances.</Text>
+          <TouchableOpacity style={styles.welcomeButton} onPress={() => navigation.getParent()?.navigate('Onboarding')}>
+            <Text style={styles.welcomeButtonText}>Commencer</Text>
+          </TouchableOpacity>
         </View>
       ) : (
-        <Text style={styles.empty}>Aucune échéance à venir.</Text>
-      )}
+        <>
+          {partiallyConfigured && (
+            <TouchableOpacity style={styles.configBanner} onPress={() => navigation.getParent()?.navigate('Onboarding')}>
+              <Text style={styles.configBannerText}>Terminer ma configuration →</Text>
+            </TouchableOpacity>
+          )}
 
-      {summary.optionsEnvisagees.total > 0 && (
-        <Text style={styles.secondaryLine}>
-          Options envisagées : {summary.optionsEnvisagees.total.toLocaleString('fr-FR')} DH{summary.optionsEnvisagees.hasUnknown ? ' (+ montants inconnus)' : ''}
-        </Text>
-      )}
+          {/* Bloc 1 — Ma situation */}
+          {accounts.length > 0 && (
+            <View style={styles.block}>
+              <Text style={styles.blockTitle}>MA SITUATION</Text>
+              {accounts.slice(0, 4).map((a) => (
+                <TouchableOpacity key={a.id} style={styles.accountRow} onPress={() => navigation.getParent()?.navigate('AccountDetail', { id: a.id })}>
+                  <Text style={styles.accountName}>{a.name}</Text>
+                  <Text style={styles.accountAmount}>{a.soldeCourant.toLocaleString('fr-FR')} DH</Text>
+                </TouchableOpacity>
+              ))}
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Total</Text>
+                <Text style={styles.totalValue}>{summary.patrimoine_liquide_total.toLocaleString('fr-FR')} DH</Text>
+              </View>
+              <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Accounts')}>
+                <Text style={styles.linkText}>Voir mes comptes →</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
-      <Text style={styles.sectionTitle}>Actions à traiter</Text>
-      {summary.actionsATraiter.length === 0 ? (
-        <Text style={styles.empty}>Rien à traiter pour l'instant.</Text>
-      ) : (
-        summary.actionsATraiter.slice(0, 5).map((a, i) => (
-          <View key={i} style={styles.actionRow}>
-            <Text style={styles.actionText}>{a.message}</Text>
+          {/* Bloc 2 — Mon disponible réel */}
+          <View style={styles.block}>
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel}>Trésorerie</Text>
+              <Text style={styles.breakdownValue}>{summary.operational_treasury.toLocaleString('fr-FR')} DH</Text>
+            </View>
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel}>Réservé</Text>
+              <Text style={styles.breakdownValue}>{summary.reserved_amount.toLocaleString('fr-FR')} DH</Text>
+            </View>
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel}>Engagé</Text>
+              <Text style={styles.breakdownValue}>{summary.committed_amount.toLocaleString('fr-FR')} DH</Text>
+            </View>
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel}>Coussin</Text>
+              <Text style={styles.breakdownValue}>{summary.safety_buffer.toLocaleString('fr-FR')} DH</Text>
+            </View>
+            <View style={styles.freeAvailableBox}>
+              <Text style={styles.freeAvailableLabel}>DISPONIBLE LIBRE</Text>
+              <Text style={[styles.freeAvailableValue, summary.free_available < 0 && styles.negative]}>
+                {summary.free_available.toLocaleString('fr-FR')} DH
+              </Text>
+              <Text style={styles.infoText}>
+                ⓘ Votre disponible libre tient compte de l'argent réservé et de votre coussin de sécurité.
+              </Text>
+              {!summary.is_complete && (
+                <Text style={styles.warning}>⚠ Calcul incomplet — {summary.unknown_commitments_count} montant(s) encore inconnu(s).</Text>
+              )}
+            </View>
           </View>
-        ))
-      )}
 
-      {summary.budgetsResume.length > 0 && (
-        <>
-          <Text style={styles.sectionTitle}>Budgets variables</Text>
-          {summary.budgetsResume.map((b) => (
-            <TouchableOpacity key={b.id} style={styles.card} onPress={() => navigation.getParent()?.navigate('BudgetDetail', { id: b.id })}>
-              <Text style={styles.cardTitle}>
-                {b.categoryName} — {b.referenceAmount.toLocaleString('fr-FR')} DH/{b.referencePeriod}
+          {/* Bloc 3 — Prochaines échéances */}
+          {upcomingDeadlines.length > 0 && (
+            <View style={styles.block}>
+              <Text style={styles.blockTitle}>PROCHAINEMENT</Text>
+              {upcomingDeadlines.map((d) => (
+                <TouchableOpacity key={d.id} style={styles.deadlineRow} onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: d.id })}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.deadlineDate, { color: urgencyColor(d.dueDate) }]}>{formatShortDate(d.dueDate)}</Text>
+                    <Text style={styles.deadlineLabel}>{d.chargePlanLabel}</Text>
+                    {d.coverageStatus === 'couverte' && <Text style={styles.coveredBadge}>✓ Couvert</Text>}
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.deadlineAmount}>
+                      {d.resteAPayer !== null ? `${d.resteAPayer.toLocaleString('fr-FR')} DH` : 'À confirmer'}
+                    </Text>
+                    <TouchableOpacity style={styles.payPill} onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: d.id })}>
+                      <Text style={styles.payPillText}>Payer</Text>
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Charges')}>
+                <Text style={styles.linkText}>Voir toutes →</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Bloc 4 — Mes plans */}
+          {topPlans.length > 0 && (
+            <View style={styles.block}>
+              <Text style={styles.blockTitle}>MES PLANS</Text>
+              {topPlans.map((p) => (
+                <TouchableOpacity key={p.id} style={styles.planCard} onPress={() => navigation.getParent()?.navigate('FinancialPlanDetail', { id: p.id })}>
+                  <Text style={styles.planLabel}>{p.label}</Text>
+                  <Text style={styles.planAmounts}>
+                    {p.provisionCoverage.toLocaleString('fr-FR')} / {p.knownPlanCost.toLocaleString('fr-FR')} DH
+                  </Text>
+                  {p.tauxCouverture !== null && (
+                    <>
+                      <Text style={styles.planPercent}>{Math.round(p.tauxCouverture)}% couvert</Text>
+                      <View style={styles.progressTrack}>
+                        <View style={[styles.progressFill, { width: `${Math.min(100, p.tauxCouverture)}%` }]} />
+                      </View>
+                    </>
+                  )}
+                  {p.remainingDue > 0 && <Text style={styles.planRemaining}>Reste à financer : {p.remainingDue.toLocaleString('fr-FR')} DH</Text>}
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity onPress={() => navigation.getParent()?.navigate('FinancialPlans')}>
+                <Text style={styles.linkText}>Voir tous →</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Bloc 5 — Projection */}
+          <TouchableOpacity style={styles.block} onPress={() => navigation.getParent()?.navigate('Projection')}>
+            <Text style={styles.blockTitle}>DANS 30 JOURS</Text>
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel}>Trésorerie prévue</Text>
+              <Text style={styles.breakdownValue}>{summary.next_30_days.closing_physical_treasury.toLocaleString('fr-FR')} DH</Text>
+            </View>
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel}>Disponible libre prévu</Text>
+              <Text style={styles.breakdownValue}>{summary.next_30_days.closing_free_capacity.toLocaleString('fr-FR')} DH</Text>
+            </View>
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel}>Point bas</Text>
+              <Text style={styles.breakdownValue}>
+                {summary.next_30_days.physical_low_point.toLocaleString('fr-FR')} DH le {formatLongDate(summary.next_30_days.physical_low_point_date)}
               </Text>
-              <Text style={styles.cardMeta}>{b.status.budgetContractuelRestant.toLocaleString('fr-FR')} DH restants</Text>
-            </TouchableOpacity>
-          ))}
+            </View>
+            <Text style={[styles.projectionStatus, { color: PROJECTION_STATUS_COLOR[summary.next_30_days.status] }]}>
+              {PROJECTION_STATUS_LABEL[summary.next_30_days.status]}
+            </Text>
+            {summary.next_30_days.status === 'DEFICIT_PHYSIQUE' && summary.next_30_days.first_negative_date && (
+              <Text style={styles.warning}>
+                Risque de déficit le {formatLongDate(summary.next_30_days.first_negative_date)}
+                {summary.next_30_days.deficit_at_first_negative !== null
+                  ? ` (${summary.next_30_days.deficit_at_first_negative.toLocaleString('fr-FR')} DH)`
+                  : ''}
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          {/* Bloc 6 — Actions à traiter (jamais affiché si vide, §16) */}
+          {summary.actionsATraiter.length > 0 && (
+            <View style={styles.block}>
+              <Text style={styles.blockTitle}>
+                {summary.actionsATraiter.length} action{summary.actionsATraiter.length > 1 ? 's' : ''} à traiter
+              </Text>
+              {summary.actionsATraiter.slice(0, 5).map((a, i) => {
+                const target = actionTarget(a);
+                return (
+                  <TouchableOpacity
+                    key={i}
+                    style={styles.actionRow}
+                    disabled={!target}
+                    onPress={() => target && navigation.getParent()?.navigate(target.route, target.params)}
+                  >
+                    <Text style={styles.actionText}>• {a.message}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
         </>
       )}
-
-      {summary.financialPlansResume.length > 0 && (
-        <>
-          <Text style={styles.sectionTitle}>Plans financiers</Text>
-          {summary.financialPlansResume.map((p) => (
-            <TouchableOpacity key={p.id} style={styles.card} onPress={() => navigation.getParent()?.navigate('FinancialPlanDetail', { id: p.id })}>
-              <Text style={styles.cardTitle}>{p.label}</Text>
-              <Text style={styles.cardMeta}>
-                Connu {p.knownPlanCost.toLocaleString('fr-FR')} DH · Reste {p.remainingDue.toLocaleString('fr-FR')} DH
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </>
-      )}
-
-      {summary.provisionsResume.length > 0 && (
-        <>
-          <Text style={styles.sectionTitle}>Provisions</Text>
-          {summary.provisionsResume.map((p) => (
-            <TouchableOpacity key={p.id} style={styles.card} onPress={() => navigation.getParent()?.navigate('PocketDetail', { kind: 'provision', id: p.id })}>
-              <Text style={styles.cardTitle}>{p.name}</Text>
-              <Text style={styles.cardMeta}>
-                {p.currentAmount.toLocaleString('fr-FR')} DH provisionnés · {p.totalResteAPayer.toLocaleString('fr-FR')} DH à payer
-                {p.totalUncovered > 0 ? ` · ${p.totalUncovered.toLocaleString('fr-FR')} DH encore à couvrir` : ''}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </>
-      )}
-
-      <TouchableOpacity style={styles.inviteButton} onPress={onInvite} disabled={invitingLoading}>
-        {invitingLoading ? <ActivityIndicator /> : <Text style={styles.inviteButtonText}>Inviter un second adulte</Text>}
-      </TouchableOpacity>
-      {invite ? <Text style={styles.inviteCode}>Code d'invitation : {invite}</Text> : null}
     </ScrollView>
-  );
-}
-
-function Figure({ label, value }: { label: string; value: number }) {
-  return (
-    <View style={styles.figure}>
-      <Text style={styles.figureLabel}>{label}</Text>
-      <Text style={styles.figureValue}>{value.toLocaleString('fr-FR')} DH</Text>
-    </View>
   );
 }
 
@@ -272,34 +403,58 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F6F5F2' },
   scroll: { padding: 20, paddingTop: 56 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  title: { fontSize: 20, fontWeight: '700', color: '#172436' },
-  addButton: { backgroundColor: '#172436', width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  addButtonText: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  onboardingBanner: { backgroundColor: '#172436', borderRadius: 14, padding: 16, marginBottom: 16 },
-  onboardingBannerTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  onboardingBannerText: { color: '#C9D2E0', fontSize: 12, marginTop: 4 },
-  heroCard: { backgroundColor: '#fff', borderRadius: 14, padding: 18, marginBottom: 12 },
-  heroLabel: { fontSize: 13, color: '#6B747C', fontWeight: '600' },
-  heroValue: { fontSize: 28, fontWeight: '800', color: '#172436', marginTop: 4 },
+  menuButton: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  menuButtonText: { fontSize: 20, color: '#172436' },
+  brand: { fontSize: 16, fontWeight: '700', color: '#172436' },
+
+  welcomeCard: { backgroundColor: '#172436', borderRadius: 16, padding: 24, alignItems: 'center' },
+  welcomeTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  welcomeText: { color: '#C9D2E0', fontSize: 13, marginTop: 6, textAlign: 'center' },
+  welcomeButton: { backgroundColor: '#fff', borderRadius: 999, paddingHorizontal: 24, paddingVertical: 12, marginTop: 16 },
+  welcomeButtonText: { color: '#172436', fontWeight: '700', fontSize: 14 },
+
+  configBanner: { backgroundColor: '#EEF0F3', borderRadius: 12, padding: 14, marginBottom: 16 },
+  configBannerText: { color: '#172436', fontSize: 13, fontWeight: '700', textAlign: 'center' },
+
+  block: { backgroundColor: '#fff', borderRadius: 14, padding: 16, marginBottom: 12 },
+  blockTitle: { fontSize: 11, fontWeight: '700', color: '#6B747C', letterSpacing: 0.5, marginBottom: 10 },
+
+  accountRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F0EFEA' },
+  accountName: { fontSize: 13, color: '#172436', fontWeight: '600' },
+  accountAmount: { fontSize: 13, color: '#172436', fontWeight: '700' },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 10 },
+  totalLabel: { fontSize: 13, color: '#6B747C', fontWeight: '700' },
+  totalValue: { fontSize: 16, color: '#172436', fontWeight: '800' },
+  linkText: { color: '#2E7D5B', fontSize: 12, fontWeight: '700', marginTop: 10 },
+
+  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+  breakdownLabel: { fontSize: 12, color: '#6B747C' },
+  breakdownValue: { fontSize: 12, color: '#172436', fontWeight: '600' },
+  freeAvailableBox: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F0EFEA' },
+  freeAvailableLabel: { fontSize: 12, fontWeight: '700', color: '#6B747C', letterSpacing: 0.5 },
+  freeAvailableValue: { fontSize: 30, fontWeight: '800', color: '#172436', marginTop: 4 },
   negative: { color: '#B3261E' },
-  heroHelp: { fontSize: 11, color: '#6B747C', marginTop: 6, fontStyle: 'italic' },
+  infoText: { fontSize: 11, color: '#6B747C', marginTop: 8, fontStyle: 'italic' },
   warning: { fontSize: 12, color: '#B8860B', marginTop: 8, fontWeight: '600' },
-  info: { fontSize: 12, color: '#6B747C', marginTop: 8 },
+
+  deadlineRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F0EFEA' },
+  deadlineDate: { fontSize: 11, fontWeight: '700' },
+  deadlineLabel: { fontSize: 13, fontWeight: '600', color: '#172436', marginTop: 2 },
+  coveredBadge: { fontSize: 10, color: '#2E7D5B', fontWeight: '700', marginTop: 2 },
+  deadlineAmount: { fontSize: 13, fontWeight: '700', color: '#172436' },
+  payPill: { backgroundColor: '#172436', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginTop: 6 },
+  payPillText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+
+  planCard: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F0EFEA' },
+  planLabel: { fontSize: 14, fontWeight: '700', color: '#172436' },
+  planAmounts: { fontSize: 12, color: '#6B747C', marginTop: 2 },
+  planPercent: { fontSize: 11, fontWeight: '700', color: '#172436', marginTop: 4 },
+  progressTrack: { height: 6, backgroundColor: '#EDEBE6', borderRadius: 3, overflow: 'hidden', marginTop: 4 },
+  progressFill: { height: '100%', backgroundColor: '#2E7D5B' },
+  planRemaining: { fontSize: 11, color: '#6B747C', marginTop: 4 },
+
   projectionStatus: { fontSize: 12, fontWeight: '800', marginTop: 8 },
-  figuresRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  figure: { flex: 1, backgroundColor: '#fff', borderRadius: 10, padding: 12, marginRight: 8 },
-  figureLabel: { fontSize: 10, color: '#6B747C' },
-  figureValue: { fontSize: 13, fontWeight: '700', color: '#172436', marginTop: 4 },
-  secondaryLine: { fontSize: 11, color: '#6B747C', marginTop: 8, marginBottom: 4 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#172436', marginTop: 20, marginBottom: 8 },
-  empty: { color: '#6B747C', fontSize: 13 },
-  card: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8 },
-  cardTitle: { fontSize: 13, fontWeight: '700', color: '#172436' },
-  cardMeta: { fontSize: 11, color: '#6B747C', marginTop: 2 },
-  cardAmount: { fontSize: 13, fontWeight: '700', color: '#172436', marginTop: 4 },
-  actionRow: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8 },
+
+  actionRow: { paddingVertical: 6 },
   actionText: { fontSize: 12, color: '#172436' },
-  inviteButton: { marginTop: 24, alignItems: 'center' },
-  inviteButtonText: { color: '#172436', fontSize: 13, fontWeight: '600' },
-  inviteCode: { marginTop: 8, fontSize: 16, fontWeight: '700', color: '#172436', letterSpacing: 1, textAlign: 'center' },
 });

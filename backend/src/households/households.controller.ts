@@ -6,6 +6,8 @@ import { CreateHouseholdDto } from './dto/create-household.dto';
 import { CreateInviteDto } from './dto/create-invite.dto';
 import { JoinHouseholdDto } from './dto/join-household.dto';
 import { UpdateHouseholdSettingsDto } from './dto/update-household-settings.dto';
+import { SkipOnboardingStepDto } from './dto/skip-onboarding-step.dto';
+import { ResetFinancialDataDto } from './dto/reset-financial-data.dto';
 import { CurrentUser, AuthenticatedUser } from '../common/decorators/current-user.decorator';
 import { HouseholdRequiredGuard } from '../common/guards/household-required.guard';
 
@@ -46,5 +48,17 @@ export class HouseholdsController {
   @UseGuards(HouseholdRequiredGuard)
   updateSettings(@Body() dto: UpdateHouseholdSettingsDto, @CurrentUser() user: AuthenticatedUser) {
     return this.households.updateSettings(user.sub, user.householdId!, dto);
+  }
+
+  @Patch('onboarding/skip')
+  @UseGuards(HouseholdRequiredGuard)
+  skipOnboardingStep(@Body() dto: SkipOnboardingStepDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.households.skipOnboardingStep(user.sub, user.householdId!, dto);
+  }
+
+  @Post('reset-financial-data')
+  @UseGuards(HouseholdRequiredGuard)
+  resetFinancialData(@Body() dto: ResetFinancialDataDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.households.resetFinancialData(user.sub, user.householdId!, dto);
   }
 }
