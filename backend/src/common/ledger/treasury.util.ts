@@ -76,6 +76,29 @@ export async function computeReservedAmounts(tx: TxClient, householdId: string):
   return { total: round2(total) };
 }
 
+/**
+ * Couverture physique par compte (Lot 11, §5 cadrage V1) — lecture DÉRIVÉE
+ * uniquement, jamais une deuxième réservation : Σ current_amount des
+ * SavingsPocket/Provision virtual_allocation dont linkedAccountId référence
+ * ce compte (localisation INFORMATIVE, cf. §4). Ne modifie ni ne recalcule
+ * computeReservedAmounts (toujours global au foyer, inchangé) — sert
+ * uniquement à afficher "sur ce compte précis, X DH sont réservés par des
+ * enveloppes, il en reste Y physiquement disponibles / il en manque Z".
+ */
+export async function computeAccountEnvelopeCoverage(tx: TxClient, accountId: string): Promise<{ reservedByEnvelopes: number }> {
+  const pockets = await tx.savingsPocket.findMany({ where: { linkedAccountId: accountId, allocationMode: 'virtual_allocation' } });
+  const provisions = await tx.provision.findMany({ where: { linkedAccountId: accountId, allocationMode: 'virtual_allocation' } });
+
+  let reservedByEnvelopes = 0;
+  for (const p of pockets) {
+    reservedByEnvelopes += await computePocketCurrentAmount(tx, 'savings_pocket', p.id, p.allocationMode, p.linkedAccountId);
+  }
+  for (const p of provisions) {
+    reservedByEnvelopes += await computePocketCurrentAmount(tx, 'provision', p.id, p.allocationMode, p.linkedAccountId);
+  }
+  return { reservedByEnvelopes: round2(reservedByEnvelopes) };
+}
+
 // ---------- G.5 — Horizon (H*) ----------
 
 function toUtcMidnight(date: Date): Date {

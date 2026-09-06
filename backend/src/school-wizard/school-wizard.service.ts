@@ -25,6 +25,7 @@ export class SchoolWizardService {
         data: {
           householdId,
           label: dto.label,
+          planType: 'school',
           periodStart: new Date(dto.periodStart),
           periodEnd: new Date(dto.periodEnd),
         },
@@ -43,14 +44,19 @@ export class SchoolWizardService {
         const obligationStatus = item.obligationStatus ?? (isGarderie ? 'optionnelle_envisagee' : 'obligatoire');
         const amountStatus = item.amount === null || item.amount === undefined ? 'inconnu' : 'estime';
 
+        const isPeriodic = item.recurrenceRule && item.recurrenceRule !== 'ponctuel';
+
         const chargePlan = await tx.chargePlan.create({
           data: {
             householdId,
             label: item.label,
-            generationMode: 'calendrier_manuel',
+            generationMode: isPeriodic ? 'auto_frequence' : 'calendrier_manuel',
+            recurrenceRule: item.recurrenceRule,
             obligationStatus,
             financialPlanId: plan.id,
-            startDate: new Date(dto.periodStart),
+            // Ancre de la récurrence = la date de CE poste, jamais periodStart du plan
+            // entier (des postes différents peuvent avoir des périodicités différentes).
+            startDate: isPeriodic ? new Date(item.dueDate) : new Date(dto.periodStart),
             endDate: new Date(dto.periodEnd),
             children: { create: childIds.map((childId) => ({ childId })) },
           },

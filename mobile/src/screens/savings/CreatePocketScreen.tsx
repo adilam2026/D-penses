@@ -76,25 +76,46 @@ export function CreatePocketScreen() {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
-      <Text style={styles.title}>{kind === 'provision' ? 'Nouvelle provision' : 'Nouvelle poche d\'épargne'}</Text>
+      <Text style={styles.title}>{kind === 'provision' ? 'Nouvelle enveloppe (provision)' : 'Nouvelle enveloppe (épargne)'}</Text>
+      <Text style={styles.intro}>Une enveloppe réserve une partie de votre argent pour un usage précis.</Text>
 
       <Text style={styles.sectionLabel}>Nom</Text>
-      <TextInput style={styles.input} placeholder="ex. Provision École" value={name} onChangeText={setName} />
+      <TextInput style={styles.input} placeholder="ex. École, Voyage, Épargne enfants" value={name} onChangeText={setName} />
 
-      <Text style={styles.sectionLabel}>Mode</Text>
+      <Text style={styles.sectionLabel}>Où se trouve cet argent ?</Text>
       <View style={styles.segment}>
         <TouchableOpacity style={[styles.segmentItem, allocationMode === 'virtual_allocation' && styles.segmentActive]} onPress={() => setAllocationMode('virtual_allocation')}>
-          <Text style={[styles.segmentText, allocationMode === 'virtual_allocation' && styles.segmentTextActive]}>Réservation virtuelle</Text>
+          <Text style={[styles.segmentText, allocationMode === 'virtual_allocation' && styles.segmentTextActive]}>Réservation sur ma trésorerie</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.segmentItem, allocationMode === 'backed_by_account' && styles.segmentActive]} onPress={() => setAllocationMode('backed_by_account')}>
-          <Text style={[styles.segmentText, allocationMode === 'backed_by_account' && styles.segmentTextActive]}>Compte dédié</Text>
+          <Text style={[styles.segmentText, allocationMode === 'backed_by_account' && styles.segmentTextActive]}>Compte entièrement dédié</Text>
         </TouchableOpacity>
       </View>
       {allocationMode === 'virtual_allocation' ? (
-        <Text style={styles.help}>Cette somme reste sur votre compte mais n'est plus considérée comme disponible.</Text>
+        <>
+          <Text style={styles.help}>
+            Cette somme reste sur votre trésorerie globale mais n'est plus considérée comme disponible. Vous pouvez
+            indiquer, à titre indicatif, sur quel compte elle se trouve réellement — le compte garde son solde entier,
+            aucun montant n'y est réellement isolé.
+          </Text>
+          <View style={styles.chipRow}>
+            <TouchableOpacity style={[styles.chip, linkedAccountId === null && styles.chipActive]} onPress={() => setLinkedAccountId(null)}>
+              <Text style={[styles.chipText, linkedAccountId === null && styles.chipTextActive]}>Non précisé</Text>
+            </TouchableOpacity>
+            {accounts.map((a) => (
+              <TouchableOpacity key={a.id} style={[styles.chip, linkedAccountId === a.id && styles.chipActive]} onPress={() => setLinkedAccountId(a.id)}>
+                <Text style={[styles.chipText, linkedAccountId === a.id && styles.chipTextActive]}>{a.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </>
       ) : (
         <>
-          <Text style={styles.help}>L'argent est physiquement transféré vers un compte qui lui est exclusivement dédié.</Text>
+          <Text style={styles.help}>
+            Attention : ce compte devient ENTIÈREMENT cette enveloppe — tout son solde compte comme réservé, jamais
+            partagé avec un autre usage. Pour réserver seulement une partie d'un compte existant, choisissez plutôt
+            « Réservation sur ma trésorerie » ci-dessus.
+          </Text>
           <View style={styles.chipRow}>
             {accounts.map((a) => (
               <TouchableOpacity key={a.id} style={[styles.chip, linkedAccountId === a.id && styles.chipActive]} onPress={() => setLinkedAccountId(a.id)}>
@@ -143,7 +164,8 @@ export function CreatePocketScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F6F5F2' },
   scroll: { padding: 24, paddingTop: 16 },
-  title: { fontSize: 18, fontWeight: '700', color: '#172436', marginBottom: 16 },
+  title: { fontSize: 18, fontWeight: '700', color: '#172436', marginBottom: 4 },
+  intro: { fontSize: 13, color: '#6B747C', lineHeight: 19, marginBottom: 16 },
   sectionLabel: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 8, marginTop: 4 },
   help: { fontSize: 11, color: '#6B747C', marginBottom: 12, fontStyle: 'italic' },
   input: {

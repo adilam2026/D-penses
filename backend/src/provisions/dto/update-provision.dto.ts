@@ -1,4 +1,4 @@
-import { IsBoolean, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
 
 export class UpdateProvisionDto {
   @IsOptional()
@@ -9,4 +9,9 @@ export class UpdateProvisionDto {
   @IsOptional()
   @IsBoolean()
   isFlexible?: boolean;
+
+  /** Lot 11 (§4) : corrige la localisation déclarée (informative en virtual_allocation, réelle en backed_by_account). */
+  @IsOptional()
+  @IsUUID()
+  linkedAccountId?: string;
 }

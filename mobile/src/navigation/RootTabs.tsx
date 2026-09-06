@@ -15,13 +15,13 @@ const TAB_ICONS: Record<string, { active: IconName; inactive: IconName }> = {
   Accueil: { active: 'home', inactive: 'home-outline' },
   Transactions: { active: 'swap-horizontal', inactive: 'swap-horizontal-outline' },
   Calendrier: { active: 'calendar', inactive: 'calendar-outline' },
-  Épargne: { active: 'wallet', inactive: 'wallet-outline' },
+  Enveloppes: { active: 'wallet', inactive: 'wallet-outline' },
   Plus: { active: 'menu', inactive: 'menu-outline' },
 };
 
 /**
  * Navigation principale (document 03 §J.2/J.4) : Accueil / Transactions / Calendrier /
- * Épargne / Plus. Le bouton central « + » (feuille modale de saisie rapide, écrans
+ * Enveloppes / Plus. Le bouton central « + » (feuille modale de saisie rapide, écrans
  * Home/Transactions) navigue vers le stack racine (RootNavigator), pas un onglet.
  *
  * Icônes explicites obligatoires : sans `tabBarIcon`, React Navigation affiche son
@@ -43,7 +43,7 @@ export function RootTabs() {
       <Tab.Screen name="Accueil" component={HomeScreen} />
       <Tab.Screen name="Transactions" component={TransactionsScreen} />
       <Tab.Screen name="Calendrier" component={CalendarScreen} />
-      <Tab.Screen name="Épargne" component={EpargneScreen} />
+      <Tab.Screen name="Enveloppes" component={EpargneScreen} />
       <Tab.Screen name="Plus" component={PlusMenuScreen} />
     </Tab.Navigator>
   );

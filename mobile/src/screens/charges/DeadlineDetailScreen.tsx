@@ -21,6 +21,7 @@ interface Deadline {
   amountStatus: 'inconnu' | 'estime' | 'confirme';
   financialStatus: 'ouverte' | 'partiellement_payee' | 'soldee' | 'annulee';
   resteAPayer: number | string | null;
+  provisionId: string | null;
   chargePlan: { label: string };
 }
 
@@ -34,6 +35,14 @@ interface Payment {
 interface Account {
   id: string;
   name: string;
+}
+
+interface Provision {
+  id: string;
+  name: string;
+  allocationMode: 'virtual_allocation' | 'backed_by_account';
+  linkedAccountId: string | null;
+  currentAmount: number | string;
 }
 
 const STATUS_LABEL: Record<Deadline['financialStatus'], string> = {
@@ -66,11 +75,13 @@ export function DeadlineDetailScreen() {
   const [deadline, setDeadline] = useState<Deadline | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [provision, setProvision] = useState<Provision | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [confirmAmount, setConfirmAmount] = useState('');
   const [confirming, setConfirming] = useState(false);
 
+  const [fundingSource, setFundingSource] = useState<'compte' | 'provision'>('compte');
   const [payAmount, setPayAmount] = useState('');
   const [payAccountId, setPayAccountId] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
@@ -86,8 +97,20 @@ export function DeadlineDetailScreen() {
       setDeadline(d);
       setPayments(p);
       setAccounts(accountList);
-      setPayAccountId((current) => current ?? accountList[0]?.id ?? null);
       if (d.amountCurrent !== null) setConfirmAmount(String(n(d.amountCurrent)));
+
+      if (d.provisionId) {
+        const prov: Provision = await api.getProvision(d.provisionId);
+        setProvision(prov);
+        setFundingSource('provision');
+        setPayAccountId((current) =>
+          prov.allocationMode === 'backed_by_account' ? prov.linkedAccountId : current ?? prov.linkedAccountId ?? accountList[0]?.id ?? null,
+        );
+      } else {
+        setProvision(null);
+        setFundingSource('compte');
+        setPayAccountId((current) => current ?? accountList[0]?.id ?? null);
+      }
     } finally {
       setLoading(false);
     }
@@ -128,9 +151,20 @@ export function DeadlineDetailScreen() {
       setError('Choisissez un compte');
       return;
     }
+    if (fundingSource === 'provision' && provision) {
+      const available = n(provision.currentAmount) ?? 0;
+      if (value > available) {
+        setError(`Enveloppe insuffisante : ${available.toLocaleString('fr-FR')} DH disponibles dans « ${provision.name} »`);
+        return;
+      }
+    }
     setPaying(true);
     try {
-      await api.createPayment(id, { amount: value, accountId: payAccountId, paidDate: todayIso() });
+      if (fundingSource === 'provision' && provision) {
+        await api.payDeadlineWithProvision(id, { amount: value, accountId: payAccountId, provisionId: provision.id, paidDate: todayIso() });
+      } else {
+        await api.createPayment(id, { amount: value, accountId: payAccountId, paidDate: todayIso() });
+      }
       setPayAmount('');
       await load();
     } catch (err) {
@@ -201,13 +235,50 @@ export function DeadlineDetailScreen() {
         {isOpen && (
           <>
             <Text style={styles.sectionTitle}>Payer (total ou partiel)</Text>
-            <View style={styles.chipRow}>
-              {accounts.map((a) => (
-                <TouchableOpacity key={a.id} style={[styles.chip, payAccountId === a.id && styles.chipActive]} onPress={() => setPayAccountId(a.id)}>
-                  <Text style={[styles.chipText, payAccountId === a.id && styles.chipTextActive]}>{a.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+
+            {provision && (
+              <>
+                <View style={styles.segment}>
+                  <TouchableOpacity
+                    style={[styles.segmentItem, fundingSource === 'provision' && styles.segmentActive]}
+                    onPress={() => {
+                      setFundingSource('provision');
+                      setPayAccountId(provision.allocationMode === 'backed_by_account' ? provision.linkedAccountId : payAccountId ?? provision.linkedAccountId ?? accounts[0]?.id ?? null);
+                    }}
+                  >
+                    <Text style={[styles.segmentText, fundingSource === 'provision' && styles.segmentTextActive]}>Utiliser l'enveloppe « {provision.name} »</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.segmentItem, fundingSource === 'compte' && styles.segmentActive]}
+                    onPress={() => setFundingSource('compte')}
+                  >
+                    <Text style={[styles.segmentText, fundingSource === 'compte' && styles.segmentTextActive]}>Payer sans utiliser l'enveloppe</Text>
+                  </TouchableOpacity>
+                </View>
+                {fundingSource === 'provision' && (
+                  <Text style={styles.help}>
+                    Disponible dans cette enveloppe : {(n(provision.currentAmount) ?? 0).toLocaleString('fr-FR')} DH.
+                    {provision.allocationMode === 'backed_by_account'
+                      ? ' Cette enveloppe est un compte dédié : le compte à débiter est imposé.'
+                      : ' Choisissez le compte réel qui enregistre ce paiement.'}
+                  </Text>
+                )}
+              </>
+            )}
+
+            {(fundingSource === 'compte' || !provision || provision.allocationMode !== 'backed_by_account') && (
+              <View style={styles.chipRow}>
+                {accounts.map((a) => (
+                  <TouchableOpacity key={a.id} style={[styles.chip, payAccountId === a.id && styles.chipActive]} onPress={() => setPayAccountId(a.id)}>
+                    <Text style={[styles.chipText, payAccountId === a.id && styles.chipTextActive]}>{a.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            {fundingSource === 'provision' && provision?.allocationMode === 'backed_by_account' && (
+              <Text style={styles.help}>Compte débité : {accounts.find((a) => a.id === payAccountId)?.name ?? '—'}</Text>
+            )}
+
             <View style={styles.row}>
               <TextInput style={[styles.input, { flex: 1 }]} placeholder="Montant (DH)" keyboardType="decimal-pad" value={payAmount} onChangeText={setPayAmount} />
               <TouchableOpacity style={styles.button} onPress={onPay} disabled={paying}>
@@ -256,6 +327,12 @@ const styles = StyleSheet.create({
   heroStatus: { fontSize: 12, fontWeight: '700', color: '#6B747C', marginTop: 8, textTransform: 'uppercase' },
   heroAmount: { fontSize: 22, fontWeight: '800', color: '#172436', marginTop: 8 },
   sectionTitle: { fontSize: 14, fontWeight: '700', color: '#172436', marginTop: 16, marginBottom: 8 },
+  help: { fontSize: 11, color: '#6B747C', marginBottom: 10, fontStyle: 'italic' },
+  segment: { flexDirection: 'row', backgroundColor: '#EDEBE6', borderRadius: 10, padding: 4, marginBottom: 8 },
+  segmentItem: { flex: 1, paddingVertical: 10, paddingHorizontal: 4, borderRadius: 8, alignItems: 'center' },
+  segmentActive: { backgroundColor: '#fff' },
+  segmentText: { fontSize: 11, color: '#6B747C', fontWeight: '600', textAlign: 'center' },
+  segmentTextActive: { color: '#172436' },
   row: { flexDirection: 'row', alignItems: 'center' },
   input: {
     backgroundColor: '#fff',

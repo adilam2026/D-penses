@@ -104,6 +104,14 @@ enum ChargePlanGenerationMode {
   calendrier_manuel
 }
 
+// Lot 11 (§9/§11 cadrage V1) — distingue les FinancialPlan pour l'UI mobile (assistant
+// scolaire vs voyage vs plan libre), purement informatif.
+enum FinancialPlanType {
+  school
+  travel
+  other
+}
+
 enum ObligationStatus {
   obligatoire
   optionnelle_envisagee
@@ -522,23 +530,23 @@ model AccountTransfer {
 // ============================================================
 
 model IncomeSource {
-  id                String               @id @default(uuid())
-  householdId       String               @map("household_id")
-  label             String
-  beneficiaryUserId String?              @map("beneficiary_user_id")
-  categoryId        String?              @map("category_id")
-  recurrenceRule    RecurrenceFrequency? @map("recurrence_rule")
+  id                   String               @id @default(uuid())
+  householdId          String               @map("household_id")
+  label                String
+  beneficiaryUserId    String?              @map("beneficiary_user_id")
+  categoryId           String?              @map("category_id")
+  recurrenceRule       RecurrenceFrequency? @map("recurrence_rule")
   // Lot 11 (§1) : date d'ancrage de la récurrence (jour habituel de versement) — sert de
   // référence à recurrence.util.ts::occurrenceDatesInRange, jamais utilisée seule comme
   // une IncomeOccurrence. NULL = pas encore configuré (ex. source ponctuelle) : aucune
   // génération automatique tant que ce champ est vide.
-  recurrenceAnchorDate DateTime?         @map("recurrence_anchor_date") @db.Date
-  usualAmount       Decimal              @map("usual_amount") @db.Decimal(14, 2)
-  isRecurring       Boolean              @default(true) @map("is_recurring")
-  defaultAccountId  String               @map("default_account_id")
-  status            IncomeSourceStatus   @default(actif)
-  createdAt         DateTime             @default(now()) @map("created_at")
-  updatedAt         DateTime             @updatedAt @map("updated_at")
+  recurrenceAnchorDate DateTime?            @map("recurrence_anchor_date") @db.Date
+  usualAmount          Decimal              @map("usual_amount") @db.Decimal(14, 2)
+  isRecurring          Boolean              @default(true) @map("is_recurring")
+  defaultAccountId     String               @map("default_account_id")
+  status               IncomeSourceStatus   @default(actif)
+  createdAt            DateTime             @default(now()) @map("created_at")
+  updatedAt            DateTime             @updatedAt @map("updated_at")
 
   household      Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
   beneficiary    User?              @relation(fields: [beneficiaryUserId], references: [id])
@@ -570,13 +578,13 @@ model IncomeOccurrence {
   account      FinancialAccount? @relation("IncomeOccurrenceAccount", fields: [accountId], references: [id])
   confirmedBy  User?             @relation(fields: [confirmedByUserId], references: [id])
 
+  // Lot 11 (§1) : anti-doublon pour ensureIncomeOccurrencesUntil (createMany skipDuplicates) —
+  // une même source ne peut jamais avoir deux occurrences à la même usualDate.
+  @@unique([incomeSourceId, usualDate])
   // Filtré par computeHorizon/computeProjection (status='prevu', usualDate dans l'horizon,
   // §5/§23 Lots 5/7) — la requête la plus fréquente sur cette table.
   @@index([incomeSourceId])
   @@index([status, usualDate])
-  // Lot 11 (§1) : anti-doublon pour ensureIncomeOccurrencesUntil (createMany skipDuplicates) —
-  // une même source ne peut jamais avoir deux occurrences à la même usualDate.
-  @@unique([incomeSourceId, usualDate])
   @@map("income_occurrence")
 }
 
@@ -639,12 +647,12 @@ model Deadline {
   payments         Payment[]
   childAllocations DeadlineChildAllocation[]
 
-  @@index([chargePlanId])
-  @@index([dueDate])
-  @@index([provisionId])
   // Lot 11 (§1) : anti-doublon pour ensureChargeDeadlinesUntil (createMany skipDuplicates) —
   // un même ChargePlan ne peut jamais avoir deux échéances à la même due_date.
   @@unique([chargePlanId, dueDate])
+  @@index([chargePlanId])
+  @@index([dueDate])
+  @@index([provisionId])
   @@map("deadline")
 }
 
@@ -763,16 +771,23 @@ model AdHocExpense {
 // RG-110/111 : regroupement générique thématique — aucun agrégat stocké (budget_total,
 // paid_total...), tout est calculé à la demande (FinancialPlansService).
 model FinancialPlan {
-  id                String   @id @default(uuid())
-  householdId       String   @map("household_id")
+  id                String            @id @default(uuid())
+  householdId       String            @map("household_id")
   label             String
-  periodStart       DateTime @map("period_start") @db.Date
-  periodEnd         DateTime @map("period_end") @db.Date
+  // Lot 11 (§9/§11 cadrage V1) : distinction explicite du type de plan pour l'UI mobile
+  // (assistant scolaire vs assistant voyage vs plan libre) — jamais déduite du texte de
+  // `label`. Purement informatif, aucune logique métier ne branche dessus.
+  planType          FinancialPlanType @default(other) @map("plan_type")
+  // Lot 11 (§10) : destination réelle du plan Voyage — donnée métier propre, jamais
+  // encodée dans `label`. NULL pour les plans non-voyage.
+  destination       String?
+  periodStart       DateTime          @map("period_start") @db.Date
+  periodEnd         DateTime          @map("period_end") @db.Date
   // Lot 6 (RG-112) — relation informative pour l'affichage consolidé ; la couverture
   // réelle reste régie par RG-090 indépendamment du FinancialPlan.
-  linkedProvisionId String?  @map("linked_provision_id")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  linkedProvisionId String?           @map("linked_provision_id")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
 
   household       Household                  @relation(fields: [householdId], references: [id], onDelete: Cascade)
   chargePlans     ChargePlan[]

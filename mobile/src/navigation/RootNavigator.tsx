@@ -23,6 +23,7 @@ import { FinancialPlansScreen } from '../screens/financial-plans/FinancialPlansS
 import { FinancialPlanDetailScreen } from '../screens/financial-plans/FinancialPlanDetailScreen';
 import { ConfirmDeadlineScreen } from '../screens/financial-plans/ConfirmDeadlineScreen';
 import { SchoolWizardScreen } from '../screens/school-wizard/SchoolWizardScreen';
+import { TravelWizardScreen } from '../screens/travel-wizard/TravelWizardScreen';
 import { CreatePocketScreen } from '../screens/savings/CreatePocketScreen';
 import { PocketDetailScreen } from '../screens/savings/PocketDetailScreen';
 import { GoalsScreen } from '../screens/savings/GoalsScreen';
@@ -91,6 +92,7 @@ export function RootNavigator() {
       <Stack.Screen name="FinancialPlanDetail" component={FinancialPlanDetailScreen} options={{ headerShown: true, title: 'Plan financier' }} />
       <Stack.Screen name="ConfirmDeadline" component={ConfirmDeadlineScreen} options={{ headerShown: true, title: 'Confirmer la facture', presentation: 'modal' }} />
       <Stack.Screen name="SchoolWizard" component={SchoolWizardScreen} options={{ presentation: 'modal' }} />
+      <Stack.Screen name="TravelWizard" component={TravelWizardScreen} options={{ presentation: 'modal' }} />
       <Stack.Screen name="CreatePocket" component={CreatePocketScreen} options={{ headerShown: true, title: 'Nouvelle poche', presentation: 'modal' }} />
       <Stack.Screen name="PocketDetail" component={PocketDetailScreen} options={{ headerShown: true, title: 'Épargne' }} />
       <Stack.Screen name="Goals" component={GoalsScreen} options={{ headerShown: true, title: 'Objectifs' }} />

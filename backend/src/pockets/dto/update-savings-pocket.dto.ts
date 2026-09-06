@@ -1,4 +1,4 @@
-import { IsBoolean, IsISO8601, IsNumber, IsOptional, IsPositive, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsISO8601, IsNumber, IsOptional, IsPositive, IsString, IsUUID, MinLength } from 'class-validator';
 
 /** §22 : is_protected reste modifiable par une action utilisateur explicite (suspendre/réaffecter). */
 export class UpdateSavingsPocketDto {
@@ -19,4 +19,9 @@ export class UpdateSavingsPocketDto {
   @IsOptional()
   @IsBoolean()
   isProtected?: boolean;
+
+  /** Lot 11 (§4) : corrige la localisation déclarée (informative en virtual_allocation, réelle en backed_by_account). */
+  @IsOptional()
+  @IsUUID()
+  linkedAccountId?: string;
 }

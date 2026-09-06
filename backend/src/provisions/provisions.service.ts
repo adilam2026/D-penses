@@ -25,14 +25,15 @@ export class ProvisionsService {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
 
-      if (dto.allocationMode === 'backed_by_account') {
-        if (!dto.linkedAccountId) {
-          throw new BadRequestException('linkedAccountId est requis quand allocationMode = backed_by_account (RG-072)');
-        }
+      if (dto.allocationMode === 'backed_by_account' && !dto.linkedAccountId) {
+        throw new BadRequestException('linkedAccountId est requis quand allocationMode = backed_by_account (RG-072)');
+      }
+      // Lot 11 (§4 cadrage V1) : linkedAccountId reste autorisé en virtual_allocation —
+      // purement INFORMATIF, jamais lu par computePocketCurrentAmount/computeReservedAmounts
+      // pour ce mode (cf. pockets.service.ts, même règle).
+      if (dto.linkedAccountId) {
         const account = await tx.financialAccount.findFirst({ where: { id: dto.linkedAccountId, householdId } });
         if (!account) throw new NotFoundException('Compte introuvable dans ce foyer');
-      } else if (dto.linkedAccountId) {
-        throw new BadRequestException('linkedAccountId doit être absent quand allocationMode = virtual_allocation (RG-071)');
       }
 
       const provision = await tx.provision.create({
@@ -40,7 +41,7 @@ export class ProvisionsService {
           householdId,
           name: dto.name,
           allocationMode: dto.allocationMode,
-          linkedAccountId: dto.allocationMode === 'backed_by_account' ? dto.linkedAccountId : null,
+          linkedAccountId: dto.linkedAccountId ?? null,
           isFlexible: dto.isFlexible ?? true,
         },
       });
@@ -78,7 +79,11 @@ export class ProvisionsService {
       const tx = this.rlsContext.getClient();
       const provision = await tx.provision.findFirst({ where: { id, householdId } });
       if (!provision) throw new NotFoundException('Provision introuvable');
-      await tx.provision.update({ where: { id }, data: { name: dto.name, isFlexible: dto.isFlexible } });
+      if (dto.linkedAccountId) {
+        const account = await tx.financialAccount.findFirst({ where: { id: dto.linkedAccountId, householdId } });
+        if (!account) throw new NotFoundException('Compte introuvable dans ce foyer');
+      }
+      await tx.provision.update({ where: { id }, data: { name: dto.name, isFlexible: dto.isFlexible, linkedAccountId: dto.linkedAccountId } });
       return this.detailOnTx(tx, id);
     });
   }

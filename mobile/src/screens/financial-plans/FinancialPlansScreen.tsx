@@ -6,6 +6,8 @@ import * as api from '../../api/client';
 interface FinancialPlan {
   id: string;
   label: string;
+  planType: 'school' | 'travel' | 'other';
+  destination: string | null;
   knownPlanCost: number;
   remainingDue: number;
   completude: 'complet' | 'contient_estimations' | 'contient_inconnues';
@@ -15,6 +17,12 @@ const COMPLETUDE_LABEL: Record<FinancialPlan['completude'], string> = {
   complet: 'Complet',
   contient_estimations: 'Contient des estimations',
   contient_inconnues: 'Incomplet — montants inconnus',
+};
+
+const PLAN_TYPE_ICON: Record<FinancialPlan['planType'], string> = {
+  school: '🎓',
+  travel: '✈️',
+  other: '📁',
 };
 
 /** Liste des FinancialPlan (§7/§15) — École 2026/2027, Vacances, Travaux maison... */
@@ -44,6 +52,9 @@ export function FinancialPlansScreen() {
         <TouchableOpacity style={styles.addButtonOutline} onPress={() => navigation.getParent()?.navigate('SchoolWizard')}>
           <Text style={styles.addButtonOutlineText}>🎓 Frais scolaires</Text>
         </TouchableOpacity>
+        <TouchableOpacity style={styles.addButtonOutline} onPress={() => navigation.getParent()?.navigate('TravelWizard')}>
+          <Text style={styles.addButtonOutlineText}>✈️ Voyage</Text>
+        </TouchableOpacity>
       </View>
 
       <FlatList
@@ -53,7 +64,10 @@ export function FinancialPlansScreen() {
         ListEmptyComponent={!loading ? <Text style={styles.empty}>Aucun plan financier pour l'instant.</Text> : null}
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.card} onPress={() => navigation.getParent()?.navigate('FinancialPlanDetail', { id: item.id })}>
-            <Text style={styles.cardTitle}>{item.label}</Text>
+            <Text style={styles.cardTitle}>
+              {PLAN_TYPE_ICON[item.planType]} {item.label}
+              {item.destination ? ` · ${item.destination}` : ''}
+            </Text>
             <Text style={styles.cardMeta}>{COMPLETUDE_LABEL[item.completude]}</Text>
             <View style={styles.figuresRow}>
               <View>
@@ -74,7 +88,7 @@ export function FinancialPlansScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F6F5F2', paddingTop: 16, paddingHorizontal: 20 },
-  header: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 16 },
+  header: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 16, gap: 8 },
   addButtonOutline: { backgroundColor: '#172436', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
   addButtonOutlineText: { color: '#fff', fontSize: 12, fontWeight: '600' },
   empty: { color: '#6B747C', textAlign: 'center', marginTop: 24 },

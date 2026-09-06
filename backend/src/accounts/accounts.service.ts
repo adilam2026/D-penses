@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { getAccountBalance } from '../common/ledger/ledger.util';
-import { computeTreasurySummary } from '../common/ledger/treasury.util';
+import { computeAccountEnvelopeCoverage, computeTreasurySummary } from '../common/ledger/treasury.util';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { CreateTransferDto } from './dto/create-transfer.dto';
 import { ReconcileDto } from './dto/reconcile.dto';
@@ -50,7 +50,11 @@ export class AccountsService {
         orderBy: { createdAt: 'asc' },
       });
       return Promise.all(
-        accounts.map(async (a) => ({ ...a, soldeCourant: await this.getBalance(a.id) })),
+        accounts.map(async (a) => {
+          const soldeCourant = await this.getBalance(a.id);
+          const { reservedByEnvelopes } = await computeAccountEnvelopeCoverage(tx, a.id);
+          return { ...a, soldeCourant, reservedByEnvelopes };
+        }),
       );
     });
   }
@@ -60,7 +64,9 @@ export class AccountsService {
       const tx = this.rlsContext.getClient();
       const account = await tx.financialAccount.findFirst({ where: { id, householdId } });
       if (!account) throw new NotFoundException('Compte introuvable');
-      return { ...account, soldeCourant: await this.getBalance(account.id) };
+      const soldeCourant = await this.getBalance(account.id);
+      const { reservedByEnvelopes } = await computeAccountEnvelopeCoverage(tx, account.id);
+      return { ...account, soldeCourant, reservedByEnvelopes };
     });
   }
 

@@ -25,14 +25,16 @@ export class PocketsService {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
 
-      if (dto.allocationMode === 'backed_by_account') {
-        if (!dto.linkedAccountId) {
-          throw new BadRequestException('linkedAccountId est requis quand allocationMode = backed_by_account (RG-072)');
-        }
+      if (dto.allocationMode === 'backed_by_account' && !dto.linkedAccountId) {
+        throw new BadRequestException('linkedAccountId est requis quand allocationMode = backed_by_account (RG-072)');
+      }
+      // Lot 11 (§4 cadrage V1) : linkedAccountId reste autorisé en virtual_allocation —
+      // purement INFORMATIF (localisation déclarée de la réservation), jamais utilisé
+      // par computePocketCurrentAmount pour ce mode (RG-071, toujours Σ PocketMovement
+      // confirmés), jamais lu par computeReservedAmounts (toujours global au foyer).
+      if (dto.linkedAccountId) {
         const account = await tx.financialAccount.findFirst({ where: { id: dto.linkedAccountId, householdId } });
         if (!account) throw new NotFoundException('Compte introuvable dans ce foyer');
-      } else if (dto.linkedAccountId) {
-        throw new BadRequestException('linkedAccountId doit être absent quand allocationMode = virtual_allocation (RG-071)');
       }
 
       // RG-047 : protection par défaut si épargne enfant avec versement récurrent déclaré —
@@ -46,7 +48,7 @@ export class PocketsService {
           ownerUserId: dto.ownerUserId,
           beneficiaryChildId: dto.beneficiaryChildId,
           allocationMode: dto.allocationMode,
-          linkedAccountId: dto.allocationMode === 'backed_by_account' ? dto.linkedAccountId : null,
+          linkedAccountId: dto.linkedAccountId ?? null,
           targetAmount: dto.targetAmount,
           targetDate: dto.targetDate ? new Date(dto.targetDate) : undefined,
           isProtected,
@@ -78,6 +80,10 @@ export class PocketsService {
       const tx = this.rlsContext.getClient();
       const pocket = await tx.savingsPocket.findFirst({ where: { id, householdId } });
       if (!pocket) throw new NotFoundException('Poche introuvable');
+      if (dto.linkedAccountId) {
+        const account = await tx.financialAccount.findFirst({ where: { id: dto.linkedAccountId, householdId } });
+        if (!account) throw new NotFoundException('Compte introuvable dans ce foyer');
+      }
       const updated = await tx.savingsPocket.update({
         where: { id },
         data: {
@@ -85,6 +91,7 @@ export class PocketsService {
           targetAmount: dto.targetAmount,
           targetDate: dto.targetDate ? new Date(dto.targetDate) : undefined,
           isProtected: dto.isProtected,
+          linkedAccountId: dto.linkedAccountId,
         },
       });
       return this.withCurrentAmount(tx, updated);

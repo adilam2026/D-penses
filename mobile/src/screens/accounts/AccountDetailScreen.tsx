@@ -19,6 +19,7 @@ interface Account {
   name: string;
   type: string;
   soldeCourant: number;
+  reservedByEnvelopes: number;
 }
 
 interface Reconciliation {
@@ -156,6 +157,23 @@ export function AccountDetailScreen() {
           <Text style={styles.heroValue}>{account.soldeCourant.toLocaleString('fr-FR')} DH</Text>
         </View>
 
+        {account.reservedByEnvelopes > 0 && (
+          <View style={[styles.card, account.reservedByEnvelopes > account.soldeCourant && styles.cardWarning]}>
+            <Text style={styles.cardTitle}>Enveloppes localisées sur ce compte</Text>
+            <Text style={styles.cardMeta}>Réservé : {account.reservedByEnvelopes.toLocaleString('fr-FR')} DH</Text>
+            {account.reservedByEnvelopes > account.soldeCourant ? (
+              <Text style={styles.warningText}>
+                ⚠ Réservations insuffisamment couvertes : il manque {(account.reservedByEnvelopes - account.soldeCourant).toLocaleString('fr-FR')} DH
+                sur ce compte.
+              </Text>
+            ) : (
+              <Text style={styles.cardMeta}>
+                Libre physiquement non affecté sur ce compte : {(account.soldeCourant - account.reservedByEnvelopes).toLocaleString('fr-FR')} DH
+              </Text>
+            )}
+          </View>
+        )}
+
         <Text style={styles.sectionTitle}>Rapprochement</Text>
         <Text style={styles.help}>Saisissez le solde constaté (ex. sur votre relevé bancaire) pour vérifier s'il correspond au solde calculé.</Text>
         <View style={styles.row}>
@@ -261,8 +279,10 @@ const styles = StyleSheet.create({
   buttonSecondary: { backgroundColor: '#EEF0F3', borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
   buttonSecondaryText: { color: '#172436', fontWeight: '600', fontSize: 12 },
   card: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#E3E1DC' },
+  cardWarning: { borderColor: '#B3261E', backgroundColor: '#FBEDEC' },
   cardTitle: { fontSize: 13, fontWeight: '700', color: '#172436' },
   cardMeta: { fontSize: 12, color: '#6B747C', marginTop: 2 },
+  warningText: { fontSize: 12, color: '#B3261E', fontWeight: '600', marginTop: 4 },
   adjustBox: { marginTop: 10 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
   chip: {

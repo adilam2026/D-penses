@@ -50,7 +50,7 @@ export function EpargneScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scroll} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
       <View style={styles.headerRow}>
-        <Text style={styles.title}>Épargne</Text>
+        <Text style={styles.title}>Enveloppes</Text>
         <TouchableOpacity style={styles.goalsButton} onPress={() => navigation.getParent()?.navigate('Goals')}>
           <Text style={styles.goalsButtonText}>Objectifs</Text>
         </TouchableOpacity>

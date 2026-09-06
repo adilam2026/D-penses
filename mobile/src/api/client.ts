@@ -113,12 +113,9 @@ export const createAccount = (data: { name: string; type: string; initialBalance
 
 export const setAccountFavorite = (accountId: string) => apiFetch(`/accounts/${accountId}/favorite`, { method: 'POST' });
 
-export const getAccount = async (accountId: string): Promise<{ id: string; name: string; type: string; soldeCourant: number }> => {
-  const list = await listAccounts();
-  const account = list.find((a: { id: string }) => a.id === accountId);
-  if (!account) throw new ApiError(404, 'Compte introuvable');
-  return account;
-};
+export const getAccount = (
+  accountId: string,
+): Promise<{ id: string; name: string; type: string; soldeCourant: number; reservedByEnvelopes: number }> => apiFetch(`/accounts/${accountId}`);
 
 // ---------- Rapprochement / ajustement de compte (Lot 1) ----------
 export const createReconciliation = (accountId: string, data: { declaredBalance: number }) =>
@@ -258,11 +255,28 @@ export interface SchoolWizardItem {
   amount?: number | null;
   dueDate: string;
   obligationStatus?: string;
+  recurrenceRule?: 'hebdomadaire' | 'mensuel' | 'trimestriel' | 'semestriel' | 'annuel';
   childIds?: string[];
 }
 
 export const submitSchoolWizard = (data: { label: string; childIds: string[]; periodStart: string; periodEnd: string; items: SchoolWizardItem[] }) =>
   apiFetch('/school-wizard', { method: 'POST', body: data });
+
+// ---------- Assistant Voyage (§39/40 cadrage V1) ----------
+export interface TravelWizardItem {
+  label: string;
+  amount?: number | null;
+  dueDate: string;
+}
+
+export const submitTravelWizard = (data: {
+  label: string;
+  destination?: string;
+  periodStart: string;
+  periodEnd: string;
+  linkedProvisionId?: string;
+  items: TravelWizardItem[];
+}) => apiFetch('/travel-wizard', { method: 'POST', body: data });
 
 // ---------- Actions à traiter ----------
 export const listActionsATraiter = () => apiFetch('/actions-a-traiter');
@@ -294,6 +308,8 @@ export interface CreatePocketBody {
 export const listPockets = () => apiFetch('/pockets');
 export const getPocket = (id: string) => apiFetch(`/pockets/${id}`);
 export const createPocket = (data: CreatePocketBody) => apiFetch('/pockets', { method: 'POST', body: data });
+export const updatePocket = (id: string, data: { name?: string; targetAmount?: number; targetDate?: string; isProtected?: boolean; linkedAccountId?: string }) =>
+  apiFetch(`/pockets/${id}`, { method: 'PATCH', body: data });
 export const contributePocket = (id: string, data: { amount: number; date?: string; intentionLabel?: string; confirmed?: boolean }) =>
   apiFetch(`/pockets/${id}/contribute`, { method: 'POST', body: data });
 export const withdrawPocket = (id: string, data: { amount: number; date?: string; intentionLabel?: string }) =>
@@ -312,6 +328,8 @@ export interface CreateProvisionBody {
 export const listProvisions = () => apiFetch('/provisions');
 export const getProvision = (id: string) => apiFetch(`/provisions/${id}`);
 export const createProvision = (data: CreateProvisionBody) => apiFetch('/provisions', { method: 'POST', body: data });
+export const updateProvision = (id: string, data: { name?: string; isFlexible?: boolean; linkedAccountId?: string }) =>
+  apiFetch(`/provisions/${id}`, { method: 'PATCH', body: data });
 export const contributeProvision = (id: string, data: { amount: number; date?: string; intentionLabel?: string; confirmed?: boolean }) =>
   apiFetch(`/provisions/${id}/contribute`, { method: 'POST', body: data });
 export const withdrawProvision = (id: string, data: { amount: number; date?: string; intentionLabel?: string }) =>

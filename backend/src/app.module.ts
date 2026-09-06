@@ -19,6 +19,7 @@ import { ExpensesModule } from './expenses/expenses.module';
 import { FinancialPlansModule } from './financial-plans/financial-plans.module';
 import { ActionsModule } from './actions/actions.module';
 import { SchoolWizardModule } from './school-wizard/school-wizard.module';
+import { TravelWizardModule } from './travel-wizard/travel-wizard.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { CalendarModule } from './calendar/calendar.module';
 import { PocketsModule } from './pockets/pockets.module';
@@ -47,6 +48,7 @@ import { AppController } from './app.controller';
     FinancialPlansModule,
     ActionsModule,
     SchoolWizardModule,
+    TravelWizardModule,
     DashboardModule,
     CalendarModule,
     PocketsModule,

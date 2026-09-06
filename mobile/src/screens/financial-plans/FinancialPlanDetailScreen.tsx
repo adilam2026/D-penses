@@ -5,11 +5,31 @@ import * as api from '../../api/client';
 
 interface DeadlineRow {
   id: string;
+  dueDate: string;
   chargePlanLabel: string;
   amountCurrent: string | number | null;
   amountStatus: 'inconnu' | 'estime' | 'confirme';
   resteAPayer: number | null;
-  financialStatus: string;
+  financialStatus: 'ouverte' | 'partiellement_payee' | 'soldee' | 'annulee';
+  provisionId: string | null;
+}
+
+const STATUS_MARK: Record<DeadlineRow['financialStatus'], string> = {
+  ouverte: '○',
+  partiellement_payee: '◐',
+  soldee: '✓',
+  annulee: '✕',
+};
+
+const STATUS_LABEL: Record<DeadlineRow['financialStatus'], string> = {
+  ouverte: 'Ouverte',
+  partiellement_payee: 'Partiellement payée',
+  soldee: 'Soldée',
+  annulee: 'Annulée',
+};
+
+function formatShortDate(iso: string) {
+  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
 }
 
 interface UnknownItem {
@@ -55,7 +75,14 @@ export function FinancialPlanDetailScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setDetail(await api.getFinancialPlan(id));
+      const d: FinancialPlanDetail = await api.getFinancialPlan(id);
+      // Tri chronologique (§26 cadrage V1) : dueDate ASC, id en départage — jamais
+      // l'ordre de création des ChargePlan, purement un affichage mobile.
+      d.deadlinesCertain = [...d.deadlinesCertain].sort((a, b) => {
+        const byDate = a.dueDate.localeCompare(b.dueDate);
+        return byDate !== 0 ? byDate : a.id.localeCompare(b.id);
+      });
+      setDetail(d);
     } finally {
       setLoading(false);
     }
@@ -92,21 +119,35 @@ export function FinancialPlanDetailScreen() {
       {detail.deadlinesCertain.length === 0 ? (
         <Text style={styles.empty}>Aucune échéance certaine pour l'instant.</Text>
       ) : (
-        detail.deadlinesCertain.map((d) => (
-          <TouchableOpacity
-            key={d.id}
-            style={styles.row}
-            onPress={() => d.amountStatus !== 'confirme' && navigation.getParent()?.navigate('ConfirmDeadline', { id: d.id })}
-          >
-            <View>
-              <Text style={styles.rowLabel}>{d.chargePlanLabel}</Text>
-              <Text style={styles.rowMeta}>
-                {d.amountStatus === 'confirme' ? 'Confirmé' : d.amountStatus === 'estime' ? 'Estimé — appuyer pour confirmer' : 'Inconnu'}
-              </Text>
-            </View>
-            <Text style={styles.rowAmount}>{d.resteAPayer !== null ? `${Number(d.resteAPayer).toLocaleString('fr-FR')} DH restants` : '—'}</Text>
-          </TouchableOpacity>
-        ))
+        detail.deadlinesCertain.map((d) => {
+          const isOpen = d.financialStatus === 'ouverte' || d.financialStatus === 'partiellement_payee';
+          return (
+            <TouchableOpacity
+              key={d.id}
+              style={styles.row}
+              onPress={() => d.amountStatus !== 'confirme' && navigation.getParent()?.navigate('ConfirmDeadline', { id: d.id })}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowLabel}>
+                  {STATUS_MARK[d.financialStatus]} {d.chargePlanLabel} · {formatShortDate(d.dueDate)}
+                  {d.provisionId ? ' · 💰' : ''}
+                </Text>
+                <Text style={styles.rowMeta}>
+                  {STATUS_LABEL[d.financialStatus]} ·{' '}
+                  {d.amountStatus === 'confirme' ? 'Montant confirmé' : d.amountStatus === 'estime' ? 'Estimé — appuyer pour confirmer' : 'Montant inconnu'}
+                </Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={styles.rowAmount}>{d.resteAPayer !== null ? `${Number(d.resteAPayer).toLocaleString('fr-FR')} DH restants` : '—'}</Text>
+                {isOpen && (
+                  <TouchableOpacity style={styles.payButton} onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: d.id })}>
+                    <Text style={styles.payButtonText}>Payer</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </TouchableOpacity>
+          );
+        })
       )}
 
       <Text style={styles.sectionTitle}>Options envisagées</Text>
@@ -174,5 +215,7 @@ const styles = StyleSheet.create({
   rowLabel: { fontSize: 13, fontWeight: '600', color: '#172436' },
   rowMeta: { fontSize: 11, color: '#6B747C', marginTop: 2 },
   rowAmount: { fontSize: 13, fontWeight: '700', color: '#172436' },
+  payButton: { backgroundColor: '#172436', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5, marginTop: 6 },
+  payButtonText: { color: '#fff', fontSize: 11, fontWeight: '600' },
   optionTotal: { fontSize: 11, color: '#6B747C', marginTop: 4, marginBottom: 4, fontStyle: 'italic' },
 });

@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import { ArrayMinSize, IsArray, IsIn, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, MinLength, ValidateNested } from 'class-validator';
 
 const OBLIGATION_VALUES = ['obligatoire', 'optionnelle_envisagee', 'optionnelle_souscrite', 'optionnelle_refusee'] as const;
+const RECURRENCE_VALUES = ['hebdomadaire', 'mensuel', 'trimestriel', 'semestriel', 'annuel', 'ponctuel'] as const;
 
 /**
  * Une étape de l'assistant (§17) : scolarité T1/T2/T3, fournitures, uniforme,
@@ -26,6 +27,18 @@ export class SchoolWizardItemDto {
   @IsOptional()
   @IsIn(OBLIGATION_VALUES)
   obligationStatus?: (typeof OBLIGATION_VALUES)[number];
+
+  /**
+   * Lot 11 (§20 cadrage V1) : périodicité du poste — absent/ponctuel = une seule
+   * Deadline (comportement historique). Toute autre valeur : le ChargePlan passe
+   * en generationMode=auto_frequence, seule LA PREMIÈRE Deadline (dueDate) est
+   * créée ici ; les occurrences suivantes sont générées par
+   * ensureChargeDeadlinesUntil (même moteur que les charges récurrentes
+   * génériques, Lot 11 §1 — jamais une deuxième logique de récurrence).
+   */
+  @IsOptional()
+  @IsIn(RECURRENCE_VALUES)
+  recurrenceRule?: (typeof RECURRENCE_VALUES)[number];
 
   /** Enfants concernés par cette ligne précise — défaut : tous les enfants du plan. */
   @IsOptional()

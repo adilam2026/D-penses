@@ -23,9 +23,15 @@ const SECTIONS: { title: string; items: MenuItem[] }[] = [
   },
   {
     title: 'Famille',
+    items: [{ label: 'Enfants', icon: 'people-outline', route: 'Children' }],
+  },
+  {
+    title: 'Mes projets',
     items: [
-      { label: 'Enfants', icon: 'people-outline', route: 'Children' },
-      { label: 'Plans financiers', icon: 'school-outline', route: 'FinancialPlans' },
+      { label: 'Plans financiers', icon: 'folder-outline', route: 'FinancialPlans' },
+      { label: 'Voyages', icon: 'airplane-outline', route: 'TravelWizard' },
+      { label: 'Frais scolaires', icon: 'school-outline', route: 'SchoolWizard' },
+      { label: 'Objectifs', icon: 'flag-outline', route: 'Goals' },
     ],
   },
   {

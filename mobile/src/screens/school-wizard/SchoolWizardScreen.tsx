@@ -10,11 +10,23 @@ interface Child {
   lastName: string;
 }
 
+type RecurrenceRule = 'ponctuel' | 'hebdomadaire' | 'mensuel' | 'trimestriel' | 'semestriel' | 'annuel';
+
+const RECURRENCE_LABEL: Record<RecurrenceRule, string> = {
+  ponctuel: 'Ponctuel',
+  hebdomadaire: 'Hebdomadaire',
+  mensuel: 'Mensuel',
+  trimestriel: 'Trimestriel',
+  semestriel: 'Semestriel',
+  annuel: 'Annuel',
+};
+
 interface ItemState {
   included: boolean;
   amount: string;
   unknown: boolean;
   dueDate: string;
+  recurrenceRule: RecurrenceRule;
 }
 
 interface ExtraItem {
@@ -24,12 +36,16 @@ interface ExtraItem {
   dueDate: string;
 }
 
-function newItem(dueDate: string, included = true): ItemState {
-  return { included, amount: '', unknown: false, dueDate };
+function newItem(dueDate: string, included = true, recurrenceRule: RecurrenceRule = 'ponctuel'): ItemState {
+  return { included, amount: '', unknown: false, dueDate, recurrenceRule };
 }
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 const STEP_TITLES = [
@@ -74,7 +90,9 @@ export function SchoolWizardScreen() {
   const [uniforme, setUniforme] = useState<ItemState>(newItem(todayIso()));
   const [sorties, setSorties] = useState<ItemState>(newItem(todayIso()));
   const [restauration, setRestauration] = useState<ItemState>(newItem(todayIso()));
-  const [garderie, setGarderie] = useState<ItemState & { souscrite: boolean }>({ ...newItem(todayIso(), false), souscrite: false });
+  const [garderie, setGarderie] = useState<ItemState & { souscrite: boolean }>({ ...newItem(todayIso(), false, 'mensuel'), souscrite: false });
+
+  const [annualTotal, setAnnualTotal] = useState('');
   const [assurance, setAssurance] = useState<ItemState>(newItem(todayIso()));
   const [reinscription, setReinscription] = useState<ItemState>(newItem(todayIso()));
   const [autres, setAutres] = useState<ExtraItem[]>([]);
@@ -90,6 +108,15 @@ export function SchoolWizardScreen() {
     setSelectedChildIds((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));
   }
 
+  /** Aide T1/T2/T3 (§17bis) : répartition indicative 4/10-3/10-3/10 d'un total annuel — reste éditable ligne par ligne ensuite. */
+  function applyAnnualDistribution() {
+    const total = Number(annualTotal.replace(',', '.'));
+    if (!total || total <= 0) return;
+    setT1({ ...t1, included: true, unknown: false, amount: String(round2(total * 0.4)) });
+    setT2({ ...t2, included: true, unknown: false, amount: String(round2(total * 0.3)) });
+    setT3({ ...t3, included: true, unknown: false, amount: String(round2(total * 0.3)) });
+  }
+
   function buildItems(): api.SchoolWizardItem[] {
     const items: api.SchoolWizardItem[] = [];
     const push = (label: string, item: ItemState, obligationStatus?: string) => {
@@ -99,6 +126,7 @@ export function SchoolWizardScreen() {
         amount: item.unknown ? null : Number(item.amount.replace(',', '.')) || null,
         dueDate: item.dueDate,
         obligationStatus,
+        recurrenceRule: item.recurrenceRule !== 'ponctuel' ? item.recurrenceRule : undefined,
       });
     };
     push('Scolarité T1', t1);
@@ -184,6 +212,17 @@ export function SchoolWizardScreen() {
               value={value.dueDate}
               onChangeText={(dueDate) => onChange({ ...value, dueDate })}
             />
+            <Text style={styles.miniLabel}>Périodicité</Text>
+            <View style={styles.chipRow}>
+              {(Object.keys(RECURRENCE_LABEL) as RecurrenceRule[]).map((r) => (
+                <TouchableOpacity key={r} style={[styles.chipSmall, value.recurrenceRule === r && styles.chipActive]} onPress={() => onChange({ ...value, recurrenceRule: r })}>
+                  <Text style={[styles.chipText, value.recurrenceRule === r && styles.chipTextActive]}>{RECURRENCE_LABEL[r]}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {value.recurrenceRule !== 'ponctuel' && (
+              <Text style={styles.hint}>Les échéances suivantes seront générées automatiquement (même moteur que les charges récurrentes).</Text>
+            )}
           </>
         )}
       </View>
@@ -226,6 +265,19 @@ export function SchoolWizardScreen() {
       case 3:
         return (
           <View>
+            <Text style={styles.stepHint}>Aide : indiquez le total annuel de la scolarité, réparti indicativement 4/10 - 3/10 - 3/10 sur T1/T2/T3 (montant par terme ensuite éditable).</Text>
+            <View style={styles.row}>
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                placeholder="Total annuel (DH)"
+                keyboardType="decimal-pad"
+                value={annualTotal}
+                onChangeText={setAnnualTotal}
+              />
+              <TouchableOpacity style={styles.distributeButton} onPress={applyAnnualDistribution}>
+                <Text style={styles.distributeButtonText}>Répartir</Text>
+              </TouchableOpacity>
+            </View>
             <Text style={styles.subStepTitle}>T1</Text>
             <ItemStep itemLabel="Scolarité T1" value={t1} onChange={setT1} />
             <Text style={styles.subStepTitle}>T2</Text>
@@ -275,6 +327,18 @@ export function SchoolWizardScreen() {
                     onChangeText={(amount) => setGarderie({ ...garderie, amount })}
                   />
                 )}
+                <Text style={styles.miniLabel}>Périodicité</Text>
+                <View style={styles.chipRow}>
+                  {(Object.keys(RECURRENCE_LABEL) as RecurrenceRule[]).map((r) => (
+                    <TouchableOpacity
+                      key={r}
+                      style={[styles.chipSmall, garderie.recurrenceRule === r && styles.chipActive]}
+                      onPress={() => setGarderie({ ...garderie, recurrenceRule: r })}
+                    >
+                      <Text style={[styles.chipText, garderie.recurrenceRule === r && styles.chipTextActive]}>{RECURRENCE_LABEL[r]}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               </>
             )}
           </View>
@@ -357,6 +421,7 @@ const styles = StyleSheet.create({
   stepHint: { fontSize: 12, color: '#6B747C', marginBottom: 12 },
   subStepTitle: { fontSize: 13, fontWeight: '700', color: '#172436', marginTop: 12, marginBottom: 4 },
   hint: { fontSize: 11, color: '#6B747C', marginBottom: 8, fontStyle: 'italic' },
+  row: { flexDirection: 'row', alignItems: 'center' },
   toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   toggleLabel: { fontSize: 13, color: '#172436', flex: 1, marginRight: 8 },
   input: {
@@ -383,6 +448,19 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: '#172436', borderColor: '#172436' },
   chipText: { fontSize: 13, color: '#172436' },
   chipTextActive: { color: '#fff', fontWeight: '600' },
+  chipSmall: {
+    backgroundColor: '#fff',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginRight: 6,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: '#E3E1DC',
+  },
+  miniLabel: { fontSize: 11, color: '#6B747C', fontWeight: '600', marginBottom: 4 },
+  distributeButton: { backgroundColor: '#172436', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  distributeButtonText: { color: '#fff', fontWeight: '600', fontSize: 12 },
   extraBlock: { marginBottom: 8, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#E3E1DC' },
   addExtraButton: { alignItems: 'center', paddingVertical: 8 },
   addExtraButtonText: { color: '#172436', fontWeight: '600', fontSize: 13 },
