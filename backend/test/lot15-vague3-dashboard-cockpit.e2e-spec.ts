@@ -111,4 +111,65 @@ describe('Vague 3 — accueil-cockpit : champs dashboard enrichis (e2e)', () => 
     expect(typeof dashboard.body.next_30_days.closing_free_capacity).toBe('number');
     expect(dashboard.body.next_30_days.closing_free_capacity).toBe(5000);
   });
+
+  /**
+   * Correctif post-Vague 3 (point 1) — financialPlansResume expose désormais
+   * nextDeadlineDate/hasOverdue (portée certaine uniquement, même moteur que
+   * deadlinesCertain), pour que la priorisation "Mes plans" de l'accueil intègre
+   * l'urgence d'échéance sans jamais la recalculer côté mobile.
+   */
+  it('financialPlansResume expose nextDeadlineDate (échéance ouverte la plus proche) et hasOverdue', async () => {
+    const { auth } = await newHousehold();
+    const category = await http.post('/categories').set(...auth()).send({ name: 'École priorité', kind: 'expense' }).expect(201);
+
+    const planFuture = await http
+      .post('/financial-plans')
+      .set(...auth())
+      .send({ label: 'Plan futur', periodStart: '2026-09-01', periodEnd: '2027-06-30' })
+      .expect(201);
+    const cpFuture = await http
+      .post('/charge-plans')
+      .set(...auth())
+      .send({ label: 'Poste futur', categoryId: category.body.id, generationMode: 'calendrier_manuel', financialPlanId: planFuture.body.id, startDate: '2026-09-01' })
+      .expect(201);
+    await http.post(`/charge-plans/${cpFuture.body.id}/deadlines`).set(...auth()).send({ dueDate: '2027-01-15', amountCurrent: 1000, amountStatus: 'confirme' }).expect(201);
+
+    const planOverdue = await http
+      .post('/financial-plans')
+      .set(...auth())
+      .send({ label: 'Plan en retard', periodStart: '2025-01-01', periodEnd: '2025-12-31' })
+      .expect(201);
+    const cpOverdue = await http
+      .post('/charge-plans')
+      .set(...auth())
+      .send({ label: 'Poste en retard', categoryId: category.body.id, generationMode: 'calendrier_manuel', financialPlanId: planOverdue.body.id, startDate: '2025-01-01' })
+      .expect(201);
+    await http.post(`/charge-plans/${cpOverdue.body.id}/deadlines`).set(...auth()).send({ dueDate: '2025-06-15', amountCurrent: 500, amountStatus: 'confirme' }).expect(201);
+
+    const dashboard = await http.get('/dashboard/summary').set(...auth()).expect(200);
+    const resumeFuture = dashboard.body.financialPlansResume.find((p: { id: string }) => p.id === planFuture.body.id);
+    const resumeOverdue = dashboard.body.financialPlansResume.find((p: { id: string }) => p.id === planOverdue.body.id);
+
+    expect(new Date(resumeFuture.nextDeadlineDate).toISOString().slice(0, 10)).toBe('2027-01-15');
+    expect(resumeFuture.hasOverdue).toBe(false);
+    expect(new Date(resumeOverdue.nextDeadlineDate).toISOString().slice(0, 10)).toBe('2025-06-15');
+    expect(resumeOverdue.hasOverdue).toBe(true);
+  });
+
+  /**
+   * Correctif post-Vague 3 (point 2) — seuil_a_payer_days (bloc "Prochaines échéances")
+   * reflète HouseholdSettings.seuilAPayerDays : une seule source de vérité, jamais une
+   * valeur dupliquée côté mobile.
+   */
+  it('seuil_a_payer_days reflète le seuil du foyer (PATCH /households/settings), pas une valeur codée en dur', async () => {
+    const { auth } = await newHousehold();
+
+    const before = await http.get('/dashboard/summary').set(...auth()).expect(200);
+    expect(before.body.seuil_a_payer_days).toBe(7); // défaut Prisma @default(7)
+
+    await http.patch('/households/settings').set(...auth()).send({ seuilAPayerDays: 14 }).expect(200);
+
+    const after = await http.get('/dashboard/summary').set(...auth()).expect(200);
+    expect(after.body.seuil_a_payer_days).toBe(14);
+  });
 });

@@ -44,17 +44,17 @@ export class FinancialPlansService {
   }
 
   /** Variante réutilisable sur une transaction déjà ouverte (DashboardService) — jamais un second rlsContext.run() imbriqué. */
-  async listOnTx(tx: TxClient, householdId: string) {
+  async listOnTx(tx: TxClient, householdId: string, referenceDate: Date = new Date()) {
     const plans = await tx.financialPlan.findMany({ where: { householdId }, orderBy: { createdAt: 'desc' } });
-    return Promise.all(plans.map((p) => this.detailOnTx(tx, p.id)));
+    return Promise.all(plans.map((p) => this.detailOnTx(tx, p.id, referenceDate)));
   }
 
-  async findOne(userId: string, householdId: string, id: string) {
+  async findOne(userId: string, householdId: string, id: string, referenceDate: Date = new Date()) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
       const plan = await tx.financialPlan.findFirst({ where: { id, householdId } });
       if (!plan) throw new NotFoundException('FinancialPlan introuvable');
-      return this.detailOnTx(tx, id);
+      return this.detailOnTx(tx, id, referenceDate);
     });
   }
 
@@ -66,7 +66,7 @@ export class FinancialPlansService {
    * les Deadline annulées sont exclues de tout calcul (RG-107), conservées en
    * historique via les listes brutes ChargePlan/Deadline (jamais supprimées).
    */
-  private async detailOnTx(tx: TxClient, id: string) {
+  private async detailOnTx(tx: TxClient, id: string, referenceDate: Date = new Date()) {
     const plan = await tx.financialPlan.findUniqueOrThrow({
       where: { id },
       include: { beneficiaries: { include: { user: true, child: true } } },
@@ -88,6 +88,12 @@ export class FinancialPlansService {
     let hasEstimate = false;
     const deadlinesCertain: Array<Record<string, unknown>> = [];
     const unknownItems: Array<{ chargePlanId: string; label: string; deadlineId: string }> = [];
+    // Correctif post-Vague 3 (priorisation "Mes plans", accueil) — échéance certaine la
+    // plus proche et présence d'un retard, calculées ici (portée certaine uniquement,
+    // comme le reste du moteur ; unknownItems volontairement exclus, cf. RG-103) pour que
+    // le tri d'accueil réutilise ces données au lieu de les recalculer côté mobile.
+    let nextDeadlineDate: Date | null = null;
+    let hasOverdue = false;
 
     for (const cp of certainPlans) {
       for (const d of cp.deadlines) {
@@ -115,6 +121,10 @@ export class FinancialPlansService {
         const isOpen = d.financialStatus === 'ouverte' || d.financialStatus === 'partiellement_payee';
         if (isOpen) {
           remainingDue += resteAPayer; // RG-119 : uniquement le besoin encore dû, jamais une échéance soldée
+          if (resteAPayer > 0) {
+            if (d.dueDate.getTime() < referenceDate.getTime()) hasOverdue = true;
+            if (nextDeadlineDate === null || d.dueDate.getTime() < nextDeadlineDate.getTime()) nextDeadlineDate = d.dueDate;
+          }
           if (d.provisionId) {
             const coverage = await engagementNonCouvert(tx, d.id);
             coverageAffectee = coverage?.coverageAffectee ?? 0;
@@ -179,6 +189,8 @@ export class FinancialPlansService {
       provisionCoverage: round2(provisionCoverage),
       remainingToFund,
       tauxCouverture,
+      nextDeadlineDate,
+      hasOverdue,
       completude,
       envisagedTotal: round2(envisagedTotal),
       envisagedItems,

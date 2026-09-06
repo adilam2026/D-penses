@@ -27,6 +27,7 @@ jest.mock('../../api/client', () => {
 const mockedApi = api as jest.Mocked<typeof api>;
 
 const EMPTY_SUMMARY = {
+  seuil_a_payer_days: 7,
   operational_treasury: 0,
   free_available: 0,
   reserved_amount: 0,
@@ -93,7 +94,17 @@ describe('Accueil — état configuré (§7-17/§31)', () => {
       },
     ],
     financialPlansResume: [
-      { id: 'p1', label: 'École 2026/2027', knownPlanCost: 67450, remainingDue: 37450, provisionCoverage: 30000, tauxCouverture: 44, completude: 'complet' },
+      {
+        id: 'p1',
+        label: 'École 2026/2027',
+        knownPlanCost: 67450,
+        remainingDue: 37450,
+        provisionCoverage: 30000,
+        tauxCouverture: 44,
+        nextDeadlineDate: '2026-09-30',
+        hasOverdue: false,
+        completude: 'complet',
+      },
     ],
     actionsATraiter: [{ kind: 'montant_a_confirmer' as const, deadlineId: 'd2', message: 'Facture Internet à confirmer.' }],
   };
@@ -160,6 +171,138 @@ describe('Accueil — état configuré (§7-17/§31)', () => {
     await render(<HomeScreen />);
     await waitFor(() => screen.getByText('DISPONIBLE LIBRE'));
     expect(screen.queryByText(/action.*à traiter/)).toBeNull();
+  });
+});
+
+/** Correctif post-Vague 3 (point 1) — la priorité de "Mes plans" doit intégrer
+ * l'urgence d'échéance (nextDeadlineDate/hasOverdue), jamais seulement le montant :
+ * un plan avec une échéance très proche ne doit jamais être masqué par un plan
+ * moins urgent uniquement parce que son reste à financer est supérieur. */
+describe('Accueil — priorité des plans intègre l\'échéance (correctif post-Vague 3)', () => {
+  function iso(daysFromNow: number): string {
+    return new Date(Date.now() + daysFromNow * 86400000).toISOString().slice(0, 10);
+  }
+
+  it("un plan avec une échéance proche passe avant un plan au reste à financer bien plus élevé mais sans échéance proche", async () => {
+    mockedApi.getDashboardSummary.mockResolvedValue({
+      ...EMPTY_SUMMARY,
+      financialPlansResume: [
+        {
+          id: 'plan-loin',
+          label: 'Voyage lointain',
+          knownPlanCost: 60000,
+          remainingDue: 50000,
+          provisionCoverage: 5000,
+          tauxCouverture: 10,
+          nextDeadlineDate: iso(60),
+          hasOverdue: false,
+          completude: 'complet',
+        },
+        {
+          id: 'plan-proche',
+          label: 'École échéance demain',
+          knownPlanCost: 1000,
+          remainingDue: 500,
+          provisionCoverage: 500,
+          tauxCouverture: 50,
+          nextDeadlineDate: iso(1),
+          hasOverdue: false,
+          completude: 'complet',
+        },
+      ],
+    });
+    mockedApi.listAccounts.mockResolvedValue([]);
+    await render(<HomeScreen />);
+
+    await waitFor(() => screen.getByTestId('home-plan-plan-proche'));
+    const cards = screen.getAllByTestId(/^home-plan-/);
+    expect(cards.map((c) => c.props.testID)).toEqual(['home-plan-plan-proche', 'home-plan-plan-loin']);
+  });
+
+  it('un plan en retard passe toujours avant un plan non en retard, même avec une échéance plus proche sur ce dernier', async () => {
+    mockedApi.getDashboardSummary.mockResolvedValue({
+      ...EMPTY_SUMMARY,
+      financialPlansResume: [
+        {
+          id: 'plan-a-venir',
+          label: 'À venir',
+          knownPlanCost: 100000,
+          remainingDue: 100000,
+          provisionCoverage: 0,
+          tauxCouverture: 0,
+          nextDeadlineDate: iso(1),
+          hasOverdue: false,
+          completude: 'complet',
+        },
+        {
+          id: 'plan-retard',
+          label: 'En retard',
+          knownPlanCost: 100,
+          remainingDue: 100,
+          provisionCoverage: 50,
+          tauxCouverture: 50,
+          nextDeadlineDate: iso(-5),
+          hasOverdue: true,
+          completude: 'complet',
+        },
+      ],
+    });
+    mockedApi.listAccounts.mockResolvedValue([]);
+    await render(<HomeScreen />);
+
+    await waitFor(() => screen.getByTestId('home-plan-plan-retard'));
+    const cards = screen.getAllByTestId(/^home-plan-/);
+    expect(cards.map((c) => c.props.testID)).toEqual(['home-plan-plan-retard', 'home-plan-plan-a-venir']);
+  });
+});
+
+/** Correctif post-Vague 3 (point 2) — le seuil "très proche" (orange) de l'accueil doit
+ * refléter seuil_a_payer_days du foyer (déjà chargé avec le dashboard), jamais une
+ * valeur codée en dur, pour rester cohérent quel que soit le seuil configuré. */
+describe('Accueil — seuil "très proche" suit seuil_a_payer_days du foyer (correctif post-Vague 3)', () => {
+  const deadlineDueIn10Days = {
+    id: 'd-seuil',
+    chargePlanId: 'cp-seuil',
+    chargePlanLabel: 'Échéance à 10 jours',
+    dueDate: new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10),
+    amountStatus: 'confirme' as const,
+    resteAPayer: 1000,
+    coverageStatus: 'non_couverte' as const,
+  };
+
+  it('avec seuil_a_payer_days=14, une échéance à 10 jours est classée "très proche" (orange)', async () => {
+    mockedApi.getDashboardSummary.mockResolvedValue({
+      ...EMPTY_SUMMARY,
+      seuil_a_payer_days: 14,
+      deadlineItems: [deadlineDueIn10Days],
+    });
+    mockedApi.listAccounts.mockResolvedValue([]);
+    await render(<HomeScreen />);
+
+    await waitFor(() => screen.getByText('Échéance à 10 jours'));
+    const dateText = screen.getByText(
+      new Date(deadlineDueIn10Days.dueDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }),
+    );
+    const style = [dateText.props.style].flat();
+    expect(style.some((s: any) => s?.color === '#B8860B')).toBe(true);
+  });
+
+  it('avec seuil_a_payer_days=7 (défaut), la même échéance à 10 jours reste neutre (pas encore "très proche")', async () => {
+    mockedApi.getDashboardSummary.mockResolvedValue({
+      ...EMPTY_SUMMARY,
+      seuil_a_payer_days: 7,
+      deadlineItems: [deadlineDueIn10Days],
+    });
+    mockedApi.listAccounts.mockResolvedValue([]);
+    await render(<HomeScreen />);
+
+    await waitFor(() => screen.getByText('Échéance à 10 jours'));
+    const dateText = screen.getByText(
+      new Date(deadlineDueIn10Days.dueDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }),
+    );
+    const style = [dateText.props.style].flat();
+    expect(style.some((s: any) => s?.color === '#B8860B')).toBe(false);
+    expect(style.some((s: any) => s?.color === '#172436')).toBe(true);
   });
 });
 

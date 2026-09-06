@@ -46,6 +46,12 @@ export class DashboardService {
       const nextDeadline = await computeNextDeadline(tx, householdId, referenceDate);
       const actionsATraiter = await this.actions.listOnTx(tx, householdId, referenceDate);
 
+      // Correctif post-Vague 3 : seuil_a_payer_days est déjà chargé ici (foyer) — jamais un
+      // second appel réseau depuis le mobile, jamais une valeur codée en dur côté écran
+      // (HomeScreen ne doit avoir qu'UNE seule source de vérité pour ce seuil).
+      const settings = await tx.householdSettings.findUnique({ where: { householdId } });
+      const seuilAPayerDays = settings?.seuilAPayerDays ?? 7;
+
       const budgets = await tx.variableBudget.findMany({ where: { householdId }, include: { category: true } });
       const budgetsResume = await Promise.all(
         budgets.map(async (b) => {
@@ -57,13 +63,18 @@ export class DashboardService {
       // Vague 3 §13/§14 (accueil) : tauxCouverture/provisionCoverage déjà calculés par
       // FinancialPlansService.detailOnTx (Vague 2 §8) — jamais recalculés ici, seulement
       // exposés au résumé pour permettre la priorisation des plans sur l'accueil.
-      const financialPlansResume = (await this.financialPlans.listOnTx(tx, householdId)).map((p) => ({
+      // Correctif post-Vague 3 : nextDeadlineDate/hasOverdue (même moteur, même tx-scoped
+      // referenceDate) exposés pour que le tri de priorité de "Mes plans" (HomeScreen)
+      // intègre l'urgence d'échéance sans jamais la recalculer côté mobile.
+      const financialPlansResume = (await this.financialPlans.listOnTx(tx, householdId, referenceDate)).map((p) => ({
         id: p.id,
         label: p.label,
         knownPlanCost: p.knownPlanCost,
         remainingDue: p.remainingDue,
         provisionCoverage: p.provisionCoverage,
         tauxCouverture: p.tauxCouverture,
+        nextDeadlineDate: p.nextDeadlineDate,
+        hasOverdue: p.hasOverdue,
         completude: p.completude,
       }));
 
@@ -91,6 +102,7 @@ export class DashboardService {
 
       return {
         reference_date: referenceDate,
+        seuil_a_payer_days: seuilAPayerDays,
 
         operational_treasury: disponible.tresorerieOperationnelle,
         reserved_amount: disponible.montantsReserves,

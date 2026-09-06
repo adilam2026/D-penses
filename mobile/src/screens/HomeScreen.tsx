@@ -27,6 +27,8 @@ interface FinancialPlanResume {
   remainingDue: number;
   provisionCoverage: number;
   tauxCouverture: number | null;
+  nextDeadlineDate: string | null;
+  hasOverdue: boolean;
   completude: string;
 }
 
@@ -48,6 +50,7 @@ interface ActionItem {
 }
 
 interface DashboardSummary {
+  seuil_a_payer_days: number;
   operational_treasury: number;
   free_available: number;
   reserved_amount: number;
@@ -119,26 +122,45 @@ function formatLongDate(iso: string) {
 }
 
 // §12 — hiérarchie simple, jamais un tableau multicolore : en retard (rouge),
-// très proche ≤7j (orange, valeur par défaut du seuil foyer), à venir (neutre).
-function urgencyColor(dueDate: string): string {
+// très proche (orange, seuil du foyer — seuil_a_payer_days, déjà chargé avec le
+// dashboard : jamais un second appel réseau, jamais une valeur dupliquée en dur ici),
+// à venir (neutre).
+function urgencyColor(dueDate: string, seuilAPayerDays: number): string {
   const days = Math.floor((new Date(dueDate).getTime() - Date.now()) / 86400000);
   if (days < 0) return '#B3261E';
-  if (days <= 7) return '#B8860B';
+  if (days <= seuilAPayerDays) return '#B8860B';
   return '#172436';
 }
 
-// §14 — règle déterministe et documentée : les plans encore à financer d'abord,
-// triés par taux de couverture croissant (le moins couvert = le plus urgent),
-// puis par reste à financer décroissant en cas d'égalité — jamais l'ordre de création.
+// Correctif post-Vague 3 — règle déterministe et documentée à 5 niveaux, réutilisant
+// EXCLUSIVEMENT des champs déjà calculés côté backend (FinancialPlansService.detailOnTx) :
+// jamais de logique métier parallèle recalculée ici. Un plan avec une échéance ouverte
+// proche (ex. demain) ne doit jamais être masqué par un plan moins urgent uniquement
+// parce que son reste à financer est supérieur — d'où la proximité d'échéance en tête,
+// avant le montant :
+//  1) retard (échéance ouverte dépassée) d'abord ;
+//  2) puis échéance ouverte la plus proche (null = aucune échéance ouverte, en dernier) ;
+//  3) puis reste à financer décroissant ;
+//  4) puis taux de couverture croissant (le moins couvert = le plus urgent) ;
+//  5) tie-breaker stable par id (jamais l'ordre de création/réponse API).
 function prioritizePlans(plans: FinancialPlanResume[]): FinancialPlanResume[] {
   return [...plans].sort((a, b) => {
-    const aFunded = a.remainingDue <= 0;
-    const bFunded = b.remainingDue <= 0;
-    if (aFunded !== bFunded) return aFunded ? 1 : -1;
+    if (a.hasOverdue !== b.hasOverdue) return a.hasOverdue ? -1 : 1;
+
+    if (a.nextDeadlineDate !== b.nextDeadlineDate) {
+      if (a.nextDeadlineDate === null) return 1;
+      if (b.nextDeadlineDate === null) return -1;
+      const diff = new Date(a.nextDeadlineDate).getTime() - new Date(b.nextDeadlineDate).getTime();
+      if (diff !== 0) return diff;
+    }
+
+    if (a.remainingDue !== b.remainingDue) return b.remainingDue - a.remainingDue;
+
     const aCov = a.tauxCouverture ?? 100;
     const bCov = b.tauxCouverture ?? 100;
     if (aCov !== bCov) return aCov - bCov;
-    return b.remainingDue - a.remainingDue;
+
+    return a.id.localeCompare(b.id);
   });
 }
 
@@ -294,7 +316,7 @@ export function HomeScreen() {
               {upcomingDeadlines.map((d) => (
                 <TouchableOpacity key={d.id} style={styles.deadlineRow} onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: d.id })}>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.deadlineDate, { color: urgencyColor(d.dueDate) }]}>{formatShortDate(d.dueDate)}</Text>
+                    <Text style={[styles.deadlineDate, { color: urgencyColor(d.dueDate, summary.seuil_a_payer_days) }]}>{formatShortDate(d.dueDate)}</Text>
                     <Text style={styles.deadlineLabel}>{d.chargePlanLabel}</Text>
                     {d.coverageStatus === 'couverte' && <Text style={styles.coveredBadge}>✓ Couvert</Text>}
                   </View>
@@ -319,7 +341,12 @@ export function HomeScreen() {
             <View style={styles.block}>
               <Text style={styles.blockTitle}>MES PLANS</Text>
               {topPlans.map((p) => (
-                <TouchableOpacity key={p.id} style={styles.planCard} onPress={() => navigation.getParent()?.navigate('FinancialPlanDetail', { id: p.id })}>
+                <TouchableOpacity
+                  key={p.id}
+                  testID={`home-plan-${p.id}`}
+                  style={styles.planCard}
+                  onPress={() => navigation.getParent()?.navigate('FinancialPlanDetail', { id: p.id })}
+                >
                   <Text style={styles.planLabel}>{p.label}</Text>
                   <Text style={styles.planAmounts}>
                     {p.provisionCoverage.toLocaleString('fr-FR')} / {p.knownPlanCost.toLocaleString('fr-FR')} DH

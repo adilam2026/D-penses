@@ -22,6 +22,7 @@ jest.mock('../../api/client', () => {
   return {
     ...actual,
     getDashboardSummary: jest.fn().mockResolvedValue({
+      seuil_a_payer_days: 7,
       operational_treasury: 0,
       free_available: 0,
       reserved_amount: 0,
