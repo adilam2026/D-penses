@@ -1,0 +1,58 @@
+name: Railway — Vérification publique (health + smoke test OTP)
+
+# Exécuté depuis un runner GitHub Actions (accès réseau normal, contrairement
+# au bac à sable) pour prouver que le backend est réellement joignable
+# publiquement — jamais depuis localhost/le conteneur lui-même.
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: "URL HTTPS publique du backend (sans slash final), ex. https://d-penses-production.up.railway.app"
+        required: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: GET /health
+        run: |
+          set -o pipefail
+          code=$(curl -sS -o body.json -w "%{http_code}" "${{ github.event.inputs.api_url }}/health")
+          echo "HTTP $code"
+          cat body.json
+          echo
+          test "$code" = "200"
+
+      - name: Smoke test auth — signup public (aucun token/secret impliqué)
+        run: |
+          set -o pipefail
+          email="railway-smoke+$(date +%s)@example.com"
+          echo "Email de test jetable : $email"
+          code=$(curl -sS -o signup.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/auth/signup" \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"$email\",\"password\":\"password123\",\"firstName\":\"Smoke\",\"lastName\":\"Test\"}")
+          echo "HTTP $code"
+          cat signup.json
+          echo
+          test "$code" = "201"
+          grep -q '"requiresEmailVerification":true' signup.json
+
+      - name: Smoke test auth — verify-email-otp avec un code volontairement invalide (prouve le pipeline complet sans connaître le vrai code reçu par email)
+        run: |
+          set -o pipefail
+          email="railway-smoke+$(date +%s)-b@example.com"
+          curl -sS -o /dev/null -w "signup: %{http_code}\n" -X POST "${{ github.event.inputs.api_url }}/auth/signup" \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"$email\",\"password\":\"password123\",\"firstName\":\"Smoke\",\"lastName\":\"Test\"}"
+          code=$(curl -sS -o verify.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/auth/verify-email-otp" \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"$email\",\"code\":\"000000\"}")
+          echo "HTTP $code"
+          cat verify.json
+          echo
+          test "$code" = "400"
+          grep -q "invalide ou a expiré" verify.json
+
+      - name: Aucune référence à localhost dans les réponses publiques
+        run: |
+          ! grep -io "localhost" signup.json verify.json body.json
