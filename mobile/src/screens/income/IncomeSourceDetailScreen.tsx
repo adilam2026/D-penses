@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { DateField } from '../../ui/DateField';
 
 interface Occurrence {
   id: string;
@@ -112,7 +113,7 @@ export function IncomeSourceDetailScreen() {
         <Text style={styles.title}>{label}</Text>
 
         <Text style={styles.sectionTitle}>Prochaine occurrence prévue</Text>
-        <TextInput style={styles.input} placeholder="Date prévue (AAAA-MM-JJ)" value={plannedDate} onChangeText={setPlannedDate} />
+        <DateField label="Date prévue" value={plannedDate} onChange={setPlannedDate} />
         <TextInput
           style={styles.input}
           placeholder="Montant prévu (DH, facultatif — reprend le montant habituel)"

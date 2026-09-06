@@ -3,6 +3,7 @@ import { useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { DateField } from '../../ui/DateField';
 
 interface CreatedGoal {
   label: string;
@@ -72,7 +73,7 @@ export function CreateGoalScreen() {
         <TextInput style={styles.input} placeholder="15000" keyboardType="decimal-pad" value={targetAmount} onChangeText={setTargetAmount} />
 
         <Text style={styles.sectionLabel}>Date souhaitée (optionnelle)</Text>
-        <TextInput style={styles.input} placeholder="AAAA-MM-JJ" value={targetDate} onChangeText={setTargetDate} />
+        <DateField value={targetDate} onChange={setTargetDate} placeholder="Aucune date choisie" />
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 

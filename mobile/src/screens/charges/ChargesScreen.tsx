@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { DateField } from '../../ui/DateField';
 
 interface OpenDeadline {
   id: string;
@@ -142,7 +143,7 @@ export function ChargesScreen() {
             </TouchableOpacity>
           ))}
         </View>
-        <TextInput style={styles.input} placeholder="Date d'échéance (AAAA-MM-JJ)" value={dueDate} onChangeText={setDueDate} />
+        <DateField label="Date d'échéance" value={dueDate} onChange={setDueDate} />
         <View style={styles.chipRow}>
           {(['estime', 'confirme', 'inconnu'] as const).map((s) => (
             <TouchableOpacity key={s} style={[styles.chip, amountStatus === s && styles.chipActive]} onPress={() => setAmountStatus(s)}>

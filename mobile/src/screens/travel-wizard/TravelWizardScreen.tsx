@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { DateField } from '../../ui/DateField';
 import * as api from '../../api/client';
 
 interface Provision {
@@ -127,8 +128,12 @@ export function TravelWizardScreen() {
 
         <Text style={styles.sectionLabel}>Dates du voyage</Text>
         <View style={styles.row}>
-          <TextInput style={[styles.input, { flex: 1 }]} placeholder="Début (AAAA-MM-JJ)" value={periodStart} onChangeText={setPeriodStart} />
-          <TextInput style={[styles.input, { flex: 1 }]} placeholder="Fin (AAAA-MM-JJ)" value={periodEnd} onChangeText={setPeriodEnd} />
+          <View style={{ flex: 1 }}>
+            <DateField label="Début" value={periodStart} onChange={setPeriodStart} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <DateField label="Fin" value={periodEnd} onChange={setPeriodEnd} />
+          </View>
         </View>
 
         {provisions.length > 0 && (
@@ -172,12 +177,7 @@ export function TravelWizardScreen() {
                       onChangeText={(amount) => updatePoste(label, { ...item, amount })}
                     />
                   )}
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Date d'échéance (AAAA-MM-JJ)"
-                    value={item.dueDate}
-                    onChangeText={(dueDate) => updatePoste(label, { ...item, dueDate })}
-                  />
+                  <DateField value={item.dueDate} onChange={(dueDate) => updatePoste(label, { ...item, dueDate })} />
                 </>
               )}
             </View>
@@ -209,12 +209,7 @@ export function TravelWizardScreen() {
                 onChangeText={(amount) => setAutres((prev) => prev.map((e, j) => (j === i ? { ...e, amount } : e)))}
               />
             )}
-            <TextInput
-              style={styles.input}
-              placeholder="Date d'échéance (AAAA-MM-JJ)"
-              value={extra.dueDate}
-              onChangeText={(dueDate) => setAutres((prev) => prev.map((e, j) => (j === i ? { ...e, dueDate } : e)))}
-            />
+            <DateField value={extra.dueDate} onChange={(dueDate) => setAutres((prev) => prev.map((e, j) => (j === i ? { ...e, dueDate } : e)))} />
           </View>
         ))}
         <TouchableOpacity

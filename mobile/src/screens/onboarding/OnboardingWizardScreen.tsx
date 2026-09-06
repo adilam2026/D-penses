@@ -144,7 +144,7 @@ export function OnboardingWizardScreen() {
         </View>
       </ScrollView>
 
-      <View style={styles.navRow}>
+      <View style={[styles.navRow, { paddingBottom: bottomInset }]}>
         <TouchableOpacity style={styles.navButton} onPress={() => (step === 0 ? navigation.goBack() : setStep((s) => s - 1))}>
           <Text style={styles.navButtonText}>{step === 0 ? 'Fermer' : 'Précédent'}</Text>
         </TouchableOpacity>

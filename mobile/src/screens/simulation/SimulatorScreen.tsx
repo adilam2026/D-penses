@@ -3,6 +3,7 @@ import { useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { DateField } from '../../ui/DateField';
 
 interface Account {
   id: string;
@@ -194,7 +195,7 @@ export function SimulatorScreen() {
       <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} />
 
       <Text style={styles.sectionLabel}>Date</Text>
-      <TextInput style={styles.input} placeholder="AAAA-MM-JJ" value={date} onChangeText={setDate} />
+      <DateField value={date} onChange={setDate} />
 
       <Text style={styles.sectionLabel}>Compte</Text>
       <View style={styles.chipRow}>

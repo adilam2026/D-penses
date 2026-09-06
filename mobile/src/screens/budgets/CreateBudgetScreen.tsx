@@ -3,6 +3,7 @@ import { useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { DateField } from '../../ui/DateField';
 
 interface Category {
   id: string;
@@ -113,7 +114,7 @@ export function CreateBudgetScreen() {
       </View>
 
       <Text style={styles.sectionLabel}>Date de début</Text>
-      <TextInput style={styles.input} placeholder="AAAA-MM-JJ" value={startDate} onChangeText={setStartDate} />
+      <DateField value={startDate} onChange={setStartDate} />
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
