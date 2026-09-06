@@ -8,6 +8,11 @@ import { VerifyEmailScreen } from '../screens/auth/VerifyEmailScreen';
 import { HouseholdSetupScreen } from '../screens/household/HouseholdSetupScreen';
 import { QuickAddScreen } from '../screens/quickadd/QuickAddScreen';
 import { AccountsScreen } from '../screens/accounts/AccountsScreen';
+import { AccountDetailScreen } from '../screens/accounts/AccountDetailScreen';
+import { IncomeScreen } from '../screens/income/IncomeScreen';
+import { IncomeSourceDetailScreen } from '../screens/income/IncomeSourceDetailScreen';
+import { ChargesScreen } from '../screens/charges/ChargesScreen';
+import { DeadlineDetailScreen } from '../screens/charges/DeadlineDetailScreen';
 import { BudgetsScreen } from '../screens/budgets/BudgetsScreen';
 import { BudgetDetailScreen } from '../screens/budgets/BudgetDetailScreen';
 import { CreateBudgetScreen } from '../screens/budgets/CreateBudgetScreen';
@@ -66,6 +71,11 @@ export function RootNavigator() {
       <Stack.Screen name="Tabs" component={RootTabs} />
       <Stack.Screen name="QuickAdd" component={QuickAddScreen} options={{ presentation: 'modal' }} />
       <Stack.Screen name="Accounts" component={AccountsScreen} options={{ headerShown: true, title: 'Comptes' }} />
+      <Stack.Screen name="AccountDetail" component={AccountDetailScreen} options={{ headerShown: true, title: 'Compte' }} />
+      <Stack.Screen name="Income" component={IncomeScreen} options={{ headerShown: true, title: 'Revenus' }} />
+      <Stack.Screen name="IncomeSourceDetail" component={IncomeSourceDetailScreen} options={{ headerShown: true, title: 'Revenu' }} />
+      <Stack.Screen name="Charges" component={ChargesScreen} options={{ headerShown: true, title: 'Charges récurrentes' }} />
+      <Stack.Screen name="DeadlineDetail" component={DeadlineDetailScreen} options={{ headerShown: true, title: 'Échéance' }} />
       <Stack.Screen name="Budgets" component={BudgetsScreen} options={{ headerShown: true, title: 'Budgets' }} />
       <Stack.Screen name="BudgetDetail" component={BudgetDetailScreen} options={{ headerShown: true, title: 'Budget' }} />
       <Stack.Screen name="CreateBudget" component={CreateBudgetScreen} options={{ headerShown: true, title: 'Nouveau budget', presentation: 'modal' }} />

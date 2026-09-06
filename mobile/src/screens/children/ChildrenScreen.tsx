@@ -1,7 +1,19 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import * as api from '../../api/client';
+import { useBottomInset } from '../../ui/useBottomInset';
 
 interface Child {
   id: string;
@@ -12,6 +24,7 @@ interface Child {
 /** Enfants (Lot 0, docs/03) — écran secondaire, prérequis au module scolaire (Lot 4). */
 export function ChildrenScreen() {
   const navigation = useNavigation<any>();
+  const bottomInset = useBottomInset();
   const [children, setChildren] = useState<Child[]>([]);
   const [loading, setLoading] = useState(true);
   const [firstName, setFirstName] = useState('');
@@ -47,12 +60,14 @@ export function ChildrenScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <FlatList
         data={children}
         keyExtractor={(c) => c.id}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
-        ListEmptyComponent={!loading ? <Text style={styles.empty}>Aucun enfant pour l'instant.</Text> : null}
+        ListEmptyComponent={
+          !loading ? <Text style={styles.empty}>Ajoutez vos enfants pour suivre leurs frais (scolarité, activités...) séparément.</Text> : null
+        }
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.row} onPress={() => navigation.getParent()?.navigate('ChildCosts', { id: item.id })}>
             <Text style={styles.rowName}>
@@ -61,17 +76,20 @@ export function ChildrenScreen() {
             <Text style={styles.rowLink}>Coûts →</Text>
           </TouchableOpacity>
         )}
+        contentContainerStyle={{ paddingBottom: 8 }}
       />
 
-      <Text style={styles.sectionLabel}>Ajouter un enfant</Text>
-      <View style={styles.createRow}>
-        <TextInput style={[styles.input, { flex: 1, marginRight: 8 }]} placeholder="Prénom" value={firstName} onChangeText={setFirstName} />
-        <TextInput style={[styles.input, { flex: 1, marginRight: 8 }]} placeholder="Nom" value={lastName} onChangeText={setLastName} />
-        <TouchableOpacity style={styles.addButton} onPress={onCreate} disabled={creating}>
-          {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.addButtonText}>+</Text>}
-        </TouchableOpacity>
+      <View style={[styles.createBox, { paddingBottom: bottomInset }]}>
+        <Text style={styles.sectionLabel}>Ajouter un enfant</Text>
+        <View style={styles.createRow}>
+          <TextInput style={[styles.input, { flex: 1, marginRight: 8 }]} placeholder="Prénom" value={firstName} onChangeText={setFirstName} />
+          <TextInput style={[styles.input, { flex: 1, marginRight: 8 }]} placeholder="Nom" value={lastName} onChangeText={setLastName} />
+          <TouchableOpacity style={styles.addButton} onPress={onCreate} disabled={creating}>
+            {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.addButtonText}>+</Text>}
+          </TouchableOpacity>
+        </View>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -89,8 +107,9 @@ const styles = StyleSheet.create({
   },
   rowName: { fontSize: 15, fontWeight: '600', color: '#172436' },
   rowLink: { fontSize: 12, color: '#6B747C' },
-  sectionLabel: { fontSize: 13, fontWeight: '600', color: '#172436', marginTop: 8, marginBottom: 8 },
-  createRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  createBox: { borderTopWidth: 1, borderTopColor: '#E3E1DC', paddingTop: 12, marginTop: 8 },
+  sectionLabel: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 8 },
+  createRow: { flexDirection: 'row', alignItems: 'center' },
   input: {
     backgroundColor: '#fff',
     borderRadius: 10,

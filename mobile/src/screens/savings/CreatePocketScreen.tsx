@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useBottomInset } from '../../ui/useBottomInset';
 import * as api from '../../api/client';
 
 interface Account {
@@ -21,6 +22,7 @@ interface Child {
 export function CreatePocketScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
+  const bottomInset = useBottomInset();
   const kind = (route.params?.kind as 'pocket' | 'provision') ?? 'pocket';
 
   const [name, setName] = useState('');
@@ -72,7 +74,7 @@ export function CreatePocketScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
       <Text style={styles.title}>{kind === 'provision' ? 'Nouvelle provision' : 'Nouvelle poche d\'épargne'}</Text>
 
       <Text style={styles.sectionLabel}>Nom</Text>

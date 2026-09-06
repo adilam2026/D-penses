@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import * as api from '../../api/client';
+import { useBottomInset } from '../../ui/useBottomInset';
 
 type Mode = 'depense' | 'revenu' | 'paiement' | 'transfert';
 
@@ -53,6 +54,7 @@ const MODE_LABEL: Record<Mode, string> = {
  */
 export function QuickAddScreen() {
   const navigation = useNavigation<any>();
+  const bottomInset = useBottomInset();
   const [mode, setMode] = useState<Mode>('depense');
   const [label, setLabel] = useState('');
   const [amount, setAmount] = useState('');
@@ -176,7 +178,7 @@ export function QuickAddScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
         <Text style={styles.title}>Ajouter</Text>
 
         <View style={styles.modeRow}>

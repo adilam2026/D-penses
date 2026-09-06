@@ -113,6 +113,22 @@ export const createAccount = (data: { name: string; type: string; initialBalance
 
 export const setAccountFavorite = (accountId: string) => apiFetch(`/accounts/${accountId}/favorite`, { method: 'POST' });
 
+export const getAccount = async (accountId: string): Promise<{ id: string; name: string; type: string; soldeCourant: number }> => {
+  const list = await listAccounts();
+  const account = list.find((a: { id: string }) => a.id === accountId);
+  if (!account) throw new ApiError(404, 'Compte introuvable');
+  return account;
+};
+
+// ---------- Rapprochement / ajustement de compte (Lot 1) ----------
+export const createReconciliation = (accountId: string, data: { declaredBalance: number }) =>
+  apiFetch(`/accounts/${accountId}/reconciliations`, { method: 'POST', body: data });
+
+export const listReconciliations = (accountId: string) => apiFetch(`/accounts/${accountId}/reconciliations`);
+
+export const adjustReconciliation = (accountId: string, reconciliationId: string, data: { reason?: string } = {}) =>
+  apiFetch(`/accounts/${accountId}/reconciliations/${reconciliationId}/adjust`, { method: 'POST', body: data });
+
 // ---------- Transactions (Lot 2) ----------
 export const listTransactions = () => apiFetch('/transactions');
 
@@ -123,10 +139,16 @@ export const createIncomeSource = (data: {
   defaultAccountId: string;
   isRecurring?: boolean;
   recurrenceRule?: string;
+  beneficiaryUserId?: string;
+  categoryId?: string;
 }) => apiFetch('/income-sources', { method: 'POST', body: data });
+
+export const listIncomeSources = () => apiFetch('/income-sources');
 
 export const createIncomeOccurrence = (sourceId: string, data: { usualDate: string; plannedAmount?: number }) =>
   apiFetch(`/income-sources/${sourceId}/occurrences`, { method: 'POST', body: data });
+
+export const listIncomeOccurrences = (sourceId: string) => apiFetch(`/income-sources/${sourceId}/occurrences`);
 
 export const confirmIncomeOccurrence = (
   occurrenceId: string,
@@ -134,16 +156,31 @@ export const confirmIncomeOccurrence = (
 ) => apiFetch(`/income-occurrences/${occurrenceId}/confirm`, { method: 'POST', body: data });
 
 // ---------- Charges & paiements (Lot 2) ----------
-export const createChargePlan = (data: { label: string; startDate: string }) =>
-  apiFetch('/charge-plans', { method: 'POST', body: data });
+export const createChargePlan = (data: {
+  label: string;
+  startDate: string;
+  categoryId?: string;
+  recurrenceRule?: string;
+  childIds?: string[];
+}) => apiFetch('/charge-plans', { method: 'POST', body: data });
 
-export const createDeadline = (chargePlanId: string, data: { dueDate: string; amountCurrent: number }) =>
-  apiFetch(`/charge-plans/${chargePlanId}/deadlines`, { method: 'POST', body: data });
+export const createDeadline = (
+  chargePlanId: string,
+  data: { dueDate: string; amountCurrent?: number; amountStatus?: string; expectedBillingDate?: string },
+) => apiFetch(`/charge-plans/${chargePlanId}/deadlines`, { method: 'POST', body: data });
+
+export const listChargePlanDeadlines = (chargePlanId: string) => apiFetch(`/charge-plans/${chargePlanId}/deadlines`);
+
+export const closeDeadline = (id: string) => apiFetch(`/deadlines/${id}/close`, { method: 'POST' });
+
+export const cancelDeadline = (id: string) => apiFetch(`/deadlines/${id}/cancel`, { method: 'POST' });
 
 export const createPayment = (
   deadlineId: string,
   data: { amount: number; accountId: string; paidDate?: string; type?: string },
 ) => apiFetch(`/deadlines/${deadlineId}/payments`, { method: 'POST', body: data });
+
+export const listPayments = (deadlineId: string) => apiFetch(`/deadlines/${deadlineId}/payments`);
 
 /** Échéances encore ouvertes du foyer — saisie rapide « Paiement d'une échéance » (Lot 3 §2/§16). */
 export const listOpenDeadlines = () => apiFetch('/deadlines');

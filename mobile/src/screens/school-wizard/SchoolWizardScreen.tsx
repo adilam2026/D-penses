@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useBottomInset } from '../../ui/useBottomInset';
 import * as api from '../../api/client';
 
 interface Child {
@@ -55,6 +56,7 @@ const STEP_TITLES = [
  */
 export function SchoolWizardScreen() {
   const navigation = useNavigation<any>();
+  const bottomInset = useBottomInset();
   const [step, setStep] = useState(0);
   const [children, setChildren] = useState<Child[]>([]);
   const [loadingChildren, setLoadingChildren] = useState(true);
@@ -325,7 +327,7 @@ export function SchoolWizardScreen() {
       </Text>
       <Text style={styles.title}>{STEP_TITLES[step]}</Text>
 
-      <ScrollView contentContainerStyle={styles.scroll}>{renderStep()}</ScrollView>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>{renderStep()}</ScrollView>
 
       <View style={styles.navRow}>
         <TouchableOpacity style={styles.navButton} onPress={() => (step === 0 ? navigation.goBack() : setStep(step - 1))}>

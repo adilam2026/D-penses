@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
+import { useBottomInset } from '../../ui/useBottomInset';
 
 interface Category {
   id: string;
@@ -16,6 +17,7 @@ function todayIso() {
 /** Création d'un budget variable (§17) — saisie simple, les paramètres avancés restent secondaires. */
 export function CreateBudgetScreen() {
   const navigation = useNavigation<any>();
+  const bottomInset = useBottomInset();
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
@@ -55,7 +57,7 @@ export function CreateBudgetScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
       <Text style={styles.sectionLabel}>Catégorie</Text>
       {loading ? (
         <ActivityIndicator />

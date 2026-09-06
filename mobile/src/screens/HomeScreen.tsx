@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../api/client';
+import { useBottomInset } from '../ui/useBottomInset';
 
 interface DashboardSummary {
   operational_treasury: number;
@@ -58,6 +59,7 @@ function formatDate(iso: string) {
  */
 export function HomeScreen() {
   const navigation = useNavigation<any>();
+  const bottomInset = useBottomInset();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [invite, setInvite] = useState<string | null>(null);
@@ -98,7 +100,11 @@ export function HomeScreen() {
   if (!summary) return null;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scroll} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}
+      refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
+    >
       <View style={styles.headerRow}>
         <Text style={styles.title}>Accueil</Text>
         <TouchableOpacity style={styles.addButton} onPress={() => navigation.getParent()?.navigate('QuickAdd')}>
