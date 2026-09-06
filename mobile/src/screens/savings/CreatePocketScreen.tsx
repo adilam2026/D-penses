@@ -15,15 +15,17 @@ interface Child {
 }
 
 /**
- * Création SavingsPocket/Provision (§9/§28). backed_by_account exige un compte
- * dédié existant — jamais un montant qui apparaîtrait par magie (RG-074/H-15) :
- * l'utilisateur crée d'abord le compte (écran Comptes) puis le lie ici.
+ * Création d'une enveloppe — SavingsPocket ou Provision (§9/§28, vocabulaire unifié
+ * Vague 2 §11). backed_by_account exige un compte dédié existant — jamais un montant
+ * qui apparaîtrait par magie (RG-074/H-15) : l'utilisateur crée d'abord le compte
+ * (écran Comptes) puis le lie ici. La nature (Réservation/Épargne) reste un choix
+ * secondaire au sein d'un même écran "Nouvelle enveloppe", jamais deux écrans distincts.
  */
 export function CreatePocketScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const bottomInset = useBottomInset();
-  const kind = (route.params?.kind as 'pocket' | 'provision') ?? 'pocket';
+  const [kind, setKind] = useState<'pocket' | 'provision'>((route.params?.kind as 'pocket' | 'provision') ?? 'pocket');
 
   const [name, setName] = useState('');
   const [allocationMode, setAllocationMode] = useState<'virtual_allocation' | 'backed_by_account'>('virtual_allocation');
@@ -76,8 +78,18 @@ export function CreatePocketScreen() {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
-      <Text style={styles.title}>{kind === 'provision' ? 'Nouvelle enveloppe (provision)' : 'Nouvelle enveloppe (épargne)'}</Text>
+      <Text style={styles.title}>Nouvelle enveloppe</Text>
       <Text style={styles.intro}>Une enveloppe réserve une partie de votre argent pour un usage précis.</Text>
+
+      <Text style={styles.sectionLabel}>Nature</Text>
+      <View style={styles.segment}>
+        <TouchableOpacity style={[styles.segmentItem, kind === 'pocket' && styles.segmentActive]} onPress={() => setKind('pocket')}>
+          <Text style={[styles.segmentText, kind === 'pocket' && styles.segmentTextActive]}>Épargne</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.segmentItem, kind === 'provision' && styles.segmentActive]} onPress={() => setKind('provision')}>
+          <Text style={[styles.segmentText, kind === 'provision' && styles.segmentTextActive]}>Réservation</Text>
+        </TouchableOpacity>
+      </View>
 
       <Text style={styles.sectionLabel}>Nom</Text>
       <TextInput style={styles.input} placeholder="ex. École, Voyage, Épargne enfants" value={name} onChangeText={setName} />

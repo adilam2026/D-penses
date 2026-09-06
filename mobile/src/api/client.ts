@@ -189,6 +189,22 @@ export const createTransfer = (data: { fromAccountId?: string; toAccountId?: str
 // ---------- Catégories ----------
 export const listCategories = () => apiFetch('/categories');
 
+// Vague 2 §1/§3 — Type (rattaché à une Catégorie) et Sous-type (rattaché à un Type),
+// facultatifs, jamais requis pour saisir une transaction.
+export const listCategoryTypes = (categoryId: string) => apiFetch(`/categories/${categoryId}/types`);
+
+export const createCategoryType = (categoryId: string, data: { name: string }) =>
+  apiFetch(`/categories/${categoryId}/types`, { method: 'POST', body: data });
+
+export const updateCategoryType = (id: string, data: { name?: string; active?: boolean }) =>
+  apiFetch(`/category-types/${id}`, { method: 'PATCH', body: data });
+
+export const createCategorySubtype = (categoryTypeId: string, data: { name: string }) =>
+  apiFetch(`/category-types/${categoryTypeId}/subtypes`, { method: 'POST', body: data });
+
+export const updateCategorySubtype = (id: string, data: { name?: string; active?: boolean }) =>
+  apiFetch(`/category-subtypes/${id}`, { method: 'PATCH', body: data });
+
 // ---------- Budgets variables & dépenses (Lot 3) ----------
 export const listVariableBudgets = () => apiFetch('/variable-budgets');
 
@@ -216,6 +232,8 @@ export const createExpense = (data: {
   amount: number;
   accountId: string;
   categoryId?: string;
+  categoryTypeId?: string;
+  categorySubtypeId?: string;
   spentDate?: string;
   variableBudgetId?: string;
   notes?: string;

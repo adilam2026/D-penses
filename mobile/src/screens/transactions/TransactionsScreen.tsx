@@ -10,8 +10,13 @@ interface LedgerEntry {
   occurredAt: string;
   amount: number;
   accountName: string;
+  // Vague 2 §20 : quand un Type est renseigné (Courses, Carburant...), le backend
+  // construit déjà `label` en "Type · Sous-type" (ex. "Courses · Viande") — jamais
+  // recalculé côté mobile, la catégorie parente reste affichée séparément ci-dessous.
   label: string | null;
   categoryName: string | null;
+  categoryTypeName: string | null;
+  categorySubtypeName: string | null;
 }
 
 const KIND_LABEL: Record<string, string> = {

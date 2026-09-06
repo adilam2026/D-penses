@@ -25,6 +25,24 @@ export class ExpensesService {
 
       const spentDate = dto.spentDate ? new Date(dto.spentDate) : new Date();
 
+      // Vague 2 §1/§4 : hiérarchie Catégorie → Type → Sous-type validée à l'écriture —
+      // un type doit appartenir à la catégorie indiquée, un sous-type à ce type précis.
+      if (dto.categoryTypeId) {
+        const type = await tx.categoryType.findFirst({ where: { id: dto.categoryTypeId } });
+        if (!type) throw new NotFoundException('Type introuvable dans ce foyer');
+        if (dto.categoryId && type.categoryId !== dto.categoryId) {
+          throw new BadRequestException('Ce type ne correspond pas à la catégorie indiquée');
+        }
+      }
+      if (dto.categorySubtypeId) {
+        if (!dto.categoryTypeId) throw new BadRequestException('Un sous-type requiert un type');
+        const subtype = await tx.categorySubtype.findFirst({ where: { id: dto.categorySubtypeId } });
+        if (!subtype) throw new NotFoundException('Sous-type introuvable dans ce foyer');
+        if (subtype.categoryTypeId !== dto.categoryTypeId) {
+          throw new BadRequestException('Ce sous-type ne correspond pas au type indiqué');
+        }
+      }
+
       let variableBudgetId = dto.variableBudgetId;
       if (variableBudgetId) {
         const budget = await tx.variableBudget.findFirst({ where: { id: variableBudgetId, householdId } });
@@ -50,6 +68,8 @@ export class ExpensesService {
             amount: dto.amount,
             spentDate,
             categoryId: dto.categoryId,
+            categoryTypeId: dto.categoryTypeId,
+            categorySubtypeId: dto.categorySubtypeId,
             accountId: dto.accountId,
             recordedById: userId,
             notes: dto.notes,
@@ -70,6 +90,8 @@ export class ExpensesService {
           amount: dto.amount,
           spentDate,
           categoryId: dto.categoryId,
+          categoryTypeId: dto.categoryTypeId,
+          categorySubtypeId: dto.categorySubtypeId,
           accountId: dto.accountId,
           recordedById: userId,
           notes: dto.notes,

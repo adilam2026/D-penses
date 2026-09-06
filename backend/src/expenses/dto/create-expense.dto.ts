@@ -17,6 +17,16 @@ export class CreateExpenseDto {
   @IsUUID()
   categoryId?: string;
 
+  // Vague 2 §1/§4 — facultatifs, jamais requis : une dépense reste valide
+  // avec seulement une catégorie. Le sous-type n'a de sens qu'avec un type.
+  @IsOptional()
+  @IsUUID()
+  categoryTypeId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  categorySubtypeId?: string;
+
   @IsOptional()
   @IsISO8601()
   spentDate?: string;

@@ -3,6 +3,8 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 
+type CoverageStatus = 'couverte' | 'partielle' | 'non_couverte' | 'sans_objet';
+
 interface DeadlineRow {
   id: string;
   dueDate: string;
@@ -12,6 +14,9 @@ interface DeadlineRow {
   resteAPayer: number | null;
   financialStatus: 'ouverte' | 'partiellement_payee' | 'soldee' | 'annulee';
   provisionId: string | null;
+  coverageAffectee: number;
+  engagementNonCouvert: number;
+  coverageStatus: CoverageStatus;
 }
 
 const STATUS_MARK: Record<DeadlineRow['financialStatus'], string> = {
@@ -19,6 +24,22 @@ const STATUS_MARK: Record<DeadlineRow['financialStatus'], string> = {
   partiellement_payee: '◐',
   soldee: '✓',
   annulee: '✕',
+};
+
+// §9 — un symbole par statut de COUVERTURE (réservé), jamais confondu avec le
+// statut de PAIEMENT (STATUS_MARK/STATUS_LABEL ci-dessus, §10).
+const COVERAGE_ICON: Record<CoverageStatus, string> = {
+  couverte: '✅',
+  partielle: '🟠',
+  non_couverte: '🔴',
+  sans_objet: '',
+};
+
+const COVERAGE_LABEL: Record<CoverageStatus, string> = {
+  couverte: 'Couverte',
+  partielle: 'Partiellement couverte',
+  non_couverte: 'Non couverte',
+  sans_objet: '',
 };
 
 const STATUS_LABEL: Record<DeadlineRow['financialStatus'], string> = {
@@ -51,6 +72,7 @@ interface FinancialPlanDetail {
   remainingDue: number;
   provisionCoverage: number;
   remainingToFund: number;
+  tauxCouverture: number | null;
   completude: 'complet' | 'contient_estimations' | 'contient_inconnues';
   deadlinesCertain: DeadlineRow[];
   envisagedItems: EnvisagedItem[];
@@ -115,12 +137,29 @@ export function FinancialPlanDetailScreen() {
         <Figure label="Reste à financer" value={detail.remainingToFund} highlight />
       </View>
 
+      {detail.tauxCouverture !== null && (
+        <View style={styles.coverageCard}>
+          <View style={styles.coverageHeaderRow}>
+            <Text style={styles.coverageTitle}>TAUX DE COUVERTURE</Text>
+            <Text style={styles.coveragePercent}>{Math.round(detail.tauxCouverture)}%</Text>
+          </View>
+          <View style={styles.coverageTrack}>
+            <View style={[styles.coverageFill, { width: `${Math.min(100, detail.tauxCouverture)}%` }]} />
+          </View>
+          <Text style={styles.coverageSub}>
+            {detail.provisionCoverage.toLocaleString('fr-FR')} DH provisionnés sur {detail.remainingDue.toLocaleString('fr-FR')} DH restant dû
+          </Text>
+        </View>
+      )}
+
       <Text style={styles.sectionTitle}>Échéances</Text>
       {detail.deadlinesCertain.length === 0 ? (
         <Text style={styles.empty}>Aucune échéance certaine pour l'instant.</Text>
       ) : (
         detail.deadlinesCertain.map((d) => {
           const isOpen = d.financialStatus === 'ouverte' || d.financialStatus === 'partiellement_payee';
+          const resteAPayerNum = d.resteAPayer !== null ? Number(d.resteAPayer) : 0;
+          const couverturePct = d.coverageStatus !== 'sans_objet' && resteAPayerNum > 0 ? Math.round((d.coverageAffectee / resteAPayerNum) * 100) : null;
           return (
             <TouchableOpacity
               key={d.id}
@@ -129,16 +168,22 @@ export function FinancialPlanDetailScreen() {
             >
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowLabel}>
-                  {STATUS_MARK[d.financialStatus]} {d.chargePlanLabel} · {formatShortDate(d.dueDate)}
-                  {d.provisionId ? ' · 💰' : ''}
+                  {COVERAGE_ICON[d.coverageStatus]} {d.chargePlanLabel} · {formatShortDate(d.dueDate)}
                 </Text>
                 <Text style={styles.rowMeta}>
-                  {STATUS_LABEL[d.financialStatus]} ·{' '}
+                  {STATUS_MARK[d.financialStatus]} {STATUS_LABEL[d.financialStatus]} ·{' '}
                   {d.amountStatus === 'confirme' ? 'Montant confirmé' : d.amountStatus === 'estime' ? 'Estimé — appuyer pour confirmer' : 'Montant inconnu'}
                 </Text>
+                {/* §10 — Couverture (réservé) et Paiement (réglé) : deux informations
+                    toujours affichées séparément, jamais fusionnées en une seule. */}
+                {couverturePct !== null && (
+                  <Text style={styles.rowCoverage}>
+                    Couverture : {couverturePct}% ({COVERAGE_LABEL[d.coverageStatus]}) · Paiement : {STATUS_LABEL[d.financialStatus]}
+                  </Text>
+                )}
               </View>
               <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.rowAmount}>{d.resteAPayer !== null ? `${Number(d.resteAPayer).toLocaleString('fr-FR')} DH restants` : '—'}</Text>
+                <Text style={styles.rowAmount}>{d.resteAPayer !== null ? `${resteAPayerNum.toLocaleString('fr-FR')} DH restants` : '—'}</Text>
                 {isOpen && (
                   <TouchableOpacity style={styles.payButton} onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: d.id })}>
                     <Text style={styles.payButtonText}>Payer</Text>
@@ -200,6 +245,13 @@ const styles = StyleSheet.create({
   figureLabel: { fontSize: 11, color: '#6B747C' },
   figureValue: { fontSize: 16, fontWeight: '700', color: '#172436', marginTop: 4 },
   figureValueHighlight: { color: '#B3261E' },
+  coverageCard: { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 12 },
+  coverageHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  coverageTitle: { fontSize: 11, fontWeight: '700', color: '#6B747C', letterSpacing: 0.5 },
+  coveragePercent: { fontSize: 16, fontWeight: '800', color: '#172436' },
+  coverageTrack: { height: 8, backgroundColor: '#EDEBE6', borderRadius: 4, overflow: 'hidden' },
+  coverageFill: { height: '100%', backgroundColor: '#2E7D5B' },
+  coverageSub: { fontSize: 11, color: '#6B747C', marginTop: 8 },
   sectionTitle: { fontSize: 14, fontWeight: '700', color: '#172436', marginTop: 16, marginBottom: 8 },
   empty: { color: '#6B747C', fontSize: 13 },
   row: {
@@ -214,6 +266,7 @@ const styles = StyleSheet.create({
   rowSimple: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8 },
   rowLabel: { fontSize: 13, fontWeight: '600', color: '#172436' },
   rowMeta: { fontSize: 11, color: '#6B747C', marginTop: 2 },
+  rowCoverage: { fontSize: 10, color: '#6B747C', marginTop: 2, fontStyle: 'italic' },
   rowAmount: { fontSize: 13, fontWeight: '700', color: '#172436' },
   payButton: { backgroundColor: '#172436', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5, marginTop: 6 },
   payButtonText: { color: '#fff', fontSize: 11, fontWeight: '600' },

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { getDeadlineBalance, toNumber } from '../common/ledger/ledger.util';
+import { engagementNonCouvert } from '../common/ledger/provision.util';
 import { CreateChildDto } from './dto/create-child.dto';
 import { UpdateChildDto } from './dto/update-child.dto';
 
@@ -82,7 +83,7 @@ export class ChildrenService {
           obligationStatus: { in: ['obligatoire', 'optionnelle_souscrite'] },
           children: { some: { childId } },
         },
-        include: { children: true, deadlines: { include: { childAllocations: true } }, category: true },
+        include: { children: true, deadlines: { include: { childAllocations: true } }, category: true, financialPlan: true },
       });
 
       let coutConnu = 0;
@@ -91,9 +92,12 @@ export class ChildrenService {
       let resteAFinancer = 0;
       const byCategory: Record<string, number> = {};
       const chargesCommunesNonVentilees: Array<{ chargePlanId: string; deadlineId: string; label: string; amount: number }> = [];
+      let prochaineEcheance: { deadlineId: string; chargePlanId: string; label: string; dueDate: Date; resteAPayer: number } | null = null;
+      const plansAssociesById = new Map<string, { id: string; label: string }>();
 
       for (const cp of chargePlans) {
         const isSingleChild = cp.children.length === 1;
+        if (cp.financialPlan) plansAssociesById.set(cp.financialPlan.id, { id: cp.financialPlan.id, label: cp.financialPlan.label });
         for (const d of cp.deadlines) {
           if (d.financialStatus === 'annulee' || d.amountStatus === 'inconnu') continue;
           const amountCurrent = toNumber(d.amountCurrent);
@@ -119,11 +123,34 @@ export class ChildrenService {
           paye += paid * ratio;
           if (d.financialStatus === 'ouverte' || d.financialStatus === 'partiellement_payee') {
             resteAPayer += reste * ratio;
-            resteAFinancer += reste * ratio; // provision_coverage = 0 (Lot 6 non livré)
+            // Vague 2 §7 : reste_a_financer soustrait la couverture provision déjà en
+            // place (RG-090), au prorata de la part attribuée à cet enfant — réutilise
+            // exclusivement engagementNonCouvert (provision.util.ts), jamais recalculé.
+            let engagementNonCouvertAmount = reste;
+            if (d.provisionId) {
+              const coverage = await engagementNonCouvert(tx, d.id);
+              engagementNonCouvertAmount = coverage?.engagementNonCouvert ?? reste;
+            }
+            resteAFinancer += engagementNonCouvertAmount * ratio;
+
+            if (reste > 0 && (!prochaineEcheance || d.dueDate < prochaineEcheance.dueDate)) {
+              prochaineEcheance = { deadlineId: d.id, chargePlanId: cp.id, label: cp.label, dueDate: d.dueDate, resteAPayer: round2(reste * ratio) };
+            }
           }
           const categoryName = cp.category?.name ?? 'Autre';
           byCategory[categoryName] = (byCategory[categoryName] ?? 0) + attributed;
         }
+      }
+
+      // §7 : plans associés — via les ChargePlan déjà attribués à cet enfant (ci-dessus)
+      // ET via un rattachement bénéficiaire direct (FinancialPlanBeneficiary), sans jamais
+      // dupliquer un même plan (Set dédoublonné par id, §19 anti double comptage).
+      const beneficiaryEntries = await tx.financialPlanBeneficiary.findMany({
+        where: { childId, financialPlan: { householdId } },
+        include: { financialPlan: true },
+      });
+      for (const b of beneficiaryEntries) {
+        plansAssociesById.set(b.financialPlan.id, { id: b.financialPlan.id, label: b.financialPlan.label });
       }
 
       return {
@@ -134,6 +161,8 @@ export class ChildrenService {
         resteAFinancer: round2(resteAFinancer),
         byCategory,
         chargesCommunesNonVentilees,
+        prochaineEcheance,
+        plansAssocies: Array.from(plansAssociesById.values()),
       };
     });
   }

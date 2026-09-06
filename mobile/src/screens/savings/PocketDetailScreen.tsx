@@ -28,6 +28,7 @@ interface PocketDetail {
   currentAmount: number;
   isProtected?: boolean;
   targetAmount?: number | null;
+  linkedAccountId?: string | null;
   coverage?: CoverageItem[];
 }
 
@@ -35,10 +36,18 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
 }
 
+// Vague 2 §11 — une seule entrée pour l'utilisateur ("Enveloppe"), la nature
+// (Provision/Poche, protégée ou non) reste une information secondaire affichée
+// en badge, jamais le concept principal exposé à l'écran.
+function natureLabel(isProvision: boolean, isProtected?: boolean): string {
+  if (isProvision) return 'Réservation';
+  return isProtected ? 'Épargne protégée' : 'Épargne';
+}
+
 /**
- * Fiche poche/provision (§27/§20) — solde dérivé, jamais un compte. Pour une
- * Provision, affiche aussi la couverture chronologique (RG-090) et permet de
- * payer une échéance couverte directement depuis la provision (§18-20).
+ * Fiche enveloppe (Provision ou Poche d'épargne, unifiées en vocabulaire — §27/§20/Vague 2 §11).
+ * Solde dérivé, jamais un compte. Pour une Provision, affiche aussi la couverture
+ * chronologique (RG-090) et permet de payer une échéance couverte directement (§18-20).
  */
 export function PocketDetailScreen() {
   const route = useRoute<any>();
@@ -63,6 +72,9 @@ export function PocketDetailScreen() {
   const [openDeadlines, setOpenDeadlines] = useState<{ id: string; chargePlan: { label: string }; dueDate: string }[]>([]);
   const [linking, setLinking] = useState(false);
   const [confirmingMovementId, setConfirmingMovementId] = useState<string | null>(null);
+  const [editingAccount, setEditingAccount] = useState(false);
+  const [editAccountId, setEditAccountId] = useState<string | null>(null);
+  const [savingAccount, setSavingAccount] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -70,9 +82,10 @@ export function PocketDetailScreen() {
       const d = isProvision ? await api.getProvision(id) : await api.getPocket(id);
       setDetail(d);
       setMovements(isProvision ? await api.listProvisionMovements(id) : await api.listPocketMovements(id));
+      const accs = await api.listAccounts();
+      setAccounts(accs);
       if (isProvision) {
-        const [accs, open] = await Promise.all([api.listAccounts(), api.listOpenDeadlines()]);
-        setAccounts(accs);
+        const open = await api.listOpenDeadlines();
         setOpenDeadlines(open);
         if (!payAccountId && accs.length) setPayAccountId(d.allocationMode === 'backed_by_account' ? d.linkedAccountId ?? accs[0].id : accs[0].id);
       }
@@ -177,6 +190,21 @@ export function PocketDetailScreen() {
     }
   }
 
+  async function onSaveLinkedAccount() {
+    setSavingAccount(true);
+    setError(null);
+    try {
+      if (isProvision) await api.updateProvision(id, { linkedAccountId: editAccountId ?? undefined });
+      else await api.updatePocket(id, { linkedAccountId: editAccountId ?? undefined });
+      setEditingAccount(false);
+      await load();
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Modification impossible');
+    } finally {
+      setSavingAccount(false);
+    }
+  }
+
   if (loading || !detail) {
     return (
       <View style={styles.center}>
@@ -190,11 +218,47 @@ export function PocketDetailScreen() {
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
       <View style={styles.headerRow}>
         <Text style={styles.title}>{detail.name}</Text>
-        {detail.isProtected && <Text style={styles.protectedBadge}>Protégée</Text>}
+        <Text style={styles.natureBadge}>{natureLabel(isProvision, detail.isProtected)}</Text>
       </View>
       <Text style={styles.amount}>{detail.currentAmount.toLocaleString('fr-FR')} DH</Text>
       {detail.targetAmount ? <Text style={styles.subtitle}>Objectif : {detail.targetAmount.toLocaleString('fr-FR')} DH</Text> : null}
       <Text style={styles.subtitle}>{detail.allocationMode === 'backed_by_account' ? 'Compte dédié' : 'Réservation virtuelle — reste sur votre compte'}</Text>
+
+      {detail.allocationMode === 'virtual_allocation' && (
+        <View style={styles.locationRow}>
+          {editingAccount ? (
+            <View style={styles.formCard}>
+              <Text style={styles.sectionLabel}>Localiser sur quel compte ?</Text>
+              <View style={styles.chipRow}>
+                {accounts.map((a) => (
+                  <TouchableOpacity key={a.id} style={[styles.chip, editAccountId === a.id && styles.chipActive]} onPress={() => setEditAccountId(a.id)}>
+                    <Text style={[styles.chipText, editAccountId === a.id && styles.chipTextActive]}>{a.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.buttonRow}>
+                <TouchableOpacity style={[styles.button, styles.buttonHalf]} onPress={onSaveLinkedAccount} disabled={savingAccount || !editAccountId}>
+                  {savingAccount ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Enregistrer</Text>}
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.button, styles.buttonHalf, styles.buttonSecondary]} onPress={() => setEditingAccount(false)} disabled={savingAccount}>
+                  <Text style={[styles.buttonText, styles.buttonTextSecondary]}>Annuler</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <TouchableOpacity
+              onPress={() => {
+                setEditAccountId(detail.linkedAccountId ?? accounts[0]?.id ?? null);
+                setEditingAccount(true);
+              }}
+            >
+              <Text style={styles.editLink}>
+                Localisée sur : {accounts.find((a) => a.id === detail.linkedAccountId)?.name ?? 'Non précisé'} · Modifier
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       {detail.allocationMode === 'virtual_allocation' ? (
         <View style={styles.formCard}>
@@ -245,13 +309,19 @@ export function PocketDetailScreen() {
               {payingDeadlineId === c.deadlineId ? (
                 <View style={styles.payForm}>
                   <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={payAmount} onChangeText={setPayAmount} />
-                  <View style={styles.chipRow}>
-                    {accounts.map((a) => (
-                      <TouchableOpacity key={a.id} style={[styles.chip, payAccountId === a.id && styles.chipActive]} onPress={() => setPayAccountId(a.id)}>
-                        <Text style={[styles.chipText, payAccountId === a.id && styles.chipTextActive]}>{a.name}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                  {detail.allocationMode === 'backed_by_account' ? (
+                    <Text style={styles.rowMeta}>
+                      Compte débité : {accounts.find((a) => a.id === payAccountId)?.name ?? '—'} (enveloppe dédiée, compte imposé)
+                    </Text>
+                  ) : (
+                    <View style={styles.chipRow}>
+                      {accounts.map((a) => (
+                        <TouchableOpacity key={a.id} style={[styles.chip, payAccountId === a.id && styles.chipActive]} onPress={() => setPayAccountId(a.id)}>
+                          <Text style={[styles.chipText, payAccountId === a.id && styles.chipTextActive]}>{a.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
                   <TouchableOpacity style={styles.button} onPress={() => onPayWithProvision(c.deadlineId)} disabled={submitting}>
                     {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Confirmer le paiement</Text>}
                   </TouchableOpacity>
@@ -317,10 +387,14 @@ const styles = StyleSheet.create({
   scroll: { padding: 20, paddingTop: 24 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   title: { fontSize: 20, fontWeight: '700', color: '#172436' },
-  protectedBadge: { fontSize: 10, fontWeight: '700', color: '#2E7D5B', backgroundColor: '#E6F2EC', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
+  natureBadge: { fontSize: 10, fontWeight: '700', color: '#2E7D5B', backgroundColor: '#E6F2EC', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
   amount: { fontSize: 28, fontWeight: '800', color: '#172436', marginTop: 8 },
   subtitle: { fontSize: 12, color: '#6B747C', marginTop: 4 },
   help: { fontSize: 12, color: '#6B747C', marginTop: 12, fontStyle: 'italic' },
+  locationRow: { marginTop: 8 },
+  editLink: { fontSize: 12, color: '#172436', fontWeight: '600' },
+  sectionLabel: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 8 },
+  rowMeta: { fontSize: 11, color: '#6B747C', marginBottom: 8 },
   formCard: { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginTop: 16 },
   input: {
     backgroundColor: '#fff',

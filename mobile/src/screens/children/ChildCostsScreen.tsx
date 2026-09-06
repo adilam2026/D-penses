@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
-import { useFocusEffect, useRoute } from '@react-navigation/native';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 
 interface ChildCosts {
@@ -10,12 +10,19 @@ interface ChildCosts {
   resteAPayer: number;
   resteAFinancer: number;
   byCategory: Record<string, number>;
-  chargesCommunesNonVentilees: Array<{ label: string; amount: number }>;
+  chargesCommunesNonVentilees: Array<{ chargePlanId: string; deadlineId: string; label: string; amount: number }>;
+  prochaineEcheance: { deadlineId: string; chargePlanId: string; label: string; dueDate: string; resteAPayer: number } | null;
+  plansAssocies: Array<{ id: string; label: string }>;
 }
 
-/** Fiche enfant → Coûts (§16) — jamais le montant complet d'une charge commune non ventilée. */
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+/** Fiche enfant → Coûts (§16, enrichie Vague 2 §7) — jamais le montant complet d'une charge commune non ventilée. */
 export function ChildCostsScreen() {
   const route = useRoute<any>();
+  const navigation = useNavigation<any>();
   const childId = route.params?.id as string;
   const [costs, setCosts] = useState<ChildCosts | null>(null);
   const [loading, setLoading] = useState(true);
@@ -56,6 +63,35 @@ export function ChildCostsScreen() {
         <Figure label="Reste à financer" value={costs.resteAFinancer} highlight />
       </View>
 
+      {costs.prochaineEcheance && (
+        <TouchableOpacity
+          style={styles.nextCard}
+          onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: costs.prochaineEcheance!.deadlineId })}
+        >
+          <Text style={styles.nextLabel}>Prochaine échéance</Text>
+          <Text style={styles.nextTitle}>{costs.prochaineEcheance.label}</Text>
+          <Text style={styles.nextMeta}>
+            {formatDate(costs.prochaineEcheance.dueDate)} · {costs.prochaineEcheance.resteAPayer.toLocaleString('fr-FR')} DH restants
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      {costs.plansAssocies.length > 0 && (
+        <>
+          <Text style={styles.sectionTitle}>Plans financiers associés</Text>
+          {costs.plansAssocies.map((p) => (
+            <TouchableOpacity
+              key={p.id}
+              style={styles.rowSimple}
+              onPress={() => navigation.getParent()?.navigate('FinancialPlanDetail', { id: p.id })}
+            >
+              <Text style={styles.rowLabel}>{p.label}</Text>
+              <Text style={styles.rowLink}>Voir →</Text>
+            </TouchableOpacity>
+          ))}
+        </>
+      )}
+
       <Text style={styles.sectionTitle}>Répartition par catégorie</Text>
       {Object.entries(costs.byCategory).length === 0 ? (
         <Text style={styles.empty}>Aucune charge attribuée pour l'instant.</Text>
@@ -72,11 +108,15 @@ export function ChildCostsScreen() {
         <>
           <Text style={styles.sectionTitle}>Charges communes non ventilées</Text>
           <Text style={styles.note}>Montant partagé avec un autre enfant, non réparti — jamais compté en totalité ci-dessus.</Text>
-          {costs.chargesCommunesNonVentilees.map((c, i) => (
-            <View key={i} style={styles.rowSimple}>
+          {costs.chargesCommunesNonVentilees.map((c) => (
+            <TouchableOpacity
+              key={c.deadlineId}
+              style={styles.rowSimple}
+              onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: c.deadlineId })}
+            >
               <Text style={styles.rowLabel}>{c.label}</Text>
               <Text style={styles.rowAmount}>Charge commune : {c.amount.toLocaleString('fr-FR')} DH</Text>
-            </View>
+            </TouchableOpacity>
           ))}
         </>
       )}
@@ -103,10 +143,15 @@ const styles = StyleSheet.create({
   figureLabel: { fontSize: 11, color: '#6B747C' },
   figureValue: { fontSize: 16, fontWeight: '700', color: '#172436', marginTop: 4 },
   figureValueHighlight: { color: '#B3261E' },
+  nextCard: { backgroundColor: '#172436', borderRadius: 12, padding: 14, marginBottom: 12 },
+  nextLabel: { fontSize: 11, color: '#AEB8C4', fontWeight: '600', textTransform: 'uppercase' },
+  nextTitle: { fontSize: 15, fontWeight: '700', color: '#fff', marginTop: 4 },
+  nextMeta: { fontSize: 12, color: '#D7DCE2', marginTop: 4 },
   sectionTitle: { fontSize: 14, fontWeight: '700', color: '#172436', marginTop: 16, marginBottom: 8 },
   empty: { color: '#6B747C', fontSize: 13 },
   note: { fontSize: 11, color: '#6B747C', marginBottom: 8, fontStyle: 'italic' },
-  rowSimple: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8 },
+  rowSimple: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8 },
   rowLabel: { fontSize: 13, fontWeight: '600', color: '#172436' },
   rowAmount: { fontSize: 13, fontWeight: '700', color: '#172436' },
+  rowLink: { fontSize: 12, color: '#2E7D5B', fontWeight: '700' },
 });

@@ -12,6 +12,10 @@ interface LedgerRow {
   label: string | null;
   category_id: string | null;
   category_name: string | null;
+  category_type_id: string | null;
+  category_type_name: string | null;
+  category_subtype_id: string | null;
+  category_subtype_name: string | null;
 }
 
 // Regroupement d'affichage pour l'écran Transactions (§13) : +revenu / -paiement / transfert —
@@ -37,7 +41,8 @@ export class TransactionsService {
       const tx = this.rlsContext.getClient();
       const rows = await tx.$queryRaw<LedgerRow[]>`
         SELECT le.kind, le.id, le.occurred_at, le.amount, le.account_id,
-               fa.name AS account_name, le.label, le.category_id, c.name AS category_name
+               fa.name AS account_name, le.label, le.category_id, c.name AS category_name,
+               le.category_type_id, le.category_type_name, le.category_subtype_id, le.category_subtype_name
         FROM ledger_entry le
         JOIN financial_account fa ON fa.id = le.account_id
         LEFT JOIN category c ON c.id = le.category_id
@@ -54,9 +59,20 @@ export class TransactionsService {
         amount: toNumber(r.amount),
         accountId: r.account_id,
         accountName: r.account_name,
-        label: r.label,
+        // Vague 2 §20 : "Type · Sous-type" quand un type est renseigné (ex. "Courses · Viande"),
+        // sinon le label existant (catégorie/plan) est conservé tel quel — jamais de régression
+        // pour les lignes sans type (revenus, paiements, transferts, anciennes dépenses).
+        label: r.category_type_name
+          ? r.category_subtype_name
+            ? `${r.category_type_name} · ${r.category_subtype_name}`
+            : r.category_type_name
+          : r.label,
         categoryId: r.category_id,
         categoryName: r.category_name,
+        categoryTypeId: r.category_type_id,
+        categoryTypeName: r.category_type_name,
+        categorySubtypeId: r.category_subtype_id,
+        categorySubtypeName: r.category_subtype_name,
       }));
     });
   }

@@ -106,18 +106,50 @@ export class FinancialPlansService {
 
         knownPlanCost += amountCurrent; // RG-119 : coût historique, quel que soit l'état financier
         paidAmount += paid;
-        if (d.financialStatus === 'ouverte' || d.financialStatus === 'partiellement_payee') {
+
+        // §9/§10 — couverture par échéance : réutilise exclusivement engagementNonCouvert
+        // (provision.util.ts, RG-090), jamais un recalcul indépendant. "Couverte" (réservé)
+        // et "payée" (financialStatus) restent deux informations distinctes, jamais fusionnées.
+        let coverageAffectee = 0;
+        let engagementNonCouvertAmount = resteAPayer;
+        const isOpen = d.financialStatus === 'ouverte' || d.financialStatus === 'partiellement_payee';
+        if (isOpen) {
           remainingDue += resteAPayer; // RG-119 : uniquement le besoin encore dû, jamais une échéance soldée
           if (d.provisionId) {
             const coverage = await engagementNonCouvert(tx, d.id);
-            provisionCoverage += coverage?.coverageAffectee ?? 0;
+            coverageAffectee = coverage?.coverageAffectee ?? 0;
+            engagementNonCouvertAmount = coverage?.engagementNonCouvert ?? resteAPayer;
+            provisionCoverage += coverageAffectee;
           }
+        } else {
+          engagementNonCouvertAmount = 0; // soldée : rien ne reste à couvrir
         }
-        deadlinesCertain.push({ ...d, chargePlanLabel: cp.label, resteAPayer });
+
+        const coverageStatus: 'couverte' | 'partielle' | 'non_couverte' | 'sans_objet' =
+          !isOpen || resteAPayer === 0
+            ? 'sans_objet'
+            : coverageAffectee <= 0
+              ? 'non_couverte'
+              : engagementNonCouvertAmount <= 0
+                ? 'couverte'
+                : 'partielle';
+
+        deadlinesCertain.push({
+          ...d,
+          chargePlanLabel: cp.label,
+          resteAPayer,
+          coverageAffectee: round2(coverageAffectee),
+          engagementNonCouvert: round2(engagementNonCouvertAmount),
+          coverageStatus,
+        });
       }
     }
 
     const remainingToFund = round2(remainingDue - provisionCoverage);
+    // §8 — taux de couverture = part du reste à payer déjà couverte par des enveloppes
+    // (même rapport que l'invariant IF-16 coverage+uncovered=reste_a_payer, agrégé au
+    // niveau du plan). NULL quand il n'y a plus rien à couvrir (aucun sens à afficher un %).
+    const tauxCouverture = remainingDue > 0 ? round2(Math.min(100, (provisionCoverage / remainingDue) * 100)) : null;
 
     let envisagedTotal = 0;
     const envisagedItems: Array<{ chargePlanId: string; label: string; amountKnown: boolean }> = [];
@@ -146,6 +178,7 @@ export class FinancialPlansService {
       remainingDue: round2(remainingDue),
       provisionCoverage: round2(provisionCoverage),
       remainingToFund,
+      tauxCouverture,
       completude,
       envisagedTotal: round2(envisagedTotal),
       envisagedItems,

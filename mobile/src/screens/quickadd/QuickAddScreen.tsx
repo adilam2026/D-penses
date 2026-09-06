@@ -29,6 +29,19 @@ interface Category {
   kind: 'income' | 'expense' | 'both';
 }
 
+interface CategorySubtype {
+  id: string;
+  name: string;
+  active: boolean;
+}
+
+interface CategoryType {
+  id: string;
+  name: string;
+  active: boolean;
+  subtypes: CategorySubtype[];
+}
+
 interface OpenDeadline {
   id: string;
   dueDate: string;
@@ -69,6 +82,17 @@ export function QuickAddScreen() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [budgetHint, setBudgetHint] = useState<string | null>(null);
+
+  // Vague 2 §1/§4 — Type filtré par Catégorie, Sous-type filtré par Type, tous deux facultatifs.
+  const [categoryTypes, setCategoryTypes] = useState<CategoryType[]>([]);
+  const [categoryTypeId, setCategoryTypeId] = useState<string | null>(null);
+  const [categorySubtypeId, setCategorySubtypeId] = useState<string | null>(null);
+  const [addingType, setAddingType] = useState(false);
+  const [newTypeName, setNewTypeName] = useState('');
+  const [creatingType, setCreatingType] = useState(false);
+  const [addingSubtype, setAddingSubtype] = useState(false);
+  const [newSubtypeName, setNewSubtypeName] = useState('');
+  const [creatingSubtype, setCreatingSubtype] = useState(false);
 
   const [openDeadlines, setOpenDeadlines] = useState<OpenDeadline[]>([]);
   const [deadlineId, setDeadlineId] = useState<string | null>(null);
@@ -136,6 +160,62 @@ export function QuickAddScreen() {
     };
   }, [mode, categoryId, categories]);
 
+  useEffect(() => {
+    setCategoryTypes([]);
+    setCategoryTypeId(null);
+    setCategorySubtypeId(null);
+    setAddingType(false);
+    setAddingSubtype(false);
+    if (mode !== 'depense' || !categoryId) return;
+    let cancelled = false;
+    api.listCategoryTypes(categoryId).then((types: CategoryType[]) => {
+      if (!cancelled) setCategoryTypes(types);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, categoryId]);
+
+  function onSelectCategoryType(typeId: string) {
+    setCategoryTypeId((current) => (current === typeId ? null : typeId));
+    setCategorySubtypeId(null);
+  }
+
+  async function onCreateType() {
+    if (!categoryId || !newTypeName.trim() || creatingType) return;
+    setCreatingType(true);
+    try {
+      const created = await api.createCategoryType(categoryId, { name: newTypeName.trim() });
+      const types: CategoryType[] = await api.listCategoryTypes(categoryId);
+      setCategoryTypes(types);
+      setCategoryTypeId(created.id);
+      setCategorySubtypeId(null);
+      setNewTypeName('');
+      setAddingType(false);
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Création du type impossible');
+    } finally {
+      setCreatingType(false);
+    }
+  }
+
+  async function onCreateSubtype() {
+    if (!categoryTypeId || !newSubtypeName.trim() || creatingSubtype) return;
+    setCreatingSubtype(true);
+    try {
+      const created = await api.createCategorySubtype(categoryTypeId, { name: newSubtypeName.trim() });
+      const types: CategoryType[] = await api.listCategoryTypes(categoryId!);
+      setCategoryTypes(types);
+      setCategorySubtypeId(created.id);
+      setNewSubtypeName('');
+      setAddingSubtype(false);
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Création du sous-type impossible');
+    } finally {
+      setCreatingSubtype(false);
+    }
+  }
+
   function onSelectDeadline(d: OpenDeadline) {
     setDeadlineId(d.id);
     if (d.resteAPayer !== null) setAmount(String(d.resteAPayer));
@@ -157,7 +237,14 @@ export function QuickAddScreen() {
     try {
       const today = todayIso();
       if (mode === 'depense') {
-        await api.createExpense({ amount: numericAmount, accountId: accountId!, categoryId: categoryId ?? undefined, notes: notes || undefined });
+        await api.createExpense({
+          amount: numericAmount,
+          accountId: accountId!,
+          categoryId: categoryId ?? undefined,
+          categoryTypeId: categoryTypeId ?? undefined,
+          categorySubtypeId: categorySubtypeId ?? undefined,
+          notes: notes || undefined,
+        });
       } else if (mode === 'revenu') {
         if (!label.trim()) {
           setError('Un libellé est requis');
@@ -260,6 +347,100 @@ export function QuickAddScreen() {
                   ))}
                 </View>
                 {budgetHint ? <Text style={styles.hint}>{budgetHint}</Text> : null}
+
+                {categoryId && categoryTypes.length > 0 && (
+                  <>
+                    <Text style={styles.sectionLabel}>Type</Text>
+                    <View style={styles.chipRow}>
+                      {categoryTypes
+                        .filter((t) => t.active)
+                        .map((t) => (
+                          <TouchableOpacity
+                            key={t.id}
+                            testID={`type-chip-${t.name}`}
+                            style={[styles.chip, categoryTypeId === t.id && styles.chipActive]}
+                            onPress={() => onSelectCategoryType(t.id)}
+                          >
+                            <Text style={[styles.chipText, categoryTypeId === t.id && styles.chipTextActive]}>{t.name}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      <TouchableOpacity testID="add-type-toggle" style={styles.chipAdd} onPress={() => setAddingType((v) => !v)}>
+                        <Text style={styles.chipAddText}>+ Nouveau type</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                )}
+                {categoryId && categoryTypes.length === 0 && (
+                  <TouchableOpacity testID="add-type-toggle" onPress={() => setAddingType((v) => !v)}>
+                    <Text style={styles.addLink}>+ Ajouter un type pour cette catégorie</Text>
+                  </TouchableOpacity>
+                )}
+                {addingType && (
+                  <View style={styles.inlineAddRow}>
+                    <TextInput
+                      testID="add-type-input"
+                      style={[styles.input, styles.inlineAddInput]}
+                      placeholder="Nom du type (ex. Jardinier)"
+                      value={newTypeName}
+                      onChangeText={setNewTypeName}
+                    />
+                    <TouchableOpacity testID="add-type-submit" style={styles.inlineAddButton} onPress={onCreateType} disabled={creatingType}>
+                      {creatingType ? <ActivityIndicator color="#fff" /> : <Text style={styles.inlineAddButtonText}>Ajouter</Text>}
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {categoryTypeId &&
+                  (() => {
+                    const selectedType = categoryTypes.find((t) => t.id === categoryTypeId);
+                    const subtypes = selectedType?.subtypes.filter((s) => s.active) ?? [];
+                    // §4 — si aucun sous-type n'existe, ne pas afficher un champ vide inutile
+                    // (sauf l'action pour en créer un, toujours disponible).
+                    return (
+                      <>
+                        {subtypes.length > 0 && (
+                          <>
+                            <Text style={styles.sectionLabel}>Sous-type (facultatif)</Text>
+                            <View style={styles.chipRow}>
+                              {subtypes.map((s) => (
+                                <TouchableOpacity
+                                  key={s.id}
+                                  testID={`subtype-chip-${s.name}`}
+                                  style={[styles.chip, categorySubtypeId === s.id && styles.chipActive]}
+                                  onPress={() => setCategorySubtypeId(categorySubtypeId === s.id ? null : s.id)}
+                                >
+                                  <Text style={[styles.chipText, categorySubtypeId === s.id && styles.chipTextActive]}>{s.name}</Text>
+                                </TouchableOpacity>
+                              ))}
+                              <TouchableOpacity testID="add-subtype-toggle" style={styles.chipAdd} onPress={() => setAddingSubtype((v) => !v)}>
+                                <Text style={styles.chipAddText}>+ Nouveau sous-type</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </>
+                        )}
+                        {subtypes.length === 0 && (
+                          <TouchableOpacity testID="add-subtype-toggle" onPress={() => setAddingSubtype((v) => !v)}>
+                            <Text style={styles.addLink}>+ Ajouter un sous-type pour ce type</Text>
+                          </TouchableOpacity>
+                        )}
+                        {addingSubtype && (
+                          <View style={styles.inlineAddRow}>
+                            <TextInput
+                              testID="add-subtype-input"
+                              style={[styles.input, styles.inlineAddInput]}
+                              placeholder="Nom du sous-type (ex. Viande)"
+                              value={newSubtypeName}
+                              onChangeText={setNewSubtypeName}
+                            />
+                            <TouchableOpacity testID="add-subtype-submit" style={styles.inlineAddButton} onPress={onCreateSubtype} disabled={creatingSubtype}>
+                              {creatingSubtype ? <ActivityIndicator color="#fff" /> : <Text style={styles.inlineAddButtonText}>Ajouter</Text>}
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </>
+                    );
+                  })()}
+
                 <TextInput style={styles.input} placeholder="Note (facultatif)" value={notes} onChangeText={setNotes} />
               </>
             )}
@@ -355,6 +536,23 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: '#172436', borderColor: '#172436' },
   chipText: { fontSize: 13, color: '#172436' },
   chipTextActive: { color: '#fff', fontWeight: '600' },
+  chipAdd: {
+    backgroundColor: '#EEF0F3',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginRight: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E3E1DC',
+    borderStyle: 'dashed',
+  },
+  chipAddText: { fontSize: 12, color: '#2E7D5B', fontWeight: '600' },
+  addLink: { color: '#2E7D5B', fontSize: 13, fontWeight: '600', marginBottom: 12 },
+  inlineAddRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  inlineAddInput: { flex: 1, marginRight: 8, marginBottom: 0 },
+  inlineAddButton: { backgroundColor: '#172436', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, justifyContent: 'center' },
+  inlineAddButtonText: { color: '#fff', fontWeight: '600', fontSize: 13 },
   hint: { fontSize: 12, color: '#6B747C', marginBottom: 12, fontStyle: 'italic' },
   button: { backgroundColor: '#172436', borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
   buttonText: { color: '#fff', fontWeight: '600', fontSize: 15 },

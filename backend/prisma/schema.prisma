@@ -260,21 +260,23 @@ model Household {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  memberships     HouseholdMembership[]
-  children        Child[]
-  categories      Category[]
-  settings        HouseholdSettings?
-  invites         HouseholdInvite[]
-  accounts        FinancialAccount[]
-  transfers       AccountTransfer[]
-  incomeSources   IncomeSource[]
-  chargePlans     ChargePlan[]
-  variableBudgets VariableBudget[]
-  adHocExpenses   AdHocExpense[]
-  financialPlans  FinancialPlan[]
-  savingsPockets  SavingsPocket[]
-  provisions      Provision[]
-  goals           Goal[]
+  memberships      HouseholdMembership[]
+  children         Child[]
+  categories       Category[]
+  settings         HouseholdSettings?
+  invites          HouseholdInvite[]
+  accounts         FinancialAccount[]
+  transfers        AccountTransfer[]
+  incomeSources    IncomeSource[]
+  chargePlans      ChargePlan[]
+  variableBudgets  VariableBudget[]
+  adHocExpenses    AdHocExpense[]
+  financialPlans   FinancialPlan[]
+  savingsPockets   SavingsPocket[]
+  provisions       Provision[]
+  goals            Goal[]
+  categoryTypes    CategoryType[]
+  categorySubtypes CategorySubtype[]
 
   @@map("household")
 }
@@ -331,9 +333,56 @@ model Category {
   variableBudgets VariableBudget[]
   budgetExpenses  BudgetExpense[]
   adHocExpenses   AdHocExpense[]
+  types           CategoryType[]
 
   @@index([householdId])
   @@map("category")
+}
+
+// Vague 2 §1 — plus petite évolution propre : Catégorie → Type → Sous-type (facultatif),
+// jamais 3 tables symétriques inutiles ; le Type est le niveau réellement filtré/saisi,
+// le Sous-type reste optionnel et n'existe que rattaché à un Type. household_id NULL =
+// système/partagé par tous les foyers (même convention que Category, doc02 §31).
+// Jamais de suppression brutale d'un type/sous-type déjà utilisé dans une transaction
+// historique (§3) : "active" seul contrôle sa disponibilité en saisie, l'historique lit
+// toujours la ligne quel que soit son état.
+model CategoryType {
+  id          String   @id @default(uuid())
+  categoryId  String   @map("category_id")
+  householdId String?  @map("household_id")
+  name        String
+  isSystem    Boolean  @default(false) @map("is_system")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  category       Category          @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  household      Household?        @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  subtypes       CategorySubtype[]
+  budgetExpenses BudgetExpense[]
+  adHocExpenses  AdHocExpense[]
+
+  @@index([categoryId])
+  @@index([householdId])
+  @@map("category_type")
+}
+
+model CategorySubtype {
+  id             String   @id @default(uuid())
+  categoryTypeId String   @map("category_type_id")
+  householdId    String?  @map("household_id")
+  name           String
+  isSystem       Boolean  @default(false) @map("is_system")
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  categoryType   CategoryType    @relation(fields: [categoryTypeId], references: [id], onDelete: Cascade)
+  household      Household?      @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  budgetExpenses BudgetExpense[]
+  adHocExpenses  AdHocExpense[]
+
+  @@index([categoryTypeId])
+  @@index([householdId])
+  @@map("category_subtype")
 }
 
 model HouseholdSettings {
@@ -714,23 +763,29 @@ model VariableBudget {
 // Une dépense réelle rattachée à un VariableBudget actif (§6/§8). Ne double
 // jamais AdHocExpense : une dépense est soit l'un, soit l'autre, jamais les deux.
 model BudgetExpense {
-  id               String   @id @default(uuid())
-  variableBudgetId String   @map("variable_budget_id")
-  amount           Decimal  @map("amount") @db.Decimal(14, 2)
+  id                String   @id @default(uuid())
+  variableBudgetId  String   @map("variable_budget_id")
+  amount            Decimal  @map("amount") @db.Decimal(14, 2)
   // Pas de @db.Date : même convention que Payment.paidDate/AccountTransfer.actualDate —
   // une date de mouvement réel porte l'heure d'enregistrement (RG-080, cf. bug de
   // comparaison avec AccountBalanceSnapshot.declaredAt sinon, corrigé en Lot 3).
-  spentDate        DateTime @map("spent_date")
-  categoryId       String?  @map("category_id")
-  accountId        String   @map("account_id")
-  recordedById     String   @map("recorded_by_id")
-  notes            String?
-  createdAt        DateTime @default(now()) @map("created_at")
+  spentDate         DateTime @map("spent_date")
+  categoryId        String?  @map("category_id")
+  // Vague 2 §1 : Type/Sous-type facultatifs, jamais requis — une dépense reste valide
+  // avec seulement une catégorie, comme avant cette évolution.
+  categoryTypeId    String?  @map("category_type_id")
+  categorySubtypeId String?  @map("category_subtype_id")
+  accountId         String   @map("account_id")
+  recordedById      String   @map("recorded_by_id")
+  notes             String?
+  createdAt         DateTime @default(now()) @map("created_at")
 
-  variableBudget VariableBudget   @relation(fields: [variableBudgetId], references: [id], onDelete: Cascade)
-  category       Category?        @relation(fields: [categoryId], references: [id])
-  account        FinancialAccount @relation("BudgetExpenseAccount", fields: [accountId], references: [id])
-  recordedBy     User             @relation("BudgetExpenseRecordedBy", fields: [recordedById], references: [id])
+  variableBudget  VariableBudget   @relation(fields: [variableBudgetId], references: [id], onDelete: Cascade)
+  category        Category?        @relation(fields: [categoryId], references: [id])
+  categoryType    CategoryType?    @relation(fields: [categoryTypeId], references: [id])
+  categorySubtype CategorySubtype? @relation(fields: [categorySubtypeId], references: [id])
+  account         FinancialAccount @relation("BudgetExpenseAccount", fields: [accountId], references: [id])
+  recordedBy      User             @relation("BudgetExpenseRecordedBy", fields: [recordedById], references: [id])
 
   // consommeSurFenetre (variable-budget.util/projection.util) : WHERE variableBudgetId AND
   // spentDate BETWEEN — appelé pour chaque période de chaque budget à chaque calcul.
@@ -742,20 +797,24 @@ model BudgetExpense {
 // Une dépense réelle sans budget variable actif correspondant (§7) — jamais de
 // Deadline ni de ChargePlan créés pour l'enregistrer (§2).
 model AdHocExpense {
-  id           String   @id @default(uuid())
-  householdId  String   @map("household_id")
-  categoryId   String?  @map("category_id")
-  amount       Decimal  @map("amount") @db.Decimal(14, 2)
-  spentDate    DateTime @map("spent_date")
-  accountId    String   @map("account_id")
-  recordedById String   @map("recorded_by_id")
-  notes        String?
-  createdAt    DateTime @default(now()) @map("created_at")
+  id                String   @id @default(uuid())
+  householdId       String   @map("household_id")
+  categoryId        String?  @map("category_id")
+  categoryTypeId    String?  @map("category_type_id")
+  categorySubtypeId String?  @map("category_subtype_id")
+  amount            Decimal  @map("amount") @db.Decimal(14, 2)
+  spentDate         DateTime @map("spent_date")
+  accountId         String   @map("account_id")
+  recordedById      String   @map("recorded_by_id")
+  notes             String?
+  createdAt         DateTime @default(now()) @map("created_at")
 
-  household  Household        @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  category   Category?        @relation(fields: [categoryId], references: [id])
-  account    FinancialAccount @relation("AdHocExpenseAccount", fields: [accountId], references: [id])
-  recordedBy User             @relation("AdHocExpenseRecordedBy", fields: [recordedById], references: [id])
+  household       Household        @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  category        Category?        @relation(fields: [categoryId], references: [id])
+  categoryType    CategoryType?    @relation(fields: [categoryTypeId], references: [id])
+  categorySubtype CategorySubtype? @relation(fields: [categorySubtypeId], references: [id])
+  account         FinancialAccount @relation("AdHocExpenseAccount", fields: [accountId], references: [id])
+  recordedBy      User             @relation("AdHocExpenseRecordedBy", fields: [recordedById], references: [id])
 
   @@index([householdId])
   @@index([spentDate])

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
@@ -19,10 +19,28 @@ interface Provision {
   currentAmount: number;
 }
 
+type Envelope = {
+  id: string;
+  kind: 'pocket' | 'provision';
+  name: string;
+  allocationMode: 'virtual_allocation' | 'backed_by_account';
+  currentAmount: number;
+  targetAmount: number | null;
+  isProtected: boolean;
+};
+
+// Vague 2 §11 — une seule entrée pour l'utilisateur ("Enveloppes"), la nature
+// (Réservation/Épargne/Épargne protégée) reste secondaire, affichée en badge.
+function natureLabel(e: Envelope): string {
+  if (e.kind === 'provision') return 'Réservation';
+  return e.isProtected ? 'Épargne protégée' : 'Épargne';
+}
+
 /**
- * Épargne / Provisions (§27) — poches et provisions dans une même vue, jamais
- * confondues avec un solde de compte bancaire (§2). Le badge « protégée » (RG-047)
- * n'a aucune action associée : rien ne la mobilise automatiquement (§22).
+ * Enveloppes (§27, unifié Vague 2 §11) — Provisions et Poches d'épargne dans une
+ * même liste, jamais confondues avec un solde de compte bancaire (§2). Le badge
+ * « protégée » (RG-047) n'a aucune action associée : rien ne la mobilise
+ * automatiquement (§22). Objectifs reste un concept séparé (accessible ci-dessous).
  */
 export function EpargneScreen() {
   const navigation = useNavigation<any>();
@@ -47,6 +65,28 @@ export function EpargneScreen() {
     }, [load]),
   );
 
+  const envelopes: Envelope[] = useMemo(() => {
+    const fromProvisions: Envelope[] = provisions.map((p) => ({
+      id: p.id,
+      kind: 'provision',
+      name: p.name,
+      allocationMode: p.allocationMode,
+      currentAmount: p.currentAmount,
+      targetAmount: null,
+      isProtected: false,
+    }));
+    const fromPockets: Envelope[] = pockets.map((p) => ({
+      id: p.id,
+      kind: 'pocket',
+      name: p.name,
+      allocationMode: p.allocationMode,
+      currentAmount: p.currentAmount,
+      targetAmount: p.targetAmount,
+      isProtected: p.isProtected,
+    }));
+    return [...fromProvisions, ...fromPockets].sort((a, b) => a.name.localeCompare(b.name));
+  }, [provisions, pockets]);
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scroll} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
       <View style={styles.headerRow}>
@@ -57,43 +97,25 @@ export function EpargneScreen() {
       </View>
 
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Provisions</Text>
-        <TouchableOpacity onPress={() => navigation.getParent()?.navigate('CreatePocket', { kind: 'provision' })}>
-          <Text style={styles.addLink}>+ Provision</Text>
+        <Text style={styles.sectionTitle}>Toutes les enveloppes</Text>
+        <TouchableOpacity onPress={() => navigation.getParent()?.navigate('CreatePocket', {})}>
+          <Text style={styles.addLink}>+ Enveloppe</Text>
         </TouchableOpacity>
       </View>
-      {provisions.length === 0 && !loading ? (
-        <Text style={styles.empty}>Aucune provision pour l'instant.</Text>
+      {envelopes.length === 0 && !loading ? (
+        <Text style={styles.empty}>Aucune enveloppe pour l'instant.</Text>
       ) : (
-        provisions.map((p) => (
-          <TouchableOpacity key={p.id} style={styles.card} onPress={() => navigation.getParent()?.navigate('PocketDetail', { kind: 'provision', id: p.id })}>
-            <Text style={styles.cardTitle}>{p.name}</Text>
-            <Text style={styles.cardAmount}>{p.currentAmount.toLocaleString('fr-FR')} DH</Text>
-            <Text style={styles.cardMeta}>{p.allocationMode === 'backed_by_account' ? 'Compte dédié' : 'Réservation virtuelle'}</Text>
-          </TouchableOpacity>
-        ))
-      )}
-
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Poches d'épargne</Text>
-        <TouchableOpacity onPress={() => navigation.getParent()?.navigate('CreatePocket', { kind: 'pocket' })}>
-          <Text style={styles.addLink}>+ Poche</Text>
-        </TouchableOpacity>
-      </View>
-      {pockets.length === 0 && !loading ? (
-        <Text style={styles.empty}>Aucune poche pour l'instant.</Text>
-      ) : (
-        pockets.map((p) => (
-          <TouchableOpacity key={p.id} style={styles.card} onPress={() => navigation.getParent()?.navigate('PocketDetail', { kind: 'pocket', id: p.id })}>
+        envelopes.map((e) => (
+          <TouchableOpacity key={`${e.kind}-${e.id}`} style={styles.card} onPress={() => navigation.getParent()?.navigate('PocketDetail', { kind: e.kind, id: e.id })}>
             <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>{p.name}</Text>
-              {p.isProtected && <Text style={styles.protectedBadge}>Protégée</Text>}
+              <Text style={styles.cardTitle}>{e.name}</Text>
+              <Text style={styles.natureBadge}>{natureLabel(e)}</Text>
             </View>
             <Text style={styles.cardAmount}>
-              {p.currentAmount.toLocaleString('fr-FR')} DH
-              {p.targetAmount ? ` / ${p.targetAmount.toLocaleString('fr-FR')} DH` : ''}
+              {e.currentAmount.toLocaleString('fr-FR')} DH
+              {e.targetAmount ? ` / ${e.targetAmount.toLocaleString('fr-FR')} DH` : ''}
             </Text>
-            <Text style={styles.cardMeta}>{p.allocationMode === 'backed_by_account' ? 'Compte dédié' : 'Réservation virtuelle'}</Text>
+            <Text style={styles.cardMeta}>{e.allocationMode === 'backed_by_account' ? 'Compte dédié' : 'Réservation virtuelle'}</Text>
           </TouchableOpacity>
         ))
       )}
@@ -115,7 +137,7 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 10 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardTitle: { fontSize: 14, fontWeight: '700', color: '#172436' },
-  protectedBadge: { fontSize: 10, fontWeight: '700', color: '#2E7D5B', backgroundColor: '#E6F2EC', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
+  natureBadge: { fontSize: 10, fontWeight: '700', color: '#2E7D5B', backgroundColor: '#E6F2EC', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
   cardAmount: { fontSize: 18, fontWeight: '800', color: '#172436', marginTop: 6 },
   cardMeta: { fontSize: 11, color: '#6B747C', marginTop: 4 },
 });
