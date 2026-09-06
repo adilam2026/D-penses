@@ -26,7 +26,8 @@ export function LoginScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Text style={styles.title}>Dépenses</Text>
+      <Text style={styles.title}>D-Penses+</Text>
+      <Text style={styles.tagline}>Comprendre. Anticiper. Décider.</Text>
       <Text style={styles.subtitle}>Connexion</Text>
 
       <TextInput
@@ -55,6 +56,7 @@ export function LoginScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#F6F5F2' },
   title: { fontSize: 28, fontWeight: '700', color: '#172436', textAlign: 'center', marginBottom: 4 },
+  tagline: { fontSize: 12, color: '#6B747C', textAlign: 'center', marginBottom: 20, fontStyle: 'italic' },
   subtitle: { fontSize: 16, color: '#6B747C', textAlign: 'center', marginBottom: 32 },
   input: {
     backgroundColor: '#fff',

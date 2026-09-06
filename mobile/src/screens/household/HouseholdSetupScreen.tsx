@@ -34,6 +34,7 @@ export function HouseholdSetupScreen() {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <Text style={styles.brand}>D-Penses+</Text>
         <Text style={styles.title}>Votre foyer</Text>
         <Text style={styles.subtitle}>Créez votre foyer, ou rejoignez celui d'un proche avec son code d'invitation.</Text>
 
@@ -69,6 +70,7 @@ export function HouseholdSetupScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F6F5F2' },
   scroll: { flexGrow: 1, justifyContent: 'center', padding: 24 },
+  brand: { fontSize: 14, fontWeight: '700', color: '#03155C', textAlign: 'center', marginBottom: 8 },
   title: { fontSize: 22, fontWeight: '700', color: '#172436', textAlign: 'center', marginBottom: 8 },
   subtitle: { fontSize: 13, color: '#6B747C', textAlign: 'center', marginBottom: 24 },
   segment: { flexDirection: 'row', backgroundColor: '#EDEBE6', borderRadius: 10, padding: 4, marginBottom: 16 },

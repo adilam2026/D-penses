@@ -30,6 +30,7 @@ export function SignupScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <Text style={styles.brand}>D-Penses+</Text>
       <Text style={styles.title}>Créer un compte</Text>
 
       <TextInput style={styles.input} placeholder="Prénom" value={firstName} onChangeText={setFirstName} />
@@ -65,6 +66,7 @@ export function SignupScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#F6F5F2' },
+  brand: { fontSize: 14, fontWeight: '700', color: '#03155C', textAlign: 'center', marginBottom: 8 },
   title: { fontSize: 22, fontWeight: '700', color: '#172436', textAlign: 'center', marginBottom: 24 },
   input: {
     backgroundColor: '#fff',
