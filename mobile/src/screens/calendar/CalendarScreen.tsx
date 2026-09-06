@@ -45,7 +45,14 @@ export function CalendarScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.getCalendar();
+      // Sans `to` explicite, le backend replie sur H* (date du tout prochain revenu
+      // prévu) — un horizon de calcul financier, pas une fenêtre d'affichage de
+      // calendrier : il coupe mathématiquement juste après ce premier revenu, quel
+      // que soit le nombre d'occurrences futures réellement générées en base. On
+      // demande donc explicitement une fenêtre de 90 jours, cohérente avec l'écran
+      // Projection.
+      const to = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
+      const res = await api.getCalendar({ to });
       setEvents(res.events);
     } finally {
       setLoading(false);
