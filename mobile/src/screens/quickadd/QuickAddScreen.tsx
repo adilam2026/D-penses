@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -13,6 +14,7 @@ import {
 } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { accountCreatedBus } from '../../state/events';
 
 type Mode = 'depense' | 'revenu' | 'paiement' | 'transfert';
 
@@ -88,14 +90,34 @@ export function QuickAddScreen() {
       setAccountId(quickDefault.accountId ?? (accountList[0]?.id ?? null));
       setCategories(categoryList);
       setOpenDeadlines(deadlines);
+      return accountList;
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    load();
+    load().then((accountList) => {
+      if (accountList && accountList.length === 0) promptCreateAccount();
+    });
   }, [load]);
+
+  useEffect(() => {
+    return accountCreatedBus.on((created) => {
+      load().then(() => setAccountId(created.id));
+    });
+  }, [load]);
+
+  function promptCreateAccount() {
+    Alert.alert(
+      'Aucun compte configuré',
+      "Créez d'abord un compte pour pouvoir enregistrer une dépense, un revenu ou un transfert.",
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Créer un compte', onPress: () => navigation.navigate('QuickCreateAccount') },
+      ],
+    );
+  }
 
   useEffect(() => {
     setBudgetHint(null);
@@ -127,7 +149,7 @@ export function QuickAddScreen() {
       return;
     }
     if (mode !== 'transfert' && !accountId) {
-      setError('Aucun compte disponible — créez un compte dans « Plus » d\'abord');
+      promptCreateAccount();
       return;
     }
 

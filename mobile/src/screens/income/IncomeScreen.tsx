@@ -1,7 +1,8 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -14,6 +15,7 @@ import {
 } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { accountCreatedBus } from '../../state/events';
 
 interface IncomeSource {
   id: string;
@@ -25,6 +27,12 @@ interface IncomeSource {
 interface Account {
   id: string;
   name: string;
+}
+
+interface Category {
+  id: string;
+  name: string;
+  kind: 'income' | 'expense' | 'both';
 }
 
 const RECURRENCE_LABEL: Record<string, string> = {
@@ -42,22 +50,26 @@ export function IncomeScreen() {
   const bottomInset = useBottomInset();
   const [sources, setSources] = useState<IncomeSource[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [label, setLabel] = useState('');
   const [amount, setAmount] = useState('');
   const [recurrence, setRecurrence] = useState('mensuel');
   const [accountId, setAccountId] = useState<string | null>(null);
+  const [categoryId, setCategoryId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [sourceList, accountList] = await Promise.all([api.listIncomeSources(), api.listAccounts()]);
+      const [sourceList, accountList, categoryList] = await Promise.all([api.listIncomeSources(), api.listAccounts(), api.listCategories()]);
       setSources(sourceList);
       setAccounts(accountList);
+      setCategories((categoryList as Category[]).filter((c) => c.kind === 'income' || c.kind === 'both'));
       setAccountId((current) => current ?? accountList[0]?.id ?? null);
+      return accountList;
     } finally {
       setLoading(false);
     }
@@ -65,9 +77,29 @@ export function IncomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      load().then((accountList) => {
+        if (accountList && accountList.length === 0) promptCreateAccount();
+      });
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [load]),
   );
+
+  useEffect(() => {
+    return accountCreatedBus.on((created) => {
+      load().then(() => setAccountId(created.id));
+    });
+  }, [load]);
+
+  function promptCreateAccount() {
+    Alert.alert(
+      'Aucun compte configuré',
+      "Créez d'abord un compte pour pouvoir y rattacher ce revenu.",
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Créer un compte', onPress: () => navigation.navigate('QuickCreateAccount') },
+      ],
+    );
+  }
 
   async function onCreate() {
     setError(null);
@@ -81,7 +113,7 @@ export function IncomeScreen() {
       return;
     }
     if (!accountId) {
-      setError('Créez un compte avant d\'ajouter un revenu');
+      promptCreateAccount();
       return;
     }
     setCreating(true);
@@ -92,9 +124,11 @@ export function IncomeScreen() {
         defaultAccountId: accountId,
         isRecurring: recurrence !== 'ponctuel',
         recurrenceRule: recurrence,
+        categoryId: categoryId ?? undefined,
       });
       setLabel('');
       setAmount('');
+      setCategoryId(null);
       await load();
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Création impossible');
@@ -141,6 +175,22 @@ export function IncomeScreen() {
             </TouchableOpacity>
           ))}
         </View>
+        {categories.length > 0 && (
+          <>
+            <Text style={styles.sectionLabel}>Catégorie (facultatif)</Text>
+            <View style={styles.chipRow}>
+              {categories.map((c) => (
+                <TouchableOpacity
+                  key={c.id}
+                  style={[styles.chip, categoryId === c.id && styles.chipActive]}
+                  onPress={() => setCategoryId(categoryId === c.id ? null : c.id)}
+                >
+                  <Text style={[styles.chipText, categoryId === c.id && styles.chipTextActive]}>{c.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <TouchableOpacity style={styles.button} onPress={onCreate} disabled={creating}>
           {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Ajouter</Text>}

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
+import { useBottomInset } from '../../ui/useBottomInset';
 
 interface Account {
   id: string;
@@ -65,6 +66,7 @@ function formatDate(iso: string) {
  */
 export function SimulatorScreen() {
   const navigation = useNavigation<any>();
+  const bottomInset = useBottomInset();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(todayIso());
@@ -118,7 +120,8 @@ export function SimulatorScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>Puis-je me le permettre ?</Text>
 
       <Text style={styles.sectionLabel}>Montant</Text>
@@ -187,7 +190,8 @@ export function SimulatorScreen() {
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text style={styles.cancel}>Retour</Text>
       </TouchableOpacity>
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
+import { useBottomInset } from '../../ui/useBottomInset';
 
 /** Création d'un objectif (§23/25) — parcours simple : label, montant cible, date optionnelle. */
 export function CreateGoalScreen() {
   const navigation = useNavigation<any>();
+  const bottomInset = useBottomInset();
   const [label, setLabel] = useState('');
   const [targetAmount, setTargetAmount] = useState('');
   const [targetDate, setTargetDate] = useState('');
@@ -35,32 +37,35 @@ export function CreateGoalScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Nouvel objectif</Text>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
+        <Text style={styles.title}>Nouvel objectif</Text>
 
-      <Text style={styles.sectionLabel}>Nom</Text>
-      <TextInput style={styles.input} placeholder="ex. PC" value={label} onChangeText={setLabel} />
+        <Text style={styles.sectionLabel}>Nom</Text>
+        <TextInput style={styles.input} placeholder="ex. PC" value={label} onChangeText={setLabel} />
 
-      <Text style={styles.sectionLabel}>Montant cible</Text>
-      <TextInput style={styles.input} placeholder="15000" keyboardType="decimal-pad" value={targetAmount} onChangeText={setTargetAmount} />
+        <Text style={styles.sectionLabel}>Montant cible</Text>
+        <TextInput style={styles.input} placeholder="15000" keyboardType="decimal-pad" value={targetAmount} onChangeText={setTargetAmount} />
 
-      <Text style={styles.sectionLabel}>Date souhaitée (optionnelle)</Text>
-      <TextInput style={styles.input} placeholder="AAAA-MM-JJ" value={targetDate} onChangeText={setTargetDate} />
+        <Text style={styles.sectionLabel}>Date souhaitée (optionnelle)</Text>
+        <TextInput style={styles.input} placeholder="AAAA-MM-JJ" value={targetDate} onChangeText={setTargetDate} />
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+        {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={submitting}>
-        {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Créer</Text>}
-      </TouchableOpacity>
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Text style={styles.cancel}>Annuler</Text>
-      </TouchableOpacity>
-    </View>
+        <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={submitting}>
+          {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Créer</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Text style={styles.cancel}>Annuler</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2', padding: 24, paddingTop: 24 },
+  container: { flex: 1, backgroundColor: '#F6F5F2' },
+  scroll: { padding: 24, paddingTop: 24 },
   title: { fontSize: 18, fontWeight: '700', color: '#172436', marginBottom: 16 },
   sectionLabel: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 8, marginTop: 4 },
   input: {

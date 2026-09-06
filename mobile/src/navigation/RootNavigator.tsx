@@ -9,6 +9,7 @@ import { HouseholdSetupScreen } from '../screens/household/HouseholdSetupScreen'
 import { QuickAddScreen } from '../screens/quickadd/QuickAddScreen';
 import { AccountsScreen } from '../screens/accounts/AccountsScreen';
 import { AccountDetailScreen } from '../screens/accounts/AccountDetailScreen';
+import { QuickCreateAccountScreen } from '../screens/accounts/QuickCreateAccountScreen';
 import { IncomeScreen } from '../screens/income/IncomeScreen';
 import { IncomeSourceDetailScreen } from '../screens/income/IncomeSourceDetailScreen';
 import { ChargesScreen } from '../screens/charges/ChargesScreen';
@@ -72,6 +73,11 @@ export function RootNavigator() {
       <Stack.Screen name="QuickAdd" component={QuickAddScreen} options={{ presentation: 'modal' }} />
       <Stack.Screen name="Accounts" component={AccountsScreen} options={{ headerShown: true, title: 'Comptes' }} />
       <Stack.Screen name="AccountDetail" component={AccountDetailScreen} options={{ headerShown: true, title: 'Compte' }} />
+      <Stack.Screen
+        name="QuickCreateAccount"
+        component={QuickCreateAccountScreen}
+        options={{ headerShown: true, title: 'Nouveau compte', presentation: 'modal' }}
+      />
       <Stack.Screen name="Income" component={IncomeScreen} options={{ headerShown: true, title: 'Revenus' }} />
       <Stack.Screen name="IncomeSourceDetail" component={IncomeSourceDetailScreen} options={{ headerShown: true, title: 'Revenu' }} />
       <Stack.Screen name="Charges" component={ChargesScreen} options={{ headerShown: true, title: 'Charges récurrentes' }} />

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
+import { useBottomInset } from '../../ui/useBottomInset';
 
 interface DeadlineContext {
   chargePlan: { label: string };
@@ -30,6 +31,7 @@ function formatDate(iso: string) {
 export function ConfirmDeadlineScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
+  const bottomInset = useBottomInset();
   const id = route.params?.id as string;
   const [context, setContext] = useState<DeadlineContext | null>(null);
   const [loadingContext, setLoadingContext] = useState(true);
@@ -66,42 +68,45 @@ export function ConfirmDeadlineScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Facture reçue</Text>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
+        <Text style={styles.title}>Facture reçue</Text>
 
-      {loadingContext ? (
-        <ActivityIndicator style={{ marginBottom: 16 }} />
-      ) : context ? (
-        <View style={styles.contextCard}>
-          <Text style={styles.contextLabel}>{context.chargePlan.label}</Text>
-          <Text style={styles.contextLine}>Échéance du {formatDate(context.dueDate)}</Text>
-          <Text style={styles.contextLine}>
-            {context.amountStatus === 'inconnu' || context.amountCurrent === null
-              ? 'Montant jusqu\'ici inconnu'
-              : `Montant estimé : ${context.amountCurrent.toLocaleString('fr-FR')} DH`}
-          </Text>
-        </View>
-      ) : null}
+        {loadingContext ? (
+          <ActivityIndicator style={{ marginBottom: 16 }} />
+        ) : context ? (
+          <View style={styles.contextCard}>
+            <Text style={styles.contextLabel}>{context.chargePlan.label}</Text>
+            <Text style={styles.contextLine}>Échéance du {formatDate(context.dueDate)}</Text>
+            <Text style={styles.contextLine}>
+              {context.amountStatus === 'inconnu' || context.amountCurrent === null
+                ? 'Montant jusqu\'ici inconnu'
+                : `Montant estimé : ${context.amountCurrent.toLocaleString('fr-FR')} DH`}
+            </Text>
+          </View>
+        ) : null}
 
-      <Text style={styles.subtitle}>Saisissez le montant réel de la facture. L'estimation initiale, si elle existe, est conservée.</Text>
+        <Text style={styles.subtitle}>Saisissez le montant réel de la facture. L'estimation initiale, si elle existe, est conservée.</Text>
 
-      <TextInput style={styles.input} placeholder="Montant réel (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} autoFocus />
+        <TextInput style={styles.input} placeholder="Montant réel (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} autoFocus />
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+        {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={submitting}>
-        {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Confirmer</Text>}
-      </TouchableOpacity>
+        <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={submitting}>
+          {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Confirmer</Text>}
+        </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Text style={styles.cancel}>Annuler</Text>
-      </TouchableOpacity>
-    </View>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Text style={styles.cancel}>Annuler</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2', padding: 24, paddingTop: 40 },
+  container: { flex: 1, backgroundColor: '#F6F5F2' },
+  scroll: { padding: 24, paddingTop: 40 },
   title: { fontSize: 20, fontWeight: '700', color: '#172436', marginBottom: 8, textAlign: 'center' },
   subtitle: { fontSize: 13, color: '#6B747C', textAlign: 'center', marginBottom: 20 },
   contextCard: { backgroundColor: '#fff', borderRadius: 10, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: '#E3E1DC' },

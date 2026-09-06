@@ -1,7 +1,8 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
-import { ActivityIndicator, FlatList, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
+import { useBottomInset } from '../../ui/useBottomInset';
 
 interface Movement {
   id: string;
@@ -42,6 +43,7 @@ function formatDate(iso: string) {
 export function PocketDetailScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
+  const bottomInset = useBottomInset();
   const kind = route.params?.kind as 'pocket' | 'provision';
   const id = route.params?.id as string;
   const isProvision = kind === 'provision';
@@ -184,7 +186,8 @@ export function PocketDetailScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
       <View style={styles.headerRow}>
         <Text style={styles.title}>{detail.name}</Text>
         {detail.isProtected && <Text style={styles.protectedBadge}>Protégée</Text>}
@@ -303,7 +306,8 @@ export function PocketDetailScreen() {
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text style={styles.cancel}>Retour</Text>
       </TouchableOpacity>
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

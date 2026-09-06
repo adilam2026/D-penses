@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../auth/AuthContext';
 import { ApiError } from '../../api/client';
 
@@ -32,40 +32,43 @@ export function HouseholdSetupScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Votre foyer</Text>
-      <Text style={styles.subtitle}>Créez votre foyer, ou rejoignez celui d'un proche avec son code d'invitation.</Text>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <Text style={styles.title}>Votre foyer</Text>
+        <Text style={styles.subtitle}>Créez votre foyer, ou rejoignez celui d'un proche avec son code d'invitation.</Text>
 
-      <View style={styles.segment}>
-        <TouchableOpacity style={[styles.segmentItem, mode === 'create' && styles.segmentActive]} onPress={() => setMode('create')}>
-          <Text style={[styles.segmentText, mode === 'create' && styles.segmentTextActive]}>Créer un foyer</Text>
+        <View style={styles.segment}>
+          <TouchableOpacity style={[styles.segmentItem, mode === 'create' && styles.segmentActive]} onPress={() => setMode('create')}>
+            <Text style={[styles.segmentText, mode === 'create' && styles.segmentTextActive]}>Créer un foyer</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.segmentItem, mode === 'join' && styles.segmentActive]} onPress={() => setMode('join')}>
+            <Text style={[styles.segmentText, mode === 'join' && styles.segmentTextActive]}>Rejoindre</Text>
+          </TouchableOpacity>
+        </View>
+
+        {mode === 'create' ? (
+          <TextInput style={styles.input} placeholder="Nom du foyer (ex. Famille Alami)" value={name} onChangeText={setName} />
+        ) : (
+          <TextInput style={styles.input} placeholder="Code d'invitation" autoCapitalize="characters" value={code} onChangeText={setCode} />
+        )}
+
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+
+        <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={loading}>
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{mode === 'create' ? 'Créer' : 'Rejoindre'}</Text>}
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.segmentItem, mode === 'join' && styles.segmentActive]} onPress={() => setMode('join')}>
-          <Text style={[styles.segmentText, mode === 'join' && styles.segmentTextActive]}>Rejoindre</Text>
+
+        <TouchableOpacity onPress={signOut}>
+          <Text style={styles.link}>Se déconnecter</Text>
         </TouchableOpacity>
-      </View>
-
-      {mode === 'create' ? (
-        <TextInput style={styles.input} placeholder="Nom du foyer (ex. Famille Alami)" value={name} onChangeText={setName} />
-      ) : (
-        <TextInput style={styles.input} placeholder="Code d'invitation" autoCapitalize="characters" value={code} onChangeText={setCode} />
-      )}
-
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-
-      <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={loading}>
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{mode === 'create' ? 'Créer' : 'Rejoindre'}</Text>}
-      </TouchableOpacity>
-
-      <TouchableOpacity onPress={signOut}>
-        <Text style={styles.link}>Se déconnecter</Text>
-      </TouchableOpacity>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#F6F5F2' },
+  container: { flex: 1, backgroundColor: '#F6F5F2' },
+  scroll: { flexGrow: 1, justifyContent: 'center', padding: 24 },
   title: { fontSize: 22, fontWeight: '700', color: '#172436', textAlign: 'center', marginBottom: 8 },
   subtitle: { fontSize: 13, color: '#6B747C', textAlign: 'center', marginBottom: 24 },
   segment: { flexDirection: 'row', backgroundColor: '#EDEBE6', borderRadius: 10, padding: 4, marginBottom: 16 },

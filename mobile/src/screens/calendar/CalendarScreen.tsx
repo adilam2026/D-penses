@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
-import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 
 interface CalendarEvent {
@@ -8,6 +8,8 @@ interface CalendarEvent {
   kind: 'revenu_prevu' | 'facture_attendue' | 'echeance' | 'montant_inconnu' | 'echeance_payee';
   label: string;
   amount: number | null;
+  deadlineId?: string;
+  incomeOccurrenceId?: string;
 }
 
 const KIND_LABEL: Record<CalendarEvent['kind'], string> = {
@@ -36,6 +38,7 @@ function formatDate(iso: string) {
  * deux événements distincts pour une seule Deadline métier.
  */
 export function CalendarScreen() {
+  const navigation = useNavigation<any>();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -64,7 +67,12 @@ export function CalendarScreen() {
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
         ListEmptyComponent={!loading ? <Text style={styles.empty}>Aucun événement dans les prochains jours.</Text> : null}
         renderItem={({ item }) => (
-          <View style={styles.row}>
+          <TouchableOpacity
+            style={styles.row}
+            disabled={!item.deadlineId}
+            activeOpacity={item.deadlineId ? 0.6 : 1}
+            onPress={() => item.deadlineId && navigation.navigate('DeadlineDetail', { id: item.deadlineId })}
+          >
             <View style={[styles.dot, { backgroundColor: KIND_COLOR[item.kind] }]} />
             <View style={styles.rowBody}>
               <Text style={styles.rowLabel}>{item.label}</Text>
@@ -73,7 +81,7 @@ export function CalendarScreen() {
               </Text>
             </View>
             {item.amount !== null && <Text style={styles.rowAmount}>{item.amount.toLocaleString('fr-FR')} DH</Text>}
-          </View>
+          </TouchableOpacity>
         )}
       />
     </View>

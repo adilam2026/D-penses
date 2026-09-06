@@ -22,6 +22,12 @@ interface OpenDeadline {
   chargePlan: { label: string };
 }
 
+interface Category {
+  id: string;
+  name: string;
+  kind: 'income' | 'expense' | 'both';
+}
+
 const RECURRENCE_LABEL: Record<string, string> = {
   hebdomadaire: 'Hebdomadaire',
   mensuel: 'Mensuel',
@@ -46,6 +52,7 @@ export function ChargesScreen() {
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
   const [deadlines, setDeadlines] = useState<OpenDeadline[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [label, setLabel] = useState('');
@@ -53,13 +60,16 @@ export function ChargesScreen() {
   const [dueDate, setDueDate] = useState(todayIso());
   const [amount, setAmount] = useState('');
   const [amountStatus, setAmountStatus] = useState<'estime' | 'confirme' | 'inconnu'>('estime');
+  const [categoryId, setCategoryId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setDeadlines(await api.listOpenDeadlines());
+      const [deadlineList, categoryList] = await Promise.all([api.listOpenDeadlines(), api.listCategories()]);
+      setDeadlines(deadlineList);
+      setCategories((categoryList as Category[]).filter((c) => c.kind === 'expense' || c.kind === 'both'));
     } finally {
       setLoading(false);
     }
@@ -83,7 +93,7 @@ export function ChargesScreen() {
     }
     setCreating(true);
     try {
-      const plan = await api.createChargePlan({ label: label.trim(), startDate: dueDate, recurrenceRule: recurrence });
+      const plan = await api.createChargePlan({ label: label.trim(), startDate: dueDate, recurrenceRule: recurrence, categoryId: categoryId ?? undefined });
       await api.createDeadline(plan.id, {
         dueDate,
         amountStatus,
@@ -91,6 +101,7 @@ export function ChargesScreen() {
       });
       setLabel('');
       setAmount('');
+      setCategoryId(null);
       await load();
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Création impossible');
@@ -140,6 +151,22 @@ export function ChargesScreen() {
         </View>
         {amountStatus !== 'inconnu' && (
           <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} />
+        )}
+        {categories.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Catégorie (facultatif)</Text>
+            <View style={styles.chipRow}>
+              {categories.map((c) => (
+                <TouchableOpacity
+                  key={c.id}
+                  style={[styles.chip, categoryId === c.id && styles.chipActive]}
+                  onPress={() => setCategoryId(categoryId === c.id ? null : c.id)}
+                >
+                  <Text style={[styles.chipText, categoryId === c.id && styles.chipTextActive]}>{c.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
         )}
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <TouchableOpacity style={styles.button} onPress={onCreate} disabled={creating}>

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useBottomInset } from '../../ui/useBottomInset';
 import * as api from '../../api/client';
 
@@ -74,7 +74,8 @@ export function CreatePocketScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>{kind === 'provision' ? 'Nouvelle provision' : 'Nouvelle poche d\'épargne'}</Text>
 
       <Text style={styles.sectionLabel}>Nom</Text>
@@ -134,7 +135,8 @@ export function CreatePocketScreen() {
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text style={styles.cancel}>Annuler</Text>
       </TouchableOpacity>
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

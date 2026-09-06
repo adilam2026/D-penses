@@ -1,7 +1,8 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useRoute } from '@react-navigation/native';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
+import { useBottomInset } from '../../ui/useBottomInset';
 
 interface GoalDetail {
   id: string;
@@ -42,6 +43,7 @@ function formatDate(iso: string) {
 export function GoalDetailScreen() {
   const route = useRoute<any>();
   const id = route.params?.id as string;
+  const bottomInset = useBottomInset();
 
   const [goal, setGoal] = useState<GoalDetail | null>(null);
   const [contributions, setContributions] = useState<Contribution[]>([]);
@@ -117,7 +119,8 @@ export function GoalDetailScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>{goal.label}</Text>
       <View style={styles.progressTrack}>
         <View style={[styles.progressFill, { width: `${goal.progressPercent}%` }]} />
@@ -166,6 +169,7 @@ export function GoalDetailScreen() {
       <FlatList
         data={contributions}
         keyExtractor={(c) => c.id}
+        scrollEnabled={false}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
         ListEmptyComponent={<Text style={styles.empty}>Aucune contribution pour l'instant.</Text>}
         renderItem={({ item }) => (
@@ -185,7 +189,8 @@ export function GoalDetailScreen() {
           </View>
         )}
       />
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -202,7 +207,8 @@ function Figure({ label, value, suffix, highlight }: { label: string; value: num
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2', paddingTop: 16, paddingHorizontal: 20 },
+  container: { flex: 1, backgroundColor: '#F6F5F2' },
+  scroll: { paddingTop: 16, paddingHorizontal: 20 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F6F5F2' },
   title: { fontSize: 20, fontWeight: '700', color: '#172436', marginBottom: 12 },
   progressTrack: { height: 8, backgroundColor: '#EDEBE6', borderRadius: 4, overflow: 'hidden', marginBottom: 16 },

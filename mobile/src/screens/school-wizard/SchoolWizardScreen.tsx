@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useBottomInset } from '../../ui/useBottomInset';
 import * as api from '../../api/client';
 
@@ -321,13 +321,15 @@ export function SchoolWizardScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Text style={styles.stepCounter}>
         Étape {step + 1}/{STEP_TITLES.length}
       </Text>
       <Text style={styles.title}>{STEP_TITLES[step]}</Text>
 
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>{renderStep()}</ScrollView>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
+        {renderStep()}
+      </ScrollView>
 
       <View style={styles.navRow}>
         <TouchableOpacity style={styles.navButton} onPress={() => (step === 0 ? navigation.goBack() : setStep(step - 1))}>
@@ -343,7 +345,7 @@ export function SchoolWizardScreen() {
           </TouchableOpacity>
         )}
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
