@@ -113,7 +113,7 @@ export function ChargesScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
         <Text style={styles.intro}>Ajoutez les dépenses que vous connaissez déjà afin que l'application puisse les anticiper.</Text>
         <Text style={styles.sectionTitle}>Échéances ouvertes</Text>
         {loading ? (

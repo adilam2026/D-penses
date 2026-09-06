@@ -200,7 +200,7 @@ export function QuickAddScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Ajouter</Text>
 
         <View style={styles.modeRow}>

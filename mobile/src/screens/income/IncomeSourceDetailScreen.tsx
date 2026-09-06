@@ -109,7 +109,7 @@ export function IncomeSourceDetailScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>{label}</Text>
 
         <Text style={styles.sectionTitle}>Prochaine occurrence prévue</Text>

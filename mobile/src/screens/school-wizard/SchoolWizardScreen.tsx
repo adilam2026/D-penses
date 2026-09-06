@@ -286,10 +286,10 @@ export function SchoolWizardScreen() {
         <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset, justifyContent: 'center', flexGrow: 1 }]} keyboardShouldPersistTaps="handled">
           <Text style={styles.gateTitle}>Aucun enfant n'est encore configuré</Text>
           <Text style={styles.gateHelp}>Un plan de frais scolaires est toujours rattaché à au moins un enfant.</Text>
-          <TextInput style={styles.input} placeholder="Prénom" value={newChildFirst} onChangeText={setNewChildFirst} />
-          <TextInput style={styles.input} placeholder="Nom" value={newChildLast} onChangeText={setNewChildLast} />
+          <TextInput testID="gate-firstName" style={styles.input} placeholder="Prénom" value={newChildFirst} onChangeText={setNewChildFirst} />
+          <TextInput testID="gate-lastName" style={styles.input} placeholder="Nom" value={newChildLast} onChangeText={setNewChildLast} />
           {childError ? <Text style={styles.error}>{childError}</Text> : null}
-          <TouchableOpacity style={styles.navButtonPrimary} onPress={onCreateChild} disabled={creatingChild}>
+          <TouchableOpacity testID="gate-submit" style={styles.navButtonPrimary} onPress={onCreateChild} disabled={creatingChild}>
             {creatingChild ? <ActivityIndicator color="#fff" /> : <Text style={styles.navButtonPrimaryText}>Ajouter un enfant</Text>}
           </TouchableOpacity>
           <TouchableOpacity style={[styles.navButton, { marginTop: 12 }]} onPress={() => navigation.goBack()}>
@@ -308,7 +308,12 @@ export function SchoolWizardScreen() {
             <Text style={styles.sectionLabel}>Enfant(s) concerné(s)</Text>
             <View style={styles.chipRow}>
               {children.map((c) => (
-                <TouchableOpacity key={c.id} style={[styles.chip, selectedChildIds.includes(c.id) && styles.chipActive]} onPress={() => toggleChild(c.id)}>
+                <TouchableOpacity
+                  key={c.id}
+                  testID={`child-chip-${c.id}`}
+                  style={[styles.chip, selectedChildIds.includes(c.id) && styles.chipActive]}
+                  onPress={() => toggleChild(c.id)}
+                >
                   <Text style={[styles.chipText, selectedChildIds.includes(c.id) && styles.chipTextActive]}>{c.firstName}</Text>
                 </TouchableOpacity>
               ))}
@@ -342,8 +347,15 @@ export function SchoolWizardScreen() {
           <View>
             <Text style={styles.stepHint}>Aide : indiquez le montant annuel total, réparti automatiquement selon les mois de trimestre ci-dessus (modifiable ensuite ligne par ligne).</Text>
             <View style={styles.row}>
-              <TextInput style={[styles.input, { flex: 1 }]} placeholder="Montant annuel (DH)" keyboardType="decimal-pad" value={scolariteAnnual} onChangeText={setScolariteAnnual} />
-              <TouchableOpacity style={styles.distributeButton} onPress={applyScolariteAnnual}>
+              <TextInput
+                testID="scolarite-annual"
+                style={[styles.input, { flex: 1 }]}
+                placeholder="Montant annuel (DH)"
+                keyboardType="decimal-pad"
+                value={scolariteAnnual}
+                onChangeText={setScolariteAnnual}
+              />
+              <TouchableOpacity testID="scolarite-repartir" style={styles.distributeButton} onPress={applyScolariteAnnual}>
                 <Text style={styles.distributeButtonText}>Répartir</Text>
               </TouchableOpacity>
             </View>
@@ -474,15 +486,15 @@ export function SchoolWizardScreen() {
       </ScrollView>
 
       <View style={[styles.navRow, { paddingBottom: bottomInset }]}>
-        <TouchableOpacity style={styles.navButton} onPress={() => (step === 0 ? navigation.goBack() : setStep(step - 1))}>
+        <TouchableOpacity testID="nav-prev" style={styles.navButton} onPress={() => (step === 0 ? navigation.goBack() : setStep(step - 1))}>
           <Text style={styles.navButtonText}>{step === 0 ? 'Annuler' : 'Précédent'}</Text>
         </TouchableOpacity>
         {step < STEP_TITLES.length - 1 ? (
-          <TouchableOpacity style={styles.navButtonPrimary} onPress={() => setStep(step + 1)}>
+          <TouchableOpacity testID="nav-next" style={styles.navButtonPrimary} onPress={() => setStep(step + 1)}>
             <Text style={styles.navButtonPrimaryText}>Suivant</Text>
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity style={styles.navButtonPrimary} onPress={onSubmit} disabled={submitting}>
+          <TouchableOpacity testID="nav-submit" style={styles.navButtonPrimary} onPress={onSubmit} disabled={submitting}>
             {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.navButtonPrimaryText}>Créer le plan</Text>}
           </TouchableOpacity>
         )}
@@ -497,7 +509,7 @@ function PosteToggle({ label, included, onToggle, children }: { label: string; i
     <View style={styles.posteBlock}>
       <View style={styles.toggleRow}>
         <Text style={styles.toggleLabel}>{label}</Text>
-        <Switch value={included} onValueChange={onToggle} />
+        <Switch testID={`toggle-${label}`} value={included} onValueChange={onToggle} />
       </View>
       {included && children}
     </View>
@@ -534,7 +546,12 @@ function PosteEditor({
       {allowedFrequencies.length > 1 && (
         <View style={styles.segment}>
           {allowedFrequencies.map((f) => (
-            <TouchableOpacity key={f} style={[styles.segmentItem, poste.frequency === f && styles.segmentActive]} onPress={() => onChange({ ...poste, frequency: f })}>
+            <TouchableOpacity
+              key={f}
+              testID={`${label}-freq-${f}`}
+              style={[styles.segmentItem, poste.frequency === f && styles.segmentActive]}
+              onPress={() => onChange({ ...poste, frequency: f })}
+            >
               <Text style={[styles.segmentText, poste.frequency === f && styles.segmentTextActive]}>{freqLabels[f]}</Text>
             </TouchableOpacity>
           ))}
@@ -548,6 +565,7 @@ function PosteEditor({
               {label} — {termLabel} ({termMonths[i]} mois)
             </Text>
             <TextInput
+              testID={`${label}-term-${i}-amount`}
               style={styles.input}
               placeholder="Montant (DH) — laissez vide si inconnu"
               keyboardType="decimal-pad"
@@ -580,6 +598,7 @@ function PosteEditor({
           )}
           {!poste.unknown && (
             <TextInput
+              testID={`${label}-amount`}
               style={styles.input}
               placeholder={poste.frequency === 'mensuel' ? 'Montant mensuel (DH)' : 'Montant (DH)'}
               keyboardType="decimal-pad"
