@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { accountCreatedBus } from '../../state/events';
+import { FormField } from '../../ui/FormField';
+import { colors, radius, spacing } from '../../ui/theme';
 
 type AccountType = 'courant' | 'especes' | 'epargne' | 'autre';
 
@@ -63,16 +65,21 @@ export function QuickCreateAccountScreen() {
           ))}
         </View>
 
-        <Text style={styles.sectionLabel}>Nom</Text>
-        <TextInput style={styles.input} placeholder="ex. Compte principal" value={name} onChangeText={setName} autoFocus />
+        <FormField testID="quickcreate-account-name-input" label="Nom" placeholder="ex. Compte principal" value={name} onChangeText={setName} autoFocus />
 
-        <Text style={styles.sectionLabel}>Solde initial (facultatif)</Text>
-        <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={initialBalance} onChangeText={setInitialBalance} />
+        <FormField
+          testID="quickcreate-account-balance-input"
+          label="Solde initial (facultatif)"
+          placeholder="Montant (DH)"
+          keyboardType="decimal-pad"
+          value={initialBalance}
+          onChangeText={setInitialBalance}
+        />
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        <TouchableOpacity style={styles.button} onPress={onCreate} disabled={submitting}>
-          {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Créer le compte</Text>}
+        <TouchableOpacity style={styles.button} onPress={onCreate} disabled={submitting} testID="quickcreate-account-submit">
+          {submitting ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Créer le compte</Text>}
         </TouchableOpacity>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.cancel}>Annuler</Text>
@@ -83,37 +90,27 @@ export function QuickCreateAccountScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  scroll: { padding: 24, paddingTop: 40 },
-  title: { fontSize: 18, fontWeight: '700', color: '#172436', marginBottom: 8, textAlign: 'center' },
-  subtitle: { fontSize: 12, color: '#6B747C', textAlign: 'center', marginBottom: 20 },
-  sectionLabel: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 8, marginTop: 4 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
+  container: { flex: 1, backgroundColor: colors.background },
+  scroll: { padding: spacing.xl, paddingTop: 40 },
+  title: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.sm, textAlign: 'center' },
+  subtitle: { fontSize: 12, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.xl },
+  sectionLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm, marginTop: 4 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: spacing.sm },
   chip: {
-    backgroundColor: '#fff',
-    borderRadius: 999,
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginRight: 8,
-    marginBottom: 8,
+    paddingVertical: spacing.sm,
+    marginRight: spacing.sm,
+    marginBottom: spacing.sm,
     borderWidth: 1,
-    borderColor: '#E3E1DC',
+    borderColor: colors.border,
   },
-  chipActive: { backgroundColor: '#172436', borderColor: '#172436' },
-  chipText: { fontSize: 13, color: '#172436' },
-  chipTextActive: { color: '#fff', fontWeight: '600' },
-  input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 12,
-    fontSize: 15,
-    borderWidth: 1,
-    borderColor: '#E3E1DC',
-  },
-  button: { backgroundColor: '#172436', borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  cancel: { color: '#6B747C', textAlign: 'center', marginTop: 16, fontSize: 13 },
-  error: { color: '#B3261E', fontSize: 13, marginBottom: 8 },
+  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipText: { fontSize: 13, color: colors.textPrimary },
+  chipTextActive: { color: colors.textOnPrimary, fontWeight: '600' },
+  button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.sm },
+  buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 15 },
+  cancel: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.md, fontSize: 13 },
+  error: { color: colors.danger, fontSize: 13, marginBottom: spacing.sm },
 });

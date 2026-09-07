@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { Select } from '../../ui/Select';
+import { FormField } from '../../ui/FormField';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface Category {
   id: string;
@@ -96,96 +98,90 @@ export function CategoryTypesScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
-      <Text style={styles.intro}>Choisissez une catégorie pour gérer ses types (ex. Alimentation → Courses).</Text>
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
+        <Text style={styles.intro}>Choisissez une catégorie pour gérer ses types (ex. Alimentation → Courses).</Text>
 
-      {/* R5 clôture §6 — sélecteur compact (catégories potentiellement nombreuses), jamais un mur de chips. */}
-      <Select
-        testID="category-types-category-select"
-        placeholder="Choisir une catégorie"
-        value={categoryId}
-        onChange={setCategoryId}
-        options={categories.map((c) => ({ value: c.id, label: c.name }))}
-      />
+        {/* R5 clôture §6 — sélecteur compact (catégories potentiellement nombreuses), jamais un mur de chips. */}
+        <Select
+          testID="category-types-category-select"
+          placeholder="Choisir une catégorie"
+          value={categoryId}
+          onChange={setCategoryId}
+          options={categories.map((c) => ({ value: c.id, label: c.name }))}
+        />
 
-      {loading ? (
-        <ActivityIndicator />
-      ) : (
-        types.map((t) => (
-          <View key={t.id} style={styles.card}>
-            <View style={styles.typeRow}>
-              <TouchableOpacity style={{ flex: 1 }} onPress={() => setOpenSubtypesFor(openSubtypesFor === t.id ? null : t.id)}>
-                <Text style={styles.typeLabel}>{t.name}</Text>
-                <Text style={styles.typeMeta}>
-                  {t.isSystem ? 'Type système' : 'Personnalisé'} · {t.subtypes.length} sous-type(s)
-                </Text>
-              </TouchableOpacity>
-              {!t.isSystem && <Switch value={t.active} onValueChange={() => onToggleType(t)} />}
-            </View>
-
-            {openSubtypesFor === t.id && (
-              <View style={styles.subtypeBlock}>
-                {t.subtypes.map((s) => (
-                  <View key={s.id} style={styles.subtypeRow}>
-                    <Text style={styles.subtypeLabel}>{s.name}</Text>
-                    {!s.isSystem && <Switch value={s.active} onValueChange={() => onToggleSubtype(s)} />}
-                  </View>
-                ))}
-                <View style={styles.inlineAddRow}>
-                  <TextInput
-                    style={[styles.input, styles.inlineAddInput]}
-                    placeholder="Nouveau sous-type"
-                    value={subtypeDrafts[t.id] ?? ''}
-                    onChangeText={(v) => setSubtypeDrafts((prev) => ({ ...prev, [t.id]: v }))}
-                    onFocus={handleFocus}
-                  />
-                  <TouchableOpacity style={styles.inlineAddButton} onPress={() => onCreateSubtype(t.id)}>
-                    <Text style={styles.inlineAddButtonText}>Ajouter</Text>
-                  </TouchableOpacity>
-                </View>
+        {loading ? (
+          <ActivityIndicator />
+        ) : (
+          types.map((t) => (
+            <View key={t.id} style={styles.card}>
+              <View style={styles.typeRow}>
+                <TouchableOpacity style={{ flex: 1 }} onPress={() => setOpenSubtypesFor(openSubtypesFor === t.id ? null : t.id)}>
+                  <Text style={styles.typeLabel}>{t.name}</Text>
+                  <Text style={styles.typeMeta}>
+                    {t.isSystem ? 'Type système' : 'Personnalisé'} · {t.subtypes.length} sous-type(s)
+                  </Text>
+                </TouchableOpacity>
+                {!t.isSystem && <Switch value={t.active} onValueChange={() => onToggleType(t)} />}
               </View>
-            )}
-          </View>
-        ))
-      )}
 
-      {addingType ? (
-        <View style={styles.inlineAddRow}>
-          <TextInput style={[styles.input, styles.inlineAddInput]} placeholder="Nom du type" value={newTypeName} onChangeText={setNewTypeName} onFocus={handleFocus} />
-          <TouchableOpacity style={styles.inlineAddButton} onPress={onCreateType}>
-            <Text style={styles.inlineAddButtonText}>Ajouter</Text>
+              {openSubtypesFor === t.id && (
+                <View style={styles.subtypeBlock}>
+                  {t.subtypes.map((s) => (
+                    <View key={s.id} style={styles.subtypeRow}>
+                      <Text style={styles.subtypeLabel}>{s.name}</Text>
+                      {!s.isSystem && <Switch value={s.active} onValueChange={() => onToggleSubtype(s)} />}
+                    </View>
+                  ))}
+                  <View style={styles.inlineAddRow}>
+                    <FormField
+                      containerStyle={styles.inlineAddInput}
+                      placeholder="Nouveau sous-type"
+                      value={subtypeDrafts[t.id] ?? ''}
+                      onChangeText={(v) => setSubtypeDrafts((prev) => ({ ...prev, [t.id]: v }))}
+                      onFocus={handleFocus}
+                    />
+                    <TouchableOpacity style={styles.inlineAddButton} onPress={() => onCreateSubtype(t.id)}>
+                      <Text style={styles.inlineAddButtonText}>Ajouter</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </View>
+          ))
+        )}
+
+        {addingType ? (
+          <View style={styles.inlineAddRow}>
+            <FormField containerStyle={styles.inlineAddInput} placeholder="Nom du type" value={newTypeName} onChangeText={setNewTypeName} onFocus={handleFocus} />
+            <TouchableOpacity style={styles.inlineAddButton} onPress={onCreateType}>
+              <Text style={styles.inlineAddButtonText}>Ajouter</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity onPress={() => setAddingType(true)}>
+            <Text style={styles.addLink}>+ Nouveau type pour cette catégorie</Text>
           </TouchableOpacity>
-        </View>
-      ) : (
-        <TouchableOpacity onPress={() => setAddingType(true)}>
-          <Text style={styles.addLink}>+ Nouveau type pour cette catégorie</Text>
-        </TouchableOpacity>
-      )}
-    </ScrollView>
+        )}
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  scroll: { padding: 20 },
-  intro: { color: '#6B747C', fontSize: 13, lineHeight: 19, marginBottom: 16 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 16 },
-  chip: { backgroundColor: '#fff', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8, marginRight: 8, marginBottom: 8, borderWidth: 1, borderColor: '#E3E1DC' },
-  chipActive: { backgroundColor: '#172436', borderColor: '#172436' },
-  chipText: { fontSize: 13, color: '#172436' },
-  chipTextActive: { color: '#fff', fontWeight: '600' },
-  card: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8 },
+  container: { flex: 1, backgroundColor: colors.background },
+  scroll: { padding: spacing.lg },
+  intro: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, marginBottom: spacing.lg },
+  card: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm },
   typeRow: { flexDirection: 'row', alignItems: 'center' },
-  typeLabel: { fontSize: 14, fontWeight: '700', color: '#172436' },
-  typeMeta: { fontSize: 11, color: '#6B747C', marginTop: 2 },
-  subtypeBlock: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#EDEBE6' },
+  typeLabel: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  typeMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  subtypeBlock: { marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.surfaceSecondary },
   subtypeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
-  subtypeLabel: { fontSize: 13, color: '#172436' },
-  inlineAddRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
-  inlineAddInput: { flex: 1, marginRight: 8, marginBottom: 0 },
-  inlineAddButton: { backgroundColor: '#172436', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, justifyContent: 'center' },
-  inlineAddButtonText: { color: '#fff', fontWeight: '600', fontSize: 12 },
-  input: { backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, borderWidth: 1, borderColor: '#E3E1DC' },
-  addLink: { color: '#2E7D5B', fontSize: 13, fontWeight: '600', marginTop: 8 },
+  subtypeLabel: { fontSize: 13, color: colors.textPrimary },
+  inlineAddRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm },
+  inlineAddInput: { flex: 1, marginRight: spacing.sm, marginBottom: 0 },
+  inlineAddButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 10, justifyContent: 'center' },
+  inlineAddButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 12 },
+  addLink: { color: colors.success, fontSize: 13, fontWeight: '600', marginTop: spacing.sm },
 });

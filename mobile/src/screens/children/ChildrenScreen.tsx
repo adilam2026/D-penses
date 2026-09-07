@@ -8,12 +8,13 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { FormField } from '../../ui/FormField';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface Child {
   id: string;
@@ -76,16 +77,16 @@ export function ChildrenScreen() {
             <Text style={styles.rowLink}>Coûts →</Text>
           </TouchableOpacity>
         )}
-        contentContainerStyle={{ paddingBottom: 8 }}
+        contentContainerStyle={{ paddingBottom: spacing.sm }}
       />
 
       <View style={[styles.createBox, { paddingBottom: bottomInset }]}>
         <Text style={styles.sectionLabel}>Ajouter un enfant</Text>
         <View style={styles.createRow}>
-          <TextInput style={[styles.input, { flex: 1, marginRight: 8 }]} placeholder="Prénom" value={firstName} onChangeText={setFirstName} />
-          <TextInput style={[styles.input, { flex: 1, marginRight: 8 }]} placeholder="Nom" value={lastName} onChangeText={setLastName} />
-          <TouchableOpacity style={styles.addButton} onPress={onCreate} disabled={creating}>
-            {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.addButtonText}>+</Text>}
+          <FormField testID="child-firstname-input" containerStyle={styles.createField} placeholder="Prénom" value={firstName} onChangeText={setFirstName} />
+          <FormField testID="child-lastname-input" containerStyle={styles.createField} placeholder="Nom" value={lastName} onChangeText={setLastName} />
+          <TouchableOpacity style={styles.addButton} onPress={onCreate} disabled={creating} testID="child-create-submit">
+            {creating ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.addButtonText}>+</Text>}
           </TouchableOpacity>
         </View>
       </View>
@@ -94,31 +95,23 @@ export function ChildrenScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2', paddingTop: 16, paddingHorizontal: 20 },
-  empty: { color: '#6B747C', textAlign: 'center', marginTop: 24 },
+  container: { flex: 1, backgroundColor: colors.background, paddingTop: spacing.md, paddingHorizontal: spacing.lg },
+  empty: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.xl },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     padding: 14,
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
-  rowName: { fontSize: 15, fontWeight: '600', color: '#172436' },
-  rowLink: { fontSize: 12, color: '#6B747C' },
-  createBox: { borderTopWidth: 1, borderTopColor: '#E3E1DC', paddingTop: 12, marginTop: 8 },
-  sectionLabel: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 8 },
+  rowName: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
+  rowLink: { fontSize: 12, color: colors.textSecondary },
+  createBox: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.sm },
+  sectionLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm },
   createRow: { flexDirection: 'row', alignItems: 'center' },
-  input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: '#E3E1DC',
-  },
-  addButton: { backgroundColor: '#172436', width: 44, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  addButtonText: { color: '#fff', fontSize: 20, fontWeight: '700' },
+  createField: { flex: 1, marginRight: spacing.sm, marginBottom: 0 },
+  addButton: { backgroundColor: colors.primary, width: 44, height: 44, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  addButtonText: { color: colors.textOnPrimary, fontSize: 20, fontWeight: '700' },
 });

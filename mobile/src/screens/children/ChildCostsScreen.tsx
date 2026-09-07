@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface ChildCosts {
   child: { firstName: string; lastName: string };
@@ -134,24 +135,24 @@ function Figure({ label, value, highlight }: { label: string; value: number; hig
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F6F5F2' },
-  scroll: { padding: 20, paddingTop: 16 },
-  title: { fontSize: 20, fontWeight: '700', color: '#172436', marginBottom: 16 },
-  figuresGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 },
-  figure: { width: '50%', backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8 },
-  figureLabel: { fontSize: 11, color: '#6B747C' },
-  figureValue: { fontSize: 16, fontWeight: '700', color: '#172436', marginTop: 4 },
-  figureValueHighlight: { color: '#B3261E' },
-  nextCard: { backgroundColor: '#172436', borderRadius: 12, padding: 14, marginBottom: 12 },
-  nextLabel: { fontSize: 11, color: '#AEB8C4', fontWeight: '600', textTransform: 'uppercase' },
-  nextTitle: { fontSize: 15, fontWeight: '700', color: '#fff', marginTop: 4 },
-  nextMeta: { fontSize: 12, color: '#D7DCE2', marginTop: 4 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#172436', marginTop: 16, marginBottom: 8 },
-  empty: { color: '#6B747C', fontSize: 13 },
-  note: { fontSize: 11, color: '#6B747C', marginBottom: 8, fontStyle: 'italic' },
-  rowSimple: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8 },
-  rowLabel: { fontSize: 13, fontWeight: '600', color: '#172436' },
-  rowAmount: { fontSize: 13, fontWeight: '700', color: '#172436' },
-  rowLink: { fontSize: 12, color: '#2E7D5B', fontWeight: '700' },
+  container: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+  scroll: { padding: spacing.lg, paddingTop: spacing.md },
+  title: { fontSize: 20, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.lg },
+  figuresGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: spacing.md },
+  figure: { width: '50%', backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm },
+  figureLabel: { fontSize: 11, color: colors.textSecondary },
+  figureValue: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginTop: 4 },
+  figureValueHighlight: { color: colors.danger },
+  nextCard: { backgroundColor: colors.primary, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md },
+  nextLabel: { fontSize: 11, color: colors.textOnPrimary, opacity: 0.7, fontWeight: '600', textTransform: 'uppercase' },
+  nextTitle: { fontSize: 15, fontWeight: '700', color: colors.textOnPrimary, marginTop: 4 },
+  nextMeta: { fontSize: 12, color: colors.textOnPrimary, opacity: 0.85, marginTop: 4 },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.lg, marginBottom: spacing.sm },
+  empty: { color: colors.textSecondary, fontSize: 13 },
+  note: { fontSize: 11, color: colors.textSecondary, marginBottom: spacing.sm, fontStyle: 'italic' },
+  rowSimple: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm },
+  rowLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
+  rowAmount: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
+  rowLink: { fontSize: 12, color: colors.success, fontWeight: '700' },
 });
