@@ -7,6 +7,7 @@ import { DateField } from '../../ui/DateField';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { Select } from '../../ui/Select';
 import { FormField } from '../../ui/FormField';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface Category {
   id: string;
@@ -105,7 +106,15 @@ export function CreateBudgetScreen() {
         />
       )}
 
-      <FormField label="Montant" placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} onFocus={handleFocus} />
+      <FormField
+        testID="create-budget-amount-input"
+        label="Montant"
+        placeholder="Montant (DH)"
+        keyboardType="decimal-pad"
+        value={amount}
+        onChangeText={setAmount}
+        onFocus={handleFocus}
+      />
 
       <Text style={styles.sectionLabel}>Période</Text>
       <View style={styles.segment}>
@@ -122,8 +131,8 @@ export function CreateBudgetScreen() {
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={submitting}>
-        {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{created.length > 0 ? 'Ajouter un autre budget' : 'Créer le budget'}</Text>}
+      <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={submitting} testID="create-budget-submit">
+        {submitting ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>{created.length > 0 ? 'Ajouter un autre budget' : 'Créer le budget'}</Text>}
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.continueButton} onPress={() => navigation.goBack()}>
@@ -135,45 +144,20 @@ export function CreateBudgetScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  scroll: { padding: 24, paddingTop: 16 },
-  intro: { color: '#6B747C', fontSize: 13, lineHeight: 19, marginBottom: 12 },
-  createdBox: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: '#E3E1DC' },
-  createdLine: { fontSize: 13, color: '#172436', marginTop: 4 },
-  sectionLabel: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 8, marginTop: 4 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 },
-  chip: {
-    backgroundColor: '#fff',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginRight: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#E3E1DC',
-  },
-  chipActive: { backgroundColor: '#172436', borderColor: '#172436' },
-  chipText: { fontSize: 13, color: '#172436' },
-  chipTextActive: { color: '#fff', fontWeight: '600' },
-  input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 12,
-    fontSize: 15,
-    borderWidth: 1,
-    borderColor: '#E3E1DC',
-  },
-  segment: { flexDirection: 'row', backgroundColor: '#EDEBE6', borderRadius: 10, padding: 4, marginBottom: 12 },
-  segmentItem: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
-  segmentActive: { backgroundColor: '#fff' },
-  segmentText: { fontSize: 13, color: '#6B747C', fontWeight: '600' },
-  segmentTextActive: { color: '#172436' },
-  button: { backgroundColor: '#172436', borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  continueButton: { borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 12, marginBottom: 24 },
-  continueButtonText: { color: '#172436', fontWeight: '600', fontSize: 14 },
-  cancel: { color: '#6B747C', textAlign: 'center', marginTop: 16, fontSize: 13, marginBottom: 24 },
-  error: { color: '#B3261E', fontSize: 13, marginBottom: 8 },
+  container: { flex: 1, backgroundColor: colors.background },
+  scroll: { padding: spacing.xl, paddingTop: spacing.md },
+  intro: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, marginBottom: spacing.md },
+  createdBox: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.lg, borderWidth: 1, borderColor: colors.border },
+  createdLine: { fontSize: 13, color: colors.textPrimary, marginTop: 4 },
+  sectionLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm, marginTop: 4 },
+  segment: { flexDirection: 'row', backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: 4, marginBottom: spacing.md },
+  segmentItem: { flex: 1, paddingVertical: 10, borderRadius: radius.sm, alignItems: 'center' },
+  segmentActive: { backgroundColor: colors.surface },
+  segmentText: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
+  segmentTextActive: { color: colors.textPrimary },
+  button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.sm },
+  buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 15 },
+  continueButton: { borderRadius: radius.md, paddingVertical: 12, alignItems: 'center', marginTop: spacing.md, marginBottom: spacing.xl },
+  continueButtonText: { color: colors.textPrimary, fontWeight: '600', fontSize: 14 },
+  error: { color: colors.danger, fontSize: 13, marginBottom: spacing.sm },
 });

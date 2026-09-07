@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { DateField } from '../../ui/DateField';
+import { FormField } from '../../ui/FormField';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface CreatedGoal {
   label: string;
@@ -68,19 +70,25 @@ export function CreateGoalScreen() {
           </View>
         )}
 
-        <Text style={styles.sectionLabel}>Nom</Text>
-        <TextInput style={styles.input} placeholder="ex. PC" value={label} onChangeText={setLabel} onFocus={handleFocus} />
+        <FormField testID="goal-label-input" label="Nom" placeholder="ex. PC" value={label} onChangeText={setLabel} onFocus={handleFocus} />
 
-        <Text style={styles.sectionLabel}>Montant cible</Text>
-        <TextInput style={styles.input} placeholder="15000" keyboardType="decimal-pad" value={targetAmount} onChangeText={setTargetAmount} onFocus={handleFocus} />
+        <FormField
+          testID="goal-target-amount-input"
+          label="Montant cible"
+          placeholder="15000"
+          keyboardType="decimal-pad"
+          value={targetAmount}
+          onChangeText={setTargetAmount}
+          onFocus={handleFocus}
+        />
 
         <Text style={styles.sectionLabel}>Date souhaitée (optionnelle)</Text>
         <DateField value={targetDate} onChange={setTargetDate} placeholder="Aucune date choisie" />
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={submitting}>
-          {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{created.length > 0 ? 'Ajouter un autre objectif' : 'Créer'}</Text>}
+        <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={submitting} testID="create-goal-submit">
+          {submitting ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>{created.length > 0 ? 'Ajouter un autre objectif' : 'Créer'}</Text>}
         </TouchableOpacity>
         <TouchableOpacity style={styles.continueButton} onPress={() => navigation.goBack()}>
           <Text style={styles.continueButtonText}>{created.length > 0 ? 'Continuer' : 'Annuler'}</Text>
@@ -91,25 +99,15 @@ export function CreateGoalScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  scroll: { padding: 24, paddingTop: 24 },
-  title: { fontSize: 18, fontWeight: '700', color: '#172436', marginBottom: 16 },
-  createdBox: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: '#E3E1DC' },
-  createdLine: { fontSize: 13, color: '#172436', marginTop: 4 },
-  sectionLabel: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 8, marginTop: 4 },
-  input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 12,
-    fontSize: 15,
-    borderWidth: 1,
-    borderColor: '#E3E1DC',
-  },
-  button: { backgroundColor: '#172436', borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  continueButton: { borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 12, marginBottom: 24 },
-  continueButtonText: { color: '#172436', fontWeight: '600', fontSize: 14 },
-  error: { color: '#B3261E', fontSize: 13, marginBottom: 8 },
+  container: { flex: 1, backgroundColor: colors.background },
+  scroll: { padding: spacing.xl, paddingTop: 24 },
+  title: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.lg },
+  createdBox: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.lg, borderWidth: 1, borderColor: colors.border },
+  createdLine: { fontSize: 13, color: colors.textPrimary, marginTop: 4 },
+  sectionLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm, marginTop: 4 },
+  button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.sm },
+  buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 15 },
+  continueButton: { borderRadius: radius.md, paddingVertical: 12, alignItems: 'center', marginTop: spacing.md, marginBottom: spacing.xl },
+  continueButtonText: { color: colors.textPrimary, fontWeight: '600', fontSize: 14 },
+  error: { color: colors.danger, fontSize: 13, marginBottom: spacing.sm },
 });

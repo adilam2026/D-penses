@@ -1,8 +1,10 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useRoute } from '@react-navigation/native';
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { FormField } from '../../ui/FormField';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface GoalDetail {
   id: string;
@@ -150,95 +152,102 @@ export function GoalDetailScreen() {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
-      <Text style={styles.title}>{goal.label}</Text>
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${goal.progressPercent}%` }]} />
-      </View>
-      <View style={styles.figuresGrid}>
-        <Figure label="Objectif" value={goal.targetAmount} />
-        <Figure label="Déjà mis de côté" value={goal.savedAmount} highlight />
-        <Figure label="Reste à constituer" value={goal.remainingToConstitute} />
-        <Figure label="Progression" value={goal.progressPercent} suffix="%" />
-      </View>
-
-      <View style={styles.formCard}>
-        <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} />
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        <View style={styles.buttonRow}>
-          <TouchableOpacity style={[styles.button, styles.buttonHalf]} onPress={() => onAddContribution(true)} disabled={submitting}>
-            {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Mettre de côté maintenant</Text>}
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.button, styles.buttonHalf, styles.buttonSecondary]} onPress={() => onAddContribution(false)} disabled={submitting}>
-            <Text style={[styles.buttonText, styles.buttonTextSecondary]}>Planifier</Text>
-          </TouchableOpacity>
+        <Text style={styles.title}>{goal.label}</Text>
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${goal.progressPercent}%` }]} />
         </View>
-        <TouchableOpacity onPress={onSimulateImpact} disabled={impactLoading}>
-          {impactLoading ? (
-            <ActivityIndicator style={{ marginTop: 10 }} size="small" />
-          ) : (
-            <Text style={styles.simulateLink}>Simuler l'impact de ce montant avant de décider</Text>
-          )}
-        </TouchableOpacity>
-        {impactError ? <Text style={styles.error}>{impactError}</Text> : null}
-        {impact && (
-          <View style={styles.impactBox}>
-            {!impact.is_complete && <Text style={styles.warning}>Calcul basé sur les montants connus uniquement.</Text>}
-            <Text style={styles.impactLine}>
-              Disponible libre minimum après cette mise de côté :{' '}
-              <Text style={styles.impactValue}>{impact.scenario.free_capacity_low_point.toLocaleString('fr-FR')} DH</Text>
-            </Text>
-            <Text style={styles.impactLineSub}>
-              {impact.delta_free_capacity_low_point < 0 ? '' : '+'}
-              {impact.delta_free_capacity_low_point.toLocaleString('fr-FR')} DH par rapport à aujourd'hui sans cette mise de côté
-            </Text>
-          </View>
-        )}
-      </View>
-
-      <TouchableOpacity style={styles.testButton} onPress={onTestGoal} disabled={testing}>
-        {testing ? <ActivityIndicator color="#172436" /> : <Text style={styles.testButtonText}>Tester mon objectif</Text>}
-      </TouchableOpacity>
-
-      {test && (
-        <View style={styles.testCard}>
-          {!test.is_complete && <Text style={styles.warning}>Calcul basé sur les montants connus — certains montants restent inconnus.</Text>}
-          <View style={styles.figuresGrid}>
-            <Figure label="Objectif restant" value={test.remaining_amount} />
-            {test.necessary_monthly_amount !== null && <Figure label="Contribution nécessaire" value={test.necessary_monthly_amount} />}
-            <Figure label="Contribution prudente" value={test.prudent_monthly_amount} highlight />
-          </View>
-          {test.target_date && <Text style={styles.testLine}>Date souhaitée : {formatDate(test.target_date)}</Text>}
-          {test.target_status === 'NOT_FEASIBLE_AT_REQUESTED_PACE' && test.realistic_date && (
-            <Text style={[styles.testLine, styles.testLineWarning]}>Date réaliste estimée : {formatDate(test.realistic_date)}</Text>
-          )}
-          {test.target_status === 'FEASIBLE_AT_REQUESTED_PACE' && <Text style={styles.testLineOk}>Compatible avec vos finances actuelles.</Text>}
+        <View style={styles.figuresGrid}>
+          <Figure label="Objectif" value={goal.targetAmount} />
+          <Figure label="Déjà mis de côté" value={goal.savedAmount} highlight />
+          <Figure label="Reste à constituer" value={goal.remainingToConstitute} />
+          <Figure label="Progression" value={goal.progressPercent} suffix="%" />
         </View>
-      )}
 
-      <Text style={styles.sectionTitle}>Contributions</Text>
-      <FlatList
-        data={contributions}
-        keyExtractor={(c) => c.id}
-        scrollEnabled={false}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
-        ListEmptyComponent={<Text style={styles.empty}>Aucune contribution pour l'instant.</Text>}
-        renderItem={({ item }) => (
-          <View style={styles.contributionRow}>
-            <Text style={styles.contributionLabel}>
-              {formatDate(item.plannedDate)}
-              {item.status === 'prevu' ? ' (prévue)' : ''}
-            </Text>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={styles.contributionAmount}>{item.plannedAmount.toLocaleString('fr-FR')} DH</Text>
-              {item.status === 'prevu' && (
-                <TouchableOpacity onPress={() => onConfirmContribution(item.id)} disabled={confirmingId === item.id}>
-                  {confirmingId === item.id ? <ActivityIndicator size="small" /> : <Text style={styles.confirmLink}>Confirmer</Text>}
-                </TouchableOpacity>
-              )}
+        <View style={styles.formCard}>
+          <FormField
+            testID="goal-contribute-amount-input"
+            placeholder="Montant (DH)"
+            keyboardType="decimal-pad"
+            value={amount}
+            onChangeText={setAmount}
+            containerStyle={styles.amountField}
+          />
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+          <View style={styles.buttonRow}>
+            <TouchableOpacity style={[styles.button, styles.buttonHalf]} onPress={() => onAddContribution(true)} disabled={submitting}>
+              {submitting ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Mettre de côté maintenant</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.button, styles.buttonHalf, styles.buttonSecondary]} onPress={() => onAddContribution(false)} disabled={submitting}>
+              <Text style={[styles.buttonText, styles.buttonTextSecondary]}>Planifier</Text>
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity onPress={onSimulateImpact} disabled={impactLoading}>
+            {impactLoading ? (
+              <ActivityIndicator style={{ marginTop: 10 }} size="small" />
+            ) : (
+              <Text style={styles.simulateLink}>Simuler l'impact de ce montant avant de décider</Text>
+            )}
+          </TouchableOpacity>
+          {impactError ? <Text style={styles.error}>{impactError}</Text> : null}
+          {impact && (
+            <View style={styles.impactBox}>
+              {!impact.is_complete && <Text style={styles.warning}>Calcul basé sur les montants connus uniquement.</Text>}
+              <Text style={styles.impactLine}>
+                Disponible libre minimum après cette mise de côté :{' '}
+                <Text style={styles.impactValue}>{impact.scenario.free_capacity_low_point.toLocaleString('fr-FR')} DH</Text>
+              </Text>
+              <Text style={styles.impactLineSub}>
+                {impact.delta_free_capacity_low_point < 0 ? '' : '+'}
+                {impact.delta_free_capacity_low_point.toLocaleString('fr-FR')} DH par rapport à aujourd'hui sans cette mise de côté
+              </Text>
             </View>
+          )}
+        </View>
+
+        <TouchableOpacity style={styles.testButton} onPress={onTestGoal} disabled={testing}>
+          {testing ? <ActivityIndicator color={colors.textPrimary} /> : <Text style={styles.testButtonText}>Tester mon objectif</Text>}
+        </TouchableOpacity>
+
+        {test && (
+          <View style={styles.testCard}>
+            {!test.is_complete && <Text style={styles.warning}>Calcul basé sur les montants connus — certains montants restent inconnus.</Text>}
+            <View style={styles.figuresGrid}>
+              <Figure label="Objectif restant" value={test.remaining_amount} />
+              {test.necessary_monthly_amount !== null && <Figure label="Contribution nécessaire" value={test.necessary_monthly_amount} />}
+              <Figure label="Contribution prudente" value={test.prudent_monthly_amount} highlight />
+            </View>
+            {test.target_date && <Text style={styles.testLine}>Date souhaitée : {formatDate(test.target_date)}</Text>}
+            {test.target_status === 'NOT_FEASIBLE_AT_REQUESTED_PACE' && test.realistic_date && (
+              <Text style={[styles.testLine, styles.testLineWarning]}>Date réaliste estimée : {formatDate(test.realistic_date)}</Text>
+            )}
+            {test.target_status === 'FEASIBLE_AT_REQUESTED_PACE' && <Text style={styles.testLineOk}>Compatible avec vos finances actuelles.</Text>}
           </View>
         )}
-      />
+
+        <Text style={styles.sectionTitle}>Contributions</Text>
+        <FlatList
+          data={contributions}
+          keyExtractor={(c) => c.id}
+          scrollEnabled={false}
+          refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
+          ListEmptyComponent={<Text style={styles.empty}>Aucune contribution pour l'instant.</Text>}
+          renderItem={({ item }) => (
+            <View style={styles.contributionRow}>
+              <Text style={styles.contributionLabel}>
+                {formatDate(item.plannedDate)}
+                {item.status === 'prevu' ? ' (prévue)' : ''}
+              </Text>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={styles.contributionAmount}>{item.plannedAmount.toLocaleString('fr-FR')} DH</Text>
+                {item.status === 'prevu' && (
+                  <TouchableOpacity onPress={() => onConfirmContribution(item.id)} disabled={confirmingId === item.id}>
+                    {confirmingId === item.id ? <ActivityIndicator size="small" /> : <Text style={styles.confirmLink}>Confirmer</Text>}
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          )}
+        />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -257,58 +266,49 @@ function Figure({ label, value, suffix, highlight }: { label: string; value: num
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  scroll: { paddingTop: 16, paddingHorizontal: 20 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F6F5F2' },
-  title: { fontSize: 20, fontWeight: '700', color: '#172436', marginBottom: 12 },
-  progressTrack: { height: 8, backgroundColor: '#EDEBE6', borderRadius: 4, overflow: 'hidden', marginBottom: 16 },
-  progressFill: { height: '100%', backgroundColor: '#2E7D5B' },
-  figuresGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 16 },
-  figure: { width: '50%', backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8 },
-  figureLabel: { fontSize: 11, color: '#6B747C' },
-  figureValue: { fontSize: 16, fontWeight: '700', color: '#172436', marginTop: 4 },
-  figureValueHighlight: { color: '#2E7D5B' },
-  formCard: { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 16 },
-  input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 10,
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: '#E3E1DC',
-  },
+  container: { flex: 1, backgroundColor: colors.background },
+  scroll: { paddingTop: spacing.md, paddingHorizontal: spacing.lg },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+  title: { fontSize: 20, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.md },
+  progressTrack: { height: 8, backgroundColor: colors.surfaceSecondary, borderRadius: 4, overflow: 'hidden', marginBottom: spacing.lg },
+  progressFill: { height: '100%', backgroundColor: colors.success },
+  figuresGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: spacing.lg },
+  figure: { width: '50%', backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm },
+  figureLabel: { fontSize: 11, color: colors.textSecondary },
+  figureValue: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginTop: 4 },
+  figureValueHighlight: { color: colors.success },
+  formCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.lg },
+  amountField: { marginBottom: spacing.sm },
   buttonRow: { flexDirection: 'row' },
-  button: { backgroundColor: '#172436', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
-  buttonHalf: { flex: 1, marginRight: 8 },
-  buttonSecondary: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#172436', marginRight: 0 },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 12, textAlign: 'center' },
-  buttonTextSecondary: { color: '#172436' },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#172436', marginBottom: 8 },
-  empty: { color: '#6B747C', fontSize: 13 },
+  button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center' },
+  buttonHalf: { flex: 1, marginRight: spacing.sm },
+  buttonSecondary: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.primary, marginRight: 0 },
+  buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 12, textAlign: 'center' },
+  buttonTextSecondary: { color: colors.textPrimary },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.sm },
+  empty: { color: colors.textSecondary, fontSize: 13 },
   contributionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 8,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
   },
-  contributionLabel: { fontSize: 12, color: '#172436' },
-  contributionAmount: { fontSize: 13, fontWeight: '700', color: '#172436' },
-  confirmLink: { color: '#2E7D5B', fontSize: 11, fontWeight: '600', marginTop: 4 },
-  error: { color: '#B3261E', fontSize: 12, marginBottom: 8 },
-  testButton: { backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#172436', paddingVertical: 12, alignItems: 'center', marginBottom: 12 },
-  testButtonText: { color: '#172436', fontWeight: '600', fontSize: 13 },
-  testCard: { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 16 },
-  testLine: { fontSize: 12, color: '#172436', marginTop: 6 },
-  testLineWarning: { color: '#B8860B', fontWeight: '600' },
-  testLineOk: { fontSize: 12, color: '#2E7D5B', fontWeight: '600', marginTop: 6 },
-  warning: { fontSize: 12, color: '#B8860B', fontWeight: '600', marginBottom: 8 },
-  simulateLink: { color: '#172436', fontSize: 12, fontWeight: '600', textAlign: 'center', marginTop: 10 },
-  impactBox: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#EDEBE6' },
-  impactLine: { fontSize: 13, color: '#172436' },
+  contributionLabel: { fontSize: 12, color: colors.textPrimary },
+  contributionAmount: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
+  confirmLink: { color: colors.success, fontSize: 11, fontWeight: '600', marginTop: 4 },
+  error: { color: colors.danger, fontSize: 12, marginBottom: spacing.sm },
+  testButton: { backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.primary, paddingVertical: 12, alignItems: 'center', marginBottom: spacing.md },
+  testButtonText: { color: colors.textPrimary, fontWeight: '600', fontSize: 13 },
+  testCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.lg },
+  testLine: { fontSize: 12, color: colors.textPrimary, marginTop: 6 },
+  testLineWarning: { color: colors.warning, fontWeight: '600' },
+  testLineOk: { fontSize: 12, color: colors.success, fontWeight: '600', marginTop: 6 },
+  warning: { fontSize: 12, color: colors.warning, fontWeight: '600', marginBottom: spacing.sm },
+  simulateLink: { color: colors.textPrimary, fontSize: 12, fontWeight: '600', textAlign: 'center', marginTop: 10 },
+  impactBox: { marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.surfaceSecondary },
+  impactLine: { fontSize: 13, color: colors.textPrimary },
   impactValue: { fontWeight: '700' },
-  impactLineSub: { fontSize: 11, color: '#6B747C', marginTop: 4 },
+  impactLineSub: { fontSize: 11, color: colors.textSecondary, marginTop: 4 },
 });

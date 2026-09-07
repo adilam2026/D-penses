@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useRoute } from '@react-navigation/native';
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import * as api from '../../api/client';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface HistoryEntry {
   id: string;
@@ -105,25 +106,25 @@ function Figure({ label, value, highlight }: { label: string; value: number; hig
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2', paddingTop: 16, paddingHorizontal: 20 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F6F5F2' },
-  title: { fontSize: 22, fontWeight: '700', color: '#172436' },
-  subtitle: { fontSize: 12, color: '#6B747C', marginTop: 4, marginBottom: 16 },
-  figuresGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 20 },
-  figure: { width: '50%', backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8 },
-  figureLabel: { fontSize: 11, color: '#6B747C' },
-  figureValue: { fontSize: 16, fontWeight: '700', color: '#172436', marginTop: 4 },
-  figureValueHighlight: { color: '#2E7D5B' },
-  historyTitle: { fontSize: 14, fontWeight: '700', color: '#172436', marginBottom: 8 },
-  empty: { color: '#6B747C', textAlign: 'center', marginTop: 12 },
+  container: { flex: 1, backgroundColor: colors.background, paddingTop: spacing.md, paddingHorizontal: spacing.lg },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+  title: { fontSize: 22, fontWeight: '700', color: colors.textPrimary },
+  subtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 4, marginBottom: spacing.lg },
+  figuresGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: spacing.xl },
+  figure: { width: '50%', backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm },
+  figureLabel: { fontSize: 11, color: colors.textSecondary },
+  figureValue: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginTop: 4 },
+  figureValueHighlight: { color: colors.success },
+  historyTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.sm },
+  empty: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.md },
   historyRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 8,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
   },
-  historyLabel: { fontSize: 13, color: '#172436' },
-  historyAmount: { fontSize: 13, fontWeight: '700', color: '#B3261E' },
+  historyLabel: { fontSize: 13, color: colors.textPrimary },
+  historyAmount: { fontSize: 13, fontWeight: '700', color: colors.danger },
 });
