@@ -1,10 +1,12 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { Select } from '../../ui/Select';
+import { FormField } from '../../ui/FormField';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface Movement {
   id: string;
@@ -231,17 +233,17 @@ export function PocketDetailScreen() {
         <View style={styles.locationRow}>
           {editingAccount ? (
             <View style={styles.formCard}>
-              <Text style={styles.sectionLabel}>Localiser sur quel compte ?</Text>
-              <View style={styles.chipRow}>
-                {accounts.map((a) => (
-                  <TouchableOpacity key={a.id} style={[styles.chip, editAccountId === a.id && styles.chipActive]} onPress={() => setEditAccountId(a.id)}>
-                    <Text style={[styles.chipText, editAccountId === a.id && styles.chipTextActive]}>{a.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              <Select
+                testID="pocket-edit-account-select"
+                label="Localiser sur quel compte ?"
+                placeholder="Choisir un compte"
+                value={editAccountId}
+                onChange={setEditAccountId}
+                options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+              />
               <View style={styles.buttonRow}>
                 <TouchableOpacity style={[styles.button, styles.buttonHalf]} onPress={onSaveLinkedAccount} disabled={savingAccount || !editAccountId}>
-                  {savingAccount ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Enregistrer</Text>}
+                  {savingAccount ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Enregistrer</Text>}
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.button, styles.buttonHalf, styles.buttonSecondary]} onPress={() => setEditingAccount(false)} disabled={savingAccount}>
                   <Text style={[styles.buttonText, styles.buttonTextSecondary]}>Annuler</Text>
@@ -265,12 +267,12 @@ export function PocketDetailScreen() {
 
       {detail.allocationMode === 'virtual_allocation' ? (
         <View style={styles.formCard}>
-          <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} onFocus={handleFocus} />
-          <TextInput style={styles.input} placeholder="Intention (facultatif)" value={intentionLabel} onChangeText={setIntentionLabel} onFocus={handleFocus} />
+          <FormField testID="pocket-contribute-amount-input" placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} onFocus={handleFocus} />
+          <FormField testID="pocket-intention-input" placeholder="Intention (facultatif)" value={intentionLabel} onChangeText={setIntentionLabel} onFocus={handleFocus} />
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <View style={styles.buttonRow}>
             <TouchableOpacity style={[styles.button, styles.buttonHalf]} onPress={onContribute} disabled={submitting}>
-              {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>+ Mettre de côté</Text>}
+              {submitting ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>+ Mettre de côté</Text>}
             </TouchableOpacity>
             <TouchableOpacity style={[styles.button, styles.buttonHalf, styles.buttonSecondary]} onPress={onWithdraw} disabled={submitting}>
               <Text style={[styles.buttonText, styles.buttonTextSecondary]}>Retirer</Text>
@@ -298,7 +300,7 @@ export function PocketDetailScreen() {
               />
             </View>
             <TouchableOpacity style={styles.linkButton} onPress={onLinkDeadline} disabled={linking}>
-              {linking ? <ActivityIndicator color="#fff" /> : <Text style={styles.linkButtonText}>Lier</Text>}
+              {linking ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.linkButtonText}>Lier</Text>}
             </TouchableOpacity>
           </View>
 
@@ -313,22 +315,22 @@ export function PocketDetailScreen() {
 
               {payingDeadlineId === c.deadlineId ? (
                 <View style={styles.payForm}>
-                  <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={payAmount} onChangeText={setPayAmount} onFocus={handleFocus} />
+                  <FormField testID={`pocket-pay-amount-${c.deadlineId}`} placeholder="Montant (DH)" keyboardType="decimal-pad" value={payAmount} onChangeText={setPayAmount} onFocus={handleFocus} />
                   {detail.allocationMode === 'backed_by_account' ? (
                     <Text style={styles.rowMeta}>
                       Compte débité : {accounts.find((a) => a.id === payAccountId)?.name ?? '—'} (enveloppe dédiée, compte imposé)
                     </Text>
                   ) : (
-                    <View style={styles.chipRow}>
-                      {accounts.map((a) => (
-                        <TouchableOpacity key={a.id} style={[styles.chip, payAccountId === a.id && styles.chipActive]} onPress={() => setPayAccountId(a.id)}>
-                          <Text style={[styles.chipText, payAccountId === a.id && styles.chipTextActive]}>{a.name}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
+                    <Select
+                      testID={`pocket-pay-account-select-${c.deadlineId}`}
+                      placeholder="Choisir un compte"
+                      value={payAccountId}
+                      onChange={setPayAccountId}
+                      options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+                    />
                   )}
                   <TouchableOpacity style={styles.button} onPress={() => onPayWithProvision(c.deadlineId)} disabled={submitting}>
-                    {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Confirmer le paiement</Text>}
+                    {submitting ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Confirmer le paiement</Text>}
                   </TouchableOpacity>
                 </View>
               ) : (
@@ -387,77 +389,52 @@ export function PocketDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F6F5F2' },
-  scroll: { padding: 20, paddingTop: 24 },
+  container: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+  scroll: { padding: spacing.xl, paddingTop: spacing.xxl },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  title: { fontSize: 20, fontWeight: '700', color: '#172436' },
-  natureBadge: { fontSize: 10, fontWeight: '700', color: '#2E7D5B', backgroundColor: '#E6F2EC', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
-  amount: { fontSize: 28, fontWeight: '800', color: '#172436', marginTop: 8 },
-  subtitle: { fontSize: 12, color: '#6B747C', marginTop: 4 },
-  help: { fontSize: 12, color: '#6B747C', marginTop: 12, fontStyle: 'italic' },
-  locationRow: { marginTop: 8 },
-  editLink: { fontSize: 12, color: '#172436', fontWeight: '600' },
-  sectionLabel: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 8 },
-  rowMeta: { fontSize: 11, color: '#6B747C', marginBottom: 8 },
-  formCard: { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginTop: 16 },
-  input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 10,
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: '#E3E1DC',
-  },
+  title: { fontSize: 20, fontWeight: '700', color: colors.textPrimary },
+  natureBadge: { fontSize: 10, fontWeight: '700', color: colors.success, backgroundColor: colors.successLight, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3 },
+  amount: { fontSize: 28, fontWeight: '800', color: colors.textPrimary, marginTop: spacing.sm },
+  subtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
+  help: { fontSize: 12, color: colors.textSecondary, marginTop: spacing.md, fontStyle: 'italic' },
+  locationRow: { marginTop: spacing.sm },
+  editLink: { fontSize: 12, color: colors.textPrimary, fontWeight: '600' },
+  sectionLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm },
+  rowMeta: { fontSize: 11, color: colors.textSecondary, marginBottom: spacing.sm },
+  formCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, marginTop: spacing.lg },
   buttonRow: { flexDirection: 'row' },
-  button: { backgroundColor: '#172436', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
-  buttonHalf: { flex: 1, marginRight: 8 },
-  buttonSecondary: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#172436', marginRight: 0 },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 13 },
-  buttonTextSecondary: { color: '#172436' },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#172436', marginTop: 24, marginBottom: 10 },
-  linkRow: { flexDirection: 'row', marginBottom: 8, alignItems: 'flex-start' },
-  linkSelect: { flex: 1, marginRight: 8 },
-  linkInput: { flex: 1, marginRight: 8, marginBottom: 0 },
-  linkButton: { backgroundColor: '#172436', borderRadius: 10, paddingHorizontal: 16, justifyContent: 'center' },
-  linkButtonText: { color: '#fff', fontWeight: '600', fontSize: 13 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
-  chip: {
-    backgroundColor: '#fff',
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    marginRight: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#E3E1DC',
-  },
-  chipActive: { backgroundColor: '#172436', borderColor: '#172436' },
-  chipText: { fontSize: 12, color: '#172436' },
-  chipTextActive: { color: '#fff', fontWeight: '600' },
-  coverageCard: { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 10 },
-  coverageDate: { fontSize: 13, fontWeight: '700', color: '#172436', marginBottom: 4 },
-  coverageLine: { fontSize: 12, color: '#6B747C', marginTop: 2 },
-  coverageWarning: { color: '#B8860B', fontWeight: '600' },
-  payLink: { marginTop: 8 },
-  payLinkText: { color: '#2E7D5B', fontSize: 12, fontWeight: '700' },
-  payForm: { marginTop: 10 },
-  empty: { color: '#6B747C', fontSize: 13 },
+  button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
+  buttonHalf: { flex: 1, marginRight: spacing.sm },
+  buttonSecondary: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.primary, marginRight: 0 },
+  buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 13 },
+  buttonTextSecondary: { color: colors.textPrimary },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.xxl, marginBottom: spacing.md },
+  linkRow: { flexDirection: 'row', marginBottom: spacing.sm, alignItems: 'flex-start' },
+  linkSelect: { flex: 1, marginRight: spacing.sm },
+  linkButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingHorizontal: spacing.lg, justifyContent: 'center' },
+  linkButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 13 },
+  coverageCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, marginBottom: spacing.sm },
+  coverageDate: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginBottom: 4 },
+  coverageLine: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  coverageWarning: { color: colors.warning, fontWeight: '600' },
+  payLink: { marginTop: spacing.sm },
+  payLinkText: { color: colors.success, fontSize: 12, fontWeight: '700' },
+  payForm: { marginTop: spacing.sm },
+  empty: { color: colors.textSecondary, fontSize: 13 },
   movementRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 8,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
   },
-  movementLabel: { fontSize: 12, color: '#172436', fontWeight: '600' },
-  movementIntention: { fontSize: 11, color: '#6B747C', marginTop: 2, fontStyle: 'italic' },
-  movementAmount: { fontSize: 13, fontWeight: '700', color: '#2E7D5B' },
-  movementAmountNegative: { color: '#B3261E' },
-  confirmLink: { color: '#172436', fontSize: 11, fontWeight: '600', marginTop: 4 },
-  cancel: { color: '#6B747C', textAlign: 'center', marginTop: 16, fontSize: 13, marginBottom: 24 },
-  error: { color: '#B3261E', fontSize: 12, marginBottom: 8 },
+  movementLabel: { fontSize: 12, color: colors.textPrimary, fontWeight: '600' },
+  movementIntention: { fontSize: 11, color: colors.textSecondary, marginTop: 2, fontStyle: 'italic' },
+  movementAmount: { fontSize: 13, fontWeight: '700', color: colors.success },
+  movementAmountNegative: { color: colors.danger },
+  confirmLink: { color: colors.textPrimary, fontSize: 11, fontWeight: '600', marginTop: 4 },
+  cancel: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.lg, fontSize: 13, marginBottom: spacing.xxl },
+  error: { color: colors.danger, fontSize: 12, marginBottom: spacing.sm },
 });
