@@ -78,8 +78,16 @@ describe('recurrence.util — occurrenceDatesInRange', () => {
     expect(iso(dates)).toEqual(['2026-01-15', '2026-02-15', '2026-03-15']);
   });
 
-  it('plafond de sécurité — horizon très long borné à MAX_GENERATED_OCCURRENCES', () => {
+  it('plafond de sécurité — horizon très long borné à MAX_GENERATED_OCCURRENCES (320, Round 4 §3)', () => {
     const dates = occurrenceDatesInRange('hebdomadaire', d(2026, 1, 1), d(2026, 1, 1), d(2036, 1, 1));
-    expect(dates.length).toBeLessThanOrEqual(60);
+    expect(dates.length).toBeLessThanOrEqual(320);
+    expect(dates.length).toBeGreaterThan(60); // le plafond relevé doit réellement avoir un effet, pas rester à l'ancienne valeur
+  });
+
+  it('récurrence hebdomadaire génère bien au-delà de 60 occurrences sur un horizon de 60 mois (Round 4 §3/§19 Q)', () => {
+    const dates = occurrenceDatesInRange('hebdomadaire', d(2026, 1, 1), d(2026, 1, 1), d(2030, 12, 31));
+    // 60 mois ≈ 261 semaines : l'ancien plafond (60) aurait tronqué silencieusement la
+    // récurrence dès le 14e mois environ — ce test échoue si le plafond régresse.
+    expect(dates.length).toBeGreaterThan(250);
   });
 });

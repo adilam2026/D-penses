@@ -23,8 +23,16 @@ const MONTH_STEP: Partial<Record<RecurrenceRule, number>> = {
   annuel: 12,
 };
 
-/** Plafond de sécurité (§16) — exclut toute génération non bornée quel que soit l'horizon demandé. */
-export const MAX_GENERATED_OCCURRENCES = 60;
+/**
+ * Plafond de sécurité (§16) — exclut toute génération non bornée quel que soit
+ * l'horizon demandé. Relevé à 320 (Projection mensuelle, Round 4 §3/§19) : la
+ * projection doit fonctionner jusqu'à 60 mois, soit ~261 occurrences pour une
+ * récurrence hebdomadaire (le cas le plus dense) — 60 aurait tronqué silencieusement
+ * toute récurrence hebdomadaire au-delà d'environ 14 mois. Mensuel/trimestriel/
+ * semestriel/annuel restent très en-dessous de ce plafond sur 60 mois (≤60
+ * occurrences) : ce relèvement ne change leur comportement sur aucun horizon existant.
+ */
+export const MAX_GENERATED_OCCURRENCES = 320;
 
 export function toUtcMidnight(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));

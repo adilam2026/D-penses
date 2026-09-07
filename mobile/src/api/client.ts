@@ -445,3 +445,86 @@ export const getProjection = (params: { at?: string; horizon?: number; to?: stri
   ).toString();
   return apiFetch(`/projection${qs ? `?${qs}` : ''}`);
 };
+
+// ---------- Projection mensuelle (Round 4) ----------
+export interface MonthlyLineItem {
+  entityType: 'income_occurrence' | 'deadline' | 'variable_budget';
+  entityId: string;
+  label: string;
+  date: string;
+  amount: number;
+  accountId: string | null;
+  accountKnown: boolean;
+  amountStatus?: 'estime' | 'confirme';
+  category?: 'obligatoire' | 'flexible' | 'projet';
+  movable: boolean;
+}
+
+export interface MonthBucketApi {
+  month: string;
+  label: string;
+  total_income: number;
+  total_expense: number;
+  balance: number;
+  cumulative_balance: number;
+  income_items: MonthlyLineItem[];
+  expense_items: MonthlyLineItem[];
+  movable_expense_total: number;
+  is_complete: boolean;
+  unknown_count: number;
+  unknown_labels: string[];
+  contains_estimates: boolean;
+  excluded_by_filter_count: number;
+  excluded_by_filter_total: number;
+}
+
+export interface MonthlyProjectionApi {
+  reference_date: string;
+  horizon_end: string;
+  horizon_months: number;
+  months: MonthBucketApi[];
+  summary: {
+    total_income: number;
+    total_expense: number;
+    total_balance: number;
+    deficit_months_count: number;
+    worst_month: { month: string; balance: number } | null;
+    max_monthly_deficit: number | null;
+    max_financing_need: number | null;
+    first_positive_cumulative_month: string | null;
+    is_complete: boolean;
+    incomplete_months_count: number;
+  };
+  account_filters: { incomeAccountIds: string[] | null; expenseAccountIds: string[] | null };
+}
+
+/** "Compte non encore déterminé" — sentinelle de filtre (§4), même valeur que le backend. */
+export const UNDETERMINED_ACCOUNT = '__undetermined__';
+
+export const getMonthlyProjection = (params: {
+  at?: string;
+  horizonMonths?: number;
+  incomeAccountIds?: string[] | null;
+  expenseAccountIds?: string[] | null;
+}): Promise<MonthlyProjectionApi> => {
+  const qs = new URLSearchParams();
+  if (params.at) qs.set('at', params.at);
+  if (params.horizonMonths) qs.set('horizonMonths', String(params.horizonMonths));
+  // "Tous" = paramètre absent (§4) ; une liste vide explicite `=` est distincte (n'inclut rien).
+  if (params.incomeAccountIds !== undefined && params.incomeAccountIds !== null) qs.set('incomeAccountIds', params.incomeAccountIds.join(','));
+  if (params.expenseAccountIds !== undefined && params.expenseAccountIds !== null) qs.set('expenseAccountIds', params.expenseAccountIds.join(','));
+  return apiFetch(`/projection/monthly?${qs.toString()}`);
+};
+
+export const simulateMonthlyProjection = (params: {
+  at?: string;
+  horizonMonths?: number;
+  incomeAccountIds?: string[] | null;
+  expenseAccountIds?: string[] | null;
+  moves: { deadlineId: string; newDate: string }[];
+}): Promise<{ baseline: MonthlyProjectionApi; scenario: MonthlyProjectionApi }> => {
+  const body: Record<string, unknown> = { at: params.at, horizonMonths: params.horizonMonths, moves: params.moves };
+  if (params.incomeAccountIds) body.incomeAccountIds = params.incomeAccountIds;
+  if (params.expenseAccountIds) body.expenseAccountIds = params.expenseAccountIds;
+  return apiFetch('/projection/monthly/simulate', { method: 'POST', body });
+};

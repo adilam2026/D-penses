@@ -5,7 +5,7 @@ import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { HomeScreen } from '../screens/HomeScreen';
 import { TransactionsScreen } from '../screens/transactions/TransactionsScreen';
 import { CalendarScreen } from '../screens/calendar/CalendarScreen';
-import { EpargneScreen } from '../screens/savings/EpargneScreen';
+import { ProjectionScreen } from '../screens/projection/ProjectionScreen';
 import { useQuickActions } from '../state/QuickActionsContext';
 
 const Tab = createBottomTabNavigator();
@@ -15,8 +15,8 @@ type IconName = keyof typeof Ionicons.glyphMap;
 const TAB_ICONS: Record<string, { active: IconName; inactive: IconName }> = {
   Accueil: { active: 'home', inactive: 'home-outline' },
   Transactions: { active: 'swap-horizontal', inactive: 'swap-horizontal-outline' },
+  Projection: { active: 'trending-up', inactive: 'trending-up-outline' },
   Calendrier: { active: 'calendar', inactive: 'calendar-outline' },
-  EnveloppesTab: { active: 'wallet', inactive: 'wallet-outline' },
 };
 
 // Jamais rendu : `tabBarButton` remplace entièrement le bouton par défaut de cet
@@ -40,15 +40,13 @@ function CentralPlusButton() {
 }
 
 /**
- * Navigation basse (recette post-Vague 3 §13) : Accueil / Transactions / [+] /
- * Calendrier / Enveloppes — 5 positions symétriques, le bouton central [+]
- * occupant mathématiquement le 3e des 5 emplacements (jamais un centrage
- * approximatif sur 4 : c'est exactement ce déséquilibre qui rendait le + mal
- * centré visuellement avant ce correctif). "EnveloppesTab" est un nom de route
- * interne distinct de l'écran "Enveloppes" du menu ☰/QuickActionsSheet (racine
- * du Stack) — même composant EpargneScreen, deux points d'entrée réutilisant
- * la même route root sans collision de nom entre navigateurs. Le bouton
- * central n'est jamais un écran réel : `tabPress` est intercepté.
+ * Navigation basse (Round 4 §1, remplace la disposition post-Vague 3) : Accueil /
+ * Transactions / [+] / Projection / Calendrier — 5 positions symétriques, le
+ * bouton central [+] occupant mathématiquement le 3e des 5 emplacements (jamais
+ * un centrage approximatif sur 4). "Enveloppes" sort de la barre mais reste
+ * accessible depuis Accueil, le menu ☰ et les parcours qui l'utilisent (déjà
+ * câblé — écran racine "Enveloppes" du Stack, inchangé). Le bouton central n'est
+ * jamais un écran réel : `tabPress` est intercepté.
  */
 export function RootTabs() {
   return (
@@ -71,8 +69,8 @@ export function RootTabs() {
         component={QuickActionsPlaceholder}
         options={{ tabBarButton: () => <CentralPlusButton />, tabBarLabel: () => null }}
       />
+      <Tab.Screen name="Projection" component={ProjectionScreen} />
       <Tab.Screen name="Calendrier" component={CalendarScreen} />
-      <Tab.Screen name="EnveloppesTab" component={EpargneScreen} options={{ tabBarLabel: 'Enveloppes' }} />
     </Tab.Navigator>
   );
 }

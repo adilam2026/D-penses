@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { getDeadlineBalance } from '../common/ledger/ledger.util';
 import { recalcFinancialStatus } from '../common/ledger/deadline-status.util';
@@ -64,7 +64,22 @@ export class DeadlinesService {
       }
 
       const data: Record<string, unknown> = {};
-      if (dto.dueDate !== undefined) data.dueDate = new Date(dto.dueDate); // report — pas un changement de statut (RG-020bis)
+      if (dto.dueDate !== undefined) {
+        // Round 4 (Projection mensuelle §11) : une échéance OBLIGATOIRE/contractuelle ne
+        // peut jamais être déplacée comme si sa date officielle avait changé — seule une
+        // SIMULATION (Projection, dateOverrides en mémoire) est permise pour ce cas. Une
+        // Deadline déjà soldée/annulée n'a plus de date à déplacer non plus.
+        const chargePlan = await tx.chargePlan.findUniqueOrThrow({ where: { id: deadline.chargePlanId } });
+        if (chargePlan.obligationStatus === 'obligatoire') {
+          throw new BadRequestException(
+            "Cette échéance est obligatoire/contractuelle : sa date officielle ne peut pas être déplacée. Utilisez « Simuler un décalage » dans Projection.",
+          );
+        }
+        if (deadline.financialStatus !== 'ouverte' && deadline.financialStatus !== 'partiellement_payee') {
+          throw new BadRequestException('Impossible de déplacer une échéance déjà soldée ou annulée');
+        }
+        data.dueDate = new Date(dto.dueDate); // report — pas un changement de statut (RG-020bis)
+      }
       if (dto.expectedBillingDate !== undefined) data.expectedBillingDate = new Date(dto.expectedBillingDate);
       if (dto.billingDate !== undefined) data.billingDate = new Date(dto.billingDate);
 
@@ -106,7 +121,14 @@ export class DeadlinesService {
         }
       }
 
-      await tx.deadline.update({ where: { id }, data });
+      try {
+        await tx.deadline.update({ where: { id }, data });
+      } catch (err: any) {
+        if (err?.code === 'P2002') {
+          throw new ConflictException('Une échéance existe déjà à cette date pour cette charge');
+        }
+        throw err;
+      }
       await recalcFinancialStatus(tx, id); // ex. montant revu à la hausse après clôture (RG-016bis)
       return this.withBalance(tx, id);
     });

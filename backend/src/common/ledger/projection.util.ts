@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, ObligationStatus } from '@prisma/client';
 import { getDeadlineBalances, round2, toNumber } from './ledger.util';
 import { computeTreasurySummary } from './treasury.util';
 import { computePocketCurrentAmount } from './provision.util';
@@ -72,16 +72,44 @@ interface RawEvent {
   // a besoin du solde de provision COURANT au moment où on l'atteint, RG-090).
   physicalImpact?: number;
   reserveImpact?: number;
-  amountStatus?: 'estime' | 'confirme';
+  amountStatus?: 'inconnu' | 'estime' | 'confirme';
   // deadline uniquement : nécessaire pour la fenêtre "engagé" du jour (§8).
   deadlineId?: string;
   engagementNonCouvert?: number;
+  // Round 4 (Projection mensuelle) — montant signé CONSOLIDÉ foyer (+ revenu, - dépense),
+  // délibérément DISTINCT de physicalImpact : indépendant du flag includeInOperationalTreasury,
+  // c'est le filtre-compte explicite (§4) qui décide côté monthly-projection.util.ts, jamais
+  // ce flag interne conçu pour un usage différent (courbe "trésorerie opérationnelle").
+  grossAmount?: number;
+  // Round 4 (Projection mensuelle §19/§9/§4) — enrichissement additif, jamais lu par
+  // le moteur jour-par-jour lui-même : uniquement consommé par monthly-projection.util.ts
+  // pour la classification/navigation/filtre-compte, sans dupliquer aucune requête ici.
+  entityType?: 'income_occurrence' | 'deadline' | 'variable_budget';
+  entityId?: string;
+  accountId?: string | null;
+  accountKnown?: boolean;
+  obligationStatus?: ObligationStatus;
+  financialPlanId?: string | null;
+  movable?: boolean;
+  // Deadline à amount_status=inconnu (RG-103) : jamais un montant à 0, mais doit
+  // rester visible (mois + libellé) pour ne jamais disparaître silencieusement (§16).
+  unknownAmount?: boolean;
 }
 
 export interface ProjectionEventSummary {
   label: string;
-  amount: number; // signé : + entrée, - sortie
+  amount: number; // signé : + entrée, - sortie ; 0 si unknownAmount=true (RG-103, jamais un vrai zéro)
   kind: EventKind;
+  grossAmount?: number;
+  amountStatus?: 'inconnu' | 'estime' | 'confirme';
+  entityType?: 'income_occurrence' | 'deadline' | 'variable_budget';
+  entityId?: string;
+  accountId?: string | null;
+  accountKnown?: boolean;
+  obligationStatus?: ObligationStatus;
+  financialPlanId?: string | null;
+  movable?: boolean;
+  unknownAmount?: boolean;
 }
 
 export interface TimelinePoint {
@@ -174,7 +202,15 @@ async function variableBudgetEvents(
         sortKey: row.id,
         physicalImpact: -round2(status.projectionPrudenteRestante),
         reserveImpact: 0,
+        grossAmount: -round2(status.projectionPrudenteRestante),
         amountStatus: 'estime',
+        entityType: 'variable_budget',
+        entityId: row.id,
+        // Round 4 (§4) : un budget variable n'est jamais rattaché à un seul compte —
+        // "Compte non encore déterminé" explicite, jamais une valeur par défaut inventée.
+        accountId: null,
+        accountKnown: false,
+        movable: false,
       });
     }
 
@@ -193,7 +229,13 @@ async function variableBudgetEvents(
           sortKey: `${row.id}-${dateKey(period.start)}`,
           physicalImpact: -round2(amount),
           reserveImpact: 0,
+          grossAmount: -round2(amount),
           amountStatus: 'estime',
+          entityType: 'variable_budget',
+          entityId: row.id,
+          accountId: null,
+          accountKnown: false,
+          movable: false,
         });
       }
       cursor = addDaysUTC(period.end, 1);
@@ -209,6 +251,13 @@ interface DeadlineCandidate {
   resteAPayer: number;
   amountStatus: 'inconnu' | 'estime' | 'confirme';
   provisionId: string | null;
+  // Round 4 (§19/§9/§4) — métadonnées ChargePlan portées jusqu'ici pour la
+  // classification obligatoire/flexible et le compte anticipé, sans requête
+  // supplémentaire : déjà chargées via `include` dans deadlineCandidates().
+  chargePlanId: string;
+  obligationStatus: ObligationStatus;
+  financialPlanId: string | null;
+  defaultAccountId: string | null;
 }
 
 async function deadlineCandidates(
@@ -245,8 +294,14 @@ async function deadlineCandidates(
     for (const d of cp.deadlines) {
       if (d.financialStatus === 'annulee' || d.financialStatus === 'soldee') continue;
       if (d.dueDate > horizonEnd) continue; // hors de l'horizon demandé — invisible à cet appel
+      const common = {
+        chargePlanId: cp.id,
+        obligationStatus: cp.obligationStatus,
+        financialPlanId: cp.financialPlanId,
+        defaultAccountId: cp.defaultAccountId,
+      };
       if (d.amountStatus === 'inconnu') {
-        result.push({ id: d.id, dueDate: d.dueDate, chargePlanLabel: cp.label, resteAPayer: 0, amountStatus: 'inconnu', provisionId: d.provisionId });
+        result.push({ id: d.id, dueDate: d.dueDate, chargePlanLabel: cp.label, resteAPayer: 0, amountStatus: 'inconnu', provisionId: d.provisionId, ...common });
         continue;
       }
       const balance = balances.get(d.id);
@@ -257,6 +312,7 @@ async function deadlineCandidates(
         resteAPayer: round2(balance?.resteAPayer ?? 0),
         amountStatus: d.amountStatus,
         provisionId: d.provisionId,
+        ...common,
       });
     }
   }
@@ -270,6 +326,14 @@ async function deadlineCandidates(
  * scénario PUREMENT EN MÉMOIRE — jamais lues ni écrites en base (IF-10) : le simulateur
  * appelle cette même fonction deux fois (baseline sans extraEvents, scénario avec), jamais
  * un second moteur financier.
+ *
+ * `dateOverrides` (Round 4, Projection mensuelle §12/§13) : `deadlineId → date simulée`,
+ * PUREMENT EN MÉMOIRE lui aussi (IF-10) — jamais lu/écrit en base. Contrairement à
+ * `extraEvents` (qui AJOUTE un événement hypothétique), un override DÉPLACE l'événement
+ * réel d'une Deadline EXISTANTE à une autre date dans le MÊME calcul : la Deadline
+ * n'est jamais comptée deux fois (ni à son ancienne date ni comme "nouvel" événement
+ * séparé), et la séquence de consommation de Provision (RG-090) reste correcte car le
+ * tri chronologique des Deadline utilise la date EFFECTIVE (déplacée), pas `due_date`.
  */
 export async function computeProjection(
   tx: TxClient,
@@ -278,6 +342,7 @@ export async function computeProjection(
   horizonEnd: Date,
   extraEvents: SimulatedEvent[] = [],
   includeEnvisagedOptions = false,
+  dateOverrides?: Map<string, Date>,
 ): Promise<ProjectionResult> {
   const ref = toUtcMidnight(referenceDate);
   const end = toUtcMidnight(horizonEnd);
@@ -330,6 +395,15 @@ export async function computeProjection(
       sortKey: income.id,
       physicalImpact: operational ? round2(toNumber(income.plannedAmount)) : 0,
       reserveImpact: 0,
+      // Round 4 : le montant CONSOLIDÉ foyer (revenus mensuels) est indépendant du
+      // périmètre "trésorerie opérationnelle" — c'est le filtre-compte explicite du
+      // §4 qui décide, jamais le flag interne includeInOperationalTreasury.
+      grossAmount: round2(toNumber(income.plannedAmount)),
+      entityType: 'income_occurrence',
+      entityId: income.id,
+      accountId: targetAccountId,
+      accountKnown: true,
+      movable: false,
     });
   }
 
@@ -405,18 +479,45 @@ export async function computeProjection(
 
   // ---------- §5/§6/§7/§9 : Deadline (portée certaine), traitées en ORDRE CHRONOLOGIQUE ----------
   // pour faire évoluer correctement le solde de provision suivi (RG-090, séquentiel et exclusif).
-  const deadlines = (await deadlineCandidates(tx, householdId, ref, end, includeEnvisagedOptions)).sort(
-    (a, b) => a.dueDate.getTime() - b.dueDate.getTime() || a.id.localeCompare(b.id),
-  );
+  // Round 4 (§12/§13) : le tri et la date d'événement utilisent la date EFFECTIVE (dateOverrides
+  // en priorité) — un déplacement simulé change où la Deadline consomme sa Provision dans la
+  // séquence, exactement comme le ferait un vrai déplacement, sans jamais la compter deux fois.
+  const candidates = await deadlineCandidates(tx, householdId, ref, end, includeEnvisagedOptions);
+  const deadlines = candidates
+    .map((d) => {
+      const overridden = dateOverrides?.get(d.id);
+      const raw = overridden ? toUtcMidnight(overridden) : d.dueDate;
+      const effectiveDate = raw < ref ? ref : raw;
+      return { ...d, effectiveDate };
+    })
+    .sort((a, b) => a.effectiveDate.getTime() - b.effectiveDate.getTime() || a.id.localeCompare(b.id));
   let envisagedEventsTotal = 0;
   for (const d of deadlines) {
-    // Une échéance déjà en retard (due_date < aujourd'hui) est projetée dès aujourd'hui —
-    // elle reste un engagement certain non réalisé, jamais ignorée (§4).
-    const eventDate = d.dueDate < ref ? ref : d.dueDate;
+    const eventDate = d.effectiveDate;
 
     if (d.amountStatus === 'inconnu') {
       unknownEventsCount += 1;
-      continue; // RG-103 : jamais compté 0, exclu des courbes numériques
+      // RG-103 : jamais compté 0 dans les totaux — mais reste visible (mois + libellé),
+      // jamais silencieusement disparu (§16 Round 4).
+      events.push({
+        date: eventDate,
+        kind: 'deadline',
+        label: d.chargePlanLabel,
+        sortKey: d.id,
+        physicalImpact: 0,
+        reserveImpact: 0,
+        grossAmount: 0,
+        amountStatus: 'inconnu',
+        unknownAmount: true,
+        entityType: 'deadline',
+        entityId: d.id,
+        accountId: d.defaultAccountId,
+        accountKnown: d.defaultAccountId !== null,
+        obligationStatus: d.obligationStatus,
+        financialPlanId: d.financialPlanId,
+        movable: d.obligationStatus !== 'obligatoire',
+      });
+      continue;
     }
     if (d.amountStatus === 'estime') containsEstimates = true;
     if (d.resteAPayer <= 0) continue;
@@ -453,9 +554,20 @@ export async function computeProjection(
       sortKey: d.id,
       physicalImpact: round2(physicalImpact),
       reserveImpact: 0, // la variation de réserve est déjà appliquée directement à provisionBalance ci-dessus
+      // Round 4 : montant CONSOLIDÉ foyer — le montant total dû, qu'une Provision le couvre ou
+      // non (§17 F : une Provision n'est jamais une "dépense supplémentaire", mais elle ne
+      // réduit pas non plus la dépense réelle consolidée — RG-095, enveloppe ≠ compte).
+      grossAmount: -d.resteAPayer,
       amountStatus: d.amountStatus,
       deadlineId: d.id,
       engagementNonCouvert,
+      entityType: 'deadline',
+      entityId: d.id,
+      accountId: d.defaultAccountId,
+      accountKnown: d.defaultAccountId !== null,
+      obligationStatus: d.obligationStatus,
+      financialPlanId: d.financialPlanId,
+      movable: d.obligationStatus !== 'obligatoire',
     });
   }
 
@@ -515,7 +627,26 @@ export async function computeProjection(
       physicalRunning = round2(physicalRunning + (e.physicalImpact ?? 0));
       reservedRunning = round2(reservedRunning + (e.reserveImpact ?? 0));
       const signed = round2((e.physicalImpact ?? 0) + (e.reserveImpact ?? 0));
-      if (signed !== 0) summaries.push({ label: e.label, amount: signed, kind: e.kind });
+      // Round 4 (§16) : un événement à montant inconnu reste visible (amount=0 n'est
+      // JAMAIS interprété comme un vrai zéro grâce à `unknownAmount: true`), même si son
+      // impact chiffré est nul — jamais silencieusement absent de la timeline.
+      if (signed !== 0 || e.unknownAmount) {
+        summaries.push({
+          label: e.label,
+          amount: signed,
+          kind: e.kind,
+          grossAmount: e.grossAmount,
+          amountStatus: e.amountStatus,
+          entityType: e.entityType,
+          entityId: e.entityId,
+          accountId: e.accountId,
+          accountKnown: e.accountKnown,
+          obligationStatus: e.obligationStatus,
+          financialPlanId: e.financialPlanId,
+          movable: e.movable,
+          unknownAmount: e.unknownAmount,
+        });
+      }
     }
 
     const engagedAmount = round2(
