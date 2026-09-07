@@ -19,6 +19,10 @@ export const colors = {
   dangerLight: '#FBEDEC',
   warning: '#B8860B',
   warningLight: '#FFF7E6',
+  // Accent ambre distinct (bandeau "attention/échéance proche" — plus vif que
+  // warning/warningLight, ex. scénario de simulation en cours sur Projection).
+  amberAccentBorder: '#E6C87A',
+  amberAccentText: '#8A6D1D',
 
   // Texte
   textPrimary: '#172436',
