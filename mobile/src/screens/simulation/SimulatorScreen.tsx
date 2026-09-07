@@ -1,9 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { DateField } from '../../ui/DateField';
+import { Select } from '../../ui/Select';
+import { FormField } from '../../ui/FormField';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface Account {
   id: string;
@@ -46,10 +50,10 @@ const DECISION_LABEL: Record<PurchaseResult['decision'], string> = {
 };
 
 const DECISION_COLOR: Record<PurchaseResult['decision'], string> = {
-  POSSIBLE_ET_PRUDENT: '#2E7D5B',
-  POSSIBLE_MAIS_TENSION: '#B8860B',
-  IMPOSSIBLE_DEFICIT: '#B3261E',
-  INDETERMINE_INCOMPLET: '#6B747C',
+  POSSIBLE_ET_PRUDENT: colors.success,
+  POSSIBLE_MAIS_TENSION: colors.warning,
+  IMPOSSIBLE_DEFICIT: colors.danger,
+  INDETERMINE_INCOMPLET: colors.textSecondary,
 };
 
 const REASON_LABEL: Record<string, string> = {
@@ -77,6 +81,7 @@ function formatDate(iso: string) {
 export function SimulatorScreen() {
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [mode, setMode] = useState<'achat' | 'capacite'>('achat');
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [amount, setAmount] = useState('');
@@ -149,116 +154,123 @@ export function SimulatorScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
-      <Text style={styles.title}>{mode === 'achat' ? 'Puis-je me le permettre ?' : 'Combien puis-je mettre de côté ?'}</Text>
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
+        <Text style={styles.title}>{mode === 'achat' ? 'Puis-je me le permettre ?' : 'Combien puis-je mettre de côté ?'}</Text>
 
-      <View style={styles.segment}>
-        <TouchableOpacity style={[styles.segmentItem, mode === 'achat' && styles.segmentActive]} onPress={() => setMode('achat')}>
-          <Text style={[styles.segmentText, mode === 'achat' && styles.segmentTextActive]}>Un achat</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.segmentItem, mode === 'capacite' && styles.segmentActive]} onPress={() => setMode('capacite')}>
-          <Text style={[styles.segmentText, mode === 'capacite' && styles.segmentTextActive]}>Capacité d'épargne</Text>
-        </TouchableOpacity>
-      </View>
-
-      {mode === 'capacite' ? (
-        <>
-          <Text style={styles.hint}>Estime, sans rien réserver réellement, le montant que vous pourriez mettre de côté sans risquer votre coussin de sécurité ni votre disponible libre.</Text>
-
-          <View style={styles.toggleRow}>
-            <Text style={styles.toggleLabel}>Versement récurrent (mensuel) plutôt qu'unique</Text>
-            <Switch value={capacityRecurring} onValueChange={setCapacityRecurring} />
-          </View>
-
-          <TouchableOpacity style={styles.button} onPress={onTestCapacity} disabled={capacityLoading}>
-            {capacityLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Calculer</Text>}
+        <View style={styles.segment}>
+          <TouchableOpacity style={[styles.segmentItem, mode === 'achat' && styles.segmentActive]} onPress={() => setMode('achat')}>
+            <Text style={[styles.segmentText, mode === 'achat' && styles.segmentTextActive]}>Un achat</Text>
           </TouchableOpacity>
-          {capacityError ? <Text style={styles.error}>{capacityError}</Text> : null}
-
-          {capacity && (
-            <View style={styles.resultCard}>
-              {!capacity.is_complete && <Text style={styles.warning}>Calcul basé sur les montants connus uniquement.</Text>}
-              {capacity.contains_estimates && capacity.is_complete && <Text style={styles.info}>Inclut des montants estimés.</Text>}
-              <Text style={styles.capacityLabel}>{capacity.recurring ? 'Montant mensuel prudent' : 'Montant unique prudent, aujourd\'hui'}</Text>
-              <Text style={styles.capacityValue}>{capacity.max_amount.toLocaleString('fr-FR')} DH</Text>
-              <Text style={styles.dateLine}>
-                {capacity.recurring
-                  ? `Sur ${capacity.contribution_dates.length} versement(s) d'ici le ${formatDate(capacity.horizon_end)}`
-                  : `Sans risque d'ici le ${formatDate(capacity.horizon_end)}`}
-              </Text>
-            </View>
-          )}
-        </>
-      ) : (
-        <>
-      <Text style={styles.sectionLabel}>Montant</Text>
-      <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} />
-
-      <Text style={styles.sectionLabel}>Date</Text>
-      <DateField value={date} onChange={setDate} />
-
-      <Text style={styles.sectionLabel}>Compte</Text>
-      <View style={styles.chipRow}>
-        {accounts.map((a) => (
-          <TouchableOpacity key={a.id} style={[styles.chip, accountId === a.id && styles.chipActive]} onPress={() => setAccountId(a.id)}>
-            <Text style={[styles.chipText, accountId === a.id && styles.chipTextActive]}>{a.name}</Text>
+          <TouchableOpacity style={[styles.segmentItem, mode === 'capacite' && styles.segmentActive]} onPress={() => setMode('capacite')}>
+            <Text style={[styles.segmentText, mode === 'capacite' && styles.segmentTextActive]}>Capacité d'épargne</Text>
           </TouchableOpacity>
-        ))}
-      </View>
-
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-
-      <TouchableOpacity style={styles.button} onPress={onSimulate} disabled={submitting}>
-        {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Simuler</Text>}
-      </TouchableOpacity>
-
-      {result && (
-        <View style={styles.resultCard}>
-          <Text style={[styles.decision, { color: DECISION_COLOR[result.decision] }]}>{DECISION_LABEL[result.decision]}</Text>
-          {!result.is_complete && <Text style={styles.warning}>Calcul basé sur les montants connus uniquement — certains montants restent inconnus.</Text>}
-          {result.contains_estimates && result.is_complete && <Text style={styles.info}>Inclut des montants estimés.</Text>}
-
-          <View style={styles.figuresRow}>
-            <Figure label="Marge minimale restante" value={result.margin_after_purchase} />
-            <Figure label="Point bas" value={result.physical_low_point_after} />
-          </View>
-
-          {result.possible_date && <Text style={styles.dateLine}>Première date possible : {formatDate(result.possible_date)}</Text>}
-          {result.recommended_date && <Text style={styles.dateLine}>Date recommandée : {formatDate(result.recommended_date)}</Text>}
-
-          {result.reason_codes.length > 0 && (
-            <View style={styles.reasons}>
-              <Text style={styles.reasonsTitle}>Raison principale</Text>
-              <Text style={styles.reasonText}>{REASON_LABEL[result.reason_codes[0]] ?? result.reason_codes[0]}</Text>
-            </View>
-          )}
         </View>
-      )}
 
-      {compare.length > 0 && (
-        <>
-          <Text style={styles.sectionLabel}>Comparateur</Text>
-          {compare.map((row, i) => (
-            <View key={i} style={styles.compareRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.compareLabel}>{row.label}</Text>
-                <Text style={styles.compareDate}>{formatDate(row.date)}</Text>
-              </View>
-              <Text style={[styles.compareDecision, { color: DECISION_COLOR[row.decision] }]}>{DECISION_LABEL[row.decision]}</Text>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.compareFigure}>{row.margin.toLocaleString('fr-FR')} DH</Text>
-                <Text style={styles.compareFigureSub}>bas: {row.lowPoint.toLocaleString('fr-FR')} DH</Text>
-              </View>
+        {mode === 'capacite' ? (
+          <>
+            <Text style={styles.hint}>Estime, sans rien réserver réellement, le montant que vous pourriez mettre de côté sans risquer votre coussin de sécurité ni votre disponible libre.</Text>
+
+            <View style={styles.toggleRow}>
+              <Text style={styles.toggleLabel}>Versement récurrent (mensuel) plutôt qu'unique</Text>
+              <Switch value={capacityRecurring} onValueChange={setCapacityRecurring} />
             </View>
-          ))}
-        </>
-      )}
-        </>
-      )}
 
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Text style={styles.cancel}>Retour</Text>
-      </TouchableOpacity>
+            <TouchableOpacity style={styles.button} onPress={onTestCapacity} disabled={capacityLoading} testID="simulator-capacity-submit">
+              {capacityLoading ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Calculer</Text>}
+            </TouchableOpacity>
+            {capacityError ? <Text style={styles.error}>{capacityError}</Text> : null}
+
+            {capacity && (
+              <View style={styles.resultCard}>
+                {!capacity.is_complete && <Text style={styles.warning}>Calcul basé sur les montants connus uniquement.</Text>}
+                {capacity.contains_estimates && capacity.is_complete && <Text style={styles.info}>Inclut des montants estimés.</Text>}
+                <Text style={styles.capacityLabel}>{capacity.recurring ? 'Montant mensuel prudent' : 'Montant unique prudent, aujourd\'hui'}</Text>
+                <Text style={styles.capacityValue}>{capacity.max_amount.toLocaleString('fr-FR')} DH</Text>
+                <Text style={styles.dateLine}>
+                  {capacity.recurring
+                    ? `Sur ${capacity.contribution_dates.length} versement(s) d'ici le ${formatDate(capacity.horizon_end)}`
+                    : `Sans risque d'ici le ${formatDate(capacity.horizon_end)}`}
+                </Text>
+              </View>
+            )}
+          </>
+        ) : (
+          <>
+            <FormField
+              testID="simulator-amount-input"
+              label="Montant"
+              placeholder="Montant (DH)"
+              keyboardType="decimal-pad"
+              value={amount}
+              onChangeText={setAmount}
+              onFocus={handleFocus}
+            />
+
+            <Text style={styles.sectionLabel}>Date</Text>
+            <DateField value={date} onChange={setDate} />
+
+            <Select
+              testID="simulator-account-select"
+              label="Compte"
+              placeholder="Choisir un compte"
+              value={accountId}
+              options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+              onChange={setAccountId}
+            />
+
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+
+            <TouchableOpacity style={styles.button} onPress={onSimulate} disabled={submitting} testID="simulator-submit">
+              {submitting ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Simuler</Text>}
+            </TouchableOpacity>
+
+            {result && (
+              <View style={styles.resultCard}>
+                <Text style={[styles.decision, { color: DECISION_COLOR[result.decision] }]}>{DECISION_LABEL[result.decision]}</Text>
+                {!result.is_complete && <Text style={styles.warning}>Calcul basé sur les montants connus uniquement — certains montants restent inconnus.</Text>}
+                {result.contains_estimates && result.is_complete && <Text style={styles.info}>Inclut des montants estimés.</Text>}
+
+                <View style={styles.figuresRow}>
+                  <Figure label="Marge minimale restante" value={result.margin_after_purchase} />
+                  <Figure label="Point bas" value={result.physical_low_point_after} />
+                </View>
+
+                {result.possible_date && <Text style={styles.dateLine}>Première date possible : {formatDate(result.possible_date)}</Text>}
+                {result.recommended_date && <Text style={styles.dateLine}>Date recommandée : {formatDate(result.recommended_date)}</Text>}
+
+                {result.reason_codes.length > 0 && (
+                  <View style={styles.reasons}>
+                    <Text style={styles.reasonsTitle}>Raison principale</Text>
+                    <Text style={styles.reasonText}>{REASON_LABEL[result.reason_codes[0]] ?? result.reason_codes[0]}</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {compare.length > 0 && (
+              <>
+                <Text style={styles.sectionLabel}>Comparateur</Text>
+                {compare.map((row, i) => (
+                  <View key={i} style={styles.compareRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.compareLabel}>{row.label}</Text>
+                      <Text style={styles.compareDate}>{formatDate(row.date)}</Text>
+                    </View>
+                    <Text style={[styles.compareDecision, { color: DECISION_COLOR[row.decision] }]}>{DECISION_LABEL[row.decision]}</Text>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={styles.compareFigure}>{row.margin.toLocaleString('fr-FR')} DH</Text>
+                      <Text style={styles.compareFigureSub}>bas: {row.lowPoint.toLocaleString('fr-FR')} DH</Text>
+                    </View>
+                  </View>
+                ))}
+              </>
+            )}
+          </>
+        )}
+
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Text style={styles.cancel}>Retour</Text>
+        </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -274,64 +286,41 @@ function Figure({ label, value }: { label: string; value: number }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  scroll: { padding: 20, paddingTop: 24, paddingBottom: 40 },
-  title: { fontSize: 18, fontWeight: '700', color: '#172436', marginBottom: 16 },
-  segment: { flexDirection: 'row', backgroundColor: '#EDEBE6', borderRadius: 10, padding: 4, marginBottom: 16 },
-  segmentItem: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
-  segmentActive: { backgroundColor: '#fff' },
-  segmentText: { fontSize: 13, color: '#6B747C', fontWeight: '600' },
-  segmentTextActive: { color: '#172436' },
-  hint: { fontSize: 12, color: '#6B747C', lineHeight: 18, marginBottom: 16 },
-  toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  toggleLabel: { fontSize: 13, color: '#172436', flex: 1, marginRight: 8 },
-  capacityLabel: { fontSize: 12, color: '#6B747C', fontWeight: '600', marginTop: 4 },
-  capacityValue: { fontSize: 28, fontWeight: '800', color: '#2E7D5B', marginTop: 4 },
-  sectionLabel: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 8, marginTop: 12 },
-  input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    borderWidth: 1,
-    borderColor: '#E3E1DC',
-  },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap' },
-  chip: {
-    backgroundColor: '#fff',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginRight: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#E3E1DC',
-  },
-  chipActive: { backgroundColor: '#172436', borderColor: '#172436' },
-  chipText: { fontSize: 13, color: '#172436' },
-  chipTextActive: { color: '#fff', fontWeight: '600' },
-  button: { backgroundColor: '#172436', borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 16 },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  error: { color: '#B3261E', fontSize: 13, marginTop: 8 },
-  resultCard: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginTop: 20 },
+  container: { flex: 1, backgroundColor: colors.background },
+  scroll: { padding: spacing.xl, paddingTop: 24 },
+  title: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.lg },
+  segment: { flexDirection: 'row', backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: 4, marginBottom: spacing.lg },
+  segmentItem: { flex: 1, paddingVertical: 10, borderRadius: radius.sm, alignItems: 'center' },
+  segmentActive: { backgroundColor: colors.surface },
+  segmentText: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
+  segmentTextActive: { color: colors.textPrimary },
+  hint: { fontSize: 12, color: colors.textSecondary, lineHeight: 18, marginBottom: spacing.lg },
+  toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
+  toggleLabel: { fontSize: 13, color: colors.textPrimary, flex: 1, marginRight: spacing.sm },
+  capacityLabel: { fontSize: 12, color: colors.textSecondary, fontWeight: '600', marginTop: 4 },
+  capacityValue: { fontSize: 28, fontWeight: '800', color: colors.success, marginTop: 4 },
+  sectionLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm, marginTop: spacing.md },
+  button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.lg },
+  buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 15 },
+  error: { color: colors.danger, fontSize: 13, marginTop: spacing.sm },
+  resultCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, marginTop: spacing.xl },
   decision: { fontSize: 18, fontWeight: '800' },
-  warning: { fontSize: 12, color: '#B8860B', marginTop: 8, fontWeight: '600' },
-  info: { fontSize: 12, color: '#6B747C', marginTop: 8 },
+  warning: { fontSize: 12, color: colors.warning, marginTop: spacing.sm, fontWeight: '600' },
+  info: { fontSize: 12, color: colors.textSecondary, marginTop: spacing.sm },
   figuresRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 14 },
   figure: { flex: 1 },
-  figureLabel: { fontSize: 11, color: '#6B747C' },
-  figureValue: { fontSize: 18, fontWeight: '800', color: '#172436', marginTop: 4 },
-  figureValueNegative: { color: '#B3261E' },
-  dateLine: { fontSize: 12, color: '#172436', marginTop: 10 },
-  reasons: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#EDEBE6' },
-  reasonsTitle: { fontSize: 11, color: '#6B747C', fontWeight: '600' },
-  reasonText: { fontSize: 13, color: '#172436', marginTop: 4 },
-  compareRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8 },
-  compareLabel: { fontSize: 12, fontWeight: '700', color: '#172436' },
-  compareDate: { fontSize: 11, color: '#6B747C', marginTop: 2 },
+  figureLabel: { fontSize: 11, color: colors.textSecondary },
+  figureValue: { fontSize: 18, fontWeight: '800', color: colors.textPrimary, marginTop: 4 },
+  figureValueNegative: { color: colors.danger },
+  dateLine: { fontSize: 12, color: colors.textPrimary, marginTop: 10 },
+  reasons: { marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.surfaceSecondary },
+  reasonsTitle: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
+  reasonText: { fontSize: 13, color: colors.textPrimary, marginTop: 4 },
+  compareRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm },
+  compareLabel: { fontSize: 12, fontWeight: '700', color: colors.textPrimary },
+  compareDate: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
   compareDecision: { fontSize: 11, fontWeight: '700', flex: 1, textAlign: 'center' },
-  compareFigure: { fontSize: 12, fontWeight: '700', color: '#172436' },
-  compareFigureSub: { fontSize: 10, color: '#6B747C', marginTop: 2 },
-  cancel: { color: '#6B747C', textAlign: 'center', marginTop: 20, fontSize: 13 },
+  compareFigure: { fontSize: 12, fontWeight: '700', color: colors.textPrimary },
+  compareFigureSub: { fontSize: 10, color: colors.textSecondary, marginTop: 2 },
+  cancel: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.xl, fontSize: 13 },
 });

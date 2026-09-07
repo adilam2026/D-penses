@@ -31,8 +31,6 @@ const JUSTIFIED_EXCEPTIONS: Record<string, string> = {
     'Un seul TextInput visible à la fois (nom OU code selon le mode), pied de page minimal (erreur, bouton, lien) — rien à faire défiler.',
   'accounts/QuickCreateAccountScreen.tsx':
     'Formulaire court (2 champs) : le bouton de création suit immédiatement le dernier champ, aucun contenu variable ne peut le repousser hors écran.',
-  'simulation/SimulatorScreen.tsx':
-    'Le champ Montant est en tête de formulaire, avant les comptes/résultats ; les résultats (variables, potentiellement longs) apparaissent après la saisie, jamais entre elle et le clavier.',
   'savings/GoalDetailScreen.tsx':
     'Le seul TextInput (montant de contribution) suit un bloc de chiffres de taille fixe ; le contenu variable (contributions, tests) est affiché après le champ, jamais au-dessus.',
   'financial-plans/FinancialPlanDetailScreen.tsx':

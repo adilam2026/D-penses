@@ -3,9 +3,12 @@ import { useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { DateField } from '../../ui/DateField';
+import { Select } from '../../ui/Select';
 import * as api from '../../api/client';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { colors, radius, spacing } from '../../ui/theme';
+
+const NO_PROVISION = '__none__';
 
 interface Provision {
   id: string;
@@ -141,18 +144,15 @@ export function TravelWizardScreen() {
 
         {provisions.length > 0 && (
           <>
-            <Text style={styles.sectionLabel}>Lier une enveloppe existante (optionnel)</Text>
-            <Text style={styles.hint}>Purement informatif — la couverture réelle se calcule ensuite ligne par ligne.</Text>
-            <View style={styles.chipRow}>
-              <TouchableOpacity style={[styles.chip, linkedProvisionId === null && styles.chipActive]} onPress={() => setLinkedProvisionId(null)}>
-                <Text style={[styles.chipText, linkedProvisionId === null && styles.chipTextActive]}>Aucune</Text>
-              </TouchableOpacity>
-              {provisions.map((p) => (
-                <TouchableOpacity key={p.id} style={[styles.chip, linkedProvisionId === p.id && styles.chipActive]} onPress={() => setLinkedProvisionId(p.id)}>
-                  <Text style={[styles.chipText, linkedProvisionId === p.id && styles.chipTextActive]}>{p.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <Text style={styles.hint}>Lier une enveloppe existante (optionnel) — purement informatif, la couverture réelle se calcule ensuite ligne par ligne.</Text>
+            <Select
+              testID="travel-provision-select"
+              label="Enveloppe liée"
+              placeholder="Aucune"
+              value={linkedProvisionId ?? NO_PROVISION}
+              options={[{ value: NO_PROVISION, label: 'Aucune' }, ...provisions.map((p) => ({ value: p.id, label: p.name }))]}
+              onChange={(v) => setLinkedProvisionId(v === NO_PROVISION ? null : v)}
+            />
           </>
         )}
 
@@ -262,20 +262,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: spacing.sm },
-  chip: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.pill,
-    paddingHorizontal: 14,
-    paddingVertical: spacing.sm,
-    marginRight: spacing.sm,
-    marginBottom: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  chipText: { fontSize: 13, color: colors.textPrimary },
-  chipTextActive: { color: colors.textOnPrimary, fontWeight: '600' },
   posteBlock: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
   toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
   toggleLabel: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, flex: 1, marginRight: spacing.sm },
