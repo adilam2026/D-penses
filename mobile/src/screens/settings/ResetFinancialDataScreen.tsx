@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 
 /**
  * ☰ Paramètres → Réinitialiser mes données financières (§24). Action sensible :
@@ -13,6 +14,7 @@ import { useBottomInset } from '../../ui/useBottomInset';
 export function ResetFinancialDataScreen() {
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [password, setPassword] = useState('');
   const [confirmed, setConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -40,7 +42,8 @@ export function ResetFinancialDataScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
       <Text style={styles.warningTitle}>⚠ Action sensible</Text>
       <Text style={styles.text}>Cette action supprime définitivement :</Text>
       <Text style={styles.bullet}>• Vos comptes et leur historique</Text>
@@ -55,7 +58,7 @@ export function ResetFinancialDataScreen() {
       <Text style={styles.bullet}>• Vos préférences (coussin de sécurité, seuils)</Text>
 
       <Text style={styles.sectionLabel}>Mot de passe</Text>
-      <TextInput style={styles.input} placeholder="Votre mot de passe" secureTextEntry value={password} onChangeText={setPassword} />
+      <TextInput style={styles.input} placeholder="Votre mot de passe" secureTextEntry value={password} onChangeText={setPassword} onFocus={handleFocus} />
 
       <View style={styles.confirmRow}>
         <Switch value={confirmed} onValueChange={setConfirmed} />
@@ -71,6 +74,7 @@ export function ResetFinancialDataScreen() {
         <Text style={styles.cancel}>Annuler</Text>
       </TouchableOpacity>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

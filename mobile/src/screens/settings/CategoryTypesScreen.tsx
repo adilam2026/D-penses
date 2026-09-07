@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 
 interface Category {
   id: string;
@@ -32,6 +33,7 @@ interface CategoryType {
  */
 export function CategoryTypesScreen() {
   const bottomInset = useBottomInset();
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [types, setTypes] = useState<CategoryType[]>([]);
@@ -92,7 +94,8 @@ export function CategoryTypesScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
       <Text style={styles.intro}>Choisissez une catégorie pour gérer ses types (ex. Alimentation → Courses).</Text>
 
       <View style={styles.chipRow}>
@@ -132,6 +135,7 @@ export function CategoryTypesScreen() {
                     placeholder="Nouveau sous-type"
                     value={subtypeDrafts[t.id] ?? ''}
                     onChangeText={(v) => setSubtypeDrafts((prev) => ({ ...prev, [t.id]: v }))}
+                    onFocus={handleFocus}
                   />
                   <TouchableOpacity style={styles.inlineAddButton} onPress={() => onCreateSubtype(t.id)}>
                     <Text style={styles.inlineAddButtonText}>Ajouter</Text>
@@ -145,7 +149,7 @@ export function CategoryTypesScreen() {
 
       {addingType ? (
         <View style={styles.inlineAddRow}>
-          <TextInput style={[styles.input, styles.inlineAddInput]} placeholder="Nom du type" value={newTypeName} onChangeText={setNewTypeName} />
+          <TextInput style={[styles.input, styles.inlineAddInput]} placeholder="Nom du type" value={newTypeName} onChangeText={setNewTypeName} onFocus={handleFocus} />
           <TouchableOpacity style={styles.inlineAddButton} onPress={onCreateType}>
             <Text style={styles.inlineAddButtonText}>Ajouter</Text>
           </TouchableOpacity>
@@ -156,6 +160,7 @@ export function CategoryTypesScreen() {
         </TouchableOpacity>
       )}
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

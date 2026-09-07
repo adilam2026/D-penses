@@ -1,8 +1,9 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 
 interface Category {
   id: string;
@@ -16,6 +17,7 @@ const KIND_LABEL: Record<Category['kind'], string> = { income: 'Revenu', expense
 /** ☰ Paramètres → Catégories. Les catégories système restent en lecture seule (jamais renommées/supprimées ici). */
 export function CategoriesScreen() {
   const bottomInset = useBottomInset();
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState('');
@@ -57,7 +59,8 @@ export function CategoriesScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
       <Text style={styles.intro}>Vos catégories organisent revenus et dépenses. Les catégories système sont partagées par tous les foyers.</Text>
 
       {loading ? (
@@ -72,7 +75,7 @@ export function CategoriesScreen() {
       )}
 
       <Text style={styles.sectionTitle}>Nouvelle catégorie</Text>
-      <TextInput style={styles.input} placeholder="Nom (ex. Cadeaux)" value={name} onChangeText={setName} />
+      <TextInput style={styles.input} placeholder="Nom (ex. Cadeaux)" value={name} onChangeText={setName} onFocus={handleFocus} />
       <View style={styles.chipRow}>
         {(['expense', 'income', 'both'] as const).map((k) => (
           <TouchableOpacity key={k} style={[styles.chip, kind === k && styles.chipActive]} onPress={() => setKind(k)}>
@@ -85,6 +88,7 @@ export function CategoriesScreen() {
         {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Ajouter</Text>}
       </TouchableOpacity>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

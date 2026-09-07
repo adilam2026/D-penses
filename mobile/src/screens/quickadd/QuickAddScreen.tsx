@@ -15,6 +15,7 @@ import {
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { accountCreatedBus } from '../../state/events';
+import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 
 type Mode = 'depense' | 'revenu' | 'paiement' | 'transfert';
 
@@ -46,7 +47,20 @@ interface OpenDeadline {
   id: string;
   dueDate: string;
   resteAPayer: number | null;
+  provisionId: string | null;
   chargePlan: { label: string };
+}
+
+interface Provision {
+  id: string;
+  name: string;
+  allocationMode: 'virtual_allocation' | 'backed_by_account';
+  linkedAccountId: string | null;
+  currentAmount: number | string;
+}
+
+function n(v: number | string): number {
+  return typeof v === 'number' ? v : Number(v);
 }
 
 function todayIso() {
@@ -71,6 +85,7 @@ export function QuickAddScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const bottomInset = useBottomInset();
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   // Vague 3 §3 — la bottom sheet "+" peut présélectionner l'action (Dépense/Revenu/
   // Payer une échéance/Transfert) ; sans paramètre, comportement inchangé (Dépense).
   const initialMode = (route.params?.mode as Mode | undefined) ?? 'depense';
@@ -100,6 +115,11 @@ export function QuickAddScreen() {
 
   const [openDeadlines, setOpenDeadlines] = useState<OpenDeadline[]>([]);
   const [deadlineId, setDeadlineId] = useState<string | null>(null);
+  // §4/§8/§9 — la Provision indique CE POUR QUOI l'argent est réservé, le compte
+  // indique D'OÙ il sort réellement : jamais confondus, le compte reste requis
+  // même quand l'enveloppe est utilisée.
+  const [deadlineProvision, setDeadlineProvision] = useState<Provision | null>(null);
+  const [fundingSource, setFundingSource] = useState<'compte' | 'provision'>('compte');
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -223,6 +243,16 @@ export function QuickAddScreen() {
   function onSelectDeadline(d: OpenDeadline) {
     setDeadlineId(d.id);
     if (d.resteAPayer !== null) setAmount(String(d.resteAPayer));
+    setFundingSource('compte');
+    if (d.provisionId) {
+      api.getProvision(d.provisionId).then((prov: Provision) => {
+        setDeadlineProvision(prov);
+        setFundingSource('provision');
+        setAccountId((current) => (prov.allocationMode === 'backed_by_account' ? prov.linkedAccountId : current));
+      });
+    } else {
+      setDeadlineProvision(null);
+    }
   }
 
   async function onSubmit() {
@@ -270,7 +300,22 @@ export function QuickAddScreen() {
           setSubmitting(false);
           return;
         }
-        await api.createPayment(deadlineId, { amount: numericAmount, accountId: accountId!, paidDate: today });
+        if (fundingSource === 'provision' && deadlineProvision) {
+          const available = n(deadlineProvision.currentAmount);
+          if (numericAmount > available) {
+            setError(`Enveloppe insuffisante : ${available.toLocaleString('fr-FR')} DH disponibles dans « ${deadlineProvision.name} »`);
+            setSubmitting(false);
+            return;
+          }
+          await api.payDeadlineWithProvision(deadlineId, {
+            amount: numericAmount,
+            accountId: accountId!,
+            provisionId: deadlineProvision.id,
+            paidDate: today,
+          });
+        } else {
+          await api.createPayment(deadlineId, { amount: numericAmount, accountId: accountId!, paidDate: today });
+        }
       } else {
         if (!toAccountId || toAccountId === accountId) {
           setError('Choisissez un compte de destination différent');
@@ -291,7 +336,7 @@ export function QuickAddScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Ajouter</Text>
 
         <View style={styles.modeRow}>
@@ -307,7 +352,7 @@ export function QuickAddScreen() {
         ) : (
           <>
             {mode === 'revenu' && (
-              <TextInput style={styles.input} placeholder="Libellé (ex. Salaire)" value={label} onChangeText={setLabel} />
+              <TextInput style={styles.input} placeholder="Libellé (ex. Salaire)" value={label} onChangeText={setLabel} onFocus={handleFocus} />
             )}
 
             {mode === 'paiement' && (
@@ -331,10 +376,45 @@ export function QuickAddScreen() {
                     ))}
                   </View>
                 )}
+
+                {deadlineProvision && (
+                  <>
+                    <Text style={styles.sectionLabel}>Enveloppe liée</Text>
+                    <View style={styles.chipRow}>
+                      <TouchableOpacity
+                        testID="funding-source-provision"
+                        style={[styles.chip, fundingSource === 'provision' && styles.chipActive]}
+                        onPress={() => {
+                          setFundingSource('provision');
+                          setAccountId(deadlineProvision.allocationMode === 'backed_by_account' ? deadlineProvision.linkedAccountId : accountId);
+                        }}
+                      >
+                        <Text style={[styles.chipText, fundingSource === 'provision' && styles.chipTextActive]}>
+                          Utiliser « {deadlineProvision.name} »
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        testID="funding-source-compte"
+                        style={[styles.chip, fundingSource === 'compte' && styles.chipActive]}
+                        onPress={() => setFundingSource('compte')}
+                      >
+                        <Text style={[styles.chipText, fundingSource === 'compte' && styles.chipTextActive]}>Payer sans l'enveloppe</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {fundingSource === 'provision' && (
+                      <Text style={styles.hint}>
+                        Disponible : {n(deadlineProvision.currentAmount).toLocaleString('fr-FR')} DH.
+                        {deadlineProvision.allocationMode === 'backed_by_account'
+                          ? ' Enveloppe = compte dédié : le compte à débiter est imposé.'
+                          : ' Le compte débité reste à choisir ci-dessous — l\'enveloppe indique seulement ce pour quoi cet argent était réservé.'}
+                      </Text>
+                    )}
+                  </>
+                )}
               </>
             )}
 
-            <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} />
+            <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} onFocus={handleFocus} />
 
             {mode === 'depense' && (
               <>
@@ -387,6 +467,7 @@ export function QuickAddScreen() {
                       placeholder="Nom du type (ex. Jardinier)"
                       value={newTypeName}
                       onChangeText={setNewTypeName}
+                      onFocus={handleFocus}
                     />
                     <TouchableOpacity testID="add-type-submit" style={styles.inlineAddButton} onPress={onCreateType} disabled={creatingType}>
                       {creatingType ? <ActivityIndicator color="#fff" /> : <Text style={styles.inlineAddButtonText}>Ajouter</Text>}
@@ -435,6 +516,7 @@ export function QuickAddScreen() {
                               placeholder="Nom du sous-type (ex. Viande)"
                               value={newSubtypeName}
                               onChangeText={setNewSubtypeName}
+                              onFocus={handleFocus}
                             />
                             <TouchableOpacity testID="add-subtype-submit" style={styles.inlineAddButton} onPress={onCreateSubtype} disabled={creatingSubtype}>
                               {creatingSubtype ? <ActivityIndicator color="#fff" /> : <Text style={styles.inlineAddButtonText}>Ajouter</Text>}
@@ -445,18 +527,27 @@ export function QuickAddScreen() {
                     );
                   })()}
 
-                <TextInput style={styles.input} placeholder="Note (facultatif)" value={notes} onChangeText={setNotes} />
+                <TextInput style={styles.input} placeholder="Note (facultatif)" value={notes} onChangeText={setNotes} onFocus={handleFocus} />
               </>
             )}
 
-            <Text style={styles.sectionLabel}>{mode === 'transfert' ? 'Compte source' : 'Compte'}</Text>
-            <View style={styles.chipRow}>
-              {accounts.map((a) => (
-                <TouchableOpacity key={a.id} style={[styles.chip, accountId === a.id && styles.chipActive]} onPress={() => setAccountId(a.id)}>
-                  <Text style={[styles.chipText, accountId === a.id && styles.chipTextActive]}>{a.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            {mode === 'paiement' && fundingSource === 'provision' && deadlineProvision?.allocationMode === 'backed_by_account' ? (
+              <>
+                <Text style={styles.sectionLabel}>Compte débité</Text>
+                <Text style={styles.hint}>{accounts.find((a) => a.id === accountId)?.name ?? '—'} (enveloppe dédiée, compte imposé)</Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.sectionLabel}>{mode === 'transfert' ? 'Compte source' : 'Compte'}</Text>
+                <View style={styles.chipRow}>
+                  {accounts.map((a) => (
+                    <TouchableOpacity key={a.id} style={[styles.chip, accountId === a.id && styles.chipActive]} onPress={() => setAccountId(a.id)}>
+                      <Text style={[styles.chipText, accountId === a.id && styles.chipTextActive]}>{a.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
 
             {mode === 'transfert' && (
               <>

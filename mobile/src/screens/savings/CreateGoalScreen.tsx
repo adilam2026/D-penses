@@ -4,6 +4,7 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleShe
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { DateField } from '../../ui/DateField';
+import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 
 interface CreatedGoal {
   label: string;
@@ -18,6 +19,7 @@ interface CreatedGoal {
 export function CreateGoalScreen() {
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [label, setLabel] = useState('');
   const [targetAmount, setTargetAmount] = useState('');
   const [targetDate, setTargetDate] = useState('');
@@ -52,7 +54,7 @@ export function CreateGoalScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Nouvel objectif</Text>
 
         {created.length > 0 && (
@@ -67,10 +69,10 @@ export function CreateGoalScreen() {
         )}
 
         <Text style={styles.sectionLabel}>Nom</Text>
-        <TextInput style={styles.input} placeholder="ex. PC" value={label} onChangeText={setLabel} />
+        <TextInput style={styles.input} placeholder="ex. PC" value={label} onChangeText={setLabel} onFocus={handleFocus} />
 
         <Text style={styles.sectionLabel}>Montant cible</Text>
-        <TextInput style={styles.input} placeholder="15000" keyboardType="decimal-pad" value={targetAmount} onChangeText={setTargetAmount} />
+        <TextInput style={styles.input} placeholder="15000" keyboardType="decimal-pad" value={targetAmount} onChangeText={setTargetAmount} onFocus={handleFocus} />
 
         <Text style={styles.sectionLabel}>Date souhaitée (optionnelle)</Text>
         <DateField value={targetDate} onChange={setTargetDate} placeholder="Aucune date choisie" />

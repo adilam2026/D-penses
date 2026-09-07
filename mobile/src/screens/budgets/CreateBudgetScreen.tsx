@@ -4,6 +4,7 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleShe
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { DateField } from '../../ui/DateField';
+import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 
 interface Category {
   id: string;
@@ -29,6 +30,7 @@ function todayIso() {
 export function CreateBudgetScreen() {
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
@@ -73,7 +75,7 @@ export function CreateBudgetScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
       <Text style={styles.intro}>Fixez une limite pour vos dépenses du quotidien.</Text>
 
       {created.length > 0 && (
@@ -101,7 +103,7 @@ export function CreateBudgetScreen() {
       )}
 
       <Text style={styles.sectionLabel}>Montant</Text>
-      <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} />
+      <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} onFocus={handleFocus} />
 
       <Text style={styles.sectionLabel}>Période</Text>
       <View style={styles.segment}>

@@ -31,6 +31,8 @@ interface Payment {
   amount: number | string;
   paidDate: string;
   type: string;
+  accountId: string;
+  provisionId: string | null;
 }
 
 interface Account {
@@ -241,7 +243,21 @@ export function DeadlineDetailScreen() {
           </>
         )}
 
-        {isOpen && (
+        {isOpen && accounts.length === 0 && (
+          <View style={styles.noAccountCard}>
+            <Text style={styles.noAccountText}>Vous devez d'abord ajouter un compte pour enregistrer ce paiement.</Text>
+            <View style={styles.buttonRowInline}>
+              <TouchableOpacity
+                style={styles.button}
+                onPress={() => navigation.navigate('QuickCreateAccount')}
+              >
+                <Text style={styles.buttonText}>Ajouter un compte</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {isOpen && accounts.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>Payer (total ou partiel)</Text>
 
@@ -309,7 +325,13 @@ export function DeadlineDetailScreen() {
             <Text style={styles.sectionTitle}>Paiements enregistrés</Text>
             {payments.map((p) => (
               <View key={p.id} style={styles.paymentRow}>
-                <Text style={styles.paymentText}>{formatDate(p.paidDate)}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.paymentText}>{formatDate(p.paidDate)}</Text>
+                  <Text style={styles.paymentMeta}>
+                    Compte {accounts.find((a) => a.id === p.accountId)?.name ?? '—'}
+                    {p.provisionId && provision?.id === p.provisionId ? ` · Enveloppe ${provision.name}` : ''}
+                  </Text>
+                </View>
                 <Text style={styles.paymentAmount}>{n(p.amount)?.toLocaleString('fr-FR')} DH</Text>
               </View>
             ))}
@@ -343,6 +365,9 @@ const styles = StyleSheet.create({
   heroStatus: { fontSize: 12, fontWeight: '700', color: '#6B747C', marginTop: 8, textTransform: 'uppercase' },
   heroAmount: { fontSize: 22, fontWeight: '800', color: '#172436', marginTop: 8 },
   sectionTitle: { fontSize: 14, fontWeight: '700', color: '#172436', marginTop: 16, marginBottom: 8 },
+  noAccountCard: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginTop: 16, borderWidth: 1, borderColor: '#E3E1DC' },
+  noAccountText: { fontSize: 13, color: '#172436', marginBottom: 12 },
+  buttonRowInline: { flexDirection: 'row' },
   help: { fontSize: 11, color: '#6B747C', marginBottom: 10, fontStyle: 'italic' },
   segment: { flexDirection: 'row', backgroundColor: '#EDEBE6', borderRadius: 10, padding: 4, marginBottom: 8 },
   segmentItem: { flex: 1, paddingVertical: 10, paddingHorizontal: 4, borderRadius: 8, alignItems: 'center' },
@@ -379,6 +404,7 @@ const styles = StyleSheet.create({
   chipTextActive: { color: '#fff', fontWeight: '600' },
   paymentRow: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#fff', borderRadius: 10, padding: 10, marginBottom: 6 },
   paymentText: { fontSize: 12, color: '#6B747C' },
+  paymentMeta: { fontSize: 11, color: '#6B747C', marginTop: 2 },
   paymentAmount: { fontSize: 13, fontWeight: '700', color: '#172436' },
   actionsRow: { flexDirection: 'row', marginTop: 16, justifyContent: 'space-between' },
   buttonSecondary: { flex: 1, backgroundColor: '#EEF0F3', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginRight: 8 },

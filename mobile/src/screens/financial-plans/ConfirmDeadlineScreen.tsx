@@ -3,6 +3,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 
 interface DeadlineContext {
   chargePlan: { label: string };
@@ -32,6 +33,7 @@ export function ConfirmDeadlineScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const id = route.params?.id as string;
   const [context, setContext] = useState<DeadlineContext | null>(null);
   const [loadingContext, setLoadingContext] = useState(true);
@@ -69,7 +71,7 @@ export function ConfirmDeadlineScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Facture reçue</Text>
 
         {loadingContext ? (
@@ -88,7 +90,7 @@ export function ConfirmDeadlineScreen() {
 
         <Text style={styles.subtitle}>Saisissez le montant réel de la facture. L'estimation initiale, si elle existe, est conservée.</Text>
 
-        <TextInput style={styles.input} placeholder="Montant réel (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} autoFocus />
+        <TextInput style={styles.input} placeholder="Montant réel (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} autoFocus onFocus={handleFocus} />
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 

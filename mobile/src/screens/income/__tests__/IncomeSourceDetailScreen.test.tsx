@@ -25,6 +25,8 @@ jest.mock('../../../api/client', () => {
     listIncomeOccurrences: jest.fn(),
     updateIncomeSource: jest.fn(),
     deleteIncomeSource: jest.fn(),
+    listAccounts: jest.fn(),
+    confirmIncomeOccurrence: jest.fn(),
   };
 });
 
@@ -37,6 +39,7 @@ beforeEach(() => {
   jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
   mockedApi.getIncomeSource.mockResolvedValue(SOURCE);
   mockedApi.listIncomeOccurrences.mockResolvedValue([]);
+  mockedApi.listAccounts.mockResolvedValue([{ id: 'acc1', name: 'Compte courant' }]);
 });
 
 it('modifie le montant habituel de la source', async () => {
@@ -84,4 +87,42 @@ it('affiche une erreur claire quand la suppression est refusée (occurrence déj
 
   await waitFor(() => screen.getByText(/occurrences déjà reçues/));
   expect(mockGoBack).not.toHaveBeenCalled();
+});
+
+/** Round 3 §11 — le compte pré-rempli à la confirmation d'un revenu reste modifiable. */
+it('propose le compte de la source par défaut, mais permet de le changer avant confirmation', async () => {
+  mockedApi.listIncomeOccurrences.mockResolvedValue([
+    { id: 'o1', usualDate: '2026-09-01', plannedAmount: 10000, actualAmount: null, actualDate: null, status: 'prevu', accountId: 'acc1' },
+  ]);
+  mockedApi.listAccounts.mockResolvedValue([
+    { id: 'acc1', name: 'Compte courant' },
+    { id: 'acc2', name: 'Épargne' },
+  ]);
+  mockedApi.confirmIncomeOccurrence.mockResolvedValue({});
+  await render(<IncomeSourceDetailScreen />);
+  await waitFor(() => screen.getByTestId('confirm-account-o1-acc1'));
+
+  await fireEvent.press(screen.getByTestId('confirm-account-o1-acc2'));
+  await fireEvent.changeText(screen.getByTestId('confirm-amount-o1'), '10000');
+  await fireEvent.press(screen.getByTestId('confirm-occurrence-o1'));
+
+  await waitFor(() =>
+    expect(mockedApi.confirmIncomeOccurrence).toHaveBeenCalledWith('o1', expect.objectContaining({ accountId: 'acc2' })),
+  );
+});
+
+it('confirme avec le compte pré-rempli si l\'utilisateur ne le change pas', async () => {
+  mockedApi.listIncomeOccurrences.mockResolvedValue([
+    { id: 'o1', usualDate: '2026-09-01', plannedAmount: 10000, actualAmount: null, actualDate: null, status: 'prevu', accountId: 'acc1' },
+  ]);
+  mockedApi.confirmIncomeOccurrence.mockResolvedValue({});
+  await render(<IncomeSourceDetailScreen />);
+  await waitFor(() => screen.getByText('Reçu'));
+
+  await fireEvent.changeText(screen.getByTestId('confirm-amount-o1'), '10000');
+  await fireEvent.press(screen.getByTestId('confirm-occurrence-o1'));
+
+  await waitFor(() =>
+    expect(mockedApi.confirmIncomeOccurrence).toHaveBeenCalledWith('o1', expect.objectContaining({ accountId: 'acc1' })),
+  );
 });

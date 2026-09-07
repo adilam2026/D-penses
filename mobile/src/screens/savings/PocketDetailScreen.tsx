@@ -3,6 +3,7 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 
 interface Movement {
   id: string;
@@ -53,6 +54,7 @@ export function PocketDetailScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const kind = route.params?.kind as 'pocket' | 'provision';
   const id = route.params?.id as string;
   const isProvision = kind === 'provision';
@@ -215,7 +217,7 @@ export function PocketDetailScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
       <View style={styles.headerRow}>
         <Text style={styles.title}>{detail.name}</Text>
         <Text style={styles.natureBadge}>{natureLabel(isProvision, detail.isProtected)}</Text>
@@ -262,8 +264,8 @@ export function PocketDetailScreen() {
 
       {detail.allocationMode === 'virtual_allocation' ? (
         <View style={styles.formCard}>
-          <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} />
-          <TextInput style={styles.input} placeholder="Intention (facultatif)" value={intentionLabel} onChangeText={setIntentionLabel} />
+          <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} onFocus={handleFocus} />
+          <TextInput style={styles.input} placeholder="Intention (facultatif)" value={intentionLabel} onChangeText={setIntentionLabel} onFocus={handleFocus} />
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <View style={styles.buttonRow}>
             <TouchableOpacity style={[styles.button, styles.buttonHalf]} onPress={onContribute} disabled={submitting}>
@@ -282,7 +284,7 @@ export function PocketDetailScreen() {
         <>
           <Text style={styles.sectionTitle}>Échéances liées</Text>
           <View style={styles.linkRow}>
-            <TextInput style={[styles.input, styles.linkInput]} placeholder="ID de l'échéance à lier" value={linkDeadlineId} onChangeText={setLinkDeadlineId} />
+            <TextInput style={[styles.input, styles.linkInput]} placeholder="ID de l'échéance à lier" value={linkDeadlineId} onChangeText={setLinkDeadlineId} onFocus={handleFocus} />
             <TouchableOpacity style={styles.linkButton} onPress={onLinkDeadline} disabled={linking}>
               {linking ? <ActivityIndicator color="#fff" /> : <Text style={styles.linkButtonText}>Lier</Text>}
             </TouchableOpacity>
@@ -308,7 +310,7 @@ export function PocketDetailScreen() {
 
               {payingDeadlineId === c.deadlineId ? (
                 <View style={styles.payForm}>
-                  <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={payAmount} onChangeText={setPayAmount} />
+                  <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={payAmount} onChangeText={setPayAmount} onFocus={handleFocus} />
                   {detail.allocationMode === 'backed_by_account' ? (
                     <Text style={styles.rowMeta}>
                       Compte débité : {accounts.find((a) => a.id === payAccountId)?.name ?? '—'} (enveloppe dédiée, compte imposé)

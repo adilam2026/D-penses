@@ -3,6 +3,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useBottomInset } from '../../ui/useBottomInset';
 import * as api from '../../api/client';
+import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 
 interface Account {
   id: string;
@@ -25,6 +26,7 @@ export function CreatePocketScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const bottomInset = useBottomInset();
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [kind, setKind] = useState<'pocket' | 'provision'>((route.params?.kind as 'pocket' | 'provision') ?? 'pocket');
 
   const [name, setName] = useState('');
@@ -77,7 +79,7 @@ export function CreatePocketScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>Nouvelle enveloppe</Text>
       <Text style={styles.intro}>Une enveloppe réserve une partie de votre argent pour un usage précis.</Text>
 
@@ -92,7 +94,7 @@ export function CreatePocketScreen() {
       </View>
 
       <Text style={styles.sectionLabel}>Nom</Text>
-      <TextInput style={styles.input} placeholder="ex. École, Voyage, Épargne enfants" value={name} onChangeText={setName} />
+      <TextInput style={styles.input} placeholder="ex. École, Voyage, Épargne enfants" value={name} onChangeText={setName} onFocus={handleFocus} />
 
       <Text style={styles.sectionLabel}>Où se trouve cet argent ?</Text>
       <View style={styles.segment}>
@@ -141,7 +143,7 @@ export function CreatePocketScreen() {
       {kind === 'pocket' && (
         <>
           <Text style={styles.sectionLabel}>Montant cible (optionnel)</Text>
-          <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={targetAmount} onChangeText={setTargetAmount} />
+          <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={targetAmount} onChangeText={setTargetAmount} onFocus={handleFocus} />
 
           <Text style={styles.sectionLabel}>Bénéficiaire (optionnel)</Text>
           <View style={styles.chipRow}>

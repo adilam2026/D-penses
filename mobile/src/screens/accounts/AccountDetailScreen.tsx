@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 
 interface Account {
   id: string;
@@ -43,6 +44,7 @@ export function AccountDetailScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const accountId = route.params?.id as string;
 
   const [account, setAccount] = useState<Account | null>(null);
@@ -151,7 +153,7 @@ export function AccountDetailScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
         <View style={styles.heroCard}>
           <Text style={styles.heroLabel}>{account.name}</Text>
           <Text style={styles.heroValue}>{account.soldeCourant.toLocaleString('fr-FR')} DH</Text>
@@ -183,6 +185,7 @@ export function AccountDetailScreen() {
             keyboardType="decimal-pad"
             value={declaredBalance}
             onChangeText={setDeclaredBalance}
+            onFocus={handleFocus}
           />
           <TouchableOpacity style={styles.button} onPress={onReconcile} disabled={reconciling}>
             {reconciling ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Vérifier</Text>}
@@ -203,6 +206,7 @@ export function AccountDetailScreen() {
                   placeholder="Raison (facultatif, ex. Frais bancaires)"
                   value={pendingReconciliation?.id === r.id ? adjustReason : ''}
                   onChangeText={setAdjustReason}
+                  onFocus={handleFocus}
                 />
                 <TouchableOpacity style={styles.buttonSecondary} onPress={() => onAdjust(r.id)} disabled={adjustingId === r.id}>
                   {adjustingId === r.id ? (
@@ -240,6 +244,7 @@ export function AccountDetailScreen() {
                 keyboardType="decimal-pad"
                 value={transferAmount}
                 onChangeText={setTransferAmount}
+                onFocus={handleFocus}
               />
               <TouchableOpacity style={styles.button} onPress={onTransfer} disabled={transferring}>
                 {transferring ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Transférer</Text>}

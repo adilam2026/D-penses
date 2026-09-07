@@ -1,8 +1,9 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 
 const PROJECTION_MODE_LABEL: Record<string, string> = {
   contractuel: 'Contractuel (montant de référence)',
@@ -13,6 +14,7 @@ const PROJECTION_MODE_LABEL: Record<string, string> = {
 /** ☰ Paramètres → Préférences (coussin de sécurité, seuils, mode de projection des budgets). */
 export function PreferencesScreen() {
   const bottomInset = useBottomInset();
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [loading, setLoading] = useState(true);
   const [securityMarginAmount, setSecurityMarginAmount] = useState('0');
   const [seuilAVenirDays, setSeuilAVenirDays] = useState('30');
@@ -67,16 +69,17 @@ export function PreferencesScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
       <Text style={styles.sectionLabel}>Coussin de sécurité (DH)</Text>
       <Text style={styles.help}>Montant toujours mis de côté avant de calculer votre disponible libre.</Text>
-      <TextInput style={styles.input} keyboardType="decimal-pad" value={securityMarginAmount} onChangeText={setSecurityMarginAmount} />
+      <TextInput style={styles.input} keyboardType="decimal-pad" value={securityMarginAmount} onChangeText={setSecurityMarginAmount} onFocus={handleFocus} />
 
       <Text style={styles.sectionLabel}>Seuil "à venir" (jours)</Text>
-      <TextInput style={styles.input} keyboardType="number-pad" value={seuilAVenirDays} onChangeText={setSeuilAVenirDays} />
+      <TextInput style={styles.input} keyboardType="number-pad" value={seuilAVenirDays} onChangeText={setSeuilAVenirDays} onFocus={handleFocus} />
 
       <Text style={styles.sectionLabel}>Seuil "à payer bientôt" (jours)</Text>
-      <TextInput style={styles.input} keyboardType="number-pad" value={seuilAPayerDays} onChangeText={setSeuilAPayerDays} />
+      <TextInput style={styles.input} keyboardType="number-pad" value={seuilAPayerDays} onChangeText={setSeuilAPayerDays} onFocus={handleFocus} />
 
       <Text style={styles.sectionLabel}>Mode de projection des budgets variables</Text>
       <Text style={styles.help}>{PROJECTION_MODE_LABEL[mode] ?? mode}</Text>
@@ -86,6 +89,7 @@ export function PreferencesScreen() {
         {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Enregistrer</Text>}
       </TouchableOpacity>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

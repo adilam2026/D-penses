@@ -4,6 +4,7 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleShe
 import { useBottomInset } from '../../ui/useBottomInset';
 import { DateField } from '../../ui/DateField';
 import * as api from '../../api/client';
+import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 
 interface Provision {
   id: string;
@@ -44,6 +45,7 @@ const DEFAULT_POSTES = ['Transport', 'Hôtel', 'Alimentation', 'Activités', 'Im
 export function TravelWizardScreen() {
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
 
   const [destination, setDestination] = useState('');
   const [periodStart, setPeriodStart] = useState(todayIso());
@@ -119,12 +121,12 @@ export function TravelWizardScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Nouveau plan Voyage</Text>
         <Text style={styles.intro}>Estimez le coût de votre voyage poste par poste — chaque poste devient une échéance suivie séparément.</Text>
 
         <Text style={styles.sectionLabel}>Destination (optionnel)</Text>
-        <TextInput style={styles.input} placeholder="ex. Rome" value={destination} onChangeText={setDestination} />
+        <TextInput style={styles.input} placeholder="ex. Rome" value={destination} onChangeText={setDestination} onFocus={handleFocus} />
 
         <Text style={styles.sectionLabel}>Dates du voyage</Text>
         <View style={styles.row}>
@@ -175,6 +177,7 @@ export function TravelWizardScreen() {
                       keyboardType="decimal-pad"
                       value={item.amount}
                       onChangeText={(amount) => updatePoste(label, { ...item, amount })}
+                      onFocus={handleFocus}
                     />
                   )}
                   <DateField value={item.dueDate} onChange={(dueDate) => updatePoste(label, { ...item, dueDate })} />
@@ -192,6 +195,7 @@ export function TravelWizardScreen() {
               placeholder="Libellé (ex. Visa, Assurance voyage)"
               value={extra.label}
               onChangeText={(label) => setAutres((prev) => prev.map((e, j) => (j === i ? { ...e, label } : e)))}
+              onFocus={handleFocus}
             />
             <View style={styles.toggleRow}>
               <Text style={styles.toggleLabelSmall}>Je ne connais pas encore le montant</Text>
@@ -207,6 +211,7 @@ export function TravelWizardScreen() {
                 keyboardType="decimal-pad"
                 value={extra.amount}
                 onChangeText={(amount) => setAutres((prev) => prev.map((e, j) => (j === i ? { ...e, amount } : e)))}
+                onFocus={handleFocus}
               />
             )}
             <DateField value={extra.dueDate} onChange={(dueDate) => setAutres((prev) => prev.map((e, j) => (j === i ? { ...e, dueDate } : e)))} />

@@ -36,6 +36,12 @@ interface Occurrence {
   actualAmount: number | string | null;
   actualDate: string | null;
   status: 'prevu' | 'recu';
+  accountId: string | null;
+}
+
+interface Account {
+  id: string;
+  name: string;
 }
 
 function n(v: number | string | null): number {
@@ -62,6 +68,7 @@ export function IncomeSourceDetailScreen() {
 
   const [source, setSource] = useState<SourceDetail | null>(null);
   const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [editLabel, setEditLabel] = useState(routeLabel ?? '');
@@ -79,14 +86,17 @@ export function IncomeSourceDetailScreen() {
 
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [actualAmounts, setActualAmounts] = useState<Record<string, string>>({});
+  // §11 — le compte pré-rempli (celui de la source) reste modifiable jusqu'à la confirmation.
+  const [confirmAccountIds, setConfirmAccountIds] = useState<Record<string, string>>({});
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, o] = await Promise.all([api.getIncomeSource(sourceId), api.listIncomeOccurrences(sourceId)]);
+      const [s, o, accs] = await Promise.all([api.getIncomeSource(sourceId), api.listIncomeOccurrences(sourceId), api.listAccounts()]);
       setSource(s);
       setOccurrences(o);
+      setAccounts(accs);
       setEditLabel(s.label);
       setEditAmount(String(n(s.usualAmount)));
       setEditRecurrence(s.recurrenceRule ?? 'ponctuel');
@@ -180,17 +190,22 @@ export function IncomeSourceDetailScreen() {
     }
   }
 
-  async function onConfirm(occurrenceId: string) {
+  async function onConfirm(occurrence: Occurrence) {
     setConfirmError(null);
-    const raw = actualAmounts[occurrenceId];
+    const raw = actualAmounts[occurrence.id];
     const value = raw ? Number(raw.replace(',', '.')) : NaN;
     if (!value || value <= 0) {
       setConfirmError('Montant réel invalide');
       return;
     }
-    setConfirmingId(occurrenceId);
+    const accountId = confirmAccountIds[occurrence.id] ?? occurrence.accountId ?? undefined;
+    if (!accountId) {
+      setConfirmError('Choisissez un compte à créditer');
+      return;
+    }
+    setConfirmingId(occurrence.id);
     try {
-      await api.confirmIncomeOccurrence(occurrenceId, { actualAmount: value, actualDate: todayIso() });
+      await api.confirmIncomeOccurrence(occurrence.id, { actualAmount: value, actualDate: todayIso(), accountId });
       await load();
     } catch (err) {
       setConfirmError(err instanceof api.ApiError ? err.message : 'Confirmation impossible');
@@ -273,17 +288,42 @@ export function IncomeSourceDetailScreen() {
                   Reçu : {n(o.actualAmount).toLocaleString('fr-FR')} DH{o.actualDate ? ` le ${formatDate(o.actualDate)}` : ''}
                 </Text>
               ) : (
-                <View style={styles.confirmRow}>
-                  <TextInput
-                    style={[styles.input, { flex: 1, marginBottom: 0 }]}
-                    placeholder="Montant réel (DH)"
-                    keyboardType="decimal-pad"
-                    value={actualAmounts[o.id] ?? String(n(o.plannedAmount))}
-                    onChangeText={(v) => setActualAmounts((prev) => ({ ...prev, [o.id]: v }))}
-                  />
-                  <TouchableOpacity style={styles.buttonSmall} onPress={() => onConfirm(o.id)} disabled={confirmingId === o.id}>
-                    {confirmingId === o.id ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonSmallText}>Reçu</Text>}
-                  </TouchableOpacity>
+                <View>
+                  <Text style={styles.confirmLabel}>Compte à créditer</Text>
+                  <View style={styles.chipRow}>
+                    {accounts.map((a) => {
+                      const selected = (confirmAccountIds[o.id] ?? o.accountId) === a.id;
+                      return (
+                        <TouchableOpacity
+                          key={a.id}
+                          testID={`confirm-account-${o.id}-${a.id}`}
+                          style={[styles.chip, selected && styles.chipActive]}
+                          onPress={() => setConfirmAccountIds((prev) => ({ ...prev, [o.id]: a.id }))}
+                        >
+                          <Text style={[styles.chipText, selected && styles.chipTextActive]}>{a.name}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  <View style={styles.confirmRow}>
+                    <TextInput
+                      testID={`confirm-amount-${o.id}`}
+                      style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                      placeholder="Montant réel (DH)"
+                      keyboardType="decimal-pad"
+                      value={actualAmounts[o.id] ?? String(n(o.plannedAmount))}
+                      onChangeText={(v) => setActualAmounts((prev) => ({ ...prev, [o.id]: v }))}
+                      onFocus={handleFocus}
+                    />
+                    <TouchableOpacity
+                      testID={`confirm-occurrence-${o.id}`}
+                      style={styles.buttonSmall}
+                      onPress={() => onConfirm(o)}
+                      disabled={confirmingId === o.id}
+                    >
+                      {confirmingId === o.id ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonSmallText}>Reçu</Text>}
+                    </TouchableOpacity>
+                  </View>
                 </View>
               )}
             </View>
@@ -326,6 +366,21 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 14, fontWeight: '700', color: '#172436' },
   cardMeta: { fontSize: 12, color: '#6B747C', marginTop: 2 },
   received: { fontSize: 12, color: '#2E7D5B', marginTop: 6, fontWeight: '600' },
+  confirmLabel: { fontSize: 11, color: '#6B747C', fontWeight: '600', marginTop: 8, marginBottom: 6 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap' },
+  chip: {
+    backgroundColor: '#fff',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginRight: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E3E1DC',
+  },
+  chipActive: { backgroundColor: '#172436', borderColor: '#172436' },
+  chipText: { fontSize: 12, color: '#172436' },
+  chipTextActive: { color: '#fff', fontWeight: '600' },
   confirmRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
   error: { color: '#B3261E', fontSize: 13, marginBottom: 8 },
 });
