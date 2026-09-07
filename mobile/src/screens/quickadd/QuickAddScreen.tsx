@@ -8,7 +8,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -17,6 +16,7 @@ import { useBottomInset } from '../../ui/useBottomInset';
 import { accountCreatedBus } from '../../state/events';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { Select } from '../../ui/Select';
+import { FormField } from '../../ui/FormField';
 import { colors, radius, spacing } from '../../ui/theme';
 
 type Mode = 'depense' | 'revenu' | 'paiement' | 'transfert';
@@ -311,7 +311,7 @@ export function QuickAddScreen() {
         ) : (
           <>
             {mode === 'revenu' && (
-              <TextInput style={styles.input} placeholder="Libellé (ex. Salaire)" value={label} onChangeText={setLabel} onFocus={handleFocus} />
+              <FormField testID="quickadd-label-input" placeholder="Libellé (ex. Salaire)" value={label} onChangeText={setLabel} onFocus={handleFocus} />
             )}
 
             {mode === 'paiement' ? (
@@ -339,7 +339,14 @@ export function QuickAddScreen() {
                 )}
               </>
             ) : (
-              <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} onFocus={handleFocus} />
+              <FormField
+                testID="quickadd-amount-input"
+                placeholder="Montant (DH)"
+                keyboardType="decimal-pad"
+                value={amount}
+                onChangeText={setAmount}
+                onFocus={handleFocus}
+              />
             )}
 
             {mode === 'depense' && (
@@ -405,9 +412,9 @@ export function QuickAddScreen() {
                 )}
                 {addingType && (
                   <View style={styles.inlineAddRow}>
-                    <TextInput
+                    <FormField
                       testID="add-type-input"
-                      style={[styles.input, styles.inlineAddInput]}
+                      containerStyle={styles.inlineAddInput}
                       placeholder="Nom du type (ex. Jardinier)"
                       value={newTypeName}
                       onChangeText={setNewTypeName}
@@ -469,9 +476,9 @@ export function QuickAddScreen() {
                         )}
                         {addingSubtype && (
                           <View style={styles.inlineAddRow}>
-                            <TextInput
+                            <FormField
                               testID="add-subtype-input"
-                              style={[styles.input, styles.inlineAddInput]}
+                              containerStyle={styles.inlineAddInput}
                               placeholder="Nom du sous-type (ex. Viande)"
                               value={newSubtypeName}
                               onChangeText={setNewSubtypeName}
@@ -486,7 +493,7 @@ export function QuickAddScreen() {
                     );
                   })()}
 
-                <TextInput style={styles.input} placeholder="Note (facultatif)" value={notes} onChangeText={setNotes} onFocus={handleFocus} />
+                <FormField testID="quickadd-notes-input" placeholder="Note (facultatif)" value={notes} onChangeText={setNotes} onFocus={handleFocus} />
               </>
             )}
 
@@ -591,16 +598,6 @@ const styles = StyleSheet.create({
   modeChipActive: { backgroundColor: colors.primary },
   modeChipText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
   modeChipTextActive: { color: colors.textOnPrimary },
-  input: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: spacing.md,
-    fontSize: 15,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
   sectionLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm, marginTop: 4 },
   empty: { color: colors.textSecondary, fontSize: 13, marginBottom: spacing.md },
   pickList: { marginBottom: spacing.md },
