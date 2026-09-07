@@ -191,4 +191,44 @@ describe('Vague 3 — reset données financières & onboarding partagé (e2e)', 
       expect(meB.body.settings.onboardingSkippedSteps).not.toContain('goals');
     });
   });
+
+  // ============================================================
+  // Recette téléphone réel §13 — bandeau "Terminer ma configuration" masqué définitivement
+  // ============================================================
+  describe('Bandeau Accueil (HouseholdSettings.homeBannerDismissed)', () => {
+    it('false par défaut à la création du foyer', async () => {
+      const owner = await newHousehold();
+      const me = await http.get('/households/me').set(...owner.auth()).expect(200);
+      expect(me.body.settings.homeBannerDismissed).toBe(false);
+    });
+
+    it('PATCH /households/settings {homeBannerDismissed:true} persiste le choix', async () => {
+      const owner = await newHousehold();
+
+      await http.patch('/households/settings').set(...owner.auth()).send({ homeBannerDismissed: true }).expect(200);
+
+      const me = await http.get('/households/me').set(...owner.auth()).expect(200);
+      expect(me.body.settings.homeBannerDismissed).toBe(true);
+    });
+
+    it('le choix est partagé entre tous les membres du foyer, jamais individuel', async () => {
+      const owner = await newHousehold();
+      const member = await addMember(owner, 'member');
+
+      await http.patch('/households/settings').set(...member.auth()).send({ homeBannerDismissed: true }).expect(200);
+
+      const meOwner = await http.get('/households/me').set(...owner.auth()).expect(200);
+      expect(meOwner.body.settings.homeBannerDismissed).toBe(true);
+    });
+
+    it("un foyer différent n'est jamais affecté (RLS)", async () => {
+      const ownerA = await newHousehold();
+      const ownerB = await newHousehold();
+
+      await http.patch('/households/settings').set(...ownerA.auth()).send({ homeBannerDismissed: true }).expect(200);
+
+      const meB = await http.get('/households/me').set(...ownerB.auth()).expect(200);
+      expect(meB.body.settings.homeBannerDismissed).toBe(false);
+    });
+  });
 });

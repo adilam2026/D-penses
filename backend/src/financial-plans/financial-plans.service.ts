@@ -1,8 +1,10 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { getDeadlineBalance, toNumber } from '../common/ledger/ledger.util';
 import { engagementNonCouvert } from '../common/ledger/provision.util';
 import { CreateFinancialPlanDto } from './dto/create-financial-plan.dto';
+import { UpdateFinancialPlanDto } from './dto/update-financial-plan.dto';
+import { DuplicateFinancialPlanDto } from './dto/duplicate-financial-plan.dto';
 import { AddBeneficiaryDto } from './dto/add-beneficiary.dto';
 
 type TxClient = ReturnType<RlsContextService['getClient']>;
@@ -240,6 +242,146 @@ export class FinancialPlansService {
       const plan = await tx.financialPlan.findFirst({ where: { id: planId, householdId } });
       if (!plan) throw new NotFoundException('FinancialPlan introuvable');
       return tx.financialPlanBeneficiary.findMany({ where: { financialPlanId: planId }, include: { user: true, child: true } });
+    });
+  }
+
+  // ---------- R5 §2 — Modifier / Supprimer ----------
+
+  /** Identité/période uniquement — jamais planType (structurel, fixé à la création, cf. wizards). */
+  async update(userId: string, householdId: string, id: string, dto: UpdateFinancialPlanDto) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const plan = await tx.financialPlan.findFirst({ where: { id, householdId } });
+      if (!plan) throw new NotFoundException('FinancialPlan introuvable');
+      await tx.financialPlan.update({
+        where: { id },
+        data: {
+          label: dto.label,
+          periodStart: dto.periodStart ? new Date(dto.periodStart) : undefined,
+          periodEnd: dto.periodEnd ? new Date(dto.periodEnd) : undefined,
+          destination: dto.destination,
+        },
+      });
+      return this.detailOnTx(tx, id);
+    });
+  }
+
+  /**
+   * Suppression sûre (R5 §2) : bloquée dès qu'un paiement réel existe sous ce plan
+   * (via n'importe quelle Deadline d'un de ses ChargePlan) — jamais un DELETE qui
+   * ferait disparaître un historique financier réel. Sans paiement, la suppression
+   * est autorisée : les ChargePlan/Deadline ne sont JAMAIS supprimés par cascade
+   * (FK financial_plan_id en ON DELETE SET NULL, cf. migration lot4) — ils restent
+   * intacts, seulement détachés de ce plan.
+   */
+  async remove(userId: string, householdId: string, id: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const plan = await tx.financialPlan.findFirst({ where: { id, householdId } });
+      if (!plan) throw new NotFoundException('FinancialPlan introuvable');
+
+      const paymentCount = await tx.payment.count({ where: { deadline: { chargePlan: { financialPlanId: id } } } });
+      if (paymentCount > 0) {
+        throw new BadRequestException(
+          'Ce plan a des paiements enregistrés — suppression impossible pour préserver l\'historique financier.',
+        );
+      }
+
+      await tx.financialPlan.delete({ where: { id } });
+      return { deleted: true };
+    });
+  }
+
+  // ---------- R5 §3 — Dupliquer avec sélection explicite des bénéficiaires ----------
+
+  /**
+   * Copie atomique (une seule transaction RLS) : nouveau FinancialPlan + copie de
+   * chaque ChargePlan actif/optionnel avec ses Deadline non annulées (montant/statut
+   * connu recopié, mais financialStatus toujours réinitialisé à `ouverte`, jamais de
+   * Payment ni de couverture Provision copiés — RG "jamais l'historique/les paiements").
+   * Les enfants bénéficiaires de la copie sont EXPLICITEMENT ceux de `dto.childIds`,
+   * jamais hérités de l'original (§3 — ex. dupliquer pour un frère/une sœur).
+   * Les deux plans sont ensuite totalement indépendants : aucune ligne copiée ne
+   * partage d'id avec l'original, donc modifier l'un ne peut jamais affecter l'autre.
+   */
+  async duplicate(userId: string, householdId: string, id: string, dto: DuplicateFinancialPlanDto) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const original = await tx.financialPlan.findFirst({
+        where: { id, householdId },
+        include: { chargePlans: { include: { deadlines: true } } },
+      });
+      if (!original) throw new NotFoundException('FinancialPlan introuvable');
+
+      const childIds = dto.childIds ?? [];
+      for (const childId of childIds) {
+        const child = await tx.child.findFirst({ where: { id: childId, householdId } });
+        if (!child) throw new NotFoundException(`Enfant ${childId} introuvable dans ce foyer`);
+      }
+
+      const copy = await tx.financialPlan.create({
+        data: {
+          householdId,
+          label: dto.label,
+          planType: original.planType,
+          destination: original.destination,
+          periodStart: original.periodStart,
+          periodEnd: original.periodEnd,
+          // linkedProvisionId volontairement omis : une copie ne partage jamais
+          // l'enveloppe de l'original (sinon double comptage de couverture).
+        },
+      });
+
+      for (const childId of childIds) {
+        await tx.financialPlanBeneficiary.create({
+          data: { financialPlanId: copy.id, beneficiaryType: 'child', childId },
+        });
+      }
+
+      for (const cp of original.chargePlans) {
+        const cpCopy = await tx.chargePlan.create({
+          data: {
+            householdId,
+            label: cp.label,
+            categoryId: cp.categoryId,
+            generationMode: cp.generationMode,
+            recurrenceRule: cp.recurrenceRule,
+            defaultAccountId: cp.defaultAccountId,
+            obligationStatus: cp.obligationStatus,
+            financialPlanId: copy.id,
+            startDate: cp.startDate,
+            endDate: cp.endDate,
+            priorityLevel: cp.priorityLevel,
+            status: cp.status,
+          },
+        });
+
+        for (const childId of childIds) {
+          await tx.chargePlanChild.create({ data: { chargePlanId: cpCopy.id, childId } });
+        }
+
+        for (const d of cp.deadlines) {
+          if (d.financialStatus === 'annulee') continue; // jamais reconduire une échéance annulée
+          await tx.deadline.create({
+            data: {
+              chargePlanId: cpCopy.id,
+              dueDate: d.dueDate,
+              expectedBillingDate: d.expectedBillingDate,
+              billingDate: null,
+              amountCurrent: d.amountCurrent,
+              amountStatus: d.amountStatus,
+              amountInitialEstimated: d.amountInitialEstimated,
+              confirmedAt: null,
+              financialStatus: 'ouverte',
+              provisionId: null, // jamais la couverture de l'original — la copie repart sans enveloppe
+            },
+          });
+          // Aucun Payment ni DeadlineChildAllocation copié : jamais l'historique/la
+          // ventilation de l'original, uniquement l'échéancier et les montants connus.
+        }
+      }
+
+      return this.detailOnTx(tx, copy.id);
     });
   }
 }

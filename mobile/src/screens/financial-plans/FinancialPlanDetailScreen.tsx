@@ -1,7 +1,17 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
+import { useBottomInset } from '../../ui/useBottomInset';
+import { ChoiceSheet } from '../../ui/ChoiceSheet';
+import { DateField } from '../../ui/DateField';
+import { colors, radius, spacing } from '../../ui/theme';
+
+interface Child {
+  id: string;
+  firstName: string;
+  lastName: string;
+}
 
 type CoverageStatus = 'couverte' | 'partielle' | 'non_couverte' | 'sans_objet';
 
@@ -66,7 +76,11 @@ interface EnvisagedItem {
 }
 
 interface FinancialPlanDetail {
+  id: string;
   label: string;
+  periodStart: string;
+  periodEnd: string;
+  planType: 'school' | 'travel' | 'other';
   knownPlanCost: number;
   paidAmount: number;
   remainingDue: number;
@@ -91,8 +105,29 @@ export function FinancialPlanDetailScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const id = route.params?.id as string;
+  const bottomInset = useBottomInset();
   const [detail, setDetail] = useState<FinancialPlanDetail | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // R5 §2 — menu "..." (Modifier/Dupliquer/Supprimer), pattern réutilisable (§19).
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editLabel, setEditLabel] = useState('');
+  const [editPeriodStart, setEditPeriodStart] = useState('');
+  const [editPeriodEnd, setEditPeriodEnd] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  // R5 §3 — duplication avec sélection explicite des enfants bénéficiaires.
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const [duplicateLabel, setDuplicateLabel] = useState('');
+  const [children, setChildren] = useState<Child[]>([]);
+  const [duplicateChildIds, setDuplicateChildIds] = useState<string[]>([]);
+  const [duplicating, setDuplicating] = useState(false);
+  const [duplicateError, setDuplicateError] = useState<string | null>(null);
+
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -116,6 +151,94 @@ export function FinancialPlanDetailScreen() {
     }, [load]),
   );
 
+  const loadChildren = useCallback(async () => {
+    setChildren(await api.listChildren());
+  }, []);
+
+  function openEdit() {
+    if (!detail) return;
+    setMenuOpen(false);
+    setEditLabel(detail.label);
+    setEditPeriodStart(detail.periodStart.slice(0, 10));
+    setEditPeriodEnd(detail.periodEnd.slice(0, 10));
+    setEditError(null);
+    setEditOpen(true);
+  }
+
+  async function onSaveEdit() {
+    if (!editLabel.trim()) {
+      setEditError('Le nom du plan est obligatoire');
+      return;
+    }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      await api.updateFinancialPlan(id, { label: editLabel.trim(), periodStart: editPeriodStart, periodEnd: editPeriodEnd });
+      setEditOpen(false);
+      await load();
+    } catch (err) {
+      setEditError(err instanceof api.ApiError ? err.message : 'Modification impossible');
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  function openDuplicate() {
+    if (!detail) return;
+    setMenuOpen(false);
+    setDuplicateLabel(`${detail.label} (copie)`);
+    setDuplicateChildIds([]);
+    setDuplicateError(null);
+    loadChildren();
+    setDuplicateOpen(true);
+  }
+
+  function toggleDuplicateChild(childId: string) {
+    setDuplicateChildIds((current) => (current.includes(childId) ? current.filter((c) => c !== childId) : [...current, childId]));
+  }
+
+  async function onConfirmDuplicate() {
+    if (!duplicateLabel.trim()) {
+      setDuplicateError('Le nom de la copie est obligatoire');
+      return;
+    }
+    setDuplicating(true);
+    setDuplicateError(null);
+    try {
+      const copy = await api.duplicateFinancialPlan(id, { label: duplicateLabel.trim(), childIds: duplicateChildIds });
+      setDuplicateOpen(false);
+      navigation.replace('FinancialPlanDetail', { id: copy.id });
+    } catch (err) {
+      setDuplicateError(err instanceof api.ApiError ? err.message : 'Duplication impossible');
+    } finally {
+      setDuplicating(false);
+    }
+  }
+
+  function onRequestDelete() {
+    setMenuOpen(false);
+    setDeleteError(null);
+    Alert.alert('Supprimer ce plan ?', 'Cette action est définitive.', [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Supprimer', style: 'destructive', onPress: onDelete },
+    ]);
+  }
+
+  async function onDelete() {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.deleteFinancialPlan(id);
+      navigation.goBack();
+    } catch (err) {
+      // §2 — jamais un DELETE silencieux : le backend refuse dès qu'un paiement
+      // existe déjà sous ce plan (historique financier réel), affiché ici en clair.
+      setDeleteError(err instanceof api.ApiError ? err.message : 'Suppression impossible');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   if (loading || !detail) {
     return (
       <View style={styles.center}>
@@ -125,8 +248,14 @@ export function FinancialPlanDetailScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
-      <Text style={styles.title}>{detail.label}</Text>
+    <ScrollView testID="plan-detail-scroll" style={styles.container} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
+      <View style={styles.headerRow}>
+        <Text style={styles.title}>{detail.label}</Text>
+        <TouchableOpacity testID="plan-menu-button" style={styles.menuButton} onPress={() => setMenuOpen(true)}>
+          <Text style={styles.menuButtonText}>•••</Text>
+        </TouchableOpacity>
+      </View>
+      {deleteError && <Text style={styles.error}>{deleteError}</Text>}
       <Text style={styles.completude}>{COMPLETUDE_LABEL[detail.completude]}</Text>
 
       <View style={styles.figuresGrid}>
@@ -225,6 +354,76 @@ export function FinancialPlanDetailScreen() {
           </TouchableOpacity>
         ))
       )}
+
+      <ChoiceSheet
+        testID="plan-menu"
+        visible={menuOpen}
+        title={detail.label}
+        onClose={() => setMenuOpen(false)}
+        options={[
+          { key: 'modifier', label: 'Modifier', icon: 'create-outline', onPress: openEdit },
+          { key: 'dupliquer', label: 'Dupliquer', icon: 'copy-outline', onPress: openDuplicate },
+          { key: 'supprimer', label: 'Supprimer', icon: 'trash-outline', onPress: onRequestDelete },
+        ]}
+      />
+
+      <Modal visible={editOpen} transparent animationType="fade" onRequestClose={() => setEditOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard} testID="plan-edit-form">
+            <Text style={styles.modalTitle}>Modifier le plan</Text>
+            <TextInput style={styles.modalInput} value={editLabel} onChangeText={setEditLabel} placeholder="Nom du plan" testID="plan-edit-label" />
+            <DateField label="Début" value={editPeriodStart} onChange={setEditPeriodStart} />
+            <DateField label="Fin" value={editPeriodEnd} onChange={setEditPeriodEnd} />
+            {editError && <Text style={styles.error}>{editError}</Text>}
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalButtonSecondary} onPress={() => setEditOpen(false)}>
+                <Text style={styles.modalButtonSecondaryText}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity testID="plan-edit-save" style={styles.modalButton} onPress={onSaveEdit} disabled={editSaving}>
+                {editSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalButtonText}>Enregistrer</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={duplicateOpen} transparent animationType="fade" onRequestClose={() => setDuplicateOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard} testID="plan-duplicate-form">
+            <Text style={styles.modalTitle}>Dupliquer le plan</Text>
+            <TextInput style={styles.modalInput} value={duplicateLabel} onChangeText={setDuplicateLabel} placeholder="Nom de la copie" testID="plan-duplicate-label" />
+            {children.length > 0 && (
+              <>
+                <Text style={styles.modalSubLabel}>Enfant(s) bénéficiaire(s) de la copie</Text>
+                <View style={styles.chipRow}>
+                  {children.map((c) => (
+                    <TouchableOpacity
+                      key={c.id}
+                      testID={`plan-duplicate-child-${c.id}`}
+                      style={[styles.chip, duplicateChildIds.includes(c.id) && styles.chipActive]}
+                      onPress={() => toggleDuplicateChild(c.id)}
+                    >
+                      <Text style={[styles.chipText, duplicateChildIds.includes(c.id) && styles.chipTextActive]}>
+                        {c.firstName} {c.lastName}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
+            <Text style={styles.help}>La copie ne reprend jamais les paiements ni l'historique — un échéancier neuf, indépendant de l'original.</Text>
+            {duplicateError && <Text style={styles.error}>{duplicateError}</Text>}
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalButtonSecondary} onPress={() => setDuplicateOpen(false)}>
+                <Text style={styles.modalButtonSecondaryText}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity testID="plan-duplicate-confirm" style={styles.modalButton} onPress={onConfirmDuplicate} disabled={duplicating}>
+                {duplicating ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalButtonText}>Dupliquer</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -275,4 +474,33 @@ const styles = StyleSheet.create({
   payButton: { backgroundColor: '#172436', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5, marginTop: 6 },
   payButtonText: { color: '#fff', fontSize: 11, fontWeight: '600' },
   optionTotal: { fontSize: 11, color: '#6B747C', marginTop: 4, marginBottom: 4, fontStyle: 'italic' },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  menuButton: { paddingHorizontal: 10, paddingVertical: 4 },
+  menuButtonText: { fontSize: 18, fontWeight: '700', color: colors.textSecondary },
+  error: { color: colors.danger, fontSize: 12, marginTop: 8, marginBottom: 4 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)', alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
+  modalCard: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.xl, width: '100%' },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.md },
+  modalSubLabel: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginTop: 4, marginBottom: 6 },
+  modalInput: {
+    backgroundColor: colors.background,
+    borderRadius: radius.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 10,
+  },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: spacing.md },
+  modalButton: { backgroundColor: colors.primary, borderRadius: radius.sm, paddingHorizontal: 18, paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
+  modalButtonText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+  modalButtonSecondary: { paddingHorizontal: 14, paddingVertical: 10, marginRight: 8 },
+  modalButtonSecondaryText: { color: colors.textSecondary, fontWeight: '600', fontSize: 13 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
+  chip: { backgroundColor: colors.background, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, marginRight: 8, marginBottom: 8, borderWidth: 1, borderColor: colors.border },
+  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipText: { fontSize: 12, color: colors.textPrimary },
+  chipTextActive: { color: '#fff', fontWeight: '600' },
+  help: { fontSize: 11, color: colors.textSecondary, fontStyle: 'italic', marginTop: 4, marginBottom: 4 },
 });

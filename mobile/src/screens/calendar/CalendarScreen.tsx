@@ -1,7 +1,11 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as api from '../../api/client';
+import { colors, radius, spacing } from '../../ui/theme';
+
+type IconName = keyof typeof Ionicons.glyphMap;
 
 interface CalendarEvent {
   date: string;
@@ -15,18 +19,32 @@ interface CalendarEvent {
 const KIND_LABEL: Record<CalendarEvent['kind'], string> = {
   revenu_prevu: 'Revenu prévu',
   facture_attendue: 'Facture attendue',
-  echeance: 'Échéance',
+  echeance: 'À payer',
   montant_inconnu: 'Montant inconnu',
-  echeance_payee: 'Échéance payée',
+  echeance_payee: 'Payé',
+};
+
+// §9 (recette téléphone réel) : jamais la couleur seule pour distinguer un type
+// d'événement — un pictogramme différent par kind, la couleur en renfort.
+const KIND_ICON: Record<CalendarEvent['kind'], IconName> = {
+  revenu_prevu: 'arrow-down-circle-outline',
+  facture_attendue: 'document-text-outline',
+  echeance: 'alert-circle-outline',
+  montant_inconnu: 'help-circle-outline',
+  echeance_payee: 'checkmark-circle',
 };
 
 const KIND_COLOR: Record<CalendarEvent['kind'], string> = {
-  revenu_prevu: '#2E7D5B',
-  facture_attendue: '#B8860B',
-  echeance: '#172436',
-  montant_inconnu: '#B3261E',
-  echeance_payee: '#6B747C',
+  revenu_prevu: colors.success,
+  facture_attendue: colors.warning,
+  echeance: colors.primary,
+  montant_inconnu: colors.danger,
+  echeance_payee: colors.textSecondary,
 };
+
+// Ordre d'affichage de la légende — dérivé des mêmes constantes que les lignes
+// (source unique, jamais une liste dupliquée qui pourrait diverger).
+const LEGEND_ORDER: CalendarEvent['kind'][] = ['echeance', 'echeance_payee', 'revenu_prevu', 'montant_inconnu', 'facture_attendue'];
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' });
@@ -41,6 +59,7 @@ export function CalendarScreen() {
   const navigation = useNavigation<any>();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [legendOpen, setLegendOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -68,6 +87,22 @@ export function CalendarScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Calendrier</Text>
+
+      <TouchableOpacity testID="legend-toggle" style={styles.legendToggle} onPress={() => setLegendOpen((v) => !v)}>
+        <Text style={styles.legendToggleText}>Légende</Text>
+        <Ionicons name={legendOpen ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textSecondary} />
+      </TouchableOpacity>
+      {legendOpen && (
+        <View style={styles.legend} testID="legend-panel">
+          {LEGEND_ORDER.map((kind) => (
+            <View key={kind} style={styles.legendItem}>
+              <Ionicons name={KIND_ICON[kind]} size={14} color={KIND_COLOR[kind]} />
+              <Text style={styles.legendItemText}>{KIND_LABEL[kind]}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
       <FlatList
         data={events}
         keyExtractor={(e, i) => `${e.kind}-${e.date}-${i}`}
@@ -80,10 +115,10 @@ export function CalendarScreen() {
             activeOpacity={item.deadlineId ? 0.6 : 1}
             onPress={() => item.deadlineId && navigation.navigate('DeadlineDetail', { id: item.deadlineId })}
           >
-            <View style={[styles.dot, { backgroundColor: KIND_COLOR[item.kind] }]} />
+            <Ionicons name={KIND_ICON[item.kind]} size={20} color={KIND_COLOR[item.kind]} style={styles.rowIcon} />
             <View style={styles.rowBody}>
               <Text style={styles.rowLabel}>{item.label}</Text>
-              <Text style={styles.rowMeta}>
+              <Text style={[styles.rowMeta, { color: KIND_COLOR[item.kind] }]}>
                 {formatDate(item.date)} · {KIND_LABEL[item.kind]}
               </Text>
             </View>
@@ -96,13 +131,25 @@ export function CalendarScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2', paddingTop: 56, paddingHorizontal: 20 },
-  title: { fontSize: 22, fontWeight: '700', color: '#172436', marginBottom: 16 },
-  empty: { color: '#6B747C', textAlign: 'center', marginTop: 24 },
-  row: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8 },
-  dot: { width: 8, height: 8, borderRadius: 4, marginRight: 10 },
+  container: { flex: 1, backgroundColor: colors.background, paddingTop: 56, paddingHorizontal: spacing.xl },
+  title: { fontSize: 22, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.md },
+  legendToggle: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', marginBottom: spacing.sm },
+  legendToggleText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginRight: 4 },
+  legend: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', marginRight: spacing.md, marginBottom: 4 },
+  legendItemText: { fontSize: 11, color: colors.textPrimary, marginLeft: 4 },
+  empty: { color: colors.textSecondary, textAlign: 'center', marginTop: 24 },
+  row: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm },
+  rowIcon: { marginRight: spacing.sm },
   rowBody: { flex: 1 },
-  rowLabel: { fontSize: 13, fontWeight: '600', color: '#172436' },
-  rowMeta: { fontSize: 11, color: '#6B747C', marginTop: 2 },
-  rowAmount: { fontSize: 13, fontWeight: '700', color: '#172436' },
+  rowLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
+  rowMeta: { fontSize: 11, marginTop: 2, fontWeight: '600' },
+  rowAmount: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
 });

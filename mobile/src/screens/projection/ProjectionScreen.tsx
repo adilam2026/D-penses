@@ -197,6 +197,7 @@ export function ProjectionScreen() {
   const [incomeAccountIds, setIncomeAccountIds] = useState<string[] | null>(null); // null = "Tous"
   const [expenseAccountIds, setExpenseAccountIds] = useState<string[] | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [notionsInfoOpen, setNotionsInfoOpen] = useState(false);
 
   const [data, setData] = useState<MonthlyProjectionApi | null>(null);
   const [loading, setLoading] = useState(true);
@@ -413,6 +414,16 @@ export function ProjectionScreen() {
         {!data.summary.is_complete && (
           <Text style={styles.warningText}>⚠ Projection incomplète — {data.summary.incomplete_months_count} mois avec montant(s) inconnu(s).</Text>
         )}
+        <TouchableOpacity testID="projection-info-toggle" style={styles.infoToggleRow} onPress={() => setNotionsInfoOpen((v) => !v)}>
+          <Text style={styles.infoToggleText}>ⓘ Balance / cumul / trésorerie : quelle différence ?</Text>
+        </TouchableOpacity>
+        {notionsInfoOpen && (
+          <View style={styles.notionsInfoBox} testID="projection-info-panel">
+            <Text style={styles.notionsInfoLine}>• Balance du mois : revenus − dépenses de CE mois uniquement.</Text>
+            <Text style={styles.notionsInfoLine}>• Balance cumulée : somme des balances mensuelles depuis le premier mois affiché (flux purs, part de zéro).</Text>
+            <Text style={styles.notionsInfoLine}>• Trésorerie projetée : trésorerie initiale réelle + balance cumulée — jamais confondue avec la balance cumulée seule.</Text>
+          </View>
+        )}
         <View style={styles.summaryRow}>
           <SummaryFigure label="Revenus totaux" value={data.summary.total_income} />
           <SummaryFigure label="Dépenses totales" value={data.summary.total_expense} />
@@ -540,6 +551,10 @@ const styles = StyleSheet.create({
   figureLabel: { fontSize: 11, color: '#6B747C' },
   figureValue: { fontSize: 18, fontWeight: '800', color: '#172436', marginTop: 4 },
   summaryLine: { fontSize: 12, color: '#172436', marginTop: 4 },
+  infoToggleRow: { marginBottom: 6 },
+  infoToggleText: { fontSize: 11, color: '#6B747C', fontWeight: '600' },
+  notionsInfoBox: { backgroundColor: '#F6F5F2', borderRadius: 10, padding: 10, marginBottom: 10 },
+  notionsInfoLine: { fontSize: 11, color: '#172436', marginBottom: 4 },
   warningText: { fontSize: 12, color: '#B8860B', fontWeight: '600', marginBottom: 8 },
   scenarioBar: { marginBottom: 16 },
   scenarioButton: { backgroundColor: '#172436', borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center', flex: 1 },

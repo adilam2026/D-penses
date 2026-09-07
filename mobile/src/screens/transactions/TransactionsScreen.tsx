@@ -82,7 +82,11 @@ export function TransactionsScreen() {
         renderItem={({ item }) => {
           const positive = item.amount >= 0;
           return (
-            <View style={styles.row}>
+            <TouchableOpacity
+              testID={`transaction-row-${item.kind}-${item.id}`}
+              style={styles.row}
+              onPress={() => navigation.navigate('TransactionDetail', { kind: item.kind, id: item.id })}
+            >
               <View style={styles.rowLeft}>
                 <Text style={styles.rowLabel}>{item.label ?? KIND_LABEL[item.displayKind] ?? item.kind}</Text>
                 <Text style={styles.rowMeta}>
@@ -97,7 +101,7 @@ export function TransactionsScreen() {
                 </Text>
                 <Text style={styles.rowKind}>{KIND_LABEL[item.displayKind] ?? item.displayKind}</Text>
               </View>
-            </View>
+            </TouchableOpacity>
           );
         }}
       />

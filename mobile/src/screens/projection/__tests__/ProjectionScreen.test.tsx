@@ -346,3 +346,22 @@ it('une échéance contractuelle (non modifiable) propose "Simuler un décalage"
   await waitFor(() => screen.getByText('Simuler un décalage'));
   expect(screen.queryByText('Déplacer')).toBeNull();
 });
+
+/**
+ * Recette téléphone réel §6/§7 : aide discrète expliquant les 3 notions
+ * (balance du mois / balance cumulée / trésorerie projetée), repliée par
+ * défaut pour ne pas surcharger l'écran.
+ */
+it('§6/§7 : aide "Balance/cumul/trésorerie" repliée par défaut, dépliable au tap', async () => {
+  await render(<ProjectionScreen />);
+  await waitFor(() => screen.getByTestId('projection-info-toggle'));
+
+  expect(screen.queryByTestId('projection-info-panel')).toBeNull();
+
+  await fireEvent.press(screen.getByTestId('projection-info-toggle'));
+
+  const panel = within(screen.getByTestId('projection-info-panel'));
+  expect(panel.getByText(/Balance du mois/)).toBeTruthy();
+  expect(panel.getByText(/Balance cumulée/)).toBeTruthy();
+  expect(panel.getByText(/Trésorerie projetée/)).toBeTruthy();
+});

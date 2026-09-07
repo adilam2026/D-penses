@@ -35,6 +35,8 @@ const JUSTIFIED_EXCEPTIONS: Record<string, string> = {
     'Le champ Montant est en tête de formulaire, avant les comptes/résultats ; les résultats (variables, potentiellement longs) apparaissent après la saisie, jamais entre elle et le clavier.',
   'savings/GoalDetailScreen.tsx':
     'Le seul TextInput (montant de contribution) suit un bloc de chiffres de taille fixe ; le contenu variable (contributions, tests) est affiché après le champ, jamais au-dessus.',
+  'financial-plans/FinancialPlanDetailScreen.tsx':
+    'Les TextInput (§2/§3 — Modifier/Dupliquer) vivent dans des Modal overlay courts (un champ, boutons juste en dessous), pas dans le corps défilant du ScrollView principal — le ScrollView de la page ne contient lui-même aucun TextInput.',
 };
 
 describe('Couverture useKeyboardAwareScroll (garde-fou Round 3 §1/§3)', () => {

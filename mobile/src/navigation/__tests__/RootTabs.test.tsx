@@ -52,6 +52,8 @@ jest.mock('../../api/client', () => {
       },
     }),
     listAccounts: jest.fn().mockResolvedValue([]),
+    listIncomeSources: jest.fn().mockResolvedValue([]),
+    getMyHousehold: jest.fn().mockResolvedValue({ id: 'h1', settings: { homeBannerDismissed: false } }),
     listTransactions: jest.fn().mockResolvedValue([]),
     getCalendar: jest.fn().mockResolvedValue({ events: [] }),
     getMonthlyProjection: jest.fn().mockResolvedValue({

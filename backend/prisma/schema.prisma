@@ -399,6 +399,12 @@ model HouseholdSettings {
   // sont conservées, partagées entre tous les membres (le champ vit sur HouseholdSettings,
   // déjà household-scoped) — pas 15 booléens, un seul tableau des clés d'étape ignorées.
   onboardingSkippedSteps       String[]                     @default([]) @map("onboarding_skipped_steps")
+  // Recette téléphone réel §13 — le gros bandeau "Terminer ma configuration" ne
+  // doit plus s'afficher automatiquement dès que les prérequis essentiels sont
+  // satisfaits ET que l'utilisateur a explicitement choisi "Ne plus afficher"
+  // (jamais réaffiché après ce choix, partagé au niveau du foyer comme le reste
+  // de HouseholdSettings — même convention qu'onboardingSkippedSteps ci-dessus).
+  homeBannerDismissed          Boolean                      @default(false) @map("home_banner_dismissed")
   createdAt                    DateTime                     @default(now()) @map("created_at")
   updatedAt                    DateTime                     @updatedAt @map("updated_at")
 

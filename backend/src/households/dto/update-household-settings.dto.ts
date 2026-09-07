@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsNumber, IsOptional, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsNumber, IsOptional, Min } from 'class-validator';
 
 const PROJECTION_MODES = ['contractuel', 'rythme_reel', 'prudent_max'] as const;
 
@@ -22,4 +22,10 @@ export class UpdateHouseholdSettingsDto {
   @IsOptional()
   @IsIn(PROJECTION_MODES)
   variableBudgetProjectionMode?: (typeof PROJECTION_MODES)[number];
+
+  // Recette téléphone réel §13 — bandeau "Terminer ma configuration" masqué
+  // définitivement quand l'utilisateur choisit "Ne plus afficher".
+  @IsOptional()
+  @IsBoolean()
+  homeBannerDismissed?: boolean;
 }

@@ -129,6 +129,9 @@ export const adjustReconciliation = (accountId: string, reconciliationId: string
 // ---------- Transactions (Lot 2) ----------
 export const listTransactions = () => apiFetch('/transactions');
 
+// §5 (recette téléphone réel) : détail enrichi d'une ligne (kind+id l'identifient sans ambiguïté).
+export const getTransactionDetail = (kind: string, id: string) => apiFetch(`/transactions/${kind}/${id}`);
+
 // ---------- Revenus (Lot 2) ----------
 export const createIncomeSource = (data: {
   label: string;
@@ -306,6 +309,18 @@ export const createFinancialPlan = (data: { label: string; periodStart: string; 
 export const addFinancialPlanBeneficiary = (planId: string, data: { beneficiaryType: 'user' | 'child'; userId?: string; childId?: string }) =>
   apiFetch(`/financial-plans/${planId}/beneficiaries`, { method: 'POST', body: data });
 
+export const listFinancialPlanBeneficiaries = (planId: string) => apiFetch(`/financial-plans/${planId}/beneficiaries`);
+
+// R5 §2 — Modifier / Supprimer.
+export const updateFinancialPlan = (id: string, data: { label?: string; periodStart?: string; periodEnd?: string; destination?: string }) =>
+  apiFetch(`/financial-plans/${id}`, { method: 'PATCH', body: data });
+
+export const deleteFinancialPlan = (id: string) => apiFetch(`/financial-plans/${id}`, { method: 'DELETE' });
+
+// R5 §3 — Dupliquer avec sélection explicite des enfants bénéficiaires de la copie.
+export const duplicateFinancialPlan = (id: string, data: { label: string; childIds?: string[] }) =>
+  apiFetch(`/financial-plans/${id}/duplicate`, { method: 'POST', body: data });
+
 // ---------- Assistant frais scolaires (§17) ----------
 export interface SchoolWizardItem {
   label: string;
@@ -346,8 +361,12 @@ export const getCalendar = (params?: { at?: string; from?: string; to?: string }
   return apiFetch(`/calendar${qs ? `?${qs}` : ''}`);
 };
 
-export const updateHouseholdSettings = (data: { securityMarginAmount?: number; seuilAVenirDays?: number; seuilAPayerDays?: number }) =>
-  apiFetch('/households/settings', { method: 'PATCH', body: data });
+export const updateHouseholdSettings = (data: {
+  securityMarginAmount?: number;
+  seuilAVenirDays?: number;
+  seuilAPayerDays?: number;
+  homeBannerDismissed?: boolean;
+}) => apiFetch('/households/settings', { method: 'PATCH', body: data });
 
 // Vague 3 §25/§28 — étape d'onboarding marquée "non applicable"/"plus tard", partagée
 // entre les adultes du foyer (HouseholdSettings.onboardingSkippedSteps).

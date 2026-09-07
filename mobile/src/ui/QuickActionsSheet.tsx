@@ -4,6 +4,7 @@ import { Alert, Modal, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedb
 import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { useQuickActions } from '../state/QuickActionsContext';
+import { ChoiceSheet } from './ChoiceSheet';
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -33,6 +34,7 @@ export function QuickActionsSheet() {
   const navigation = useNavigation<any>();
   const { visible, close } = useQuickActions();
   const [checking, setChecking] = useState<string | null>(null);
+  const [planChoiceOpen, setPlanChoiceOpen] = useState(false);
 
   function goToQuickAdd(mode: 'depense' | 'revenu' | 'paiement' | 'transfert') {
     close();
@@ -77,11 +79,10 @@ export function QuickActionsSheet() {
 
   function onCreerPlan() {
     close();
-    Alert.alert('Quel type de plan ?', undefined, [
-      { text: 'Annuler', style: 'cancel' },
-      { text: 'Frais scolaires', onPress: () => navigation.navigate('SchoolWizard') },
-      { text: 'Voyage', onPress: () => navigation.navigate('TravelWizard') },
-    ]);
+    // §12 : un choix métier (type de plan) ne passe jamais par un Alert natif —
+    // le ChoiceSheet interne s'ouvre APRÈS la fermeture du bottom sheet "+"
+    // (deux modals React Native simultanées se marchent dessus sur Android).
+    setTimeout(() => setPlanChoiceOpen(true), 300);
   }
 
   function onPress(key: string) {
@@ -103,29 +104,53 @@ export function QuickActionsSheet() {
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
-      <TouchableWithoutFeedback onPress={close}>
-        <View style={styles.backdrop} />
-      </TouchableWithoutFeedback>
-      <View style={styles.sheet} testID="quick-actions-sheet">
-        <View style={styles.handle} />
-        <Text style={styles.title}>Ajouter</Text>
-        <View style={styles.grid}>
-          {ACTIONS.map((a) => (
-            <TouchableOpacity key={a.key} testID={`quick-action-${a.key}`} style={styles.action} onPress={() => onPress(a.key)} disabled={checking === a.key}>
-              <View style={styles.iconCircle}>
-                <Ionicons name={a.icon} size={22} color="#172436" />
-              </View>
-              <Text style={styles.actionLabel}>{a.label}</Text>
-              <Text style={styles.actionDescription}>{a.description}</Text>
-            </TouchableOpacity>
-          ))}
+    <>
+      <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
+        <TouchableWithoutFeedback onPress={close}>
+          <View style={styles.backdrop} />
+        </TouchableWithoutFeedback>
+        <View style={styles.sheet} testID="quick-actions-sheet">
+          <View style={styles.handle} />
+          <Text style={styles.title}>Ajouter</Text>
+          <View style={styles.grid}>
+            {ACTIONS.map((a) => (
+              <TouchableOpacity key={a.key} testID={`quick-action-${a.key}`} style={styles.action} onPress={() => onPress(a.key)} disabled={checking === a.key}>
+                <View style={styles.iconCircle}>
+                  <Ionicons name={a.icon} size={22} color="#172436" />
+                </View>
+                <Text style={styles.actionLabel}>{a.label}</Text>
+                <Text style={styles.actionDescription}>{a.description}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <TouchableOpacity style={styles.cancelButton} onPress={close}>
+            <Text style={styles.cancelText}>Annuler</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.cancelButton} onPress={close}>
-          <Text style={styles.cancelText}>Annuler</Text>
-        </TouchableOpacity>
-      </View>
-    </Modal>
+      </Modal>
+      <ChoiceSheet
+        visible={planChoiceOpen}
+        title="Créer un plan"
+        testID="plan-type-choice"
+        onClose={() => setPlanChoiceOpen(false)}
+        options={[
+          {
+            key: 'scolaire',
+            label: 'Frais scolaires',
+            description: 'Échéances de scolarité et services associés',
+            icon: 'school-outline',
+            onPress: () => navigation.navigate('SchoolWizard'),
+          },
+          {
+            key: 'voyage',
+            label: 'Voyage',
+            description: "Budget et dépenses d'un voyage",
+            icon: 'airplane-outline',
+            onPress: () => navigation.navigate('TravelWizard'),
+          },
+        ]}
+      />
+    </>
   );
 }
 

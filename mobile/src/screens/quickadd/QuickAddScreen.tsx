@@ -16,12 +16,14 @@ import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { accountCreatedBus } from '../../state/events';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
+import { Select } from '../../ui/Select';
 
 type Mode = 'depense' | 'revenu' | 'paiement' | 'transfert';
 
 interface Account {
   id: string;
   name: string;
+  soldeCourant: number;
 }
 
 interface Category {
@@ -49,18 +51,6 @@ interface OpenDeadline {
   resteAPayer: number | null;
   provisionId: string | null;
   chargePlan: { label: string };
-}
-
-interface Provision {
-  id: string;
-  name: string;
-  allocationMode: 'virtual_allocation' | 'backed_by_account';
-  linkedAccountId: string | null;
-  currentAmount: number | string;
-}
-
-function n(v: number | string): number {
-  return typeof v === 'number' ? v : Number(v);
 }
 
 function todayIso() {
@@ -114,12 +104,6 @@ export function QuickAddScreen() {
   const [creatingSubtype, setCreatingSubtype] = useState(false);
 
   const [openDeadlines, setOpenDeadlines] = useState<OpenDeadline[]>([]);
-  const [deadlineId, setDeadlineId] = useState<string | null>(null);
-  // §4/§8/§9 — la Provision indique CE POUR QUOI l'argent est réservé, le compte
-  // indique D'OÙ il sort réellement : jamais confondus, le compte reste requis
-  // même quand l'enveloppe est utilisée.
-  const [deadlineProvision, setDeadlineProvision] = useState<Provision | null>(null);
-  const [fundingSource, setFundingSource] = useState<'compte' | 'provision'>('compte');
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -240,22 +224,18 @@ export function QuickAddScreen() {
     }
   }
 
+  // §10 (recette téléphone réel) : un SEUL parcours de paiement partagé — DeadlineDetailScreen,
+  // le même que Accueil/Plan financier/Calendrier. "Ajouter > Échéance" n'est plus qu'une liste
+  // de sélection ; sélectionner une échéance ouvre directement l'écran de paiement dédié, jamais
+  // une sélection inline silencieuse sans retour visuel (bug bloquant corrigé).
   function onSelectDeadline(d: OpenDeadline) {
-    setDeadlineId(d.id);
-    if (d.resteAPayer !== null) setAmount(String(d.resteAPayer));
-    setFundingSource('compte');
-    if (d.provisionId) {
-      api.getProvision(d.provisionId).then((prov: Provision) => {
-        setDeadlineProvision(prov);
-        setFundingSource('provision');
-        setAccountId((current) => (prov.allocationMode === 'backed_by_account' ? prov.linkedAccountId : current));
-      });
-    } else {
-      setDeadlineProvision(null);
-    }
+    navigation.navigate('DeadlineDetail', { id: d.id });
   }
 
   async function onSubmit() {
+    // §10 — le paiement se fait désormais exclusivement sur DeadlineDetailScreen
+    // (parcours unique) : ce formulaire ne soumet jamais rien en mode 'paiement'.
+    if (mode === 'paiement') return;
     setError(null);
     const numericAmount = Number(amount.replace(',', '.'));
     if (!numericAmount || numericAmount <= 0) {
@@ -294,28 +274,6 @@ export function QuickAddScreen() {
         });
         const occurrence = await api.createIncomeOccurrence(source.id, { usualDate: today, plannedAmount: numericAmount });
         await api.confirmIncomeOccurrence(occurrence.id, { actualAmount: numericAmount, actualDate: today, accountId: accountId! });
-      } else if (mode === 'paiement') {
-        if (!deadlineId) {
-          setError('Choisissez une échéance à payer');
-          setSubmitting(false);
-          return;
-        }
-        if (fundingSource === 'provision' && deadlineProvision) {
-          const available = n(deadlineProvision.currentAmount);
-          if (numericAmount > available) {
-            setError(`Enveloppe insuffisante : ${available.toLocaleString('fr-FR')} DH disponibles dans « ${deadlineProvision.name} »`);
-            setSubmitting(false);
-            return;
-          }
-          await api.payDeadlineWithProvision(deadlineId, {
-            amount: numericAmount,
-            accountId: accountId!,
-            provisionId: deadlineProvision.id,
-            paidDate: today,
-          });
-        } else {
-          await api.createPayment(deadlineId, { amount: numericAmount, accountId: accountId!, paidDate: today });
-        }
       } else {
         if (!toAccountId || toAccountId === accountId) {
           setError('Choisissez un compte de destination différent');
@@ -355,7 +313,10 @@ export function QuickAddScreen() {
               <TextInput style={styles.input} placeholder="Libellé (ex. Salaire)" value={label} onChangeText={setLabel} onFocus={handleFocus} />
             )}
 
-            {mode === 'paiement' && (
+            {mode === 'paiement' ? (
+              // §10 — cette liste ne fait QUE sélectionner l'échéance : le paiement
+              // lui-même (montant, compte obligatoire, enveloppe facultative, partiel)
+              // se fait sur DeadlineDetailScreen, le même écran que partout ailleurs.
               <>
                 <Text style={styles.sectionLabel}>Échéance à payer</Text>
                 {openDeadlines.length === 0 ? (
@@ -363,73 +324,36 @@ export function QuickAddScreen() {
                 ) : (
                   <View style={styles.pickList}>
                     {openDeadlines.map((d) => (
-                      <TouchableOpacity
-                        key={d.id}
-                        style={[styles.pickRow, deadlineId === d.id && styles.pickRowActive]}
-                        onPress={() => onSelectDeadline(d)}
-                      >
-                        <Text style={styles.pickRowLabel}>{d.chargePlan.label}</Text>
-                        <Text style={styles.pickRowMeta}>
-                          {d.resteAPayer !== null ? `${d.resteAPayer.toLocaleString('fr-FR')} DH restants` : 'Montant inconnu'}
-                        </Text>
+                      <TouchableOpacity key={d.id} testID={`pick-deadline-${d.id}`} style={styles.pickRow} onPress={() => onSelectDeadline(d)}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.pickRowLabel}>{d.chargePlan.label}</Text>
+                          <Text style={styles.pickRowMeta}>
+                            {d.resteAPayer !== null ? `${d.resteAPayer.toLocaleString('fr-FR')} DH restants` : 'Montant inconnu'}
+                          </Text>
+                        </View>
+                        <Text style={styles.pickRowChevron}>›</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
                 )}
-
-                {deadlineProvision && (
-                  <>
-                    <Text style={styles.sectionLabel}>Enveloppe liée</Text>
-                    <View style={styles.chipRow}>
-                      <TouchableOpacity
-                        testID="funding-source-provision"
-                        style={[styles.chip, fundingSource === 'provision' && styles.chipActive]}
-                        onPress={() => {
-                          setFundingSource('provision');
-                          setAccountId(deadlineProvision.allocationMode === 'backed_by_account' ? deadlineProvision.linkedAccountId : accountId);
-                        }}
-                      >
-                        <Text style={[styles.chipText, fundingSource === 'provision' && styles.chipTextActive]}>
-                          Utiliser « {deadlineProvision.name} »
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        testID="funding-source-compte"
-                        style={[styles.chip, fundingSource === 'compte' && styles.chipActive]}
-                        onPress={() => setFundingSource('compte')}
-                      >
-                        <Text style={[styles.chipText, fundingSource === 'compte' && styles.chipTextActive]}>Payer sans l'enveloppe</Text>
-                      </TouchableOpacity>
-                    </View>
-                    {fundingSource === 'provision' && (
-                      <Text style={styles.hint}>
-                        Disponible : {n(deadlineProvision.currentAmount).toLocaleString('fr-FR')} DH.
-                        {deadlineProvision.allocationMode === 'backed_by_account'
-                          ? ' Enveloppe = compte dédié : le compte à débiter est imposé.'
-                          : ' Le compte débité reste à choisir ci-dessous — l\'enveloppe indique seulement ce pour quoi cet argent était réservé.'}
-                      </Text>
-                    )}
-                  </>
-                )}
               </>
+            ) : (
+              <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} onFocus={handleFocus} />
             )}
-
-            <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} onFocus={handleFocus} />
 
             {mode === 'depense' && (
               <>
-                <Text style={styles.sectionLabel}>Catégorie</Text>
-                <View style={styles.chipRow}>
-                  {expenseCategories.map((c) => (
-                    <TouchableOpacity
-                      key={c.id}
-                      style={[styles.chip, categoryId === c.id && styles.chipActive]}
-                      onPress={() => setCategoryId(categoryId === c.id ? null : c.id)}
-                    >
-                      <Text style={[styles.chipText, categoryId === c.id && styles.chipTextActive]}>{c.name}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                {/* §8 (recette téléphone réel) : sélecteur compact D-Penses+ (Select
+                    partagé) au lieu d'une grande liste de chips permanente — plus de
+                    2-4 choix courts, jamais un mur de chips sur mobile. */}
+                <Select
+                  testID="quickadd-category-select"
+                  label="Catégorie"
+                  placeholder="Choisir une catégorie (facultatif)"
+                  value={categoryId}
+                  onChange={(v) => setCategoryId(categoryId === v ? null : v)}
+                  options={expenseCategories.map((c) => ({ value: c.id, label: c.name }))}
+                />
                 {budgetHint ? <Text style={styles.hint}>{budgetHint}</Text> : null}
 
                 {categoryId && categoryTypes.length > 0 && (
@@ -531,18 +455,21 @@ export function QuickAddScreen() {
               </>
             )}
 
-            {mode === 'paiement' && fundingSource === 'provision' && deadlineProvision?.allocationMode === 'backed_by_account' ? (
-              <>
-                <Text style={styles.sectionLabel}>Compte débité</Text>
-                <Text style={styles.hint}>{accounts.find((a) => a.id === accountId)?.name ?? '—'} (enveloppe dédiée, compte imposé)</Text>
-              </>
-            ) : (
+            {mode !== 'paiement' && (
               <>
                 <Text style={styles.sectionLabel}>{mode === 'transfert' ? 'Compte source' : 'Compte'}</Text>
                 <View style={styles.chipRow}>
                   {accounts.map((a) => (
-                    <TouchableOpacity key={a.id} style={[styles.chip, accountId === a.id && styles.chipActive]} onPress={() => setAccountId(a.id)}>
-                      <Text style={[styles.chipText, accountId === a.id && styles.chipTextActive]}>{a.name}</Text>
+                    <TouchableOpacity
+                      key={a.id}
+                      testID={mode === 'transfert' ? `source-account-${a.id}` : undefined}
+                      style={[styles.chip, accountId === a.id && styles.chipActive]}
+                      onPress={() => setAccountId(a.id)}
+                    >
+                      <Text style={[styles.chipText, accountId === a.id && styles.chipTextActive]}>
+                        {a.name}
+                        {mode === 'transfert' ? ` — ${a.soldeCourant.toLocaleString('fr-FR')} DH` : ''}
+                      </Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -558,21 +485,56 @@ export function QuickAddScreen() {
                     .map((a) => (
                       <TouchableOpacity
                         key={a.id}
+                        testID={`dest-account-${a.id}`}
                         style={[styles.chip, toAccountId === a.id && styles.chipActive]}
                         onPress={() => setToAccountId(a.id)}
                       >
-                        <Text style={[styles.chipText, toAccountId === a.id && styles.chipTextActive]}>{a.name}</Text>
+                        <Text style={[styles.chipText, toAccountId === a.id && styles.chipTextActive]}>
+                          {a.name} — {a.soldeCourant.toLocaleString('fr-FR')} DH
+                        </Text>
                       </TouchableOpacity>
                     ))}
                 </View>
+
+                {(() => {
+                  const numericAmount = Number(amount.replace(',', '.'));
+                  const from = accounts.find((a) => a.id === accountId);
+                  const to = accounts.find((a) => a.id === toAccountId);
+                  if (!from || !to || !numericAmount || numericAmount <= 0) return null;
+                  // §11 — recalculé en direct à chaque changement de montant/source/destination,
+                  // toujours affiché AVANT confirmation, jamais après coup.
+                  return (
+                    <View style={styles.transferPreview} testID="transfer-preview">
+                      <Text style={styles.transferPreviewTitle}>APRÈS TRANSFERT</Text>
+                      <View style={styles.transferPreviewRow}>
+                        <Text style={styles.transferPreviewName}>{from.name}</Text>
+                        <Text style={styles.transferPreviewValue}>
+                          {from.soldeCourant.toLocaleString('fr-FR')} → {(from.soldeCourant - numericAmount).toLocaleString('fr-FR')} DH
+                        </Text>
+                      </View>
+                      <View style={styles.transferPreviewRow}>
+                        <Text style={styles.transferPreviewName}>{to.name}</Text>
+                        <Text style={styles.transferPreviewValue}>
+                          {to.soldeCourant.toLocaleString('fr-FR')} → {(to.soldeCourant + numericAmount).toLocaleString('fr-FR')} DH
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })()}
               </>
             )}
 
             {error ? <Text style={styles.error}>{error}</Text> : null}
 
-            <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={submitting}>
-              {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Enregistrer</Text>}
-            </TouchableOpacity>
+            {mode !== 'paiement' && (
+              <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={submitting}>
+                {submitting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>{mode === 'transfert' ? 'Confirmer le transfert' : 'Enregistrer'}</Text>
+                )}
+              </TouchableOpacity>
+            )}
           </>
         )}
 
@@ -587,6 +549,11 @@ export function QuickAddScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F6F5F2' },
   scroll: { padding: 24, paddingTop: 40 },
+  transferPreview: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#E3E1DC' },
+  transferPreviewTitle: { fontSize: 10, fontWeight: '700', color: '#6B747C', letterSpacing: 0.5, marginBottom: 8 },
+  transferPreviewRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  transferPreviewName: { fontSize: 13, color: '#172436', fontWeight: '600' },
+  transferPreviewValue: { fontSize: 13, color: '#172436', fontWeight: '700' },
   title: { fontSize: 22, fontWeight: '700', color: '#172436', marginBottom: 16, textAlign: 'center' },
   modeRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginBottom: 16 },
   modeChip: {
@@ -613,10 +580,19 @@ const styles = StyleSheet.create({
   sectionLabel: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 8, marginTop: 4 },
   empty: { color: '#6B747C', fontSize: 13, marginBottom: 12 },
   pickList: { marginBottom: 12 },
-  pickRow: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#E3E1DC' },
-  pickRowActive: { borderColor: '#172436', backgroundColor: '#EEF0F3' },
+  pickRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E3E1DC',
+  },
   pickRowLabel: { fontSize: 14, fontWeight: '600', color: '#172436' },
   pickRowMeta: { fontSize: 12, color: '#6B747C', marginTop: 2 },
+  pickRowChevron: { fontSize: 20, color: '#9AA0A6', marginLeft: 8 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 },
   chip: {
     backgroundColor: '#fff',

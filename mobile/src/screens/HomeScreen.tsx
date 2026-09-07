@@ -1,8 +1,10 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { useBottomInset } from '../ui/useBottomInset';
+import { ChoiceSheet } from '../ui/ChoiceSheet';
 
 interface Account {
   id: string;
@@ -113,6 +115,18 @@ function isPartiallyConfigured(summary: DashboardSummary, accounts: Account[]): 
   return accounts.length > 0 && !isFullyEmpty(summary, accounts);
 }
 
+/**
+ * Recette téléphone réel §13 — prérequis ESSENTIELS (distincts des étapes
+ * facultatives d'onboarding, toujours accessibles depuis Paramètres) : au moins
+ * un compte et au moins un revenu planifié. Le foyer ne "déclare" nulle part
+ * s'il a des enfants avant d'en créer un — la clause "si le foyer a déclaré des
+ * enfants" du cahier des charges est donc un no-op tant qu'aucun tel indicateur
+ * n'existe dans le modèle (documenté explicitement, pas une omission silencieuse).
+ */
+function essentialPrerequisitesMet(accounts: Account[], incomeSourcesCount: number): boolean {
+  return accounts.length > 0 && incomeSourcesCount > 0;
+}
+
 function formatShortDate(iso: string) {
   return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
 }
@@ -194,18 +208,36 @@ export function HomeScreen() {
   const bottomInset = useBottomInset();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [incomeSourcesCount, setIncomeSourcesCount] = useState(0);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [dismissChoiceOpen, setDismissChoiceOpen] = useState(false);
+  const [freeAvailableInfoOpen, setFreeAvailableInfoOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, a] = await Promise.all([api.getDashboardSummary(), api.listAccounts()]);
+      const [s, a, incomeSources, household] = await Promise.all([
+        api.getDashboardSummary(),
+        api.listAccounts(),
+        api.listIncomeSources(),
+        api.getMyHousehold(),
+      ]);
       setSummary(s);
       setAccounts(a);
+      setIncomeSourcesCount(incomeSources.length);
+      setBannerDismissed(!!household?.settings?.homeBannerDismissed);
     } finally {
       setLoading(false);
     }
   }, []);
+
+  async function onDismissBanner(permanent: boolean) {
+    setDismissChoiceOpen(false);
+    if (!permanent) return;
+    setBannerDismissed(true); // §13 — jamais réaffiché après ce choix, retour immédiat sans attendre le réseau.
+    await api.updateHouseholdSettings({ homeBannerDismissed: true });
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -224,6 +256,9 @@ export function HomeScreen() {
 
   const fullyEmpty = isFullyEmpty(summary, accounts);
   const partiallyConfigured = isPartiallyConfigured(summary, accounts);
+  // §13 — le bandeau ne s'affiche plus automatiquement dès que les prérequis
+  // essentiels sont satisfaits, et jamais après un "Ne plus afficher" explicite.
+  const showConfigBanner = partiallyConfigured && !essentialPrerequisitesMet(accounts, incomeSourcesCount) && !bannerDismissed;
   const upcomingDeadlines = [...summary.deadlineItems].sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3);
   const topPlans = prioritizePlans(summary.financialPlansResume).slice(0, 3);
 
@@ -251,11 +286,26 @@ export function HomeScreen() {
         </View>
       ) : (
         <>
-          {partiallyConfigured && (
-            <TouchableOpacity style={styles.configBanner} onPress={() => navigation.getParent()?.navigate('Onboarding')}>
-              <Text style={styles.configBannerText}>Terminer ma configuration →</Text>
-            </TouchableOpacity>
+          {showConfigBanner && (
+            <View style={styles.configBanner}>
+              <TouchableOpacity style={{ flex: 1 }} onPress={() => navigation.getParent()?.navigate('Onboarding')} testID="config-banner">
+                <Text style={styles.configBannerText}>Terminer ma configuration →</Text>
+              </TouchableOpacity>
+              <TouchableOpacity testID="config-banner-close" style={styles.configBannerClose} onPress={() => setDismissChoiceOpen(true)}>
+                <Ionicons name="close" size={16} color="#6B747C" />
+              </TouchableOpacity>
+            </View>
           )}
+          <ChoiceSheet
+            visible={dismissChoiceOpen}
+            title="Masquer ce rappel ?"
+            testID="dismiss-banner-choice"
+            onClose={() => setDismissChoiceOpen(false)}
+            options={[
+              { key: 'later', label: 'Pas maintenant', onPress: () => onDismissBanner(false) },
+              { key: 'forever', label: 'Ne plus afficher', onPress: () => onDismissBanner(true) },
+            ]}
+          />
 
           {/* Bloc 1 — Ma situation */}
           {accounts.length > 0 && (
@@ -277,35 +327,46 @@ export function HomeScreen() {
             </View>
           )}
 
-          {/* Bloc 2 — Mon disponible réel */}
+          {/* Bloc 2 — Mon disponible réel. §14 (recette téléphone réel) : le
+              disponible libre est l'élément PRINCIPAL (en tête, gros chiffre) —
+              Trésorerie/Réservé/Engagé/Coussin ne sont que des informations
+              secondaires compactes en dessous, jamais au même poids visuel. */}
           <View style={styles.block}>
+            <View style={styles.freeAvailableHero}>
+              <View style={styles.freeAvailableHeroRow}>
+                <Text style={styles.freeAvailableLabel}>DISPONIBLE LIBRE</Text>
+                <TouchableOpacity testID="free-available-info" onPress={() => setFreeAvailableInfoOpen((v) => !v)}>
+                  <Text style={styles.infoIcon}>ⓘ</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={[styles.freeAvailableValue, summary.free_available < 0 && styles.negative]}>
+                {summary.free_available.toLocaleString('fr-FR')} DH
+              </Text>
+              {freeAvailableInfoOpen && (
+                <Text style={styles.infoText}>
+                  Votre disponible libre tient compte de l'argent réservé et de votre coussin de sécurité.
+                </Text>
+              )}
+              {!summary.is_complete && (
+                <Text style={styles.warning}>⚠ Calcul incomplet — {summary.unknown_commitments_count} montant(s) encore inconnu(s).</Text>
+              )}
+            </View>
+            <View style={styles.breakdownDivider} />
             <View style={styles.breakdownRow}>
               <Text style={styles.breakdownLabel}>Trésorerie</Text>
               <Text style={styles.breakdownValue}>{summary.operational_treasury.toLocaleString('fr-FR')} DH</Text>
-            </View>
-            <View style={styles.breakdownRow}>
-              <Text style={styles.breakdownLabel}>Réservé</Text>
-              <Text style={styles.breakdownValue}>{summary.reserved_amount.toLocaleString('fr-FR')} DH</Text>
             </View>
             <View style={styles.breakdownRow}>
               <Text style={styles.breakdownLabel}>Engagé</Text>
               <Text style={styles.breakdownValue}>{summary.committed_amount.toLocaleString('fr-FR')} DH</Text>
             </View>
             <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel}>Réservé</Text>
+              <Text style={styles.breakdownValue}>{summary.reserved_amount.toLocaleString('fr-FR')} DH</Text>
+            </View>
+            <View style={styles.breakdownRow}>
               <Text style={styles.breakdownLabel}>Coussin</Text>
               <Text style={styles.breakdownValue}>{summary.safety_buffer.toLocaleString('fr-FR')} DH</Text>
-            </View>
-            <View style={styles.freeAvailableBox}>
-              <Text style={styles.freeAvailableLabel}>DISPONIBLE LIBRE</Text>
-              <Text style={[styles.freeAvailableValue, summary.free_available < 0 && styles.negative]}>
-                {summary.free_available.toLocaleString('fr-FR')} DH
-              </Text>
-              <Text style={styles.infoText}>
-                ⓘ Votre disponible libre tient compte de l'argent réservé et de votre coussin de sécurité.
-              </Text>
-              {!summary.is_complete && (
-                <Text style={styles.warning}>⚠ Calcul incomplet — {summary.unknown_commitments_count} montant(s) encore inconnu(s).</Text>
-              )}
             </View>
           </View>
 
@@ -440,8 +501,9 @@ const styles = StyleSheet.create({
   welcomeButton: { backgroundColor: '#fff', borderRadius: 999, paddingHorizontal: 24, paddingVertical: 12, marginTop: 16 },
   welcomeButtonText: { color: '#172436', fontWeight: '700', fontSize: 14 },
 
-  configBanner: { backgroundColor: '#EEF0F3', borderRadius: 12, padding: 14, marginBottom: 16 },
+  configBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EEF0F3', borderRadius: 12, padding: 14, marginBottom: 16 },
   configBannerText: { color: '#172436', fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  configBannerClose: { paddingLeft: 12, paddingVertical: 4 },
 
   block: { backgroundColor: '#fff', borderRadius: 14, padding: 16, marginBottom: 12 },
   blockTitle: { fontSize: 11, fontWeight: '700', color: '#6B747C', letterSpacing: 0.5, marginBottom: 10 },
@@ -457,8 +519,11 @@ const styles = StyleSheet.create({
   breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
   breakdownLabel: { fontSize: 12, color: '#6B747C' },
   breakdownValue: { fontSize: 12, color: '#172436', fontWeight: '600' },
-  freeAvailableBox: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F0EFEA' },
+  breakdownDivider: { height: 1, backgroundColor: '#F0EFEA', marginBottom: 8 },
+  freeAvailableHero: { marginBottom: 4 },
+  freeAvailableHeroRow: { flexDirection: 'row', alignItems: 'center' },
   freeAvailableLabel: { fontSize: 12, fontWeight: '700', color: '#6B747C', letterSpacing: 0.5 },
+  infoIcon: { fontSize: 13, color: '#6B747C', marginLeft: 6 },
   freeAvailableValue: { fontSize: 30, fontWeight: '800', color: '#172436', marginTop: 4 },
   negative: { color: '#B3261E' },
   infoText: { fontSize: 11, color: '#6B747C', marginTop: 8, fontStyle: 'italic' },

@@ -125,6 +125,7 @@ export class HouseholdsService {
           seuilAVenirDays: dto.seuilAVenirDays,
           seuilAPayerDays: dto.seuilAPayerDays,
           variableBudgetProjectionMode: dto.variableBudgetProjectionMode,
+          homeBannerDismissed: dto.homeBannerDismissed,
         },
       }),
     );

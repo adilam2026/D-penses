@@ -17,6 +17,7 @@ import { ChargesScreen } from '../screens/charges/ChargesScreen';
 import { CreateChargeScreen } from '../screens/charges/CreateChargeScreen';
 import { ChargePlanDetailScreen } from '../screens/charges/ChargePlanDetailScreen';
 import { DeadlineDetailScreen } from '../screens/charges/DeadlineDetailScreen';
+import { TransactionDetailScreen } from '../screens/transactions/TransactionDetailScreen';
 import { BudgetsScreen } from '../screens/budgets/BudgetsScreen';
 import { BudgetDetailScreen } from '../screens/budgets/BudgetDetailScreen';
 import { CreateBudgetScreen } from '../screens/budgets/CreateBudgetScreen';
@@ -109,6 +110,7 @@ export function RootNavigator() {
       <Stack.Screen name="CreateCharge" component={CreateChargeScreen} options={{ headerShown: true, title: 'Nouvelle charge', presentation: 'modal' }} />
       <Stack.Screen name="ChargePlanDetail" component={ChargePlanDetailScreen} options={{ headerShown: true, title: 'Charge récurrente' }} />
       <Stack.Screen name="DeadlineDetail" component={DeadlineDetailScreen} options={{ headerShown: true, title: 'Échéance' }} />
+      <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} options={{ headerShown: true, title: 'Transaction' }} />
       <Stack.Screen name="Budgets" component={BudgetsScreen} options={{ headerShown: true, title: 'Budgets' }} />
       <Stack.Screen name="BudgetDetail" component={BudgetDetailScreen} options={{ headerShown: true, title: 'Budget' }} />
       <Stack.Screen name="CreateBudget" component={CreateBudgetScreen} options={{ headerShown: true, title: 'Nouveau budget', presentation: 'modal' }} />

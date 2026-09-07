@@ -19,9 +19,21 @@ jest.mock('@react-navigation/native', () => ({
   },
 }));
 
+jest.mock('@expo/vector-icons', () => {
+  const { Text } = require('react-native');
+  return { Ionicons: (props: any) => require('react').createElement(Text, null, props.name) };
+});
+
 jest.mock('../../api/client', () => {
   const actual = jest.requireActual('../../api/client');
-  return { ...actual, getDashboardSummary: jest.fn(), listAccounts: jest.fn() };
+  return {
+    ...actual,
+    getDashboardSummary: jest.fn(),
+    listAccounts: jest.fn(),
+    listIncomeSources: jest.fn(),
+    getMyHousehold: jest.fn(),
+    updateHouseholdSettings: jest.fn(),
+  };
 });
 
 const mockedApi = api as jest.Mocked<typeof api>;
@@ -59,6 +71,8 @@ const EMPTY_SUMMARY = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockedApi.listIncomeSources.mockResolvedValue([]);
+  mockedApi.getMyHousehold.mockResolvedValue({ id: 'h1', settings: { homeBannerDismissed: false } });
 });
 
 describe('Accueil — état vide (§19)', () => {
@@ -121,6 +135,15 @@ describe('Accueil — état configuré (§7-17/§31)', () => {
     await render(<HomeScreen />);
     await waitFor(() => expect(screen.getByText('DISPONIBLE LIBRE')).toBeTruthy());
     expect(screen.getAllByText('15 000 DH').length).toBeGreaterThan(0);
+  });
+
+  it('§14 : le disponible libre est le PREMIER élément du bloc 2 (hiérarchie visuelle), les autres montants en dessous', async () => {
+    await render(<HomeScreen />);
+    await waitFor(() => screen.getByText('DISPONIBLE LIBRE'));
+
+    expect(screen.queryByText("Comment est calculé mon disponible")).toBeNull(); // aide repliée par défaut
+    await fireEvent.press(screen.getByTestId('free-available-info'));
+    expect(screen.getByText(/tient compte de l'argent réservé/)).toBeTruthy();
   });
 
   it('un compte est cliquable → AccountDetail', async () => {
@@ -315,5 +338,75 @@ describe('Accueil — configuration partielle (§19/§28)', () => {
     await waitFor(() => expect(screen.getByText('Terminer ma configuration →')).toBeTruthy());
     await fireEvent.press(screen.getByText('Terminer ma configuration →'));
     expect(mockNavigate).toHaveBeenCalledWith('Onboarding');
+  });
+});
+
+/**
+ * Recette téléphone réel §13 — le bandeau ne s'affiche plus dès que les
+ * prérequis essentiels (≥1 compte, ≥1 revenu planifié) sont satisfaits, et
+ * plus jamais après un "Ne plus afficher" persisté côté foyer.
+ */
+describe('Accueil — bandeau de configuration intelligent (§13)', () => {
+  it('prérequis essentiels satisfaits (compte + revenu) → le bandeau ne s\'affiche plus, même en configuration partielle', async () => {
+    mockedApi.getDashboardSummary.mockResolvedValue(EMPTY_SUMMARY);
+    mockedApi.listAccounts.mockResolvedValue([{ id: 'acc-1', name: 'Compte SG', soldeCourant: 0 }]);
+    mockedApi.listIncomeSources.mockResolvedValue([{ id: 'inc-1', label: 'Salaire' }]);
+    await render(<HomeScreen />);
+
+    await waitFor(() => screen.getByText('DISPONIBLE LIBRE'));
+    expect(screen.queryByTestId('config-banner')).toBeNull();
+    expect(screen.queryByText('Terminer ma configuration →')).toBeNull();
+  });
+
+  it('prérequis essentiels NON satisfaits (pas de revenu planifié) → le bandeau reste affiché avec un bouton de fermeture', async () => {
+    mockedApi.getDashboardSummary.mockResolvedValue(EMPTY_SUMMARY);
+    mockedApi.listAccounts.mockResolvedValue([{ id: 'acc-1', name: 'Compte SG', soldeCourant: 0 }]);
+    mockedApi.listIncomeSources.mockResolvedValue([]);
+    await render(<HomeScreen />);
+
+    await waitFor(() => screen.getByTestId('config-banner'));
+    expect(screen.getByTestId('config-banner-close')).toBeTruthy();
+  });
+
+  it('déjà marqué "Ne plus afficher" côté foyer → le bandeau ne s\'affiche jamais, même sans prérequis satisfaits', async () => {
+    mockedApi.getDashboardSummary.mockResolvedValue(EMPTY_SUMMARY);
+    mockedApi.listAccounts.mockResolvedValue([{ id: 'acc-1', name: 'Compte SG', soldeCourant: 0 }]);
+    mockedApi.listIncomeSources.mockResolvedValue([]);
+    mockedApi.getMyHousehold.mockResolvedValue({ id: 'h1', settings: { homeBannerDismissed: true } });
+    await render(<HomeScreen />);
+
+    await waitFor(() => screen.getByText('DISPONIBLE LIBRE'));
+    expect(screen.queryByTestId('config-banner')).toBeNull();
+  });
+
+  it('"Ne plus afficher" masque immédiatement le bandeau et persiste le choix côté foyer', async () => {
+    mockedApi.getDashboardSummary.mockResolvedValue(EMPTY_SUMMARY);
+    mockedApi.listAccounts.mockResolvedValue([{ id: 'acc-1', name: 'Compte SG', soldeCourant: 0 }]);
+    mockedApi.listIncomeSources.mockResolvedValue([]);
+    mockedApi.updateHouseholdSettings.mockResolvedValue({});
+    await render(<HomeScreen />);
+    await waitFor(() => screen.getByTestId('config-banner-close'));
+
+    await fireEvent.press(screen.getByTestId('config-banner-close'));
+    await waitFor(() => screen.getByTestId('dismiss-banner-choice-option-forever'));
+    await fireEvent.press(screen.getByTestId('dismiss-banner-choice-option-forever'));
+
+    await waitFor(() => expect(screen.queryByTestId('config-banner')).toBeNull());
+    expect(mockedApi.updateHouseholdSettings).toHaveBeenCalledWith({ homeBannerDismissed: true });
+  });
+
+  it('"Pas maintenant" garde le bandeau visible (jamais persisté)', async () => {
+    mockedApi.getDashboardSummary.mockResolvedValue(EMPTY_SUMMARY);
+    mockedApi.listAccounts.mockResolvedValue([{ id: 'acc-1', name: 'Compte SG', soldeCourant: 0 }]);
+    mockedApi.listIncomeSources.mockResolvedValue([]);
+    await render(<HomeScreen />);
+    await waitFor(() => screen.getByTestId('config-banner-close'));
+
+    await fireEvent.press(screen.getByTestId('config-banner-close'));
+    await waitFor(() => screen.getByTestId('dismiss-banner-choice-option-later'));
+    await fireEvent.press(screen.getByTestId('dismiss-banner-choice-option-later'));
+
+    expect(screen.getByTestId('config-banner')).toBeTruthy();
+    expect(mockedApi.updateHouseholdSettings).not.toHaveBeenCalled();
   });
 });

@@ -12,9 +12,10 @@ jest.mock('../../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
 
 const mockNavigate = jest.fn();
 const mockGoBack = jest.fn();
+let mockRouteParams: { mode?: string } = {};
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({ navigate: mockNavigate, goBack: mockGoBack }),
-  useRoute: () => ({ params: {} }),
+  useRoute: () => ({ params: mockRouteParams }),
 }));
 
 jest.mock('../../../api/client', () => {
@@ -30,6 +31,7 @@ jest.mock('../../../api/client', () => {
     createCategoryType: jest.fn(),
     createCategorySubtype: jest.fn(),
     createExpense: jest.fn(),
+    createTransfer: jest.fn(),
   };
 });
 
@@ -40,6 +42,7 @@ const CATEGORY_TRANSPORT = { id: 'cat-transport', name: 'Transport', kind: 'expe
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockRouteParams = {};
   mockedApi.listAccounts.mockResolvedValue([{ id: 'acc-1', name: 'Compte SG' }]);
   mockedApi.getQuickAddDefaultAccount.mockResolvedValue({ accountId: 'acc-1' });
   mockedApi.listCategories.mockResolvedValue([CATEGORY_ALIMENTATION, CATEGORY_TRANSPORT]);
@@ -50,7 +53,14 @@ beforeEach(() => {
 
 async function renderScreen() {
   await render(<QuickAddScreen />);
-  await waitFor(() => screen.getByText('Alimentation'));
+  await waitFor(() => screen.getByTestId('quickadd-category-select'));
+}
+
+// §8 (recette téléphone réel) : la catégorie est désormais un Select compact
+// (bottom sheet), plus une liste de chips permanente — ouvrir puis choisir.
+async function selectCategory(categoryId: string) {
+  await fireEvent.press(screen.getByTestId('quickadd-category-select'));
+  await fireEvent.press(await screen.findByTestId(`quickadd-category-select-option-${categoryId}`));
 }
 
 describe('QuickAddScreen — Catégorie → Type → Sous-type (Vague 2 §21)', () => {
@@ -61,7 +71,7 @@ describe('QuickAddScreen — Catégorie → Type → Sous-type (Vague 2 §21)', 
     ]);
     await renderScreen();
 
-    await fireEvent.press(screen.getByText('Alimentation'));
+    await selectCategory('cat-alim');
 
     await waitFor(() => expect(mockedApi.listCategoryTypes).toHaveBeenCalledWith('cat-alim'));
     expect(await screen.findByTestId('type-chip-Courses')).toBeTruthy();
@@ -74,7 +84,7 @@ describe('QuickAddScreen — Catégorie → Type → Sous-type (Vague 2 §21)', 
       { id: 'type-restaurant', name: 'Restaurant', active: true, subtypes: [{ id: 'sub-fastfood', name: 'Fast-food', active: true }] },
     ]);
     await renderScreen();
-    await fireEvent.press(screen.getByText('Alimentation'));
+    await selectCategory('cat-alim');
     await screen.findByTestId('type-chip-Courses');
 
     await fireEvent.press(screen.getByTestId('type-chip-Courses'));
@@ -86,7 +96,7 @@ describe('QuickAddScreen — Catégorie → Type → Sous-type (Vague 2 §21)', 
   it("aucun sous-type existant → le champ sous-type n'affiche pas de chips, seulement le lien pour en créer un", async () => {
     mockedApi.listCategoryTypes.mockResolvedValue([{ id: 'type-courses', name: 'Courses', active: true, subtypes: [] }]);
     await renderScreen();
-    await fireEvent.press(screen.getByText('Alimentation'));
+    await selectCategory('cat-alim');
     await screen.findByTestId('type-chip-Courses');
 
     await fireEvent.press(screen.getByTestId('type-chip-Courses'));
@@ -104,10 +114,10 @@ describe('QuickAddScreen — Catégorie → Type → Sous-type (Vague 2 §21)', 
       ),
     );
     await renderScreen();
-    await fireEvent.press(screen.getByText('Alimentation'));
+    await selectCategory('cat-alim');
     await fireEvent.press(await screen.findByTestId('type-chip-Courses'));
 
-    await fireEvent.press(screen.getByText('Transport'));
+    await selectCategory('cat-transport');
 
     await waitFor(() => expect(mockedApi.listCategoryTypes).toHaveBeenCalledWith('cat-transport'));
     expect(await screen.findByTestId('type-chip-Carburant')).toBeTruthy();
@@ -120,7 +130,7 @@ describe('QuickAddScreen — Catégorie → Type → Sous-type (Vague 2 §21)', 
       .mockResolvedValueOnce([{ id: 'type-jardinier', name: 'Jardinier', active: true, subtypes: [] }]); // après création
     mockedApi.createCategoryType.mockResolvedValue({ id: 'type-jardinier', name: 'Jardinier', active: true, isSystem: false });
     await renderScreen();
-    await fireEvent.press(screen.getByText('Alimentation'));
+    await selectCategory('cat-alim');
     await screen.findByText('+ Ajouter un type pour cette catégorie');
 
     await fireEvent.press(screen.getByTestId('add-type-toggle'));
@@ -137,5 +147,98 @@ describe('QuickAddScreen — Catégorie → Type → Sous-type (Vague 2 §21)', 
         expect.objectContaining({ categoryId: 'cat-alim', categoryTypeId: 'type-jardinier' }),
       ),
     );
+  });
+});
+
+/**
+ * Recette téléphone réel §10 (BUG BLOQUANT corrigé) : sélectionner une échéance
+ * dans "Ajouter > Échéance" ouvrait un formulaire inline sans retour visuel
+ * clair — désormais un seul parcours de paiement partagé (DeadlineDetailScreen,
+ * le même qu'Accueil/Plan financier/Calendrier) : sélectionner navigue
+ * IMMÉDIATEMENT, jamais une sélection silencieuse.
+ */
+describe('QuickAddScreen — Ajouter > Échéance (§10, bug bloquant corrigé)', () => {
+  beforeEach(() => {
+    mockRouteParams = { mode: 'paiement' };
+    mockedApi.listOpenDeadlines.mockResolvedValue([
+      { id: 'dl-1', dueDate: '2026-09-30', resteAPayer: 1950, provisionId: null, chargePlan: { label: 'Restauration T1' } },
+    ]);
+  });
+
+  it('sélectionner une échéance navigue directement vers DeadlineDetail (parcours de paiement unique)', async () => {
+    await render(<QuickAddScreen />);
+    await waitFor(() => screen.getByTestId('pick-deadline-dl-1'));
+
+    await fireEvent.press(screen.getByTestId('pick-deadline-dl-1'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('DeadlineDetail', { id: 'dl-1' });
+  });
+
+  it('aucune échéance ouverte → message explicite, jamais une liste vide silencieuse', async () => {
+    mockedApi.listOpenDeadlines.mockResolvedValue([]);
+    await render(<QuickAddScreen />);
+
+    await waitFor(() => screen.getByText("Aucune échéance ouverte pour l'instant."));
+    expect(screen.queryByText('Enregistrer')).toBeNull();
+  });
+});
+
+/**
+ * Recette téléphone réel §11 : le transfert affiche désormais les soldes réels
+ * par compte et un aperçu "avant/après" recalculé en direct, jamais après coup.
+ */
+describe('QuickAddScreen — Transfert entre comptes (§11)', () => {
+  beforeEach(() => {
+    mockRouteParams = { mode: 'transfert' };
+    mockedApi.listAccounts.mockResolvedValue([
+      { id: 'acc-1', name: 'Compte courant', soldeCourant: 4750 },
+      { id: 'acc-2', name: 'Maison', soldeCourant: 700 },
+    ]);
+    mockedApi.getQuickAddDefaultAccount.mockResolvedValue({ accountId: 'acc-1' });
+  });
+
+  it('affiche le solde de chaque compte source/destination', async () => {
+    await render(<QuickAddScreen />);
+    await waitFor(() => screen.getByTestId('source-account-acc-1'));
+    expect(screen.getByTestId('dest-account-acc-2')).toBeTruthy();
+  });
+
+  it('saisir un montant + choisir une destination affiche l\'aperçu avant/après, recalculé en direct', async () => {
+    await render(<QuickAddScreen />);
+    await waitFor(() => screen.getByTestId('dest-account-acc-2'));
+
+    await fireEvent.changeText(screen.getByPlaceholderText('Montant (DH)'), '1000');
+    await fireEvent.press(screen.getByTestId('dest-account-acc-2'));
+
+    const preview = screen.getByTestId('transfer-preview');
+    expect(preview).toBeTruthy();
+    expect(screen.getByText('4 750 → 3 750 DH')).toBeTruthy();
+    expect(screen.getByText('700 → 1 700 DH')).toBeTruthy();
+
+    // Changer le montant recalcule immédiatement l'aperçu.
+    await fireEvent.changeText(screen.getByPlaceholderText('Montant (DH)'), '2000');
+    expect(screen.getByText('4 750 → 2 750 DH')).toBeTruthy();
+    expect(screen.getByText('700 → 2 700 DH')).toBeTruthy();
+  });
+
+  it('le compte source n\'apparaît jamais dans la liste des destinations possibles', async () => {
+    await render(<QuickAddScreen />);
+    await waitFor(() => screen.getByText('Compte destination'));
+
+    // "Compte courant" (source par défaut) doit être absent de la section destination —
+    // seul un "Maison — 700 DH" doit apparaître comme option de destination.
+    const destinationSection = screen.getByText('Compte destination').parent;
+    expect(destinationSection).toBeTruthy();
+    expect(screen.queryAllByText(/Compte courant — 4 750 DH/)).toHaveLength(1); // uniquement dans "Compte source"
+  });
+
+  it('bouton de confirmation libellé "Confirmer le transfert" et interdit montant<=0', async () => {
+    await render(<QuickAddScreen />);
+    await waitFor(() => screen.getByText('Confirmer le transfert'));
+
+    await fireEvent.press(screen.getByText('Confirmer le transfert'));
+
+    await waitFor(() => screen.getByText('Montant invalide'));
+    expect(mockedApi.createTransfer).not.toHaveBeenCalled();
   });
 });

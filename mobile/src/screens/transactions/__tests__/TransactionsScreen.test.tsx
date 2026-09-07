@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { TransactionsScreen } from '../TransactionsScreen';
 import * as api from '../../../api/client';
 
@@ -9,8 +9,9 @@ import * as api from '../../../api/client';
  * pas seulement disponible dans la réponse API. Scénario exact demandé :
  * 500 DH / Alimentation → Courses → Viande / Compte SG.
  */
+const mockNavigate = jest.fn();
 jest.mock('@react-navigation/native', () => ({
-  useNavigation: () => ({ getParent: () => ({ navigate: jest.fn() }) }),
+  useNavigation: () => ({ navigate: mockNavigate, getParent: () => ({ navigate: jest.fn() }) }),
   useFocusEffect: (cb: () => void) => {
     const React = require('react');
     React.useEffect(cb, []);
@@ -68,4 +69,28 @@ it('une transaction sans type (revenu, paiement...) garde son libellé d\'origin
 
   await waitFor(() => expect(screen.getByText('Salaire')).toBeTruthy());
   expect(screen.getByText('+8 000 DH')).toBeTruthy();
+});
+
+it('§5 — une carte de transaction est cliquable et navigue vers son écran détail avec kind+id', async () => {
+  mockedApi.listTransactions.mockResolvedValue([
+    {
+      kind: 'payment',
+      displayKind: 'paiement',
+      id: 'p1',
+      occurredAt: '2026-09-04T10:00:00.000Z',
+      amount: -1500,
+      accountName: 'Compte SG',
+      label: 'Frais scolarité',
+      categoryName: null,
+      categoryTypeName: null,
+      categorySubtypeName: null,
+    },
+  ]);
+
+  await render(<TransactionsScreen />);
+  await waitFor(() => expect(screen.getByText('Frais scolarité')).toBeTruthy());
+
+  fireEvent.press(screen.getByTestId('transaction-row-payment-p1'));
+
+  expect(mockNavigate).toHaveBeenCalledWith('TransactionDetail', { kind: 'payment', id: 'p1' });
 });

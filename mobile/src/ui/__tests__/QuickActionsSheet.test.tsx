@@ -136,13 +136,16 @@ describe('QuickActionsSheet — prérequis anticipés (§4)', () => {
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('QuickAdd', { mode: 'paiement' }));
   });
 
-  it('Créer un plan propose un choix École/Voyage, jamais une impasse', async () => {
+  it('Créer un plan propose un choix École/Voyage via un modal interne (jamais un Alert natif), sans impasse', async () => {
     await renderOpenSheet();
     await fireEvent.press(screen.getByTestId('quick-action-plan'));
 
-    expect(Alert.alert).toHaveBeenCalled();
-    const [, , buttons] = (Alert.alert as jest.Mock).mock.calls[0];
-    buttons[1].onPress();
+    // §12 : jamais Alert.alert pour un choix métier — un ChoiceSheet interne s'ouvre à la place.
+    await waitFor(() => screen.getByTestId('plan-type-choice-option-scolaire'));
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(screen.getByTestId('plan-type-choice-option-voyage')).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId('plan-type-choice-option-scolaire'));
     expect(mockNavigate).toHaveBeenCalledWith('SchoolWizard');
   });
 });
