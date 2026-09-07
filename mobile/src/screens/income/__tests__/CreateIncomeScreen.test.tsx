@@ -39,7 +39,7 @@ it('compte via sélecteur compact et fréquence via sélecteur compact', async (
   await waitFor(() => screen.getByTestId('income-frequency-select-option-trimestriel'));
   await fireEvent.press(screen.getByTestId('income-frequency-select-option-trimestriel'));
 
-  await fireEvent.changeText(screen.getByPlaceholderText('Jour habituel de versement (1 à 31)'), '15');
+  await fireEvent.changeText(screen.getByTestId('income-anchor-day-input'), '15');
 
   await fireEvent.press(screen.getByTestId('income-account-select'));
   await waitFor(() => screen.getByTestId('income-account-select-option-acc1'));

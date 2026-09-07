@@ -16,8 +16,10 @@ import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { DateField } from '../../ui/DateField';
 import { Select } from '../../ui/Select';
+import { FormField } from '../../ui/FormField';
 import { frequencyOptions } from '../../ui/frequency';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
+import { colors, radius, spacing } from '../../ui/theme';
 
 const RECURRENCE_VALUES = ['hebdomadaire', 'mensuel', 'trimestriel', 'semestriel', 'annuel', 'ponctuel'] as const;
 
@@ -226,9 +228,10 @@ export function IncomeSourceDetailScreen() {
         )}
 
         <Text style={styles.sectionTitle}>Modifier la source</Text>
-        <TextInput style={styles.input} value={editLabel} onChangeText={setEditLabel} onFocus={handleFocus} />
-        <TextInput
-          style={styles.input}
+        <FormField testID="income-source-label-input" label="Libellé" value={editLabel} onChangeText={setEditLabel} onFocus={handleFocus} />
+        <FormField
+          testID="income-source-amount-input"
+          label="Montant habituel"
           placeholder="Montant habituel (DH)"
           keyboardType="decimal-pad"
           value={editAmount}
@@ -244,33 +247,33 @@ export function IncomeSourceDetailScreen() {
         />
         {editError ? <Text style={styles.error}>{editError}</Text> : null}
         <TouchableOpacity style={styles.button} onPress={onSaveSource} disabled={saving} testID="income-source-save">
-          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Enregistrer</Text>}
+          {saving ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Enregistrer</Text>}
         </TouchableOpacity>
         <View style={styles.actionsRow}>
           <TouchableOpacity style={styles.buttonSecondary} onPress={onToggleStatus} disabled={togglingStatus} testID="income-source-toggle-status">
             {togglingStatus ? (
-              <ActivityIndicator color="#172436" />
+              <ActivityIndicator color={colors.textPrimary} />
             ) : (
               <Text style={styles.buttonSecondaryText}>{source?.status === 'actif' ? 'Arrêter la récurrence' : 'Réactiver'}</Text>
             )}
           </TouchableOpacity>
           <TouchableOpacity style={styles.buttonDanger} onPress={onDeleteSource} disabled={deleting} testID="income-source-delete">
-            {deleting ? <ActivityIndicator color="#B3261E" /> : <Text style={styles.buttonDangerText}>Supprimer</Text>}
+            {deleting ? <ActivityIndicator color={colors.danger} /> : <Text style={styles.buttonDangerText}>Supprimer</Text>}
           </TouchableOpacity>
         </View>
 
         <Text style={styles.sectionTitle}>Prochaine occurrence prévue</Text>
         <DateField label="Date prévue" value={plannedDate} onChange={setPlannedDate} />
-        <TextInput
-          style={styles.input}
-          placeholder="Montant prévu (DH, facultatif — reprend le montant habituel)"
+        <FormField
+          label="Montant prévu (facultatif)"
+          placeholder="Reprend le montant habituel"
           keyboardType="decimal-pad"
           value={plannedAmount}
           onChangeText={setPlannedAmount}
         />
         {createError ? <Text style={styles.error}>{createError}</Text> : null}
         <TouchableOpacity style={styles.button} onPress={onCreateOccurrence} disabled={creating}>
-          {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Planifier</Text>}
+          {creating ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Planifier</Text>}
         </TouchableOpacity>
 
         <Text style={styles.sectionTitle}>Occurrences</Text>
@@ -289,26 +292,18 @@ export function IncomeSourceDetailScreen() {
                 </Text>
               ) : (
                 <View>
-                  <Text style={styles.confirmLabel}>Compte à créditer</Text>
-                  <View style={styles.chipRow}>
-                    {accounts.map((a) => {
-                      const selected = (confirmAccountIds[o.id] ?? o.accountId) === a.id;
-                      return (
-                        <TouchableOpacity
-                          key={a.id}
-                          testID={`confirm-account-${o.id}-${a.id}`}
-                          style={[styles.chip, selected && styles.chipActive]}
-                          onPress={() => setConfirmAccountIds((prev) => ({ ...prev, [o.id]: a.id }))}
-                        >
-                          <Text style={[styles.chipText, selected && styles.chipTextActive]}>{a.name}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
+                  <Select
+                    testID={`confirm-account-select-${o.id}`}
+                    label="Compte à créditer"
+                    placeholder="Choisir un compte"
+                    value={confirmAccountIds[o.id] ?? o.accountId}
+                    onChange={(v) => setConfirmAccountIds((prev) => ({ ...prev, [o.id]: v }))}
+                    options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+                  />
                   <View style={styles.confirmRow}>
-                    <TextInput
+                    <FormField
                       testID={`confirm-amount-${o.id}`}
-                      style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                      containerStyle={styles.confirmAmountField}
                       placeholder="Montant réel (DH)"
                       keyboardType="decimal-pad"
                       value={actualAmounts[o.id] ?? String(n(o.plannedAmount))}
@@ -321,7 +316,7 @@ export function IncomeSourceDetailScreen() {
                       onPress={() => onConfirm(o)}
                       disabled={confirmingId === o.id}
                     >
-                      {confirmingId === o.id ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonSmallText}>Reçu</Text>}
+                      {confirmingId === o.id ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonSmallText}>Reçu</Text>}
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -336,51 +331,38 @@ export function IncomeSourceDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  scroll: { padding: 20 },
-  title: { fontSize: 20, fontWeight: '700', color: '#172436', marginBottom: 16 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#172436', marginTop: 16, marginBottom: 8 },
-  empty: { color: '#6B747C', fontSize: 13 },
+  container: { flex: 1, backgroundColor: colors.background },
+  scroll: { padding: spacing.xl },
+  title: { fontSize: 20, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.lg },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.lg, marginBottom: spacing.sm },
+  empty: { color: colors.textSecondary, fontSize: 13 },
   input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 14,
     borderWidth: 1,
-    borderColor: '#E3E1DC',
-    marginBottom: 8,
+    borderColor: colors.border,
+    marginBottom: spacing.sm,
   },
-  button: { backgroundColor: '#172436', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  inactiveBanner: { backgroundColor: '#FBEAEA', borderRadius: 10, padding: 12, marginBottom: 16 },
-  inactiveBannerText: { color: '#B3261E', fontSize: 12, fontWeight: '600' },
-  actionsRow: { flexDirection: 'row', marginTop: 12, marginBottom: 8, justifyContent: 'space-between' },
-  buttonSecondary: { flex: 1, backgroundColor: '#EEF0F3', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginRight: 8 },
-  buttonSecondaryText: { color: '#172436', fontWeight: '600', fontSize: 13 },
-  buttonDanger: { flex: 1, backgroundColor: '#FBEAEA', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
-  buttonDangerText: { color: '#B3261E', fontWeight: '600', fontSize: 13 },
-  buttonSmall: { backgroundColor: '#172436', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, marginLeft: 8, justifyContent: 'center' },
-  buttonSmallText: { color: '#fff', fontWeight: '600', fontSize: 12 },
-  card: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#E3E1DC' },
-  cardTitle: { fontSize: 14, fontWeight: '700', color: '#172436' },
-  cardMeta: { fontSize: 12, color: '#6B747C', marginTop: 2 },
-  received: { fontSize: 12, color: '#2E7D5B', marginTop: 6, fontWeight: '600' },
-  confirmLabel: { fontSize: 11, color: '#6B747C', fontWeight: '600', marginTop: 8, marginBottom: 6 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap' },
-  chip: {
-    backgroundColor: '#fff',
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginRight: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#E3E1DC',
-  },
-  chipActive: { backgroundColor: '#172436', borderColor: '#172436' },
-  chipText: { fontSize: 12, color: '#172436' },
-  chipTextActive: { color: '#fff', fontWeight: '600' },
-  confirmRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
-  error: { color: '#B3261E', fontSize: 13, marginBottom: 8 },
+  button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center' },
+  buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 14 },
+  inactiveBanner: { backgroundColor: colors.dangerLight, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.lg },
+  inactiveBannerText: { color: colors.danger, fontSize: 12, fontWeight: '600' },
+  actionsRow: { flexDirection: 'row', marginTop: spacing.md, marginBottom: spacing.sm, justifyContent: 'space-between' },
+  buttonSecondary: { flex: 1, backgroundColor: colors.surfaceActive, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center', marginRight: spacing.sm },
+  buttonSecondaryText: { color: colors.textPrimary, fontWeight: '600', fontSize: 13 },
+  buttonDanger: { flex: 1, backgroundColor: colors.dangerLight, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center' },
+  buttonDangerText: { color: colors.danger, fontWeight: '600', fontSize: 13 },
+  buttonSmall: { backgroundColor: colors.primary, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 10, marginLeft: spacing.sm, justifyContent: 'center' },
+  buttonSmallText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 12 },
+  card: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  cardTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  cardMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  received: { fontSize: 12, color: colors.success, marginTop: 6, fontWeight: '600' },
+  confirmLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', marginTop: spacing.sm, marginBottom: 6 },
+  confirmRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm },
+  confirmAmountField: { flex: 1, marginBottom: 0, marginRight: spacing.sm },
+  error: { color: colors.danger, fontSize: 13, marginBottom: spacing.sm },
 });

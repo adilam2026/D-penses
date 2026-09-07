@@ -131,9 +131,10 @@ it('filtre par compte et recalcule la projection', async () => {
   await render(<ProjectionScreen />);
   await waitFor(() => screen.getByTestId('toggle-filters'));
   await fireEvent.press(screen.getByTestId('toggle-filters'));
-  await waitFor(() => screen.getByTestId('expense-account-acc2'));
+  await waitFor(() => screen.getByTestId('projection-expense-accounts-select'));
 
-  await fireEvent.press(screen.getByTestId('expense-account-acc2'));
+  fireEvent.press(screen.getByTestId('projection-expense-accounts-select'));
+  await fireEvent.press(await screen.findByTestId('projection-expense-accounts-select-option-acc2'));
 
   await waitFor(() =>
     expect(mockedApi.getMonthlyProjection).toHaveBeenLastCalledWith(expect.objectContaining({ expenseAccountIds: ['acc2'] })),
@@ -144,9 +145,10 @@ it('la sélection "Compte non déterminé" recalcule aussi la projection', async
   await render(<ProjectionScreen />);
   await waitFor(() => screen.getByTestId('toggle-filters'));
   await fireEvent.press(screen.getByTestId('toggle-filters'));
-  await waitFor(() => screen.getByTestId('expense-account-undetermined'));
+  await waitFor(() => screen.getByTestId('projection-expense-accounts-select'));
 
-  await fireEvent.press(screen.getByTestId('expense-account-undetermined'));
+  fireEvent.press(screen.getByTestId('projection-expense-accounts-select'));
+  await fireEvent.press(await screen.findByTestId(`projection-expense-accounts-select-option-${api.UNDETERMINED_ACCOUNT}`));
 
   await waitFor(() =>
     expect(mockedApi.getMonthlyProjection).toHaveBeenLastCalledWith(expect.objectContaining({ expenseAccountIds: [api.UNDETERMINED_ACCOUNT] })),

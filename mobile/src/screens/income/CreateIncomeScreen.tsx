@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { Select } from '../../ui/Select';
+import { FormField } from '../../ui/FormField';
 import { frequencyOptions } from '../../ui/frequency';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { accountCreatedBus } from '../../state/events';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface Account {
   id: string;
@@ -130,18 +132,25 @@ export function CreateIncomeScreen() {
       <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
         <Text style={styles.intro}>Ajoutez un revenu que vous recevez régulièrement — l'application anticipera automatiquement les prochains versements.</Text>
 
-        <Text style={styles.label}>Libellé</Text>
-        <TextInput style={styles.input} placeholder="Ex. Salaire" value={label} onChangeText={setLabel} onFocus={handleFocus} />
+        <FormField testID="income-label-input" label="Libellé" placeholder="Ex. Salaire" value={label} onChangeText={setLabel} onFocus={handleFocus} />
 
-        <Text style={styles.label}>Montant habituel</Text>
-        <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} onFocus={handleFocus} />
+        <FormField
+          testID="income-amount-input"
+          label="Montant habituel"
+          placeholder="Montant (DH)"
+          keyboardType="decimal-pad"
+          value={amount}
+          onChangeText={setAmount}
+          onFocus={handleFocus}
+        />
 
         <Select testID="income-frequency-select" label="Fréquence" value={recurrence} options={frequencyOptions(RECURRENCE_VALUES)} onChange={setRecurrence} />
 
         {recurrence !== 'ponctuel' && (
-          <TextInput
-            style={styles.input}
-            placeholder="Jour habituel de versement (1 à 31)"
+          <FormField
+            testID="income-anchor-day-input"
+            label="Jour habituel de versement"
+            placeholder="1 à 31"
             keyboardType="number-pad"
             maxLength={2}
             value={anchorDay}
@@ -174,7 +183,7 @@ export function CreateIncomeScreen() {
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <TouchableOpacity style={styles.button} onPress={onCreate} disabled={creating} testID="create-income-submit">
-          {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Ajouter</Text>}
+          {creating ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Ajouter</Text>}
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -182,21 +191,10 @@ export function CreateIncomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  scroll: { padding: 20 },
-  intro: { color: '#6B747C', fontSize: 13, lineHeight: 19, marginBottom: 16 },
-  label: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 6 },
-  input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: '#E3E1DC',
-    marginBottom: 8,
-  },
-  button: { backgroundColor: '#172436', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 8 },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  error: { color: '#B3261E', fontSize: 13, marginBottom: 8 },
+  container: { flex: 1, backgroundColor: colors.background },
+  scroll: { padding: spacing.xl },
+  intro: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, marginBottom: spacing.lg },
+  button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center', marginTop: spacing.sm },
+  buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 14 },
+  error: { color: colors.danger, fontSize: 13, marginBottom: spacing.sm },
 });

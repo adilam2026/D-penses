@@ -100,9 +100,10 @@ it('propose le compte de la source par défaut, mais permet de le changer avant 
   ]);
   mockedApi.confirmIncomeOccurrence.mockResolvedValue({});
   await render(<IncomeSourceDetailScreen />);
-  await waitFor(() => screen.getByTestId('confirm-account-o1-acc1'));
+  await waitFor(() => screen.getByTestId('confirm-account-select-o1'));
 
-  await fireEvent.press(screen.getByTestId('confirm-account-o1-acc2'));
+  fireEvent.press(screen.getByTestId('confirm-account-select-o1'));
+  await fireEvent.press(await screen.findByTestId('confirm-account-select-o1-option-acc2'));
   await fireEvent.changeText(screen.getByTestId('confirm-amount-o1'), '10000');
   await fireEvent.press(screen.getByTestId('confirm-occurrence-o1'));
 

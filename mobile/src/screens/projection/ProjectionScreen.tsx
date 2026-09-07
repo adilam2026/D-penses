@@ -7,6 +7,7 @@ import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { DateField } from '../../ui/DateField';
 import { colors, radius, spacing } from '../../ui/theme';
+import { MultiSelect } from '../../ui/MultiSelect';
 
 interface Account {
   id: string;
@@ -268,13 +269,6 @@ export function ProjectionScreen() {
     [horizonMonths, incomeAccountIds, expenseAccountIds],
   );
 
-  function toggleAccount(kind: 'income' | 'expense', accountId: string) {
-    const [current, setter] = kind === 'income' ? [incomeAccountIds, setIncomeAccountIds] : [expenseAccountIds, setExpenseAccountIds];
-    const base = current ?? [];
-    const next = base.includes(accountId) ? base.filter((a) => a !== accountId) : [...base, accountId];
-    setter(next);
-  }
-
   function resetScenario() {
     setMoves([]);
     setScenarioData(null);
@@ -368,46 +362,24 @@ export function ProjectionScreen() {
       </TouchableOpacity>
       {showFilters && (
         <View style={styles.filterBox}>
-          <Text style={styles.sectionLabel}>Comptes revenus</Text>
-          <View style={styles.chipRow}>
-            <TouchableOpacity style={[styles.chip, incomeAccountIds === null && styles.chipActive]} onPress={() => setIncomeAccountIds(null)}>
-              <Text style={[styles.chipText, incomeAccountIds === null && styles.chipTextActive]}>Tous</Text>
-            </TouchableOpacity>
-            {accounts.map((a) => (
-              <TouchableOpacity
-                key={a.id}
-                testID={`income-account-${a.id}`}
-                style={[styles.chip, incomeAccountIds?.includes(a.id) && styles.chipActive]}
-                onPress={() => toggleAccount('income', a.id)}
-              >
-                <Text style={[styles.chipText, incomeAccountIds?.includes(a.id) && styles.chipTextActive]}>{a.name}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={styles.sectionLabel}>Comptes dépenses</Text>
-          <View style={styles.chipRow}>
-            <TouchableOpacity style={[styles.chip, expenseAccountIds === null && styles.chipActive]} onPress={() => setExpenseAccountIds(null)}>
-              <Text style={[styles.chipText, expenseAccountIds === null && styles.chipTextActive]}>Tous</Text>
-            </TouchableOpacity>
-            {accounts.map((a) => (
-              <TouchableOpacity
-                key={a.id}
-                testID={`expense-account-${a.id}`}
-                style={[styles.chip, expenseAccountIds?.includes(a.id) && styles.chipActive]}
-                onPress={() => toggleAccount('expense', a.id)}
-              >
-                <Text style={[styles.chipText, expenseAccountIds?.includes(a.id) && styles.chipTextActive]}>{a.name}</Text>
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity
-              testID="expense-account-undetermined"
-              style={[styles.chip, expenseAccountIds?.includes(UNDETERMINED_ACCOUNT) && styles.chipActive]}
-              onPress={() => toggleAccount('expense', UNDETERMINED_ACCOUNT)}
-            >
-              <Text style={[styles.chipText, expenseAccountIds?.includes(UNDETERMINED_ACCOUNT) && styles.chipTextActive]}>Compte non déterminé</Text>
-            </TouchableOpacity>
-          </View>
+          {/* R6 finition UX/UI §2 — filtres compte potentiellement nombreux : sélecteur
+              multi-select compact plutôt qu'un mur de chips (aucune sélection = Tous). */}
+          <MultiSelect
+            testID="projection-income-accounts-select"
+            label="Comptes revenus"
+            placeholder="Tous"
+            value={incomeAccountIds ?? []}
+            onChange={(next) => setIncomeAccountIds(next.length === 0 ? null : next)}
+            options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+          />
+          <MultiSelect
+            testID="projection-expense-accounts-select"
+            label="Comptes dépenses"
+            placeholder="Tous"
+            value={expenseAccountIds ?? []}
+            onChange={(next) => setExpenseAccountIds(next.length === 0 ? null : next)}
+            options={[...accounts.map((a) => ({ value: a.id, label: a.name })), { value: UNDETERMINED_ACCOUNT, label: 'Compte non déterminé' }]}
+          />
         </View>
       )}
 
