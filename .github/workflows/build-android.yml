@@ -89,6 +89,24 @@ jobs:
             || (echo "assets/index.android.bundle absent de l'APK — JS non embarqué" && exit 1)
           unzip -l "$APK" | grep -E "assets/index\.android\.bundle"
 
+      - name: Confirmer l'absence de localhost dans le bundle JS embarqué + empreinte SHA-256 de l'APK
+        # Preuve factuelle demandée avant livraison (recette manuelle) : le bundle JS
+        # RÉELLEMENT embarqué (pas le code source) ne doit contenir aucune référence à
+        # localhost/127.0.0.1/10.0.2.2 — l'URL backend utilisée à l'exécution est celle
+        # injectée dans EXPO_PUBLIC_API_URL au build (étape précédente), jamais un repli
+        # caché. Calcule aussi le SHA-256 de l'APK réel (pas de l'archive zip d'upload).
+        working-directory: mobile
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          rm -rf /tmp/apk-bundle-check && mkdir -p /tmp/apk-bundle-check
+          unzip -p "$APK" assets/index.android.bundle > /tmp/apk-bundle-check/index.android.bundle
+          if grep -aiE "localhost|127\.0\.0\.1|10\.0\.2\.2" /tmp/apk-bundle-check/index.android.bundle; then
+            echo "Référence localhost/127.0.0.1/10.0.2.2 trouvée dans le bundle JS embarqué — build refusé" && exit 1
+          fi
+          echo "Aucune référence localhost/127.0.0.1/10.0.2.2 dans assets/index.android.bundle"
+          echo "SHA-256 (APK réel, pas l'archive d'upload) :"
+          sha256sum "$APK"
+
       - uses: actions/upload-artifact@v4
         with:
           name: depenses-android-release-apk
