@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
+import { FormField } from '../../ui/FormField';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface DeadlineContext {
   chargePlan: { label: string };
@@ -90,12 +92,12 @@ export function ConfirmDeadlineScreen() {
 
         <Text style={styles.subtitle}>Saisissez le montant réel de la facture. L'estimation initiale, si elle existe, est conservée.</Text>
 
-        <TextInput style={styles.input} placeholder="Montant réel (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} autoFocus onFocus={handleFocus} />
+        <FormField placeholder="Montant réel (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} autoFocus onFocus={handleFocus} />
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={submitting}>
-          {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Confirmer</Text>}
+          {submitting ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Confirmer</Text>}
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -107,25 +109,15 @@ export function ConfirmDeadlineScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  scroll: { padding: 24, paddingTop: 40 },
-  title: { fontSize: 20, fontWeight: '700', color: '#172436', marginBottom: 8, textAlign: 'center' },
-  subtitle: { fontSize: 13, color: '#6B747C', textAlign: 'center', marginBottom: 20 },
-  contextCard: { backgroundColor: '#fff', borderRadius: 10, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: '#E3E1DC' },
-  contextLabel: { fontSize: 15, fontWeight: '700', color: '#172436' },
-  contextLine: { fontSize: 12, color: '#6B747C', marginTop: 4 },
-  input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 12,
-    fontSize: 15,
-    borderWidth: 1,
-    borderColor: '#E3E1DC',
-  },
-  button: { backgroundColor: '#172436', borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  cancel: { color: '#6B747C', textAlign: 'center', marginTop: 16, fontSize: 13 },
-  error: { color: '#B3261E', fontSize: 13, marginBottom: 8 },
+  container: { flex: 1, backgroundColor: colors.background },
+  scroll: { padding: spacing.xxl, paddingTop: 40 },
+  title: { fontSize: 20, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.sm, textAlign: 'center' },
+  subtitle: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.xl },
+  contextCard: { backgroundColor: colors.surface, borderRadius: radius.md, padding: 14, marginBottom: spacing.lg, borderWidth: 1, borderColor: colors.border },
+  contextLabel: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  contextLine: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
+  button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.sm },
+  buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 15 },
+  cancel: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.lg, fontSize: 13 },
+  error: { color: colors.danger, fontSize: 13, marginBottom: spacing.sm },
 });

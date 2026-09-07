@@ -1,12 +1,14 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { DateField } from '../../ui/DateField';
 import { Select } from '../../ui/Select';
+import { FormField } from '../../ui/FormField';
 import { frequencyOptions } from '../../ui/frequency';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface Category {
   id: string;
@@ -84,8 +86,7 @@ export function CreateChargeScreen() {
       <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
         <Text style={styles.intro}>Ajoutez une dépense que vous connaissez déjà (loyer, internet, école...) afin que l'application puisse l'anticiper.</Text>
 
-        <Text style={styles.label}>Libellé</Text>
-        <TextInput style={styles.input} placeholder="Ex. Internet, Loyer, École" value={label} onChangeText={setLabel} onFocus={handleFocus} />
+        <FormField testID="charge-label-input" label="Libellé" placeholder="Ex. Internet, Loyer, École" value={label} onChangeText={setLabel} onFocus={handleFocus} />
 
         <Select
           testID="charge-frequency-select"
@@ -106,8 +107,8 @@ export function CreateChargeScreen() {
           ))}
         </View>
         {amountStatus !== 'inconnu' && (
-          <TextInput
-            style={styles.input}
+          <FormField
+            testID="charge-amount-input"
             placeholder="Montant (DH)"
             keyboardType="decimal-pad"
             value={amount}
@@ -129,7 +130,7 @@ export function CreateChargeScreen() {
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <TouchableOpacity style={styles.button} onPress={onCreate} disabled={creating} testID="create-charge-submit">
-          {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Ajouter la charge</Text>}
+          {creating ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Ajouter la charge</Text>}
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -137,26 +138,16 @@ export function CreateChargeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  scroll: { padding: 20 },
-  intro: { color: '#6B747C', fontSize: 13, lineHeight: 19, marginBottom: 16 },
-  label: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 6 },
-  input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: '#E3E1DC',
-    marginBottom: 8,
-  },
-  segment: { flexDirection: 'row', backgroundColor: '#EDEBE6', borderRadius: 10, padding: 4, marginBottom: 8 },
-  segmentItem: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
-  segmentActive: { backgroundColor: '#fff' },
-  segmentText: { fontSize: 12, color: '#6B747C', fontWeight: '600' },
-  segmentTextActive: { color: '#172436' },
-  button: { backgroundColor: '#172436', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 8 },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  error: { color: '#B3261E', fontSize: 13, marginBottom: 8 },
+  container: { flex: 1, backgroundColor: colors.background },
+  scroll: { padding: spacing.xl },
+  intro: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, marginBottom: spacing.lg },
+  label: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: 6 },
+  segment: { flexDirection: 'row', backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: 4, marginBottom: spacing.sm },
+  segmentItem: { flex: 1, paddingVertical: 10, borderRadius: radius.sm, alignItems: 'center' },
+  segmentActive: { backgroundColor: colors.surface },
+  segmentText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+  segmentTextActive: { color: colors.textPrimary },
+  button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center', marginTop: spacing.sm },
+  buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 14 },
+  error: { color: colors.danger, fontSize: 13, marginBottom: spacing.sm },
 });

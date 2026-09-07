@@ -1,11 +1,13 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { Select } from '../../ui/Select';
+import { FormField } from '../../ui/FormField';
 import { frequencyOptions } from '../../ui/frequency';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface Category {
   id: string;
@@ -172,8 +174,7 @@ export function ChargePlanDetailScreen() {
           </View>
         )}
 
-        <Text style={styles.label}>Libellé</Text>
-        <TextInput style={styles.input} value={label} onChangeText={setLabel} onFocus={handleFocus} />
+        <FormField testID="chargeplan-label-input" label="Libellé" value={label} onChangeText={setLabel} onFocus={handleFocus} />
 
         {categories.length > 0 && (
           <Select
@@ -196,19 +197,19 @@ export function ChargePlanDetailScreen() {
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <TouchableOpacity style={styles.button} onPress={onSave} disabled={saving} testID="chargeplan-save">
-          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Enregistrer</Text>}
+          {saving ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Enregistrer</Text>}
         </TouchableOpacity>
 
         <View style={styles.actionsRow}>
           <TouchableOpacity style={styles.buttonSecondary} onPress={onToggleStatus} disabled={togglingStatus} testID="chargeplan-toggle-status">
             {togglingStatus ? (
-              <ActivityIndicator color="#172436" />
+              <ActivityIndicator color={colors.textPrimary} />
             ) : (
               <Text style={styles.buttonSecondaryText}>{plan.status === 'actif' ? 'Arrêter la récurrence' : 'Réactiver'}</Text>
             )}
           </TouchableOpacity>
           <TouchableOpacity style={styles.buttonDanger} onPress={onDelete} disabled={deleting} testID="chargeplan-delete">
-            {deleting ? <ActivityIndicator color="#B3261E" /> : <Text style={styles.buttonDangerText}>Supprimer</Text>}
+            {deleting ? <ActivityIndicator color={colors.danger} /> : <Text style={styles.buttonDangerText}>Supprimer</Text>}
           </TouchableOpacity>
         </View>
 
@@ -234,42 +235,32 @@ export function ChargePlanDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F6F5F2' },
-  scroll: { padding: 20 },
-  inactiveBanner: { backgroundColor: '#FBEAEA', borderRadius: 10, padding: 12, marginBottom: 16 },
-  inactiveBannerText: { color: '#B3261E', fontSize: 12, fontWeight: '600' },
-  label: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 6 },
-  input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: '#E3E1DC',
-    marginBottom: 8,
-  },
-  error: { color: '#B3261E', fontSize: 13, marginBottom: 8 },
-  button: { backgroundColor: '#172436', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  actionsRow: { flexDirection: 'row', marginTop: 12, justifyContent: 'space-between' },
-  buttonSecondary: { flex: 1, backgroundColor: '#EEF0F3', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginRight: 8 },
-  buttonSecondaryText: { color: '#172436', fontWeight: '600', fontSize: 13 },
-  buttonDanger: { flex: 1, backgroundColor: '#FBEAEA', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
-  buttonDangerText: { color: '#B3261E', fontWeight: '600', fontSize: 13 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#172436', marginTop: 20, marginBottom: 8 },
-  empty: { color: '#6B747C', fontSize: 13 },
+  container: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+  scroll: { padding: spacing.xl },
+  inactiveBanner: { backgroundColor: colors.dangerLight, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.lg },
+  inactiveBannerText: { color: colors.danger, fontSize: 12, fontWeight: '600' },
+  label: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: 6 },
+  error: { color: colors.danger, fontSize: 13, marginBottom: spacing.sm },
+  button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center' },
+  buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 14 },
+  actionsRow: { flexDirection: 'row', marginTop: spacing.md, justifyContent: 'space-between' },
+  buttonSecondary: { flex: 1, backgroundColor: colors.surfaceActive, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center', marginRight: spacing.sm },
+  buttonSecondaryText: { color: colors.textPrimary, fontWeight: '600', fontSize: 13 },
+  buttonDanger: { flex: 1, backgroundColor: colors.dangerLight, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center' },
+  buttonDangerText: { color: colors.danger, fontWeight: '600', fontSize: 13 },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.xl, marginBottom: spacing.sm },
+  empty: { color: colors.textSecondary, fontSize: 13 },
   deadlineRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 8,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
   },
-  deadlineDate: { fontSize: 13, fontWeight: '700', color: '#172436' },
-  deadlineMeta: { fontSize: 11, color: '#6B747C', marginTop: 2 },
-  deadlineAmount: { fontSize: 13, fontWeight: '700', color: '#172436' },
+  deadlineDate: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
+  deadlineMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  deadlineAmount: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
 });
