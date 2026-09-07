@@ -284,7 +284,7 @@ export function AccountDetailScreen() {
             onFocus={handleFocus}
           />
           <TouchableOpacity style={styles.button} onPress={onReconcile} disabled={reconciling}>
-            {reconciling ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Vérifier</Text>}
+            {reconciling ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Vérifier</Text>}
           </TouchableOpacity>
         </View>
         {reconcileError ? <Text style={styles.error}>{reconcileError}</Text> : null}
@@ -306,7 +306,7 @@ export function AccountDetailScreen() {
                 />
                 <TouchableOpacity style={styles.buttonSecondary} onPress={() => onAdjust(r.id)} disabled={adjustingId === r.id}>
                   {adjustingId === r.id ? (
-                    <ActivityIndicator color="#172436" />
+                    <ActivityIndicator color={colors.textPrimary} />
                   ) : (
                     <Text style={styles.buttonSecondaryText}>Ajuster le solde à {n(r.declaredBalance).toLocaleString('fr-FR')} DH</Text>
                   )}
@@ -345,7 +345,7 @@ export function AccountDetailScreen() {
                 onFocus={handleFocus}
               />
               <TouchableOpacity style={styles.button} onPress={onTransfer} disabled={transferring}>
-                {transferring ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Transférer</Text>}
+                {transferring ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Transférer</Text>}
               </TouchableOpacity>
             </View>
             {transferError ? <Text style={styles.error}>{transferError}</Text> : null}
@@ -388,7 +388,7 @@ export function AccountDetailScreen() {
                   <Text style={styles.modalButtonSecondaryText}>Annuler</Text>
                 </TouchableOpacity>
                 <TouchableOpacity testID="account-edit-save" style={styles.modalButton} onPress={onSaveEdit} disabled={editSaving}>
-                  {editSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalButtonText}>Enregistrer</Text>}
+                  {editSaving ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.modalButtonText}>Enregistrer</Text>}
                 </TouchableOpacity>
               </View>
             </View>
@@ -400,17 +400,17 @@ export function AccountDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F6F5F2' },
-  scroll: { padding: 20 },
-  heroCard: { backgroundColor: '#fff', borderRadius: 14, padding: 18, marginBottom: 20 },
+  container: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+  scroll: { padding: spacing.xl },
+  heroCard: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: 18, marginBottom: spacing.xl },
   heroHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  heroLabel: { fontSize: 13, color: '#6B747C', fontWeight: '600', flexShrink: 1 },
-  heroValue: { fontSize: 28, fontWeight: '800', color: '#172436', marginTop: 4 },
+  heroLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '600', flexShrink: 1 },
+  heroValue: { fontSize: 28, fontWeight: '800', color: colors.textPrimary, marginTop: 4 },
   menuButton: { paddingHorizontal: 10, paddingVertical: 2 },
   menuButtonText: { fontSize: 18, fontWeight: '700', color: colors.textSecondary },
   reactivateButton: { backgroundColor: colors.primary, borderRadius: radius.sm, paddingVertical: 10, alignItems: 'center', marginTop: 12 },
-  reactivateButtonText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+  reactivateButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 13 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)', alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   modalCard: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.xl, width: '100%' },
   modalTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.md },
@@ -426,46 +426,46 @@ const styles = StyleSheet.create({
   },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: spacing.md },
   modalButton: { backgroundColor: colors.primary, borderRadius: radius.sm, paddingHorizontal: 18, paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
-  modalButtonText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+  modalButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 13 },
   modalButtonSecondary: { paddingHorizontal: 14, paddingVertical: 10, marginRight: 8 },
   modalButtonSecondaryText: { color: colors.textSecondary, fontWeight: '600', fontSize: 13 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#172436', marginTop: 12, marginBottom: 6 },
-  help: { fontSize: 12, color: '#6B747C', marginBottom: 10 },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginTop: 12, marginBottom: 6 },
+  help: { fontSize: 12, color: colors.textSecondary, marginBottom: 10 },
   row: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 14,
     borderWidth: 1,
-    borderColor: '#E3E1DC',
+    borderColor: colors.border,
     marginRight: 8,
     marginBottom: 8,
   },
-  button: { backgroundColor: '#172436', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 13 },
-  buttonSecondary: { backgroundColor: '#EEF0F3', borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
-  buttonSecondaryText: { color: '#172436', fontWeight: '600', fontSize: 12 },
-  card: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#E3E1DC' },
-  cardWarning: { borderColor: '#B3261E', backgroundColor: '#FBEDEC' },
-  cardTitle: { fontSize: 13, fontWeight: '700', color: '#172436' },
-  cardMeta: { fontSize: 12, color: '#6B747C', marginTop: 2 },
-  warningText: { fontSize: 12, color: '#B3261E', fontWeight: '600', marginTop: 4 },
+  button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
+  buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 13 },
+  buttonSecondary: { backgroundColor: colors.surfaceActive, borderRadius: radius.md, paddingVertical: 10, alignItems: 'center' },
+  buttonSecondaryText: { color: colors.textPrimary, fontWeight: '600', fontSize: 12 },
+  card: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  cardWarning: { borderColor: colors.danger, backgroundColor: colors.dangerLight },
+  cardTitle: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
+  cardMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  warningText: { fontSize: 12, color: colors.danger, fontWeight: '600', marginTop: 4 },
   adjustBox: { marginTop: 10 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: spacing.sm },
   chip: {
-    backgroundColor: '#fff',
-    borderRadius: 999,
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginRight: 8,
-    marginBottom: 8,
+    paddingVertical: spacing.sm,
+    marginRight: spacing.sm,
+    marginBottom: spacing.sm,
     borderWidth: 1,
-    borderColor: '#E3E1DC',
+    borderColor: colors.border,
   },
-  chipActive: { backgroundColor: '#172436', borderColor: '#172436' },
-  chipText: { fontSize: 13, color: '#172436' },
-  chipTextActive: { color: '#fff', fontWeight: '600' },
-  error: { color: '#B3261E', fontSize: 13, marginBottom: 8 },
+  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipText: { fontSize: 13, color: colors.textPrimary },
+  chipTextActive: { color: colors.textOnPrimary, fontWeight: '600' },
+  error: { color: colors.danger, fontSize: 13, marginBottom: spacing.sm },
 });

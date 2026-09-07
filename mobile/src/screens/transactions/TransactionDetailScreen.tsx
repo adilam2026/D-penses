@@ -319,7 +319,7 @@ export function TransactionDetailScreen() {
                 <Text style={styles.modalButtonSecondaryText}>Annuler</Text>
               </TouchableOpacity>
               <TouchableOpacity testID="correct-confirm" style={styles.modalButton} onPress={onConfirmCorrect} disabled={correcting}>
-                {correcting ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalButtonText}>Confirmer</Text>}
+                {correcting ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.modalButtonText}>Confirmer</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -343,7 +343,7 @@ export function TransactionDetailScreen() {
                 <Text style={styles.modalButtonSecondaryText}>Annuler</Text>
               </TouchableOpacity>
               <TouchableOpacity testID="metadata-save" style={styles.modalButton} onPress={onSaveMetadata} disabled={savingMetadata}>
-                {savingMetadata ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalButtonText}>Enregistrer</Text>}
+                {savingMetadata ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.modalButtonText}>Enregistrer</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -421,7 +421,7 @@ const styles = StyleSheet.create({
   },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: spacing.md },
   modalButton: { backgroundColor: colors.primary, borderRadius: radius.sm, paddingHorizontal: 18, paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
-  modalButtonText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+  modalButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 13 },
   modalButtonSecondary: { paddingHorizontal: 14, paddingVertical: 10, marginRight: 8 },
   modalButtonSecondaryText: { color: colors.textSecondary, fontWeight: '600', fontSize: 13 },
 });

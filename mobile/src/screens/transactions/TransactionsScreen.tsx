@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface LedgerEntry {
   kind: string;
@@ -110,31 +111,31 @@ export function TransactionsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2', paddingTop: 56, paddingHorizontal: 20 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  title: { fontSize: 22, fontWeight: '700', color: '#172436' },
-  addButton: { backgroundColor: '#172436', width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  addButtonText: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  empty: { color: '#6B747C', textAlign: 'center', marginTop: 24 },
-  emptyState: { alignItems: 'center', marginTop: 48, paddingHorizontal: 24 },
-  emptyTitle: { fontSize: 15, fontWeight: '700', color: '#172436', textAlign: 'center' },
-  emptyText: { fontSize: 13, color: '#6B747C', textAlign: 'center', marginTop: 6 },
-  emptyButton: { backgroundColor: '#172436', borderRadius: 999, paddingHorizontal: 20, paddingVertical: 12, marginTop: 20 },
-  emptyButtonText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+  container: { flex: 1, backgroundColor: colors.background, paddingTop: 56, paddingHorizontal: spacing.xl },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
+  title: { fontSize: 22, fontWeight: '700', color: colors.textPrimary },
+  addButton: { backgroundColor: colors.primary, width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  addButtonText: { color: colors.textOnPrimary, fontSize: 18, fontWeight: '700' },
+  empty: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.xxl },
+  emptyState: { alignItems: 'center', marginTop: 48, paddingHorizontal: spacing.xl },
+  emptyTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' },
+  emptyText: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginTop: 6 },
+  emptyButton: { backgroundColor: colors.primary, borderRadius: radius.pill, paddingHorizontal: spacing.xl, paddingVertical: spacing.md, marginTop: spacing.xl },
+  emptyButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 13 },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    backgroundColor: '#fff',
-    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     padding: 14,
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
-  rowLeft: { flexShrink: 1, paddingRight: 8 },
-  rowLabel: { fontSize: 14, fontWeight: '600', color: '#172436' },
-  rowMeta: { fontSize: 12, color: '#6B747C', marginTop: 2 },
+  rowLeft: { flexShrink: 1, paddingRight: spacing.sm },
+  rowLabel: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
+  rowMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
   rowRight: { alignItems: 'flex-end' },
   rowAmount: { fontSize: 14, fontWeight: '700' },
-  amountPositive: { color: '#2E7D5B' },
-  amountNegative: { color: '#B3261E' },
-  rowKind: { fontSize: 11, color: '#6B747C', marginTop: 2, textTransform: 'uppercase' },
+  amountPositive: { color: colors.success },
+  amountNegative: { color: colors.danger },
+  rowKind: { fontSize: 11, color: colors.textSecondary, marginTop: 2, textTransform: 'uppercase' },
 });

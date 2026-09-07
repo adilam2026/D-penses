@@ -389,7 +389,7 @@ export function FinancialPlanDetailScreen() {
                 <Text style={styles.modalButtonSecondaryText}>Annuler</Text>
               </TouchableOpacity>
               <TouchableOpacity testID="plan-edit-save" style={styles.modalButton} onPress={onSaveEdit} disabled={editSaving}>
-                {editSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalButtonText}>Enregistrer</Text>}
+                {editSaving ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.modalButtonText}>Enregistrer</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -463,7 +463,7 @@ export function FinancialPlanDetailScreen() {
                   <Text style={styles.modalButtonSecondaryText}>Retour</Text>
                 </TouchableOpacity>
                 <TouchableOpacity testID="plan-duplicate-confirm" style={styles.modalButton} onPress={onConfirmDuplicate} disabled={duplicating}>
-                  {duplicating ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalButtonText}>Confirmer la duplication</Text>}
+                  {duplicating ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.modalButtonText}>Confirmer la duplication</Text>}
                 </TouchableOpacity>
               </View>
             </View>
@@ -484,42 +484,42 @@ function Figure({ label, value, highlight }: { label: string; value: number; hig
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F6F5F2' },
-  scroll: { padding: 20, paddingTop: 16 },
-  title: { fontSize: 20, fontWeight: '700', color: '#172436' },
-  completude: { fontSize: 12, color: '#B8860B', marginTop: 4, marginBottom: 16, fontStyle: 'italic' },
-  figuresGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 },
-  figure: { width: '50%', backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8 },
-  figureLabel: { fontSize: 11, color: '#6B747C' },
-  figureValue: { fontSize: 16, fontWeight: '700', color: '#172436', marginTop: 4 },
-  figureValueHighlight: { color: '#B3261E' },
-  coverageCard: { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 12 },
-  coverageHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  coverageTitle: { fontSize: 11, fontWeight: '700', color: '#6B747C', letterSpacing: 0.5 },
-  coveragePercent: { fontSize: 16, fontWeight: '800', color: '#172436' },
-  coverageTrack: { height: 8, backgroundColor: '#EDEBE6', borderRadius: 4, overflow: 'hidden' },
-  coverageFill: { height: '100%', backgroundColor: '#2E7D5B' },
-  coverageSub: { fontSize: 11, color: '#6B747C', marginTop: 8 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#172436', marginTop: 16, marginBottom: 8 },
-  empty: { color: '#6B747C', fontSize: 13 },
+  container: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+  scroll: { padding: spacing.xl, paddingTop: spacing.lg },
+  title: { fontSize: 20, fontWeight: '700', color: colors.textPrimary },
+  completude: { fontSize: 12, color: colors.warning, marginTop: 4, marginBottom: spacing.lg, fontStyle: 'italic' },
+  figuresGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: spacing.md },
+  figure: { width: '50%', backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm },
+  figureLabel: { fontSize: 11, color: colors.textSecondary },
+  figureValue: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginTop: 4 },
+  figureValueHighlight: { color: colors.danger },
+  coverageCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, marginBottom: spacing.md },
+  coverageHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  coverageTitle: { fontSize: 11, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.5 },
+  coveragePercent: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
+  coverageTrack: { height: 8, backgroundColor: colors.surfaceSecondary, borderRadius: 4, overflow: 'hidden' },
+  coverageFill: { height: '100%', backgroundColor: colors.success },
+  coverageSub: { fontSize: 11, color: colors.textSecondary, marginTop: spacing.sm },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.lg, marginBottom: spacing.sm },
+  empty: { color: colors.textSecondary, fontSize: 13 },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 8,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
   },
-  rowSimple: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8 },
-  rowLabel: { fontSize: 13, fontWeight: '600', color: '#172436' },
-  rowMeta: { fontSize: 11, color: '#6B747C', marginTop: 2 },
-  rowCoverage: { fontSize: 10, color: '#6B747C', marginTop: 2, fontStyle: 'italic' },
-  rowAmount: { fontSize: 13, fontWeight: '700', color: '#172436' },
-  payButton: { backgroundColor: '#172436', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5, marginTop: 6 },
-  payButtonText: { color: '#fff', fontSize: 11, fontWeight: '600' },
-  optionTotal: { fontSize: 11, color: '#6B747C', marginTop: 4, marginBottom: 4, fontStyle: 'italic' },
+  rowSimple: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm },
+  rowLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
+  rowMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  rowCoverage: { fontSize: 10, color: colors.textSecondary, marginTop: 2, fontStyle: 'italic' },
+  rowAmount: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
+  payButton: { backgroundColor: colors.primary, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 5, marginTop: 6 },
+  payButtonText: { color: colors.textOnPrimary, fontSize: 11, fontWeight: '600' },
+  optionTotal: { fontSize: 11, color: colors.textSecondary, marginTop: 4, marginBottom: 4, fontStyle: 'italic' },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   menuButton: { paddingHorizontal: 10, paddingVertical: 4 },
   menuButtonText: { fontSize: 18, fontWeight: '700', color: colors.textSecondary },
@@ -540,14 +540,14 @@ const styles = StyleSheet.create({
   },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: spacing.md },
   modalButton: { backgroundColor: colors.primary, borderRadius: radius.sm, paddingHorizontal: 18, paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
-  modalButtonText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+  modalButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 13 },
   modalButtonSecondary: { paddingHorizontal: 14, paddingVertical: 10, marginRight: 8 },
   modalButtonSecondaryText: { color: colors.textSecondary, fontWeight: '600', fontSize: 13 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
   chip: { backgroundColor: colors.background, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, marginRight: 8, marginBottom: 8, borderWidth: 1, borderColor: colors.border },
   chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { fontSize: 12, color: colors.textPrimary },
-  chipTextActive: { color: '#fff', fontWeight: '600' },
+  chipTextActive: { color: colors.textOnPrimary, fontWeight: '600' },
   help: { fontSize: 11, color: colors.textSecondary, fontStyle: 'italic', marginTop: 4, marginBottom: 4 },
   recapIntro: { fontSize: 13, color: colors.textPrimary, fontWeight: '600', marginBottom: spacing.md },
   recapCard: { backgroundColor: colors.background, borderRadius: radius.sm, marginBottom: spacing.md },

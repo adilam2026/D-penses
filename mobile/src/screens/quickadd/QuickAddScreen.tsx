@@ -17,6 +17,7 @@ import { useBottomInset } from '../../ui/useBottomInset';
 import { accountCreatedBus } from '../../state/events';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { Select } from '../../ui/Select';
+import { colors, radius, spacing } from '../../ui/theme';
 
 type Mode = 'depense' | 'revenu' | 'paiement' | 'transfert';
 
@@ -394,7 +395,7 @@ export function QuickAddScreen() {
                       onFocus={handleFocus}
                     />
                     <TouchableOpacity testID="add-type-submit" style={styles.inlineAddButton} onPress={onCreateType} disabled={creatingType}>
-                      {creatingType ? <ActivityIndicator color="#fff" /> : <Text style={styles.inlineAddButtonText}>Ajouter</Text>}
+                      {creatingType ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.inlineAddButtonText}>Ajouter</Text>}
                     </TouchableOpacity>
                   </View>
                 )}
@@ -443,7 +444,7 @@ export function QuickAddScreen() {
                               onFocus={handleFocus}
                             />
                             <TouchableOpacity testID="add-subtype-submit" style={styles.inlineAddButton} onPress={onCreateSubtype} disabled={creatingSubtype}>
-                              {creatingSubtype ? <ActivityIndicator color="#fff" /> : <Text style={styles.inlineAddButtonText}>Ajouter</Text>}
+                              {creatingSubtype ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.inlineAddButtonText}>Ajouter</Text>}
                             </TouchableOpacity>
                           </View>
                         )}
@@ -518,7 +519,7 @@ export function QuickAddScreen() {
             {mode !== 'paiement' && (
               <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={submitting}>
                 {submitting ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color={colors.textOnPrimary} />
                 ) : (
                   <Text style={styles.buttonText}>{mode === 'transfert' ? 'Confirmer le transfert' : 'Enregistrer'}</Text>
                 )}
@@ -536,86 +537,86 @@ export function QuickAddScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  scroll: { padding: 24, paddingTop: 40 },
-  transferPreview: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#E3E1DC' },
-  transferPreviewTitle: { fontSize: 10, fontWeight: '700', color: '#6B747C', letterSpacing: 0.5, marginBottom: 8 },
+  container: { flex: 1, backgroundColor: colors.background },
+  scroll: { padding: spacing.xxl, paddingTop: 40 },
+  transferPreview: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border },
+  transferPreviewTitle: { fontSize: 10, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.5, marginBottom: spacing.sm },
   transferPreviewRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  transferPreviewName: { fontSize: 13, color: '#172436', fontWeight: '600' },
-  transferPreviewValue: { fontSize: 13, color: '#172436', fontWeight: '700' },
-  title: { fontSize: 22, fontWeight: '700', color: '#172436', marginBottom: 16, textAlign: 'center' },
-  modeRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginBottom: 16 },
+  transferPreviewName: { fontSize: 13, color: colors.textPrimary, fontWeight: '600' },
+  transferPreviewValue: { fontSize: 13, color: colors.textPrimary, fontWeight: '700' },
+  title: { fontSize: 22, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.lg, textAlign: 'center' },
+  modeRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginBottom: spacing.lg },
   modeChip: {
-    backgroundColor: '#EDEBE6',
-    borderRadius: 999,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.pill,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: spacing.sm,
     marginHorizontal: 4,
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
-  modeChipActive: { backgroundColor: '#172436' },
-  modeChipText: { fontSize: 12, color: '#6B747C', fontWeight: '600' },
-  modeChipTextActive: { color: '#fff' },
+  modeChipActive: { backgroundColor: colors.primary },
+  modeChipText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+  modeChipTextActive: { color: colors.textOnPrimary },
   input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    marginBottom: 12,
+    marginBottom: spacing.md,
     fontSize: 15,
     borderWidth: 1,
-    borderColor: '#E3E1DC',
+    borderColor: colors.border,
   },
-  sectionLabel: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 8, marginTop: 4 },
-  empty: { color: '#6B747C', fontSize: 13, marginBottom: 12 },
-  pickList: { marginBottom: 12 },
+  sectionLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm, marginTop: 4 },
+  empty: { color: colors.textSecondary, fontSize: 13, marginBottom: spacing.md },
+  pickList: { marginBottom: spacing.md },
   pickRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 8,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
     borderWidth: 1,
-    borderColor: '#E3E1DC',
+    borderColor: colors.border,
   },
-  pickRowLabel: { fontSize: 14, fontWeight: '600', color: '#172436' },
-  pickRowMeta: { fontSize: 12, color: '#6B747C', marginTop: 2 },
-  pickRowChevron: { fontSize: 20, color: '#9AA0A6', marginLeft: 8 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 },
+  pickRowLabel: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
+  pickRowMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  pickRowChevron: { fontSize: 20, color: colors.textPlaceholder, marginLeft: spacing.sm },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: spacing.md },
   chip: {
-    backgroundColor: '#fff',
-    borderRadius: 999,
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginRight: 8,
-    marginBottom: 8,
+    paddingVertical: spacing.sm,
+    marginRight: spacing.sm,
+    marginBottom: spacing.sm,
     borderWidth: 1,
-    borderColor: '#E3E1DC',
+    borderColor: colors.border,
   },
-  chipActive: { backgroundColor: '#172436', borderColor: '#172436' },
-  chipText: { fontSize: 13, color: '#172436' },
-  chipTextActive: { color: '#fff', fontWeight: '600' },
+  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipText: { fontSize: 13, color: colors.textPrimary },
+  chipTextActive: { color: colors.textOnPrimary, fontWeight: '600' },
   chipAdd: {
-    backgroundColor: '#EEF0F3',
-    borderRadius: 999,
+    backgroundColor: colors.surfaceActive,
+    borderRadius: radius.pill,
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginRight: 8,
-    marginBottom: 8,
+    paddingVertical: spacing.sm,
+    marginRight: spacing.sm,
+    marginBottom: spacing.sm,
     borderWidth: 1,
-    borderColor: '#E3E1DC',
+    borderColor: colors.border,
     borderStyle: 'dashed',
   },
-  chipAddText: { fontSize: 12, color: '#2E7D5B', fontWeight: '600' },
-  addLink: { color: '#2E7D5B', fontSize: 13, fontWeight: '600', marginBottom: 12 },
-  inlineAddRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  inlineAddInput: { flex: 1, marginRight: 8, marginBottom: 0 },
-  inlineAddButton: { backgroundColor: '#172436', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, justifyContent: 'center' },
-  inlineAddButtonText: { color: '#fff', fontWeight: '600', fontSize: 13 },
-  hint: { fontSize: 12, color: '#6B747C', marginBottom: 12, fontStyle: 'italic' },
-  button: { backgroundColor: '#172436', borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  cancel: { color: '#6B747C', textAlign: 'center', marginTop: 16, fontSize: 13 },
-  error: { color: '#B3261E', fontSize: 13, marginBottom: 8 },
+  chipAddText: { fontSize: 12, color: colors.success, fontWeight: '600' },
+  addLink: { color: colors.success, fontSize: 13, fontWeight: '600', marginBottom: spacing.md },
+  inlineAddRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
+  inlineAddInput: { flex: 1, marginRight: spacing.sm, marginBottom: 0 },
+  inlineAddButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12, justifyContent: 'center' },
+  inlineAddButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 13 },
+  hint: { fontSize: 12, color: colors.textSecondary, marginBottom: spacing.md, fontStyle: 'italic' },
+  button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.sm },
+  buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 15 },
+  cancel: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.lg, fontSize: 13 },
+  error: { color: colors.danger, fontSize: 13, marginBottom: spacing.sm },
 });

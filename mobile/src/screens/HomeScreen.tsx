@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { useBottomInset } from '../ui/useBottomInset';
 import { ChoiceSheet } from '../ui/ChoiceSheet';
+import { colors, radius, spacing } from '../ui/theme';
 
 interface Account {
   id: string;
@@ -90,10 +91,10 @@ const PROJECTION_STATUS_LABEL: Record<DashboardSummary['next_30_days']['status']
 };
 
 const PROJECTION_STATUS_COLOR: Record<DashboardSummary['next_30_days']['status'], string> = {
-  OK: '#2E7D5B',
-  TENSION: '#B8860B',
-  DEFICIT_PHYSIQUE: '#B3261E',
-  INCOMPLETE: '#6B747C',
+  OK: colors.success,
+  TENSION: colors.warning,
+  DEFICIT_PHYSIQUE: colors.danger,
+  INCOMPLETE: colors.textSecondary,
 };
 
 /**
@@ -141,9 +142,9 @@ function formatLongDate(iso: string) {
 // à venir (neutre).
 function urgencyColor(dueDate: string, seuilAPayerDays: number): string {
   const days = Math.floor((new Date(dueDate).getTime() - Date.now()) / 86400000);
-  if (days < 0) return '#B3261E';
-  if (days <= seuilAPayerDays) return '#B8860B';
-  return '#172436';
+  if (days < 0) return colors.danger;
+  if (days <= seuilAPayerDays) return colors.warning;
+  return colors.textPrimary;
 }
 
 // Correctif post-Vague 3 — règle déterministe et documentée à 5 niveaux, réutilisant
@@ -292,7 +293,7 @@ export function HomeScreen() {
                 <Text style={styles.configBannerText}>Terminer ma configuration →</Text>
               </TouchableOpacity>
               <TouchableOpacity testID="config-banner-close" style={styles.configBannerClose} onPress={() => setDismissChoiceOpen(true)}>
-                <Ionicons name="close" size={16} color="#6B747C" />
+                <Ionicons name="close" size={16} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
           )}
@@ -487,66 +488,66 @@ export function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F6F5F2' },
-  scroll: { padding: 20, paddingTop: 56 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  container: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+  scroll: { padding: spacing.xl, paddingTop: 56 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
   menuButton: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
-  menuButtonText: { fontSize: 20, color: '#172436' },
-  brand: { fontSize: 16, fontWeight: '700', color: '#172436' },
+  menuButtonText: { fontSize: 20, color: colors.textPrimary },
+  brand: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
 
-  welcomeCard: { backgroundColor: '#172436', borderRadius: 16, padding: 24, alignItems: 'center' },
-  welcomeTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  welcomeCard: { backgroundColor: colors.primary, borderRadius: 16, padding: spacing.xxl, alignItems: 'center' },
+  welcomeTitle: { color: colors.textOnPrimary, fontSize: 18, fontWeight: '700' },
   welcomeText: { color: '#C9D2E0', fontSize: 13, marginTop: 6, textAlign: 'center' },
-  welcomeButton: { backgroundColor: '#fff', borderRadius: 999, paddingHorizontal: 24, paddingVertical: 12, marginTop: 16 },
-  welcomeButtonText: { color: '#172436', fontWeight: '700', fontSize: 14 },
+  welcomeButton: { backgroundColor: colors.surface, borderRadius: radius.pill, paddingHorizontal: spacing.xxl, paddingVertical: spacing.md, marginTop: spacing.lg },
+  welcomeButtonText: { color: colors.textPrimary, fontWeight: '700', fontSize: 14 },
 
-  configBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EEF0F3', borderRadius: 12, padding: 14, marginBottom: 16 },
-  configBannerText: { color: '#172436', fontSize: 13, fontWeight: '700', textAlign: 'center' },
-  configBannerClose: { paddingLeft: 12, paddingVertical: 4 },
+  configBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceActive, borderRadius: radius.lg, padding: 14, marginBottom: spacing.lg },
+  configBannerText: { color: colors.textPrimary, fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  configBannerClose: { paddingLeft: spacing.md, paddingVertical: spacing.xs },
 
-  block: { backgroundColor: '#fff', borderRadius: 14, padding: 16, marginBottom: 12 },
-  blockTitle: { fontSize: 11, fontWeight: '700', color: '#6B747C', letterSpacing: 0.5, marginBottom: 10 },
+  block: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.lg, marginBottom: spacing.md },
+  blockTitle: { fontSize: 11, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.5, marginBottom: 10 },
 
-  accountRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F0EFEA' },
-  accountName: { fontSize: 13, color: '#172436', fontWeight: '600' },
-  accountAmount: { fontSize: 13, color: '#172436', fontWeight: '700' },
+  accountRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  accountName: { fontSize: 13, color: colors.textPrimary, fontWeight: '600' },
+  accountAmount: { fontSize: 13, color: colors.textPrimary, fontWeight: '700' },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 10 },
-  totalLabel: { fontSize: 13, color: '#6B747C', fontWeight: '700' },
-  totalValue: { fontSize: 16, color: '#172436', fontWeight: '800' },
-  linkText: { color: '#2E7D5B', fontSize: 12, fontWeight: '700', marginTop: 10 },
+  totalLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '700' },
+  totalValue: { fontSize: 16, color: colors.textPrimary, fontWeight: '800' },
+  linkText: { color: colors.success, fontSize: 12, fontWeight: '700', marginTop: 10 },
 
-  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
-  breakdownLabel: { fontSize: 12, color: '#6B747C' },
-  breakdownValue: { fontSize: 12, color: '#172436', fontWeight: '600' },
-  breakdownDivider: { height: 1, backgroundColor: '#F0EFEA', marginBottom: 8 },
-  freeAvailableHero: { marginBottom: 4 },
+  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.xs },
+  breakdownLabel: { fontSize: 12, color: colors.textSecondary },
+  breakdownValue: { fontSize: 12, color: colors.textPrimary, fontWeight: '600' },
+  breakdownDivider: { height: 1, backgroundColor: colors.divider, marginBottom: spacing.sm },
+  freeAvailableHero: { marginBottom: spacing.xs },
   freeAvailableHeroRow: { flexDirection: 'row', alignItems: 'center' },
-  freeAvailableLabel: { fontSize: 12, fontWeight: '700', color: '#6B747C', letterSpacing: 0.5 },
-  infoIcon: { fontSize: 13, color: '#6B747C', marginLeft: 6 },
-  freeAvailableValue: { fontSize: 30, fontWeight: '800', color: '#172436', marginTop: 4 },
-  negative: { color: '#B3261E' },
-  infoText: { fontSize: 11, color: '#6B747C', marginTop: 8, fontStyle: 'italic' },
-  warning: { fontSize: 12, color: '#B8860B', marginTop: 8, fontWeight: '600' },
+  freeAvailableLabel: { fontSize: 12, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.5 },
+  infoIcon: { fontSize: 13, color: colors.textSecondary, marginLeft: 6 },
+  freeAvailableValue: { fontSize: 30, fontWeight: '800', color: colors.textPrimary, marginTop: spacing.xs },
+  negative: { color: colors.danger },
+  infoText: { fontSize: 11, color: colors.textSecondary, marginTop: spacing.sm, fontStyle: 'italic' },
+  warning: { fontSize: 12, color: colors.warning, marginTop: spacing.sm, fontWeight: '600' },
 
-  deadlineRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F0EFEA' },
+  deadlineRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.divider },
   deadlineDate: { fontSize: 11, fontWeight: '700' },
-  deadlineLabel: { fontSize: 13, fontWeight: '600', color: '#172436', marginTop: 2 },
-  coveredBadge: { fontSize: 10, color: '#2E7D5B', fontWeight: '700', marginTop: 2 },
-  deadlineAmount: { fontSize: 13, fontWeight: '700', color: '#172436' },
-  payPill: { backgroundColor: '#172436', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginTop: 6 },
-  payPillText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  deadlineLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginTop: 2 },
+  coveredBadge: { fontSize: 10, color: colors.success, fontWeight: '700', marginTop: 2 },
+  deadlineAmount: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
+  payPill: { backgroundColor: colors.primary, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: spacing.xs, marginTop: 6 },
+  payPillText: { color: colors.textOnPrimary, fontSize: 10, fontWeight: '700' },
 
-  planCard: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F0EFEA' },
-  planLabel: { fontSize: 14, fontWeight: '700', color: '#172436' },
-  planAmounts: { fontSize: 12, color: '#6B747C', marginTop: 2 },
-  planPercent: { fontSize: 11, fontWeight: '700', color: '#172436', marginTop: 4 },
-  progressTrack: { height: 6, backgroundColor: '#EDEBE6', borderRadius: 3, overflow: 'hidden', marginTop: 4 },
-  progressFill: { height: '100%', backgroundColor: '#2E7D5B' },
-  planRemaining: { fontSize: 11, color: '#6B747C', marginTop: 4 },
+  planCard: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  planLabel: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  planAmounts: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  planPercent: { fontSize: 11, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.xs },
+  progressTrack: { height: 6, backgroundColor: colors.surfaceSecondary, borderRadius: 3, overflow: 'hidden', marginTop: spacing.xs },
+  progressFill: { height: '100%', backgroundColor: colors.success },
+  planRemaining: { fontSize: 11, color: colors.textSecondary, marginTop: spacing.xs },
 
-  projectionStatus: { fontSize: 12, fontWeight: '800', marginTop: 8 },
+  projectionStatus: { fontSize: 12, fontWeight: '800', marginTop: spacing.sm },
 
   actionRow: { paddingVertical: 6 },
-  actionText: { fontSize: 12, color: '#172436' },
+  actionText: { fontSize: 12, color: colors.textPrimary },
 });

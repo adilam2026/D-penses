@@ -4,6 +4,7 @@ import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, RefreshCon
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { FormField } from '../../ui/FormField';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface Account {
   id: string;
@@ -124,7 +125,7 @@ export function AccountsScreen() {
             onChangeText={setInitialBalance}
           />
           <TouchableOpacity style={styles.addButton} onPress={onCreate} disabled={creating}>
-            {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.addButtonText}>+</Text>}
+            {creating ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.addButtonText}>+</Text>}
           </TouchableOpacity>
         </View>
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -134,49 +135,49 @@ export function AccountsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2', paddingTop: 16, paddingHorizontal: 20 },
-  empty: { color: '#6B747C', textAlign: 'center', marginTop: 24, fontSize: 13, lineHeight: 20 },
+  container: { flex: 1, backgroundColor: colors.background, paddingTop: spacing.lg, paddingHorizontal: spacing.xl },
+  empty: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.xxl, fontSize: 13, lineHeight: 20 },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     padding: 14,
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   rowArchived: { opacity: 0.55 },
-  rowName: { fontSize: 15, fontWeight: '600', color: '#172436' },
-  rowType: { fontSize: 12, color: '#6B747C', marginTop: 2 },
-  rowBalance: { fontSize: 15, fontWeight: '600', color: '#172436' },
-  createBox: { borderTopWidth: 1, borderTopColor: '#E3E1DC', paddingTop: 12, marginTop: 8 },
-  sectionLabel: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 8 },
-  typeRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
+  rowName: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
+  rowType: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  rowBalance: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
+  createBox: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.sm },
+  sectionLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm },
+  typeRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: spacing.sm },
   typeChip: {
-    backgroundColor: '#fff',
-    borderRadius: 999,
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    marginRight: 8,
-    marginBottom: 8,
+    marginRight: spacing.sm,
+    marginBottom: spacing.sm,
     borderWidth: 1,
-    borderColor: '#E3E1DC',
+    borderColor: colors.border,
   },
-  typeChipActive: { backgroundColor: '#172436', borderColor: '#172436' },
-  typeChipText: { fontSize: 12, color: '#172436' },
-  typeChipTextActive: { color: '#fff', fontWeight: '600' },
-  createRow: { flexDirection: 'row', marginBottom: 8, alignItems: 'center' },
+  typeChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  typeChipText: { fontSize: 12, color: colors.textPrimary },
+  typeChipTextActive: { color: colors.textOnPrimary, fontWeight: '600' },
+  createRow: { flexDirection: 'row', marginBottom: spacing.sm, alignItems: 'center' },
   input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 14,
     borderWidth: 1,
-    borderColor: '#E3E1DC',
-    marginRight: 8,
+    borderColor: colors.border,
+    marginRight: spacing.sm,
   },
-  addButton: { backgroundColor: '#172436', width: 44, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  addButtonText: { color: '#fff', fontSize: 20, fontWeight: '700' },
-  error: { color: '#B3261E', fontSize: 13 },
+  addButton: { backgroundColor: colors.primary, width: 44, height: 44, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  addButtonText: { color: colors.textOnPrimary, fontSize: 20, fontWeight: '700' },
+  error: { color: colors.danger, fontSize: 13 },
 });
