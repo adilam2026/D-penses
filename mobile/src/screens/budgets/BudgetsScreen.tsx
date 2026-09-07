@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface BudgetStatus {
   budgetPeriode: number;
@@ -26,9 +27,9 @@ const HEALTH_LABEL: Record<BudgetStatus['healthStatus'], string> = {
 };
 
 const HEALTH_COLOR: Record<BudgetStatus['healthStatus'], string> = {
-  sous_budget: '#2E7D5B',
-  proche_limite: '#B8860B',
-  depasse: '#B3261E',
+  sous_budget: colors.success,
+  proche_limite: colors.warning,
+  depasse: colors.danger,
 };
 
 /** Écran Budgets Variables (Lot 3 §17) — montants toujours affichés, jamais seulement un pourcentage. */
@@ -106,19 +107,19 @@ export function BudgetsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2', paddingTop: 16, paddingHorizontal: 20 },
-  header: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 16 },
-  addButton: { backgroundColor: '#172436', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
-  addButtonText: { color: '#fff', fontSize: 12, fontWeight: '600' },
-  empty: { color: '#6B747C', textAlign: 'center', marginTop: 24 },
-  card: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 12 },
+  container: { flex: 1, backgroundColor: colors.background, paddingTop: spacing.lg, paddingHorizontal: spacing.xl },
+  header: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginBottom: spacing.lg },
+  addButton: { backgroundColor: colors.primary, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: spacing.sm },
+  addButtonText: { color: colors.textOnPrimary, fontSize: 12, fontWeight: '600' },
+  empty: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.xxl },
+  card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.md },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cardTitle: { fontSize: 15, fontWeight: '700', color: '#172436' },
+  cardTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
   statusBadge: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
-  cardSubtitle: { fontSize: 12, color: '#6B747C', marginTop: 2, marginBottom: 10 },
-  progressTrack: { height: 6, backgroundColor: '#EDEBE6', borderRadius: 3, overflow: 'hidden', marginBottom: 12 },
+  cardSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2, marginBottom: 10 },
+  progressTrack: { height: 6, backgroundColor: colors.surfaceSecondary, borderRadius: 3, overflow: 'hidden', marginBottom: 12 },
   progressFill: { height: '100%' },
   figuresRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  figureLabel: { fontSize: 11, color: '#6B747C' },
-  figureValue: { fontSize: 14, fontWeight: '700', color: '#172436', marginTop: 2 },
+  figureLabel: { fontSize: 11, color: colors.textSecondary },
+  figureValue: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginTop: 2 },
 });

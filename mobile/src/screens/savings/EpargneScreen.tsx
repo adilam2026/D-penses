@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface Pocket {
   id: string;
@@ -123,19 +124,19 @@ export function EpargneScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  scroll: { padding: 20 },
-  headerRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 16 },
-  goalsButton: { backgroundColor: '#172436', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
-  goalsButtonText: { color: '#fff', fontSize: 12, fontWeight: '600' },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, marginBottom: 8 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#172436' },
-  addLink: { color: '#2E7D5B', fontSize: 13, fontWeight: '600' },
-  empty: { color: '#6B747C', fontSize: 13, marginBottom: 8 },
-  card: { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 10 },
+  container: { flex: 1, backgroundColor: colors.background },
+  scroll: { padding: spacing.xl },
+  headerRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginBottom: spacing.lg },
+  goalsButton: { backgroundColor: colors.primary, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: spacing.sm },
+  goalsButtonText: { color: colors.textOnPrimary, fontSize: 12, fontWeight: '600' },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, marginBottom: spacing.sm },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  addLink: { color: colors.success, fontSize: 13, fontWeight: '600' },
+  empty: { color: colors.textSecondary, fontSize: 13, marginBottom: spacing.sm },
+  card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, marginBottom: 10 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cardTitle: { fontSize: 14, fontWeight: '700', color: '#172436' },
-  natureBadge: { fontSize: 10, fontWeight: '700', color: '#2E7D5B', backgroundColor: '#E6F2EC', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
-  cardAmount: { fontSize: 18, fontWeight: '800', color: '#172436', marginTop: 6 },
-  cardMeta: { fontSize: 11, color: '#6B747C', marginTop: 4 },
+  cardTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  natureBadge: { fontSize: 10, fontWeight: '700', color: colors.success, backgroundColor: colors.successLight, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3 },
+  cardAmount: { fontSize: 18, fontWeight: '800', color: colors.textPrimary, marginTop: 6 },
+  cardMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 4 },
 });

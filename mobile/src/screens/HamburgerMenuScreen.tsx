@@ -4,6 +4,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../auth/AuthContext';
 import { useBottomInset } from '../ui/useBottomInset';
+import { colors, radius, spacing } from '../ui/theme';
 
 interface MenuItem {
   label: string;
@@ -75,9 +76,9 @@ export function HamburgerMenuScreen() {
           <Text style={styles.sectionTitle}>{section.title}</Text>
           {section.items.map((item) => (
             <TouchableOpacity key={item.route} style={styles.row} onPress={() => navigation.navigate(item.route)}>
-              <Ionicons name={item.icon} size={20} color="#172436" style={styles.rowIcon} />
+              <Ionicons name={item.icon} size={20} color={colors.textPrimary} style={styles.rowIcon} />
               <Text style={styles.rowText}>{item.label}</Text>
-              <Ionicons name="chevron-forward" size={18} color="#9AA0A6" />
+              <Ionicons name="chevron-forward" size={18} color={colors.textPlaceholder} />
             </TouchableOpacity>
           ))}
         </View>
@@ -91,20 +92,20 @@ export function HamburgerMenuScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2', paddingTop: 56, paddingHorizontal: 20 },
-  title: { fontSize: 22, fontWeight: '700', color: '#172436', marginBottom: 20 },
-  section: { marginBottom: 20 },
-  sectionTitle: { fontSize: 12, fontWeight: '700', color: '#6B747C', textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 },
+  container: { flex: 1, backgroundColor: colors.background, paddingTop: 56, paddingHorizontal: spacing.xl },
+  title: { fontSize: 22, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.xl },
+  section: { marginBottom: spacing.xl },
+  sectionTitle: { fontSize: 12, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', marginBottom: spacing.sm, letterSpacing: 0.5 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     padding: 14,
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   rowIcon: { marginRight: 12 },
-  rowText: { flex: 1, fontSize: 15, fontWeight: '600', color: '#172436' },
-  logout: { marginTop: 8, marginBottom: 24, alignItems: 'center' },
-  logoutText: { color: '#B3261E', fontSize: 13, fontWeight: '600' },
+  rowText: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.textPrimary },
+  logout: { marginTop: spacing.sm, marginBottom: spacing.xxl, alignItems: 'center' },
+  logoutText: { color: colors.danger, fontSize: 13, fontWeight: '600' },
 });

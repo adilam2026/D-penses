@@ -3,6 +3,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface StepDef {
   key: string;
@@ -229,27 +230,27 @@ export function OnboardingWizardScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  scroll: { padding: 24, paddingTop: 40 },
-  stepCounter: { fontSize: 11, color: '#6B747C', textAlign: 'center', marginBottom: 8 },
-  title: { fontSize: 22, fontWeight: '700', color: '#172436', textAlign: 'center', marginBottom: 8 },
-  help: { fontSize: 13, color: '#6B747C', textAlign: 'center', lineHeight: 19, marginBottom: 20 },
-  statusCard: { backgroundColor: '#fff', borderRadius: 10, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: '#E3E1DC' },
-  statusCardDone: { borderColor: '#2E7D5B', backgroundColor: '#E6F2EC' },
-  statusText: { fontSize: 13, color: '#172436', textAlign: 'center', fontWeight: '600' },
-  actionButton: { backgroundColor: '#172436', borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginBottom: 12 },
-  actionButtonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  continueButton: { borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#172436' },
-  continueButtonText: { color: '#172436', fontWeight: '600', fontSize: 14 },
-  notApplicableButton: { alignItems: 'center', marginBottom: 12 },
-  notApplicableText: { color: '#6B747C', fontSize: 13, fontWeight: '600' },
-  dotsRow: { flexDirection: 'row', justifyContent: 'center', gap: 8 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#E3E1DC' },
-  dotActive: { backgroundColor: '#172436', width: 20 },
-  dotDone: { backgroundColor: '#2E7D5B' },
-  navRow: { flexDirection: 'row', padding: 20, gap: 12 },
-  navButton: { flex: 1, paddingVertical: 14, alignItems: 'center', borderRadius: 10, backgroundColor: '#EDEBE6' },
-  navButtonText: { color: '#172436', fontWeight: '600', fontSize: 14 },
-  navButtonPrimary: { flex: 1, paddingVertical: 14, alignItems: 'center', borderRadius: 10, backgroundColor: '#172436' },
-  navButtonPrimaryText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  container: { flex: 1, backgroundColor: colors.background },
+  scroll: { padding: spacing.xxl, paddingTop: 40 },
+  stepCounter: { fontSize: 11, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.sm },
+  title: { fontSize: 22, fontWeight: '700', color: colors.textPrimary, textAlign: 'center', marginBottom: spacing.sm },
+  help: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 19, marginBottom: spacing.xl },
+  statusCard: { backgroundColor: colors.surface, borderRadius: radius.md, padding: 14, marginBottom: spacing.lg, borderWidth: 1, borderColor: colors.border },
+  statusCardDone: { borderColor: colors.success, backgroundColor: colors.successLight },
+  statusText: { fontSize: 13, color: colors.textPrimary, textAlign: 'center', fontWeight: '600' },
+  actionButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginBottom: spacing.md },
+  actionButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 15 },
+  continueButton: { borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginBottom: spacing.md, borderWidth: 1, borderColor: colors.primary },
+  continueButtonText: { color: colors.textPrimary, fontWeight: '600', fontSize: 14 },
+  notApplicableButton: { alignItems: 'center', marginBottom: spacing.md },
+  notApplicableText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  dotsRow: { flexDirection: 'row', justifyContent: 'center', gap: spacing.sm },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.border },
+  dotActive: { backgroundColor: colors.primary, width: 20 },
+  dotDone: { backgroundColor: colors.success },
+  navRow: { flexDirection: 'row', padding: spacing.xl, gap: spacing.md },
+  navButton: { flex: 1, paddingVertical: 14, alignItems: 'center', borderRadius: radius.md, backgroundColor: colors.surfaceSecondary },
+  navButtonText: { color: colors.textPrimary, fontWeight: '600', fontSize: 14 },
+  navButtonPrimary: { flex: 1, paddingVertical: 14, alignItems: 'center', borderRadius: radius.md, backgroundColor: colors.primary },
+  navButtonPrimaryText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 14 },
 });

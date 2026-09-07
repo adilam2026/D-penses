@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface Goal {
   id: string;
@@ -65,16 +66,16 @@ export function GoalsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2', paddingTop: 16, paddingHorizontal: 20 },
-  header: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 16 },
-  addButton: { backgroundColor: '#172436', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
-  addButtonText: { color: '#fff', fontSize: 12, fontWeight: '600' },
-  empty: { color: '#6B747C', textAlign: 'center', marginTop: 24 },
-  card: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 12 },
-  cardTitle: { fontSize: 15, fontWeight: '700', color: '#172436', marginBottom: 10 },
-  progressTrack: { height: 6, backgroundColor: '#EDEBE6', borderRadius: 3, overflow: 'hidden', marginBottom: 10 },
-  progressFill: { height: '100%', backgroundColor: '#2E7D5B' },
+  container: { flex: 1, backgroundColor: colors.background, paddingTop: spacing.lg, paddingHorizontal: spacing.xl },
+  header: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: spacing.lg },
+  addButton: { backgroundColor: colors.primary, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: spacing.sm },
+  addButtonText: { color: colors.textOnPrimary, fontSize: 12, fontWeight: '600' },
+  empty: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.xxl },
+  card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.md },
+  cardTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 10 },
+  progressTrack: { height: 6, backgroundColor: colors.surfaceSecondary, borderRadius: 3, overflow: 'hidden', marginBottom: 10 },
+  progressFill: { height: '100%', backgroundColor: colors.success },
   figuresRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  figure: { fontSize: 12, color: '#6B747C' },
-  target: { fontSize: 11, color: '#6B747C', marginTop: 6 },
+  figure: { fontSize: 12, color: colors.textSecondary },
+  target: { fontSize: 11, color: colors.textSecondary, marginTop: 6 },
 });
