@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface FinancialPlan {
   id: string;
@@ -87,15 +88,15 @@ export function FinancialPlansScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2', paddingTop: 16, paddingHorizontal: 20 },
-  header: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 16, gap: 8 },
-  addButtonOutline: { backgroundColor: '#172436', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
-  addButtonOutlineText: { color: '#fff', fontSize: 12, fontWeight: '600' },
-  empty: { color: '#6B747C', textAlign: 'center', marginTop: 24 },
-  card: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 12 },
-  cardTitle: { fontSize: 15, fontWeight: '700', color: '#172436' },
-  cardMeta: { fontSize: 12, color: '#B8860B', marginTop: 2, marginBottom: 10 },
+  container: { flex: 1, backgroundColor: colors.background, paddingTop: spacing.lg, paddingHorizontal: spacing.xl },
+  header: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: spacing.lg, gap: spacing.sm },
+  addButtonOutline: { backgroundColor: colors.primary, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: spacing.sm },
+  addButtonOutlineText: { color: colors.textOnPrimary, fontSize: 12, fontWeight: '600' },
+  empty: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.xxl },
+  card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.md },
+  cardTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  cardMeta: { fontSize: 12, color: colors.warning, marginTop: 2, marginBottom: 10 },
   figuresRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  figureLabel: { fontSize: 11, color: '#6B747C' },
-  figureValue: { fontSize: 14, fontWeight: '700', color: '#172436', marginTop: 2 },
+  figureLabel: { fontSize: 11, color: colors.textSecondary },
+  figureValue: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginTop: 2 },
 });

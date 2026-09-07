@@ -4,6 +4,7 @@ import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, Toucha
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { FREQUENCY_LABEL } from '../../ui/frequency';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface NextDeadline {
   id: string;
@@ -125,17 +126,17 @@ export function ChargesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  scroll: { padding: 20 },
-  intro: { color: '#6B747C', fontSize: 13, lineHeight: 19, marginBottom: 16 },
+  container: { flex: 1, backgroundColor: colors.background },
+  scroll: { padding: spacing.xl },
+  intro: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, marginBottom: spacing.lg },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  sectionTitle: { fontSize: 11, fontWeight: '700', color: '#6B747C', letterSpacing: 0.5 },
-  addLink: { color: '#2E7D5B', fontSize: 13, fontWeight: '700' },
-  empty: { color: '#6B747C', fontSize: 13, lineHeight: 20 },
-  row: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 8 },
-  rowLabel: { fontSize: 14, fontWeight: '600', color: '#172436' },
-  rowMeta: { fontSize: 11, color: '#6B747C', marginTop: 2 },
-  rowAmount: { fontSize: 13, fontWeight: '700', color: '#172436', marginLeft: 8 },
+  sectionTitle: { fontSize: 11, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.5 },
+  addLink: { color: colors.success, fontSize: 13, fontWeight: '700' },
+  empty: { color: colors.textSecondary, fontSize: 13, lineHeight: 20 },
+  row: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12, marginBottom: spacing.sm },
+  rowLabel: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
+  rowMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  rowAmount: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginLeft: spacing.sm },
   inactiveToggle: { marginTop: 8, marginBottom: 4 },
-  inactiveToggleText: { fontSize: 12, fontWeight: '600', color: '#6B747C' },
+  inactiveToggleText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
 });
