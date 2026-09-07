@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FocusEvent, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { DateField } from '../../ui/DateField';
 import { FREQUENCY_LABEL } from '../../ui/frequency';
+import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import * as api from '../../api/client';
 
 interface Child {
@@ -113,6 +114,7 @@ const STEP_TITLES = ['Enfant(s) & établissement', 'Scolarité', 'Services scola
 export function SchoolWizardScreen() {
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [step, setStep] = useState(0);
 
   const [children, setChildren] = useState<Child[]>([]);
@@ -294,11 +296,15 @@ export function SchoolWizardScreen() {
   if (children.length === 0) {
     return (
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset, justifyContent: 'center', flexGrow: 1 }]} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset, justifyContent: 'center', flexGrow: 1 }]}
+          keyboardShouldPersistTaps="handled"
+        >
           <Text style={styles.gateTitle}>Aucun enfant n'est encore configuré</Text>
           <Text style={styles.gateHelp}>Un plan de frais scolaires est toujours rattaché à au moins un enfant.</Text>
-          <TextInput testID="gate-firstName" style={styles.input} placeholder="Prénom" value={newChildFirst} onChangeText={setNewChildFirst} />
-          <TextInput testID="gate-lastName" style={styles.input} placeholder="Nom" value={newChildLast} onChangeText={setNewChildLast} />
+          <TextInput testID="gate-firstName" style={styles.input} placeholder="Prénom" value={newChildFirst} onChangeText={setNewChildFirst} onFocus={handleFocus} />
+          <TextInput testID="gate-lastName" style={styles.input} placeholder="Nom" value={newChildLast} onChangeText={setNewChildLast} onFocus={handleFocus} />
           {childError ? <Text style={styles.error}>{childError}</Text> : null}
           <TouchableOpacity testID="gate-submit" style={styles.navButtonPrimary} onPress={onCreateChild} disabled={creatingChild}>
             {creatingChild ? <ActivityIndicator color="#fff" /> : <Text style={styles.navButtonPrimaryText}>Ajouter un enfant</Text>}
@@ -331,10 +337,10 @@ export function SchoolWizardScreen() {
             </View>
 
             <Text style={styles.sectionLabel}>Établissement (optionnel)</Text>
-            <TextInput style={styles.input} value={schoolName} onChangeText={setSchoolName} placeholder="Nom de l'établissement" />
+            <TextInput style={styles.input} value={schoolName} onChangeText={setSchoolName} placeholder="Nom de l'établissement" onFocus={handleFocus} />
 
             <Text style={styles.sectionLabel}>Année scolaire</Text>
-            <TextInput style={styles.input} value={schoolYear} onChangeText={setSchoolYear} placeholder="2026/2027" />
+            <TextInput style={styles.input} value={schoolYear} onChangeText={setSchoolYear} placeholder="2026/2027" onFocus={handleFocus} />
 
             <Text style={styles.sectionLabel}>Durée des trimestres (mois)</Text>
             <Text style={styles.hint}>Par défaut 4/3/3 — ajustez si votre établissement fonctionne autrement. Sert au calcul automatique T2/T3.</Text>
@@ -347,6 +353,7 @@ export function SchoolWizardScreen() {
                     keyboardType="number-pad"
                     value={String(termMonths[i])}
                     onChangeText={(v) => onTermMonthsChange(i as 0 | 1 | 2, v)}
+                    onFocus={handleFocus}
                   />
                 </View>
               ))}
@@ -365,12 +372,21 @@ export function SchoolWizardScreen() {
                 keyboardType="decimal-pad"
                 value={scolariteAnnual}
                 onChangeText={setScolariteAnnual}
+                onFocus={handleFocus}
               />
               <TouchableOpacity testID="scolarite-repartir" style={styles.distributeButton} onPress={applyScolariteAnnual}>
                 <Text style={styles.distributeButtonText}>Répartir</Text>
               </TouchableOpacity>
             </View>
-            <PosteEditor label="Scolarité" poste={scolarite} onChange={(p) => setScolarite(recomputeAutoTerms(p, termMonths))} termMonths={termMonths} forceIncluded allowedFrequencies={['trimestriel']} />
+            <PosteEditor
+              label="Scolarité"
+              poste={scolarite}
+              onChange={(p) => setScolarite(recomputeAutoTerms(p, termMonths))}
+              termMonths={termMonths}
+              forceIncluded
+              allowedFrequencies={['trimestriel']}
+              onFocus={handleFocus}
+            />
           </View>
         );
       case 2:
@@ -387,6 +403,7 @@ export function SchoolWizardScreen() {
                 onChange={(p) => setRestauration(recomputeAutoTerms(p, termMonths))}
                 termMonths={termMonths}
                 hint="Forfait de l'établissement — jamais un calcul prix du repas × nombre de repas."
+                onFocus={handleFocus}
               />
             </PosteToggle>
 
@@ -401,6 +418,7 @@ export function SchoolWizardScreen() {
                 onChange={(p) => setGarderie({ ...garderie, ...p })}
                 termMonths={termMonths}
                 allowedFrequencies={['mensuel', 'trimestriel', 'annuel', 'ponctuel']}
+                onFocus={handleFocus}
               />
             </PosteToggle>
           </View>
@@ -409,13 +427,13 @@ export function SchoolWizardScreen() {
         return (
           <View>
             <PosteToggle label="Uniforme" included={uniforme.included} onToggle={(included) => setUniforme({ ...uniforme, included })}>
-              <PosteEditor label="Uniforme" poste={uniforme} onChange={setUniforme} termMonths={termMonths} allowedFrequencies={['ponctuel']} />
+              <PosteEditor label="Uniforme" poste={uniforme} onChange={setUniforme} termMonths={termMonths} allowedFrequencies={['ponctuel']} onFocus={handleFocus} />
             </PosteToggle>
             <PosteToggle label="Fournitures" included={fournitures.included} onToggle={(included) => setFournitures({ ...fournitures, included })}>
-              <PosteEditor label="Fournitures" poste={fournitures} onChange={setFournitures} termMonths={termMonths} allowedFrequencies={['ponctuel']} />
+              <PosteEditor label="Fournitures" poste={fournitures} onChange={setFournitures} termMonths={termMonths} allowedFrequencies={['ponctuel']} onFocus={handleFocus} />
             </PosteToggle>
             <PosteToggle label="Assurance" included={assurance.included} onToggle={(included) => setAssurance({ ...assurance, included })}>
-              <PosteEditor label="Assurance" poste={assurance} onChange={setAssurance} termMonths={termMonths} allowedFrequencies={['ponctuel']} />
+              <PosteEditor label="Assurance" poste={assurance} onChange={setAssurance} termMonths={termMonths} allowedFrequencies={['ponctuel']} onFocus={handleFocus} />
             </PosteToggle>
           </View>
         );
@@ -429,10 +447,18 @@ export function SchoolWizardScreen() {
                 onChange={setSorties}
                 termMonths={termMonths}
                 allowedFrequencies={['mensuel', 'trimestriel', 'ponctuel']}
+                onFocus={handleFocus}
               />
             </PosteToggle>
             <PosteToggle label="Réinscription" included={reinscription.included} onToggle={(included) => setReinscription({ ...reinscription, included })}>
-              <PosteEditor label="Réinscription" poste={reinscription} onChange={setReinscription} termMonths={termMonths} allowedFrequencies={['ponctuel']} />
+              <PosteEditor
+                label="Réinscription"
+                poste={reinscription}
+                onChange={setReinscription}
+                termMonths={termMonths}
+                allowedFrequencies={['ponctuel']}
+                onFocus={handleFocus}
+              />
             </PosteToggle>
 
             <Text style={styles.sectionLabel}>Autres frais / événements exceptionnels</Text>
@@ -443,6 +469,7 @@ export function SchoolWizardScreen() {
                   placeholder="Libellé (ex. Voyage scolaire)"
                   value={extra.label}
                   onChangeText={(label) => setAutres((prev) => prev.map((e, j) => (j === i ? { ...e, label } : e)))}
+                  onFocus={handleFocus}
                 />
                 <TextInput
                   style={styles.input}
@@ -450,6 +477,7 @@ export function SchoolWizardScreen() {
                   keyboardType="decimal-pad"
                   value={extra.amount}
                   onChangeText={(amount) => setAutres((prev) => prev.map((e, j) => (j === i ? { ...e, amount } : e)))}
+                  onFocus={handleFocus}
                 />
                 <DateField value={extra.dueDate} onChange={(dueDate) => setAutres((prev) => prev.map((e, j) => (j === i ? { ...e, dueDate } : e)))} />
               </View>
@@ -504,7 +532,7 @@ export function SchoolWizardScreen() {
       </Text>
       <Text style={styles.title}>{STEP_TITLES[step]}</Text>
 
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
         {renderStep()}
       </ScrollView>
 
@@ -552,6 +580,7 @@ function PosteEditor({
   hint,
   forceIncluded,
   allowedFrequencies = ['ponctuel', 'mensuel', 'trimestriel'],
+  onFocus,
 }: {
   label: string;
   poste: PosteState;
@@ -560,6 +589,8 @@ function PosteEditor({
   hint?: string;
   forceIncluded?: boolean;
   allowedFrequencies?: Frequency[];
+  /** Correctif post-Vague 3 (§1) — même mécanisme keyboard-aware que les autres écrans de saisie, jamais dupliqué : passé par le parent (module-level component, pas de closure). */
+  onFocus?: (e: FocusEvent) => void;
 }) {
   const freqLabels = FREQUENCY_LABEL;
 
@@ -599,6 +630,7 @@ function PosteEditor({
                 const next = { ...poste, terms };
                 onChange(i === 0 ? recomputeAutoTerms(next, termMonths) : next);
               }}
+              onFocus={onFocus}
             />
             <DateField
               value={poste.terms[i].dueDate}
@@ -627,6 +659,7 @@ function PosteEditor({
               keyboardType="decimal-pad"
               value={poste.amount}
               onChangeText={(amount) => onChange({ ...poste, amount })}
+              onFocus={onFocus}
             />
           )}
           <DateField value={poste.dueDate} onChange={(dueDate) => onChange({ ...poste, dueDate })} />

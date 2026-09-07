@@ -20,6 +20,18 @@ jest.mock('../../../ui/DateField', () => {
 
 jest.mock('../../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
 
+// Correctif post-Vague 3 (§1, suivi) — le clavier recouvrait la zone active sur
+// Garderie/Réinscription/Sorties malgré useKeyboardAwareScroll déjà introduit
+// ailleurs : le hook n'était tout simplement pas câblé sur ce wizard. On mocke
+// le hook (son propre mécanisme interne — mesure + scrollTo — est déjà testé
+// implicitement par son usage réel sur les autres écrans) pour vérifier ici
+// UNIQUEMENT le câblage : chaque TextInput concerné doit bien recevoir
+// onFocus=handleFocus, jamais un oubli silencieux comme celui constaté.
+const mockHandleFocus = jest.fn();
+jest.mock('../../../ui/useKeyboardAwareScroll', () => ({
+  useKeyboardAwareScroll: () => ({ scrollRef: { current: null }, handleFocus: mockHandleFocus }),
+}));
+
 const mockNavigate = jest.fn();
 const mockReplace = jest.fn();
 const mockGoBack = jest.fn();
@@ -63,6 +75,7 @@ async function pressNext() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockHandleFocus.mockClear();
   currentStep = 0;
 });
 
@@ -191,6 +204,65 @@ describe('E. Inconnu ≠ 0', () => {
 
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('FinancialPlanDetail', { id: 'plan-xyz' }));
     expect(mockGoBack).not.toHaveBeenCalled();
+  });
+});
+
+describe('H. Clavier — mécanisme keyboard-aware réellement câblé (recette post-Vague 3, suivi §1)', () => {
+  it('le champ prénom de la porte enfant déclenche handleFocus', async () => {
+    mockedApi.listChildren.mockResolvedValue([]);
+    await render(<SchoolWizardScreen />);
+    await waitFor(() => screen.getByTestId('gate-firstName'));
+
+    await fireEvent(screen.getByTestId('gate-firstName'), 'focus');
+
+    expect(mockHandleFocus).toHaveBeenCalled();
+  });
+
+  it('Scolarité (étape 2) : le montant annuel déclenche handleFocus', async () => {
+    mockedApi.listChildren.mockResolvedValue([{ id: 'c1', firstName: 'Dina', lastName: 'TAHA' }]);
+    await render(<SchoolWizardScreen />);
+    await waitFor(() => screen.getByTestId('nav-next'));
+    await goToStep(1);
+
+    await fireEvent(screen.getByTestId('scolarite-annual'), 'focus');
+
+    expect(mockHandleFocus).toHaveBeenCalled();
+  });
+
+  it('Services scolaires (étape 3) : Restauration ET Garderie déclenchent handleFocus', async () => {
+    mockedApi.listChildren.mockResolvedValue([{ id: 'c1', firstName: 'Dina', lastName: 'TAHA' }]);
+    await render(<SchoolWizardScreen />);
+    await waitFor(() => screen.getByTestId('nav-next'));
+    await goToStep(2);
+
+    await fireEvent(screen.getByTestId('toggle-Restauration'), 'valueChange', true);
+    await fireEvent(screen.getByTestId('Restauration-freq-trimestriel'), 'press');
+    await fireEvent(screen.getByTestId('Restauration-term-0-amount'), 'focus');
+    expect(mockHandleFocus).toHaveBeenCalledTimes(1);
+
+    await fireEvent(screen.getByTestId('toggle-Garderie'), 'valueChange', true);
+    await fireEvent(screen.getByTestId('Garderie-amount'), 'focus');
+    expect(mockHandleFocus).toHaveBeenCalledTimes(2);
+  });
+
+  it('Vie scolaire & réinscription (étape 5) : Sorties ET Réinscription déclenchent handleFocus', async () => {
+    mockedApi.listChildren.mockResolvedValue([{ id: 'c1', firstName: 'Dina', lastName: 'TAHA' }]);
+    await render(<SchoolWizardScreen />);
+    await waitFor(() => screen.getByTestId('nav-next'));
+    await goToStep(4);
+
+    await fireEvent(screen.getByTestId('toggle-Sorties / activités'), 'valueChange', true);
+    await fireEvent(screen.getByTestId('Sorties-amount'), 'focus');
+    expect(mockHandleFocus).toHaveBeenCalledTimes(1);
+
+    await fireEvent(screen.getByTestId('toggle-Réinscription'), 'valueChange', true);
+    await fireEvent(screen.getByTestId('Réinscription-amount'), 'focus');
+    expect(mockHandleFocus).toHaveBeenCalledTimes(2);
+
+    // "Autres frais" (libellé + montant) — également concernés (§2 audit).
+    await fireEvent.press(screen.getByText('+ Ajouter une ligne'));
+    await fireEvent(screen.getByPlaceholderText('Libellé (ex. Voyage scolaire)'), 'focus');
+    expect(mockHandleFocus).toHaveBeenCalledTimes(3);
   });
 });
 
