@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AccountsService } from './accounts.service';
 import { CreateAccountDto } from './dto/create-account.dto';
+import { UpdateAccountDto } from './dto/update-account.dto';
 import { CreateTransferDto } from './dto/create-transfer.dto';
 import { ReconcileDto } from './dto/reconcile.dto';
 import { AdjustReconciliationDto } from './dto/adjust-reconciliation.dto';
@@ -39,19 +40,37 @@ export class AccountsController {
     return this.accounts.confirmTransfer(user.sub, user.householdId!, id);
   }
 
+  // R5 clôture §1 — annuler un transfert encore "prevu" (rien n'a bougé).
+  @Post('transfers/:id/cancel')
+  cancelTransfer(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.accounts.cancelTransfer(user.sub, user.householdId!, id);
+  }
+
+  // R5 clôture §1 — annuler un transfert confirmé par un transfert miroir atomique.
+  @Post('transfers/:id/reverse')
+  reverseTransfer(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.accounts.reverseTransfer(user.sub, user.householdId!, id);
+  }
+
   @Post()
   create(@Body() dto: CreateAccountDto, @CurrentUser() user: AuthenticatedUser) {
     return this.accounts.create(user.sub, user.householdId!, dto);
   }
 
   @Get()
-  findAll(@CurrentUser() user: AuthenticatedUser) {
-    return this.accounts.findAll(user.sub, user.householdId!);
+  findAll(@Query('includeArchived') includeArchived: string | undefined, @CurrentUser() user: AuthenticatedUser) {
+    return this.accounts.findAll(user.sub, user.householdId!, includeArchived === 'true');
   }
 
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.accounts.findOne(user.sub, user.householdId!, id);
+  }
+
+  // R5 clôture §2 — Modifier (nom/type) et/ou Archiver/Réactiver (status).
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateAccountDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.accounts.update(user.sub, user.householdId!, id, dto);
   }
 
   @Post(':id/favorite')

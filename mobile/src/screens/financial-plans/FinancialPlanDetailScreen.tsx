@@ -118,8 +118,11 @@ export function FinancialPlanDetailScreen() {
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
-  // R5 §3 — duplication avec sélection explicite des enfants bénéficiaires.
+  // R5 clôture §10 — duplication en 2 étapes (formulaire puis récapitulatif
+  // explicite) : jamais une duplication silencieuse dès le choix de l'enfant,
+  // l'utilisateur doit voir et confirmer ce qui va être créé.
   const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const [duplicateStep, setDuplicateStep] = useState<'form' | 'recap'>('form');
   const [duplicateLabel, setDuplicateLabel] = useState('');
   const [children, setChildren] = useState<Child[]>([]);
   const [duplicateChildIds, setDuplicateChildIds] = useState<string[]>([]);
@@ -186,6 +189,7 @@ export function FinancialPlanDetailScreen() {
   function openDuplicate() {
     if (!detail) return;
     setMenuOpen(false);
+    setDuplicateStep('form');
     setDuplicateLabel(`${detail.label} (copie)`);
     setDuplicateChildIds([]);
     setDuplicateError(null);
@@ -197,11 +201,16 @@ export function FinancialPlanDetailScreen() {
     setDuplicateChildIds((current) => (current.includes(childId) ? current.filter((c) => c !== childId) : [...current, childId]));
   }
 
-  async function onConfirmDuplicate() {
+  function onGoToRecap() {
     if (!duplicateLabel.trim()) {
       setDuplicateError('Le nom de la copie est obligatoire');
       return;
     }
+    setDuplicateError(null);
+    setDuplicateStep('recap');
+  }
+
+  async function onConfirmDuplicate() {
     setDuplicating(true);
     setDuplicateError(null);
     try {
@@ -389,39 +398,76 @@ export function FinancialPlanDetailScreen() {
 
       <Modal visible={duplicateOpen} transparent animationType="fade" onRequestClose={() => setDuplicateOpen(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard} testID="plan-duplicate-form">
-            <Text style={styles.modalTitle}>Dupliquer le plan</Text>
-            <TextInput style={styles.modalInput} value={duplicateLabel} onChangeText={setDuplicateLabel} placeholder="Nom de la copie" testID="plan-duplicate-label" />
-            {children.length > 0 && (
-              <>
-                <Text style={styles.modalSubLabel}>Enfant(s) bénéficiaire(s) de la copie</Text>
-                <View style={styles.chipRow}>
-                  {children.map((c) => (
-                    <TouchableOpacity
-                      key={c.id}
-                      testID={`plan-duplicate-child-${c.id}`}
-                      style={[styles.chip, duplicateChildIds.includes(c.id) && styles.chipActive]}
-                      onPress={() => toggleDuplicateChild(c.id)}
-                    >
-                      <Text style={[styles.chipText, duplicateChildIds.includes(c.id) && styles.chipTextActive]}>
-                        {c.firstName} {c.lastName}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </>
-            )}
-            <Text style={styles.help}>La copie ne reprend jamais les paiements ni l'historique — un échéancier neuf, indépendant de l'original.</Text>
-            {duplicateError && <Text style={styles.error}>{duplicateError}</Text>}
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.modalButtonSecondary} onPress={() => setDuplicateOpen(false)}>
-                <Text style={styles.modalButtonSecondaryText}>Annuler</Text>
-              </TouchableOpacity>
-              <TouchableOpacity testID="plan-duplicate-confirm" style={styles.modalButton} onPress={onConfirmDuplicate} disabled={duplicating}>
-                {duplicating ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalButtonText}>Dupliquer</Text>}
-              </TouchableOpacity>
+          {duplicateStep === 'form' ? (
+            <View style={styles.modalCard} testID="plan-duplicate-form">
+              <Text style={styles.modalTitle}>Dupliquer le plan</Text>
+              <TextInput style={styles.modalInput} value={duplicateLabel} onChangeText={setDuplicateLabel} placeholder="Nom de la copie" testID="plan-duplicate-label" />
+              {children.length > 0 && (
+                <>
+                  <Text style={styles.modalSubLabel}>Enfant(s) bénéficiaire(s) de la copie</Text>
+                  <View style={styles.chipRow}>
+                    {children.map((c) => (
+                      <TouchableOpacity
+                        key={c.id}
+                        testID={`plan-duplicate-child-${c.id}`}
+                        style={[styles.chip, duplicateChildIds.includes(c.id) && styles.chipActive]}
+                        onPress={() => toggleDuplicateChild(c.id)}
+                      >
+                        <Text style={[styles.chipText, duplicateChildIds.includes(c.id) && styles.chipTextActive]}>
+                          {c.firstName} {c.lastName}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+              {duplicateError && <Text style={styles.error}>{duplicateError}</Text>}
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.modalButtonSecondary} onPress={() => setDuplicateOpen(false)}>
+                  <Text style={styles.modalButtonSecondaryText}>Annuler</Text>
+                </TouchableOpacity>
+                <TouchableOpacity testID="plan-duplicate-next" style={styles.modalButton} onPress={onGoToRecap}>
+                  <Text style={styles.modalButtonText}>Suivant</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          ) : (
+            // R5 clôture §10 — récapitulatif explicite avant toute écriture : l'utilisateur
+            // voit exactement ce qui va être créé (un NOUVEAU plan indépendant), et peut
+            // encore revenir ajuster le formulaire — jamais une duplication silencieuse.
+            <View style={styles.modalCard} testID="plan-duplicate-recap">
+              <Text style={styles.modalTitle}>Confirmer la duplication</Text>
+              <Text style={styles.recapIntro}>Vous allez créer un NOUVEAU plan indépendant :</Text>
+              <View style={styles.recapCard}>
+                <View style={styles.recapRow}>
+                  <Text style={styles.recapLabel}>Nom de la copie</Text>
+                  <Text style={styles.recapValue}>{duplicateLabel.trim()}</Text>
+                </View>
+                <View style={styles.recapRow}>
+                  <Text style={styles.recapLabel}>Enfant(s) bénéficiaire(s)</Text>
+                  <Text style={styles.recapValue}>
+                    {duplicateChildIds.length === 0
+                      ? 'Aucun'
+                      : children.filter((c) => duplicateChildIds.includes(c.id)).map((c) => `${c.firstName} ${c.lastName}`).join(', ')}
+                  </Text>
+                </View>
+                <View style={[styles.recapRow, styles.recapRowLast]}>
+                  <Text style={styles.recapLabel}>Échéances copiées</Text>
+                  <Text style={styles.recapValue}>{detail.deadlinesCertain.length}</Text>
+                </View>
+              </View>
+              <Text style={styles.help}>La copie ne reprend jamais les paiements ni l'historique — un échéancier neuf, indépendant de l'original.</Text>
+              {duplicateError && <Text style={styles.error}>{duplicateError}</Text>}
+              <View style={styles.modalActions}>
+                <TouchableOpacity testID="plan-duplicate-back" style={styles.modalButtonSecondary} onPress={() => setDuplicateStep('form')}>
+                  <Text style={styles.modalButtonSecondaryText}>Retour</Text>
+                </TouchableOpacity>
+                <TouchableOpacity testID="plan-duplicate-confirm" style={styles.modalButton} onPress={onConfirmDuplicate} disabled={duplicating}>
+                  {duplicating ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalButtonText}>Confirmer la duplication</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </View>
       </Modal>
     </ScrollView>
@@ -503,4 +549,10 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 12, color: colors.textPrimary },
   chipTextActive: { color: '#fff', fontWeight: '600' },
   help: { fontSize: 11, color: colors.textSecondary, fontStyle: 'italic', marginTop: 4, marginBottom: 4 },
+  recapIntro: { fontSize: 13, color: colors.textPrimary, fontWeight: '600', marginBottom: spacing.md },
+  recapCard: { backgroundColor: colors.background, borderRadius: radius.sm, marginBottom: spacing.md },
+  recapRow: { paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  recapRowLast: { borderBottomWidth: 0 },
+  recapLabel: { fontSize: 11, color: colors.textSecondary, textTransform: 'uppercase', fontWeight: '700' },
+  recapValue: { fontSize: 14, color: colors.textPrimary, fontWeight: '600', marginTop: 3 },
 });

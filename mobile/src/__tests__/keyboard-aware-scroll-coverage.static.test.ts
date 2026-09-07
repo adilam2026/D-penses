@@ -37,6 +37,8 @@ const JUSTIFIED_EXCEPTIONS: Record<string, string> = {
     'Le seul TextInput (montant de contribution) suit un bloc de chiffres de taille fixe ; le contenu variable (contributions, tests) est affiché après le champ, jamais au-dessus.',
   'financial-plans/FinancialPlanDetailScreen.tsx':
     'Les TextInput (§2/§3 — Modifier/Dupliquer) vivent dans des Modal overlay courts (un champ, boutons juste en dessous), pas dans le corps défilant du ScrollView principal — le ScrollView de la page ne contient lui-même aucun TextInput.',
+  'transactions/TransactionDetailScreen.tsx':
+    'Les TextInput (clôture §1 — Corriger/Modifier une transaction) vivent dans des Modal overlay courts (un seul champ, boutons juste en dessous), pas dans le corps défilant du ScrollView principal — le ScrollView de la page ne contient lui-même aucun TextInput.',
 };
 
 describe('Couverture useKeyboardAwareScroll (garde-fou Round 3 §1/§3)', () => {

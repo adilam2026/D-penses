@@ -5,6 +5,8 @@ import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { DateField } from '../../ui/DateField';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
+import { Select } from '../../ui/Select';
+import { FormField } from '../../ui/FormField';
 
 interface Category {
   id: string;
@@ -93,17 +95,17 @@ export function CreateBudgetScreen() {
       {loading ? (
         <ActivityIndicator />
       ) : (
-        <View style={styles.chipRow}>
-          {categories.map((c) => (
-            <TouchableOpacity key={c.id} style={[styles.chip, categoryId === c.id && styles.chipActive]} onPress={() => setCategoryId(c.id)}>
-              <Text style={[styles.chipText, categoryId === c.id && styles.chipTextActive]}>{c.name}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        // R5 clôture §6 — sélecteur compact (catégories potentiellement nombreuses), jamais un mur de chips.
+        <Select
+          testID="create-budget-category-select"
+          placeholder="Choisir une catégorie"
+          value={categoryId}
+          onChange={setCategoryId}
+          options={categories.map((c) => ({ value: c.id, label: c.name }))}
+        />
       )}
 
-      <Text style={styles.sectionLabel}>Montant</Text>
-      <TextInput style={styles.input} placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} onFocus={handleFocus} />
+      <FormField label="Montant" placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} onFocus={handleFocus} />
 
       <Text style={styles.sectionLabel}>Période</Text>
       <View style={styles.segment}>

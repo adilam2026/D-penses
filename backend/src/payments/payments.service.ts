@@ -1,10 +1,11 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
-import { getAccountBalance, getDeadlineBalance } from '../common/ledger/ledger.util';
+import { getAccountBalance, getDeadlineBalance, toNumber } from '../common/ledger/ledger.util';
 import { recalcFinancialStatus } from '../common/ledger/deadline-status.util';
 import { computePocketCurrentAmount } from '../common/ledger/provision.util';
-import { withdrawFromPocket } from '../common/ledger/pocket-movements.util';
+import { withdrawFromPocket, contributeToPocket } from '../common/ledger/pocket-movements.util';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { CorrectPaymentDto } from './dto/correct-payment.dto';
 
 /**
  * Payment (docs/02-modele-metier.md §E.3, RG-015). amount toujours > 0, le
@@ -35,6 +36,10 @@ export class PaymentsService {
       // (une Provision n'est jamais un compte bancaire) — l'UX peut le pré-remplir, jamais l'omettre.
       const account = await tx.financialAccount.findFirst({ where: { id: dto.accountId, householdId } });
       if (!account) throw new NotFoundException('Compte introuvable dans ce foyer');
+      // R5 clôture §2 — jamais un NOUVEAU paiement sur un compte archivé.
+      if (account.status !== 'actif') {
+        throw new BadRequestException(`Le compte « ${account.name} » est archivé — réactivez-le pour l'utiliser`);
+      }
 
       const type = dto.type ?? 'paiement';
       if (type === 'ajustement' && !dto.direction) {
@@ -116,4 +121,119 @@ export class PaymentsService {
       return tx.payment.findMany({ where: { deadlineId }, orderBy: { paidDate: 'asc' } });
     });
   }
+
+  /**
+   * R5 clôture §1 — « Corriger » un paiement (montant mal saisi) : jamais une
+   * réécriture du Payment original — une contre-écriture RG-015
+   * (type=ajustement, direction déduite du sens de l'écart) porte le delta.
+   * Réservée aux paiements standard (type=paiement) financés depuis un compte :
+   * un paiement financé par une enveloppe n'est pas corrigeable partiellement
+   * ici (la re-ventilation de l'enveloppe sortirait du périmètre sûr de cette
+   * clôture) — seule l'Annulation complète (reverse) est proposée pour ce cas.
+   */
+  async correct(userId: string, householdId: string, deadlineId: string, paymentId: string, dto: CorrectPaymentDto) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const original = await tx.payment.findFirst({
+        where: { id: paymentId, deadlineId, deadline: { chargePlan: { householdId } } },
+      });
+      if (!original) throw new NotFoundException('Paiement introuvable');
+      if (original.type !== 'paiement') {
+        throw new BadRequestException('Seul un paiement standard peut être corrigé (jamais une correction déjà appliquée)');
+      }
+      if (original.fundingSource === 'provision') {
+        throw new BadRequestException(
+          "Un paiement financé par une enveloppe ne peut pas être corrigé partiellement — utilisez Annuler puis un nouveau paiement",
+        );
+      }
+
+      const originalAmount = toNumber(original.amount);
+      const delta = round2(dto.correctedAmount - originalAmount);
+      if (delta === 0) throw new BadRequestException('Le montant corrigé est identique au montant déjà enregistré');
+      const direction = delta > 0 ? 'augmente_paye' : 'diminue_paye';
+
+      const correction = await tx.payment.create({
+        data: {
+          deadlineId,
+          amount: Math.abs(delta),
+          paidDate: new Date(),
+          accountId: original.accountId,
+          type: 'ajustement',
+          direction,
+          fundingSource: 'compte',
+          recordedById: userId,
+          notes: `Correction du paiement du ${original.paidDate.toISOString().slice(0, 10)} (${originalAmount} DH → ${dto.correctedAmount} DH)`,
+        },
+      });
+
+      const updatedDeadline = await recalcFinancialStatus(tx, deadlineId);
+      const balance = await getDeadlineBalance(tx, deadlineId);
+      return {
+        correction,
+        deadline: { ...updatedDeadline, resteAPayer: balance?.resteAPayer ?? null },
+        soldeCourant: await getAccountBalance(tx, original.accountId),
+      };
+    });
+  }
+
+  /**
+   * R5 clôture §1 — « Annuler » un paiement entièrement erroné : jamais une
+   * suppression physique — un Payment(type=remboursement) du même montant
+   * inverse exactement l'effet du paiement original (reste_a_payer ET solde
+   * de compte, cf. la vue ledger_entry — même formule, aucun moteur modifié).
+   * Si le paiement original était financé par une enveloppe virtual_allocation,
+   * le retrait est symétriquement restitué (contributeToPocket) dans la même
+   * transaction — jamais un solde d'enveloppe qui resterait faussé.
+   */
+  async reverse(userId: string, householdId: string, deadlineId: string, paymentId: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const original = await tx.payment.findFirst({
+        where: { id: paymentId, deadlineId, deadline: { chargePlan: { householdId } } },
+      });
+      if (!original) throw new NotFoundException('Paiement introuvable');
+      if (original.type !== 'paiement') {
+        throw new BadRequestException('Seul un paiement standard peut être annulé');
+      }
+
+      const reversal = await tx.payment.create({
+        data: {
+          deadlineId,
+          amount: original.amount,
+          paidDate: new Date(),
+          accountId: original.accountId,
+          type: 'remboursement',
+          fundingSource: original.fundingSource,
+          provisionId: original.provisionId,
+          recordedById: userId,
+          notes: `Annulation du paiement du ${original.paidDate.toISOString().slice(0, 10)}`,
+        },
+      });
+
+      if (original.fundingSource === 'provision' && original.provisionId) {
+        const provision = await tx.provision.findUniqueOrThrow({ where: { id: original.provisionId } });
+        if (provision.allocationMode === 'virtual_allocation') {
+          await contributeToPocket(tx, 'provision', provision.id, 'virtual_allocation', {
+            amount: toNumber(original.amount),
+            date: reversal.paidDate,
+            intentionLabel: `Annulation paiement ${original.id}`,
+            confirmed: true,
+            recordedByUserId: userId,
+          });
+        }
+      }
+
+      const updatedDeadline = await recalcFinancialStatus(tx, deadlineId);
+      const balance = await getDeadlineBalance(tx, deadlineId);
+      return {
+        reversal,
+        deadline: { ...updatedDeadline, resteAPayer: balance?.resteAPayer ?? null },
+        soldeCourant: await getAccountBalance(tx, original.accountId),
+      };
+    });
+  }
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
 }

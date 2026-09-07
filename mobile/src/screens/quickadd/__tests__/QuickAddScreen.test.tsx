@@ -197,18 +197,27 @@ describe('QuickAddScreen — Transfert entre comptes (§11)', () => {
     mockedApi.getQuickAddDefaultAccount.mockResolvedValue({ accountId: 'acc-1' });
   });
 
-  it('affiche le solde de chaque compte source/destination', async () => {
+  it('affiche le solde de chaque compte source/destination (sélecteur compact §6)', async () => {
     await render(<QuickAddScreen />);
-    await waitFor(() => screen.getByTestId('source-account-acc-1'));
-    expect(screen.getByTestId('dest-account-acc-2')).toBeTruthy();
+    await waitFor(() => screen.getByTestId('quickadd-account-select'));
+
+    await fireEvent.press(screen.getByTestId('quickadd-account-select'));
+    expect(await screen.findByTestId('quickadd-account-select-option-acc-1')).toBeTruthy();
+    expect(screen.getByText('4 750 DH')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('quickadd-account-select-option-acc-1'));
+
+    await fireEvent.press(screen.getByTestId('quickadd-dest-account-select'));
+    expect(await screen.findByTestId('quickadd-dest-account-select-option-acc-2')).toBeTruthy();
+    expect(screen.getByText('700 DH')).toBeTruthy();
   });
 
   it('saisir un montant + choisir une destination affiche l\'aperçu avant/après, recalculé en direct', async () => {
     await render(<QuickAddScreen />);
-    await waitFor(() => screen.getByTestId('dest-account-acc-2'));
+    await waitFor(() => screen.getByTestId('quickadd-dest-account-select'));
 
     await fireEvent.changeText(screen.getByPlaceholderText('Montant (DH)'), '1000');
-    await fireEvent.press(screen.getByTestId('dest-account-acc-2'));
+    await fireEvent.press(screen.getByTestId('quickadd-dest-account-select'));
+    await fireEvent.press(await screen.findByTestId('quickadd-dest-account-select-option-acc-2'));
 
     const preview = screen.getByTestId('transfer-preview');
     expect(preview).toBeTruthy();
@@ -223,13 +232,13 @@ describe('QuickAddScreen — Transfert entre comptes (§11)', () => {
 
   it('le compte source n\'apparaît jamais dans la liste des destinations possibles', async () => {
     await render(<QuickAddScreen />);
-    await waitFor(() => screen.getByText('Compte destination'));
+    await waitFor(() => screen.getByTestId('quickadd-dest-account-select'));
 
-    // "Compte courant" (source par défaut) doit être absent de la section destination —
-    // seul un "Maison — 700 DH" doit apparaître comme option de destination.
-    const destinationSection = screen.getByText('Compte destination').parent;
-    expect(destinationSection).toBeTruthy();
-    expect(screen.queryAllByText(/Compte courant — 4 750 DH/)).toHaveLength(1); // uniquement dans "Compte source"
+    await fireEvent.press(screen.getByTestId('quickadd-dest-account-select'));
+
+    // "Compte courant" (source par défaut, acc-1) doit être absent des options de destination.
+    expect(await screen.findByTestId('quickadd-dest-account-select-option-acc-2')).toBeTruthy();
+    expect(screen.queryByTestId('quickadd-dest-account-select-option-acc-1')).toBeNull();
   });
 
   it('bouton de confirmation libellé "Confirmer le transfert" et interdit montant<=0', async () => {

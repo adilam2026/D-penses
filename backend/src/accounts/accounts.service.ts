@@ -3,6 +3,7 @@ import { RlsContextService } from '../common/prisma/rls-context.service';
 import { getAccountBalance } from '../common/ledger/ledger.util';
 import { computeAccountEnvelopeCoverage, computeTreasurySummary } from '../common/ledger/treasury.util';
 import { CreateAccountDto } from './dto/create-account.dto';
+import { UpdateAccountDto } from './dto/update-account.dto';
 import { CreateTransferDto } from './dto/create-transfer.dto';
 import { ReconcileDto } from './dto/reconcile.dto';
 import { AdjustReconciliationDto } from './dto/adjust-reconciliation.dto';
@@ -42,11 +43,18 @@ export class AccountsService {
     });
   }
 
-  async findAll(userId: string, householdId: string) {
+  /**
+   * R5 clôture §2 — `includeArchived` réservé à l'écran de gestion des comptes
+   * (voir/réactiver un compte archivé) : tous les autres appelants (sélecteurs
+   * de saisie rapide/transfert) gardent le comportement inchangé, `actif`
+   * uniquement, par défaut — un compte archivé n'est jamais proposé pour une
+   * nouvelle transaction.
+   */
+  async findAll(userId: string, householdId: string, includeArchived = false) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
       const accounts = await tx.financialAccount.findMany({
-        where: { householdId, status: 'actif' },
+        where: includeArchived ? { householdId } : { householdId, status: 'actif' },
         orderBy: { createdAt: 'asc' },
       });
       return Promise.all(
@@ -67,6 +75,26 @@ export class AccountsService {
       const soldeCourant = await this.getBalance(account.id);
       const { reservedByEnvelopes } = await computeAccountEnvelopeCoverage(tx, account.id);
       return { ...account, soldeCourant, reservedByEnvelopes };
+    });
+  }
+
+  /**
+   * R5 clôture §2 — Modifier (nom/type) et/ou Archiver/Réactiver (status). Jamais
+   * de suppression physique d'un compte : l'historique (transactions passées,
+   * Payment/Adjustment/AccountTransfer déjà écrits) référence toujours ce même
+   * id, jamais touché ici — seul `status` change ce qui est proposé pour une
+   * NOUVELLE transaction (cf. findAll/les vérifications d'écriture ci-dessous).
+   */
+  async update(userId: string, householdId: string, id: string, dto: UpdateAccountDto) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const account = await tx.financialAccount.findFirst({ where: { id, householdId } });
+      if (!account) throw new NotFoundException('Compte introuvable');
+      const updated = await tx.financialAccount.update({
+        where: { id },
+        data: { name: dto.name, type: dto.type, status: dto.status },
+      });
+      return { ...updated, soldeCourant: await this.getBalance(id) };
     });
   }
 
@@ -116,9 +144,14 @@ export class AccountsService {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
 
+      // R5 clôture §2 — un compte archivé n'est jamais source/destination d'un NOUVEAU
+      // transfert (jamais bloqué en lecture/historique, uniquement en écriture ici).
       for (const id of [dto.fromAccountId, dto.toAccountId].filter(Boolean) as string[]) {
         const exists = await tx.financialAccount.findFirst({ where: { id, householdId } });
         if (!exists) throw new NotFoundException(`Compte ${id} introuvable dans ce foyer`);
+        if (exists.status !== 'actif') {
+          throw new BadRequestException(`Le compte « ${exists.name} » est archivé — réactivez-le pour l'utiliser dans un nouveau transfert`);
+        }
       }
 
       const type = dto.fromAccountId && dto.toAccountId ? 'interne' : dto.fromAccountId ? 'retrait_especes' : 'depot_especes';
@@ -169,6 +202,60 @@ export class AccountsService {
         where: { id },
         data: { status: 'confirme', actualDate: new Date(), confirmedById: userId },
       });
+    });
+  }
+
+  /**
+   * R5 clôture §1 — Annuler un transfert encore `prevu` : rien n'a bougé (la
+   * vue ledger_entry ne retient que status='confirme'), un simple changement
+   * de statut vers `annule` (déjà prévu dans l'enum) suffit — jamais un DELETE
+   * physique, l'historique de la décision reste consultable.
+   */
+  async cancelTransfer(userId: string, householdId: string, id: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const transfer = await tx.accountTransfer.findFirst({ where: { id, householdId } });
+      if (!transfer) throw new NotFoundException('Transfert introuvable');
+      if (transfer.status !== 'prevu') {
+        throw new BadRequestException('Seul un transfert encore "prevu" peut être annulé (utilisez Annuler-reverser pour un transfert confirmé)');
+      }
+      return tx.accountTransfer.update({ where: { id }, data: { status: 'annule' } });
+    });
+  }
+
+  /**
+   * R5 clôture §1 — Annuler un transfert déjà confirmé : jamais une correction
+   * d'une seule moitié (§ explicite de la demande) — un NOUVEAU transfert
+   * miroir (comptes inversés, même montant), confirmé dans la MÊME transaction
+   * Prisma que sa création, inverse atomiquement les DEUX lignes ledger_entry
+   * (transfer_in/transfer_out) en une seule écriture indivisible. Le transfert
+   * original reste intact et visible (historique jamais réécrit).
+   */
+  async reverseTransfer(userId: string, householdId: string, id: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const transfer = await tx.accountTransfer.findFirst({ where: { id, householdId } });
+      if (!transfer) throw new NotFoundException('Transfert introuvable');
+      if (transfer.status !== 'confirme') {
+        throw new BadRequestException('Seul un transfert confirmé peut être annulé par un transfert miroir (utilisez Annuler pour un transfert "prevu")');
+      }
+
+      const now = new Date();
+      const reversal = await tx.accountTransfer.create({
+        data: {
+          householdId,
+          fromAccountId: transfer.toAccountId,
+          toAccountId: transfer.fromAccountId,
+          amount: transfer.amount,
+          plannedDate: now,
+          actualDate: now,
+          status: 'confirme',
+          type: transfer.type,
+          confirmedById: userId,
+        },
+      });
+
+      return { reversal, original: transfer };
     });
   }
 

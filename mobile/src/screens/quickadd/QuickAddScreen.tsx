@@ -456,45 +456,34 @@ export function QuickAddScreen() {
             )}
 
             {mode !== 'paiement' && (
-              <>
-                <Text style={styles.sectionLabel}>{mode === 'transfert' ? 'Compte source' : 'Compte'}</Text>
-                <View style={styles.chipRow}>
-                  {accounts.map((a) => (
-                    <TouchableOpacity
-                      key={a.id}
-                      testID={mode === 'transfert' ? `source-account-${a.id}` : undefined}
-                      style={[styles.chip, accountId === a.id && styles.chipActive]}
-                      onPress={() => setAccountId(a.id)}
-                    >
-                      <Text style={[styles.chipText, accountId === a.id && styles.chipTextActive]}>
-                        {a.name}
-                        {mode === 'transfert' ? ` — ${a.soldeCourant.toLocaleString('fr-FR')} DH` : ''}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </>
+              // R5 clôture §6 — sélecteur compact (comptes potentiellement nombreux),
+              // jamais un mur de chips permanent.
+              <Select
+                testID="quickadd-account-select"
+                label={mode === 'transfert' ? 'Compte source' : 'Compte'}
+                placeholder="Choisir un compte"
+                value={accountId}
+                onChange={setAccountId}
+                options={accounts.map((a) => ({
+                  value: a.id,
+                  label: a.name,
+                  sublabel: mode === 'transfert' ? `${a.soldeCourant.toLocaleString('fr-FR')} DH` : undefined,
+                }))}
+              />
             )}
 
             {mode === 'transfert' && (
               <>
-                <Text style={styles.sectionLabel}>Compte destination</Text>
-                <View style={styles.chipRow}>
-                  {accounts
+                <Select
+                  testID="quickadd-dest-account-select"
+                  label="Compte destination"
+                  placeholder="Choisir le compte destination"
+                  value={toAccountId}
+                  onChange={setToAccountId}
+                  options={accounts
                     .filter((a) => a.id !== accountId)
-                    .map((a) => (
-                      <TouchableOpacity
-                        key={a.id}
-                        testID={`dest-account-${a.id}`}
-                        style={[styles.chip, toAccountId === a.id && styles.chipActive]}
-                        onPress={() => setToAccountId(a.id)}
-                      >
-                        <Text style={[styles.chipText, toAccountId === a.id && styles.chipTextActive]}>
-                          {a.name} — {a.soldeCourant.toLocaleString('fr-FR')} DH
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                </View>
+                    .map((a) => ({ value: a.id, label: a.name, sublabel: `${a.soldeCourant.toLocaleString('fr-FR')} DH` }))}
+                />
 
                 {(() => {
                   const numericAmount = Number(amount.replace(',', '.'));

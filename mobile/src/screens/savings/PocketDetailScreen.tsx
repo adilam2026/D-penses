@@ -4,6 +4,7 @@ import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, RefreshCon
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
+import { Select } from '../../ui/Select';
 
 interface Movement {
   id: string;
@@ -283,21 +284,23 @@ export function PocketDetailScreen() {
       {isProvision && (
         <>
           <Text style={styles.sectionTitle}>Échéances liées</Text>
+          {/* R5 clôture §6 — sélecteur compact au lieu de saisir un ID brut + une
+              liste de chips arbitrairement tronquée à 6 (jamais une échéance
+              réelle rendue impossible à choisir faute de place). */}
           <View style={styles.linkRow}>
-            <TextInput style={[styles.input, styles.linkInput]} placeholder="ID de l'échéance à lier" value={linkDeadlineId} onChangeText={setLinkDeadlineId} onFocus={handleFocus} />
+            <View style={styles.linkSelect}>
+              <Select
+                testID="pocket-link-deadline-select"
+                placeholder="Choisir une échéance à lier"
+                value={linkDeadlineId || null}
+                onChange={setLinkDeadlineId}
+                options={openDeadlines.map((d) => ({ value: d.id, label: d.chargePlan.label, sublabel: formatDate(d.dueDate) }))}
+              />
+            </View>
             <TouchableOpacity style={styles.linkButton} onPress={onLinkDeadline} disabled={linking}>
               {linking ? <ActivityIndicator color="#fff" /> : <Text style={styles.linkButtonText}>Lier</Text>}
             </TouchableOpacity>
           </View>
-          {openDeadlines.length > 0 && (
-            <View style={styles.chipRow}>
-              {openDeadlines.slice(0, 6).map((d) => (
-                <TouchableOpacity key={d.id} style={styles.chip} onPress={() => setLinkDeadlineId(d.id)}>
-                  <Text style={styles.chipText}>{d.chargePlan.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
 
           {(detail.coverage ?? []).map((c) => (
             <View key={c.deadlineId} style={styles.coverageCard}>
@@ -415,7 +418,8 @@ const styles = StyleSheet.create({
   buttonText: { color: '#fff', fontWeight: '600', fontSize: 13 },
   buttonTextSecondary: { color: '#172436' },
   sectionTitle: { fontSize: 14, fontWeight: '700', color: '#172436', marginTop: 24, marginBottom: 10 },
-  linkRow: { flexDirection: 'row', marginBottom: 8 },
+  linkRow: { flexDirection: 'row', marginBottom: 8, alignItems: 'flex-start' },
+  linkSelect: { flex: 1, marginRight: 8 },
   linkInput: { flex: 1, marginRight: 8, marginBottom: 0 },
   linkButton: { backgroundColor: '#172436', borderRadius: 10, paddingHorizontal: 16, justifyContent: 'center' },
   linkButtonText: { color: '#fff', fontWeight: '600', fontSize: 13 },

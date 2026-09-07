@@ -196,6 +196,13 @@ it('§3 — Dupliquer propose la sélection explicite des enfants, jamais hérit
   await waitFor(() => screen.getByTestId('plan-duplicate-child-c2'));
   // Aucun enfant pré-coché : sélection explicite, jamais héritée de l'original.
   await fireEvent.press(screen.getByTestId('plan-duplicate-child-c2'));
+  await fireEvent.press(screen.getByTestId('plan-duplicate-next'));
+
+  // Clôture §10 — récapitulatif explicite obligatoire avant toute écriture :
+  // jamais une duplication immédiatement déclenchée depuis le choix de l'enfant.
+  await waitFor(() => screen.getByTestId('plan-duplicate-recap'));
+  expect(mockedApi.duplicateFinancialPlan).not.toHaveBeenCalled();
+  expect(screen.getByText('Cadette D')).toBeTruthy();
   await fireEvent.press(screen.getByTestId('plan-duplicate-confirm'));
 
   await waitFor(() =>
@@ -223,6 +230,27 @@ it("§2 — Supprimer appelle DELETE puis revient en arrière", async () => {
 
   await waitFor(() => expect(mockedApi.deleteFinancialPlan).toHaveBeenCalledWith('plan-1'));
   await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+});
+
+it('§10 — le récapitulatif affiche le nombre d\'échéances copiées et "Retour" permet de rajuster le formulaire', async () => {
+  mockedApi.listChildren.mockResolvedValue([{ id: 'c1', firstName: 'Aîné', lastName: 'D' }]);
+
+  await render(<FinancialPlanDetailScreen />);
+  await waitFor(() => screen.getByTestId('plan-menu-button'));
+  await fireEvent.press(screen.getByTestId('plan-menu-button'));
+  await waitFor(() => screen.getByTestId('plan-menu-option-dupliquer'));
+  await fireEvent.press(screen.getByTestId('plan-menu-option-dupliquer'));
+  await waitFor(() => screen.getByTestId('plan-duplicate-form'));
+  await fireEvent.press(screen.getByTestId('plan-duplicate-next'));
+
+  await waitFor(() => screen.getByTestId('plan-duplicate-recap'));
+  expect(screen.getByText('2')).toBeTruthy(); // PLAN.deadlinesCertain a 2 lignes (d1, d2)
+  expect(screen.getByText('Aucun')).toBeTruthy(); // aucun enfant sélectionné
+
+  await fireEvent.press(screen.getByTestId('plan-duplicate-back'));
+
+  await waitFor(() => screen.getByTestId('plan-duplicate-form'));
+  expect(mockedApi.duplicateFinancialPlan).not.toHaveBeenCalled();
 });
 
 it("§2 — Supprimer bloqué (paiements existants) affiche le message du backend, jamais un DELETE silencieux", async () => {

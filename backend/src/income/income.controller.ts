@@ -63,4 +63,10 @@ export class IncomeOccurrencesController {
   confirm(@Param('id') id: string, @Body() dto: ConfirmIncomeOccurrenceDto, @CurrentUser() user: AuthenticatedUser) {
     return this.income.confirmOccurrence(user.sub, user.householdId!, id, dto);
   }
+
+  // R5 clôture §1 — annuler une confirmation erronée (revient à `prevu`, jamais un DELETE).
+  @Post(':id/unconfirm')
+  unconfirm(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.income.unconfirmOccurrence(user.sub, user.householdId!, id);
+  }
 }

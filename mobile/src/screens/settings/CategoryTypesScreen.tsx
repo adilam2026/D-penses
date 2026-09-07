@@ -4,6 +4,7 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleShe
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
+import { Select } from '../../ui/Select';
 
 interface Category {
   id: string;
@@ -98,13 +99,14 @@ export function CategoryTypesScreen() {
     <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
       <Text style={styles.intro}>Choisissez une catégorie pour gérer ses types (ex. Alimentation → Courses).</Text>
 
-      <View style={styles.chipRow}>
-        {categories.map((c) => (
-          <TouchableOpacity key={c.id} style={[styles.chip, categoryId === c.id && styles.chipActive]} onPress={() => setCategoryId(c.id)}>
-            <Text style={[styles.chipText, categoryId === c.id && styles.chipTextActive]}>{c.name}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      {/* R5 clôture §6 — sélecteur compact (catégories potentiellement nombreuses), jamais un mur de chips. */}
+      <Select
+        testID="category-types-category-select"
+        placeholder="Choisir une catégorie"
+        value={categoryId}
+        onChange={setCategoryId}
+        options={categories.map((c) => ({ value: c.id, label: c.name }))}
+      />
 
       {loading ? (
         <ActivityIndicator />

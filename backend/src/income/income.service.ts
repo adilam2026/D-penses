@@ -164,6 +164,11 @@ export class IncomeService {
       if (!accountId) throw new BadRequestException('Un compte cible est obligatoire pour confirmer un revenu (RG-014bis)');
       const account = await tx.financialAccount.findFirst({ where: { id: accountId, householdId } });
       if (!account) throw new NotFoundException('Compte cible introuvable dans ce foyer');
+      // R5 clôture §2 — jamais une NOUVELLE confirmation de revenu sur un compte archivé
+      // (y compris le compte par défaut pré-rempli, s'il a été archivé depuis).
+      if (account.status !== 'actif') {
+        throw new BadRequestException(`Le compte « ${account.name} » est archivé — choisissez un autre compte pour confirmer ce revenu`);
+      }
 
       const updated = await tx.incomeOccurrence.update({
         where: { id: occurrenceId },
@@ -178,6 +183,39 @@ export class IncomeService {
       });
 
       return { ...updated, soldeCourant: await getAccountBalance(tx, accountId) };
+    });
+  }
+
+  /**
+   * R5 clôture §1 — « Annuler » un revenu confirmé (montant/compte/date erronés) :
+   * une IncomeOccurrence est un fait terminal auto-contenu (aucun autre montant
+   * n'est calculé à partir de sa valeur passée, contrairement à un Payment qui
+   * partage un reste_a_payer avec d'autres paiements) — la revenir à `prevu` en
+   * effaçant les champs actual_* est donc une réversion sûre et complète,
+   * jamais une réécriture silencieuse : l'utilisateur reconfirme ensuite avec
+   * les bonnes valeurs via l'endpoint de confirmation existant, inchangé.
+   */
+  async unconfirmOccurrence(userId: string, householdId: string, occurrenceId: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const occurrence = await tx.incomeOccurrence.findFirst({
+        where: { id: occurrenceId, incomeSource: { householdId } },
+      });
+      if (!occurrence) throw new NotFoundException('Occurrence de revenu introuvable');
+      if (occurrence.status !== 'recu') {
+        throw new BadRequestException('Seule une occurrence confirmée reçue peut être annulée');
+      }
+
+      return tx.incomeOccurrence.update({
+        where: { id: occurrenceId },
+        data: {
+          status: 'prevu',
+          actualAmount: null,
+          actualDate: null,
+          confirmedByUserId: null,
+          confirmedAt: null,
+        },
+      });
     });
   }
 }

@@ -115,7 +115,15 @@ export const setAccountFavorite = (accountId: string) => apiFetch(`/accounts/${a
 
 export const getAccount = (
   accountId: string,
-): Promise<{ id: string; name: string; type: string; soldeCourant: number; reservedByEnvelopes: number }> => apiFetch(`/accounts/${accountId}`);
+): Promise<{ id: string; name: string; type: string; status: 'actif' | 'archive'; soldeCourant: number; reservedByEnvelopes: number }> =>
+  apiFetch(`/accounts/${accountId}`);
+
+// R5 clôture §2 — Modifier / Archiver (jamais de suppression physique).
+export const updateAccount = (id: string, data: { name?: string; type?: string; status?: 'actif' | 'archive' }) =>
+  apiFetch(`/accounts/${id}`, { method: 'PATCH', body: data });
+
+/** `includeArchived` réservé à l'écran de gestion des comptes — les sélecteurs de nouvelle transaction n'appellent jamais ce paramètre. */
+export const listAllAccounts = () => apiFetch('/accounts?includeArchived=true');
 
 // ---------- Rapprochement / ajustement de compte (Lot 1) ----------
 export const createReconciliation = (accountId: string, data: { declaredBalance: number }) =>
@@ -175,6 +183,10 @@ export const confirmIncomeOccurrence = (
   data: { actualAmount: number; actualDate?: string; accountId?: string },
 ) => apiFetch(`/income-occurrences/${occurrenceId}/confirm`, { method: 'POST', body: data });
 
+// R5 clôture §1 — Annuler une confirmation erronée (revient à "prevu", jamais un DELETE).
+export const unconfirmIncomeOccurrence = (occurrenceId: string) =>
+  apiFetch(`/income-occurrences/${occurrenceId}/unconfirm`, { method: 'POST' });
+
 // ---------- Charges & paiements (Lot 2) ----------
 export const createChargePlan = (data: {
   label: string;
@@ -202,11 +214,23 @@ export const createPayment = (
 
 export const listPayments = (deadlineId: string) => apiFetch(`/deadlines/${deadlineId}/payments`);
 
+// R5 clôture §1 — Corriger (contre-écriture RG-015) / Annuler (remboursement), jamais une réécriture du Payment original.
+export const correctPayment = (deadlineId: string, paymentId: string, data: { correctedAmount: number }) =>
+  apiFetch(`/deadlines/${deadlineId}/payments/${paymentId}/correct`, { method: 'POST', body: data });
+
+export const reversePayment = (deadlineId: string, paymentId: string) =>
+  apiFetch(`/deadlines/${deadlineId}/payments/${paymentId}/reverse`, { method: 'POST' });
+
 /** Échéances encore ouvertes du foyer — saisie rapide « Paiement d'une échéance » (Lot 3 §2/§16). */
 export const listOpenDeadlines = () => apiFetch('/deadlines');
 
 export const createTransfer = (data: { fromAccountId?: string; toAccountId?: string; amount: number; plannedDate?: string }) =>
   apiFetch('/accounts/transfers', { method: 'POST', body: data });
+
+// R5 clôture §1 — Annuler un transfert "prevu" (rien n'a bougé) / Annuler par miroir atomique (confirmé).
+export const cancelTransfer = (id: string) => apiFetch(`/accounts/transfers/${id}/cancel`, { method: 'POST' });
+
+export const reverseTransfer = (id: string) => apiFetch(`/accounts/transfers/${id}/reverse`, { method: 'POST' });
 
 // ---------- Catégories ----------
 export const listCategories = () => apiFetch('/categories');
@@ -263,6 +287,19 @@ export const createExpense = (data: {
   variableBudgetId?: string;
   notes?: string;
 }) => apiFetch('/expenses', { method: 'POST', body: data });
+
+// R5 clôture §1 — Modifier (description uniquement, jamais le montant).
+export const updateExpenseMetadata = (
+  kind: 'adhoc_expense' | 'budget_expense',
+  id: string,
+  data: { categoryId?: string; categoryTypeId?: string; categorySubtypeId?: string; notes?: string },
+) => apiFetch(`/expenses/${kind}/${id}`, { method: 'PATCH', body: data });
+
+// R5 clôture §1 — Corriger/Annuler (Adjustment), adhoc_expense uniquement (cf. rapport pour budget_expense).
+export const correctAdhocExpense = (id: string, data: { correctedAmount: number }) =>
+  apiFetch(`/expenses/adhoc_expense/${id}/correct`, { method: 'POST', body: data });
+
+export const reverseAdhocExpense = (id: string) => apiFetch(`/expenses/adhoc_expense/${id}/reverse`, { method: 'POST' });
 
 // ---------- Enfants ----------
 export const listChildren = () => apiFetch('/children');

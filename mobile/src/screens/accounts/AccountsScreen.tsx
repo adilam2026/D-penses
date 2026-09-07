@@ -3,11 +3,13 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { FormField } from '../../ui/FormField';
 
 interface Account {
   id: string;
   name: string;
   type: string;
+  status: 'actif' | 'archive';
   soldeCourant: number;
   isFavorite: boolean;
 }
@@ -36,7 +38,10 @@ export function AccountsScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setAccounts(await api.listAccounts());
+      // R5 clôture §2 — les comptes archivés restent visibles ici (pour être
+      // réactivés depuis leur détail), jamais dans les sélecteurs de nouvelle
+      // transaction (ceux-ci continuent d'utiliser listAccounts()).
+      setAccounts(await api.listAllAccounts());
     } finally {
       setLoading(false);
     }
@@ -79,13 +84,20 @@ export function AccountsScreen() {
           ) : null
         }
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('AccountDetail', { id: item.id })}>
+          <TouchableOpacity
+            testID={`account-row-${item.id}`}
+            style={[styles.row, item.status === 'archive' && styles.rowArchived]}
+            onPress={() => navigation.navigate('AccountDetail', { id: item.id })}
+          >
             <View>
               <Text style={styles.rowName}>
                 {item.isFavorite ? '★ ' : ''}
                 {item.name}
               </Text>
-              <Text style={styles.rowType}>{TYPE_LABEL[item.type as AccountType] ?? item.type}</Text>
+              <Text style={styles.rowType}>
+                {TYPE_LABEL[item.type as AccountType] ?? item.type}
+                {item.status === 'archive' ? ' · Archivé' : ''}
+              </Text>
             </View>
             <Text style={styles.rowBalance}>{item.soldeCourant.toLocaleString('fr-FR')} DH</Text>
           </TouchableOpacity>
@@ -102,9 +114,7 @@ export function AccountsScreen() {
             </TouchableOpacity>
           ))}
         </View>
-        <View style={styles.createRow}>
-          <TextInput style={[styles.input, { flex: 1 }]} placeholder="Nom (ex. Compte principal)" value={name} onChangeText={setName} />
-        </View>
+        <FormField placeholder="Nom (ex. Compte principal)" value={name} onChangeText={setName} />
         <View style={styles.createRow}>
           <TextInput
             style={[styles.input, { flex: 1 }]}
@@ -135,6 +145,7 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 8,
   },
+  rowArchived: { opacity: 0.55 },
   rowName: { fontSize: 15, fontWeight: '600', color: '#172436' },
   rowType: { fontSize: 12, color: '#6B747C', marginTop: 2 },
   rowBalance: { fontSize: 15, fontWeight: '600', color: '#172436' },

@@ -2,7 +2,9 @@ import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -14,11 +16,19 @@ import {
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
+import { ChoiceSheet } from '../../ui/ChoiceSheet';
+import { FormField } from '../../ui/FormField';
+import { colors, radius, spacing } from '../../ui/theme';
+
+type AccountType = 'courant' | 'epargne' | 'especes' | 'autre';
+
+const TYPE_LABEL: Record<AccountType, string> = { courant: 'Banque', epargne: 'Épargne', especes: 'Espèces', autre: 'Autre' };
 
 interface Account {
   id: string;
   name: string;
   type: string;
+  status: 'actif' | 'archive';
   soldeCourant: number;
   reservedByEnvelopes: number;
 }
@@ -65,11 +75,22 @@ export function AccountDetailScreen() {
   const [transferring, setTransferring] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
 
+  // R5 clôture §2 — menu "..." (Modifier/Archiver), pattern réutilisable (§19).
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editType, setEditType] = useState<AccountType>('courant');
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [all, recon] = await Promise.all([api.listAccounts(), api.listReconciliations(accountId)]);
-      const found = all.find((a: Account) => a.id === accountId) ?? null;
+      // R5 clôture §2 — getAccount() n'est jamais filtré par statut (un compte
+      // archivé doit rester consultable) ; les comptes proposés comme
+      // destination de transfert restent listAccounts() (actifs uniquement).
+      const [found, all, recon] = await Promise.all([api.getAccount(accountId), api.listAccounts(), api.listReconciliations(accountId)]);
       setAccount(found);
       setOtherAccounts(all.filter((a: Account) => a.id !== accountId));
       setReconciliations(recon);
@@ -140,6 +161,67 @@ export function AccountDetailScreen() {
     }
   }
 
+  function openEdit() {
+    if (!account) return;
+    setMenuOpen(false);
+    setEditName(account.name);
+    setEditType(account.type as AccountType);
+    setEditError(null);
+    setEditOpen(true);
+  }
+
+  async function onSaveEdit() {
+    if (!editName.trim()) {
+      setEditError('Le nom du compte est obligatoire');
+      return;
+    }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      await api.updateAccount(accountId, { name: editName.trim(), type: editType });
+      setEditOpen(false);
+      await load();
+    } catch (err) {
+      setEditError(err instanceof api.ApiError ? err.message : 'Modification impossible');
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  function onRequestArchive() {
+    setMenuOpen(false);
+    setArchiveError(null);
+    Alert.alert(
+      'Archiver ce compte ?',
+      "L'historique reste intact et consultable — ce compte ne sera plus proposé pour une nouvelle transaction ou un nouveau transfert.",
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Archiver',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.updateAccount(accountId, { status: 'archive' });
+              await load();
+            } catch (err) {
+              setArchiveError(err instanceof api.ApiError ? err.message : 'Archivage impossible');
+            }
+          },
+        },
+      ],
+    );
+  }
+
+  async function onReactivate() {
+    setArchiveError(null);
+    try {
+      await api.updateAccount(accountId, { status: 'actif' });
+      await load();
+    } catch (err) {
+      setArchiveError(err instanceof api.ApiError ? err.message : 'Réactivation impossible');
+    }
+  }
+
   if (loading && !account) {
     return (
       <View style={styles.center}>
@@ -155,8 +237,22 @@ export function AccountDetailScreen() {
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
         <View style={styles.heroCard}>
-          <Text style={styles.heroLabel}>{account.name}</Text>
+          <View style={styles.heroHeaderRow}>
+            <Text style={styles.heroLabel}>
+              {account.name}
+              {account.status === 'archive' ? ' · Archivé' : ''}
+            </Text>
+            <TouchableOpacity testID="account-menu-button" style={styles.menuButton} onPress={() => setMenuOpen(true)}>
+              <Text style={styles.menuButtonText}>•••</Text>
+            </TouchableOpacity>
+          </View>
           <Text style={styles.heroValue}>{account.soldeCourant.toLocaleString('fr-FR')} DH</Text>
+          {account.status === 'archive' && (
+            <TouchableOpacity testID="account-reactivate" style={styles.reactivateButton} onPress={onReactivate}>
+              <Text style={styles.reactivateButtonText}>Réactiver ce compte</Text>
+            </TouchableOpacity>
+          )}
+          {archiveError && <Text style={styles.error}>{archiveError}</Text>}
         </View>
 
         {account.reservedByEnvelopes > 0 && (
@@ -222,7 +318,9 @@ export function AccountDetailScreen() {
         {adjustError ? <Text style={styles.error}>{adjustError}</Text> : null}
 
         <Text style={styles.sectionTitle}>Transfert vers un autre compte</Text>
-        {otherAccounts.length === 0 ? (
+        {account.status === 'archive' ? (
+          <Text style={styles.help}>Ce compte est archivé — réactivez-le pour transférer de l'argent depuis ce compte.</Text>
+        ) : otherAccounts.length === 0 ? (
           <Text style={styles.help}>Créez un second compte pour pouvoir y transférer de l'argent.</Text>
         ) : (
           <>
@@ -253,6 +351,49 @@ export function AccountDetailScreen() {
             {transferError ? <Text style={styles.error}>{transferError}</Text> : null}
           </>
         )}
+
+        <ChoiceSheet
+          testID="account-menu"
+          visible={menuOpen}
+          title={account.name}
+          onClose={() => setMenuOpen(false)}
+          options={[
+            { key: 'modifier', label: 'Modifier', icon: 'create-outline', onPress: openEdit },
+            account.status === 'actif'
+              ? { key: 'archiver', label: 'Archiver', icon: 'archive-outline', onPress: onRequestArchive }
+              : { key: 'reactiver', label: 'Réactiver', icon: 'refresh-outline', onPress: onReactivate },
+          ]}
+        />
+
+        <Modal visible={editOpen} transparent animationType="fade" onRequestClose={() => setEditOpen(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard} testID="account-edit-form">
+              <Text style={styles.modalTitle}>Modifier le compte</Text>
+              <FormField label="Nom" value={editName} onChangeText={setEditName} placeholder="Nom du compte" testID="account-edit-name" />
+              <View style={styles.chipRow}>
+                {(Object.keys(TYPE_LABEL) as AccountType[]).map((t) => (
+                  <TouchableOpacity
+                    key={t}
+                    testID={`account-edit-type-${t}`}
+                    style={[styles.chip, editType === t && styles.chipActive]}
+                    onPress={() => setEditType(t)}
+                  >
+                    <Text style={[styles.chipText, editType === t && styles.chipTextActive]}>{TYPE_LABEL[t]}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {editError && <Text style={styles.error}>{editError}</Text>}
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.modalButtonSecondary} onPress={() => setEditOpen(false)}>
+                  <Text style={styles.modalButtonSecondaryText}>Annuler</Text>
+                </TouchableOpacity>
+                <TouchableOpacity testID="account-edit-save" style={styles.modalButton} onPress={onSaveEdit} disabled={editSaving}>
+                  {editSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalButtonText}>Enregistrer</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -263,8 +404,31 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F6F5F2' },
   scroll: { padding: 20 },
   heroCard: { backgroundColor: '#fff', borderRadius: 14, padding: 18, marginBottom: 20 },
-  heroLabel: { fontSize: 13, color: '#6B747C', fontWeight: '600' },
+  heroHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  heroLabel: { fontSize: 13, color: '#6B747C', fontWeight: '600', flexShrink: 1 },
   heroValue: { fontSize: 28, fontWeight: '800', color: '#172436', marginTop: 4 },
+  menuButton: { paddingHorizontal: 10, paddingVertical: 2 },
+  menuButtonText: { fontSize: 18, fontWeight: '700', color: colors.textSecondary },
+  reactivateButton: { backgroundColor: colors.primary, borderRadius: radius.sm, paddingVertical: 10, alignItems: 'center', marginTop: 12 },
+  reactivateButtonText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)', alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
+  modalCard: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.xl, width: '100%' },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.md },
+  modalInput: {
+    backgroundColor: colors.background,
+    borderRadius: radius.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 10,
+  },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: spacing.md },
+  modalButton: { backgroundColor: colors.primary, borderRadius: radius.sm, paddingHorizontal: 18, paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
+  modalButtonText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+  modalButtonSecondary: { paddingHorizontal: 14, paddingVertical: 10, marginRight: 8 },
+  modalButtonSecondaryText: { color: colors.textSecondary, fontWeight: '600', fontSize: 13 },
   sectionTitle: { fontSize: 14, fontWeight: '700', color: '#172436', marginTop: 12, marginBottom: 6 },
   help: { fontSize: 12, color: '#6B747C', marginBottom: 10 },
   row: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
