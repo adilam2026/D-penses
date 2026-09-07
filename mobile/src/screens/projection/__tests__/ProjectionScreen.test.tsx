@@ -49,8 +49,9 @@ function monthBucket(overrides: Partial<api.MonthBucketApi> = {}): api.MonthBuck
     total_expense: 28000,
     balance: 2000,
     cumulative_balance: 2000,
+    projected_cash_balance: 2000,
     income_items: [
-      { entityType: 'income_occurrence', entityId: 'occ1', label: 'Salaire', date: '2026-09-05', amount: 30000, accountId: 'acc1', accountKnown: true, movable: false },
+      { entityType: 'income_occurrence', entityId: 'occ1', label: 'Salaire', date: '2026-09-05', amount: 30000, accountId: 'acc1', accountKnown: true, movable: false, realized: false },
     ],
     expense_items: [
       {
@@ -63,6 +64,7 @@ function monthBucket(overrides: Partial<api.MonthBucketApi> = {}): api.MonthBuck
         accountKnown: true,
         movable: true,
         category: 'flexible',
+        realized: false,
       },
     ],
     movable_expense_total: 28000,
@@ -89,8 +91,11 @@ function projectionFixture(months: api.MonthBucketApi[]): api.MonthlyProjectionA
       deficit_months_count: months.filter((m) => m.balance < 0).length,
       worst_month: null,
       max_monthly_deficit: null,
-      max_financing_need: null,
-      first_positive_cumulative_month: null,
+      opening_cash_balance: 0,
+      cash_low_point: null,
+      max_financing_need: 0,
+      first_positive_cash_balance_month: null,
+      treasury_account_ids: ['acc1', 'acc2'],
       is_complete: months.every((m) => m.is_complete),
       incomplete_months_count: months.filter((m) => !m.is_complete).length,
     },
@@ -264,12 +269,72 @@ it('« Appliquer les modifications » persiste réellement le déplacement d\'un
   await waitFor(() => expect(mockedApi.updateDeadline).toHaveBeenCalledWith('dl1', expect.objectContaining({ dueDate: expect.any(String) })));
 });
 
+it('Round 4bis : une ligne réelle affiche le badge "Réel" et aucun lien de déplacement, une ligne prévue affiche "Prévu"', async () => {
+  mockedApi.getMonthlyProjection.mockResolvedValue(
+    projectionFixture([
+      monthBucket({
+        expense_items: [
+          {
+            entityType: 'deadline',
+            entityId: 'dl3',
+            label: 'Facture payée',
+            date: '2026-09-12',
+            amount: 1500,
+            accountId: 'acc1',
+            accountKnown: true,
+            movable: false,
+            realized: true,
+          },
+        ],
+      }),
+    ]),
+  );
+  await render(<ProjectionScreen />);
+  await waitFor(() => screen.getByTestId('month-toggle-2026-09'));
+  await fireEvent.press(screen.getByTestId('month-toggle-2026-09'));
+  await waitFor(() => screen.getByText('Facture payée'));
+
+  expect(screen.getByText('Réel')).toBeTruthy();
+  // Un mouvement déjà réel ne propose plus de déplacement (ni réel ni simulé).
+  expect(screen.queryByTestId('move-dl3')).toBeNull();
+});
+
+it('Round 4bis : la carte résumé distingue "Trésorerie initiale" et "Balance cumulée" (jamais confondues)', async () => {
+  mockedApi.getMonthlyProjection.mockResolvedValue({
+    ...projectionFixture([monthBucket({ projected_cash_balance: 22000 })]),
+    summary: {
+      total_income: 30000,
+      total_expense: 28000,
+      total_balance: 2000,
+      deficit_months_count: 0,
+      worst_month: null,
+      max_monthly_deficit: null,
+      opening_cash_balance: 20000,
+      cash_low_point: { month: '2026-09', value: 22000 },
+      max_financing_need: 0,
+      first_positive_cash_balance_month: null,
+      treasury_account_ids: ['acc1'],
+      is_complete: true,
+      incomplete_months_count: 0,
+    },
+  });
+  await render(<ProjectionScreen />);
+  await waitFor(() => screen.getByTestId('summary-card'));
+
+  expect(screen.getByText(/Trésorerie initiale/)).toBeTruthy();
+  expect(screen.getByText(/20 000 DH/)).toBeTruthy();
+  expect(screen.getByText(/Besoin temporaire de financement/)).toBeTruthy();
+  const monthCard = within(screen.getByTestId('month-card-2026-09'));
+  expect(monthCard.getByText(/Balance cumulée/)).toBeTruthy();
+  expect(monthCard.getByText(/Trésorerie projetée/)).toBeTruthy();
+});
+
 it('une échéance contractuelle (non modifiable) propose "Simuler un décalage", jamais "Déplacer"', async () => {
   mockedApi.getMonthlyProjection.mockResolvedValue(
     projectionFixture([
       monthBucket({
         expense_items: [
-          { entityType: 'deadline', entityId: 'dl2', label: 'Prêt immobilier', date: '2026-09-05', amount: 8000, accountId: 'acc1', accountKnown: true, movable: false, category: 'obligatoire' },
+          { entityType: 'deadline', entityId: 'dl2', label: 'Prêt immobilier', date: '2026-09-05', amount: 8000, accountId: 'acc1', accountKnown: true, movable: false, category: 'obligatoire', realized: false },
         ],
       }),
     ]),

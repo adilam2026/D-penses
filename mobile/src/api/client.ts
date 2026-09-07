@@ -451,13 +451,14 @@ export interface MonthlyLineItem {
   entityType: 'income_occurrence' | 'deadline' | 'variable_budget';
   entityId: string;
   label: string;
-  date: string;
+  date: string; // jour exact — date RÉELLE si realized=true, date prévue sinon
   amount: number;
   accountId: string | null;
   accountKnown: boolean;
   amountStatus?: 'estime' | 'confirme';
   category?: 'obligatoire' | 'flexible' | 'projet';
   movable: boolean;
+  realized: boolean; // Round 4bis §1 — true = mouvement réel déjà survenu, false = encore prévu
 }
 
 export interface MonthBucketApi {
@@ -467,6 +468,7 @@ export interface MonthBucketApi {
   total_expense: number;
   balance: number;
   cumulative_balance: number;
+  projected_cash_balance: number; // Round 4bis §7 — trésorerie initiale + cumul des flux
   income_items: MonthlyLineItem[];
   expense_items: MonthlyLineItem[];
   movable_expense_total: number;
@@ -490,8 +492,13 @@ export interface MonthlyProjectionApi {
     deficit_months_count: number;
     worst_month: { month: string; balance: number } | null;
     max_monthly_deficit: number | null;
-    max_financing_need: number | null;
-    first_positive_cumulative_month: string | null;
+    // Round 4bis §6-§9 — "Balance cumulée" (flux purs, part de zéro) N'EST PAS "Trésorerie" :
+    // ces champs partent de la trésorerie RÉELLE initiale, jamais de zéro.
+    opening_cash_balance: number;
+    cash_low_point: { month: string; value: number } | null;
+    max_financing_need: number; // max(0, -min(trésorerie projetée)) — toujours un nombre, 0 si jamais négative
+    first_positive_cash_balance_month: string | null;
+    treasury_account_ids: string[];
     is_complete: boolean;
     incomplete_months_count: number;
   };

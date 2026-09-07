@@ -100,9 +100,9 @@ describe('Round 4 — Projection Globale Mensuelle (e2e)', () => {
 
   async function monthly(
     auth: () => [string, string],
-    query: { horizonMonths?: number; incomeAccountIds?: string; expenseAccountIds?: string } = {},
+    query: { horizonMonths?: number; incomeAccountIds?: string; expenseAccountIds?: string; at?: string } = {},
   ) {
-    let qs = `at=${REF}`;
+    let qs = `at=${query.at ?? REF}`;
     if (query.horizonMonths) qs += `&horizonMonths=${query.horizonMonths}`;
     if (query.incomeAccountIds !== undefined) qs += `&incomeAccountIds=${query.incomeAccountIds}`;
     if (query.expenseAccountIds !== undefined) qs += `&expenseAccountIds=${query.expenseAccountIds}`;
@@ -179,7 +179,7 @@ describe('Round 4 — Projection Globale Mensuelle (e2e)', () => {
   });
 
   describe('D — dépense réelle remplace correctement son prévu (aucun double comptage)', () => {
-    it('une échéance intégralement payée disparaît des dépenses mensuelles projetées', async () => {
+    it('une échéance intégralement payée dans le même mois reste comptée UNE SEULE FOIS (ni 0, ni doublée)', async () => {
       const { auth } = await newHousehold();
       const account = await newAccount(auth, 'Compte D', 10000);
       const catExp = await newCategory(auth, 'Dépenses D');
@@ -191,9 +191,14 @@ describe('Round 4 — Projection Globale Mensuelle (e2e)', () => {
       await http.post(`/deadlines/${deadlineId}/payments`).set(...auth()).send({ amount: 1000, accountId: account, paidDate: '2026-09-15' }).expect(201);
 
       const after = await monthly(auth);
-      // Payée intégralement (reste_a_payer=0) : plus comptée comme dépense projetée à venir —
-      // et pas non plus "prévu + payé" cumulés (RG-000/§14 Round 4).
-      expect(findMonth(after, '2026-09').total_expense).toBe(0);
+      // Round 4bis §1 : RÉEL+PRÉVU = UNION, jamais une disparition ni un doublon — le
+      // paiement réel (payeNet=1000, daté paidDate) REMPLACE le prévu (resteAPayer=0,
+      // donc plus généré par computeProjection) : le mois reste à 1000, jamais 0 ni 2000.
+      const sep = findMonth(after, '2026-09');
+      expect(sep.total_expense).toBe(1000);
+      const item = sep.expense_items.find((i: any) => i.label === 'Facture D');
+      expect(item.realized).toBe(true);
+      expect(item.amount).toBe(1000);
     });
   });
 
@@ -250,7 +255,7 @@ describe('Round 4 — Projection Globale Mensuelle (e2e)', () => {
   });
 
   describe('H — revenu réel : pas de double comptage avec prévu', () => {
-    it('une occurrence confirmée reçue disparaît des revenus mensuels projetés', async () => {
+    it('une occurrence confirmée reçue dans le même mois reste comptée UNE SEULE FOIS (ni 0, ni doublée)', async () => {
       const { auth } = await newHousehold();
       const account = await newAccount(auth, 'Compte H');
       const { occurrenceId } = await newIncome(auth, account, 'Salaire H', 15000, '2026-09-08');
@@ -261,7 +266,14 @@ describe('Round 4 — Projection Globale Mensuelle (e2e)', () => {
       await http.post(`/income-occurrences/${occurrenceId}/confirm`).set(...auth()).send({ actualAmount: 15000, actualDate: '2026-09-08', accountId: account }).expect(201);
 
       const after = await monthly(auth);
-      expect(findMonth(after, '2026-09').total_income).toBe(0);
+      // Round 4bis §1/§3 : IncomeOccurrence bascule 'prevu' → 'recu' (jamais les deux), donc
+      // le prévu disparaît de computeProjection MAIS le réel (actualAmount, actualDate) est
+      // réintégré par la couche réelle — le mois reste à 15000, jamais 0.
+      const sep = findMonth(after, '2026-09');
+      expect(sep.total_income).toBe(15000);
+      const item = sep.income_items.find((i: any) => i.label === 'Salaire H');
+      expect(item.realized).toBe(true);
+      expect(item.amount).toBe(15000);
     });
   });
 
@@ -452,7 +464,7 @@ describe('Round 4 — Projection Globale Mensuelle (e2e)', () => {
   });
 
   describe('R — paiement/revenu déjà réel : cohérence avec accountId', () => {
-    it('une échéance payée reste absente de la projection quel que soit le filtre-compte (jamais un second comptage)', async () => {
+    it('une échéance payée reste comptée une seule fois, filtrée sur le VRAI compte débité (celui du paiement réel)', async () => {
       const { auth } = await newHousehold();
       const account = await newAccount(auth, 'Compte R', 10000);
       const other = await newAccount(auth, 'Autre compte R');
@@ -460,10 +472,172 @@ describe('Round 4 — Projection Globale Mensuelle (e2e)', () => {
       const { deadlineId } = await newDeadline(auth, catExp, 'Facture R', '2026-09-12', 1500, { defaultAccountId: account });
       await http.post(`/deadlines/${deadlineId}/payments`).set(...auth()).send({ amount: 1500, accountId: account, paidDate: '2026-09-12' }).expect(201);
 
+      // Round 4bis §1/§9 : le paiement réel porte SON PROPRE accountId (celui réellement
+      // débité) — le filtre-compte doit donc l'inclure sur le compte payé, et l'exclure
+      // explicitement (jamais silencieusement) sur tout autre compte.
       const filteredOnPaidAccount = await monthly(auth, { expenseAccountIds: account });
       const filteredOnOtherAccount = await monthly(auth, { expenseAccountIds: other });
-      expect(findMonth(filteredOnPaidAccount, '2026-09').total_expense).toBe(0);
-      expect(findMonth(filteredOnOtherAccount, '2026-09').total_expense).toBe(0);
+      expect(findMonth(filteredOnPaidAccount, '2026-09').total_expense).toBe(1500);
+      const otherMonth = findMonth(filteredOnOtherAccount, '2026-09');
+      expect(otherMonth.total_expense).toBe(0);
+      expect(otherMonth.excluded_by_filter_count).toBe(1);
+      expect(otherMonth.excluded_by_filter_total).toBe(1500);
+    });
+  });
+
+  describe('S — salaire prévu reçu dans le même mois : union réel+prévu = montant unique', () => {
+    it('salaire prévu 29 500 puis reçu 29 500 en septembre → total revenus septembre = 29 500 (ni 0 ni 59 000)', async () => {
+      const { auth } = await newHousehold();
+      const account = await newAccount(auth, 'Compte S');
+      const { occurrenceId } = await newIncome(auth, account, 'Salaire S', 29500, '2026-09-05');
+
+      await http
+        .post(`/income-occurrences/${occurrenceId}/confirm`)
+        .set(...auth())
+        .send({ actualAmount: 29500, actualDate: '2026-09-05', accountId: account })
+        .expect(201);
+
+      const body = await monthly(auth);
+      expect(findMonth(body, '2026-09').total_income).toBe(29500);
+    });
+  });
+
+  describe('T — échéance prévue payée dans le même mois : union réel+prévu = montant unique', () => {
+    it('échéance prévue 5 000 puis payée 5 000 en septembre → total dépenses septembre = 5 000 (ni 0 ni 10 000)', async () => {
+      const { auth } = await newHousehold();
+      const account = await newAccount(auth, 'Compte T', 10000);
+      const catExp = await newCategory(auth, 'Dépenses T');
+      const { deadlineId } = await newDeadline(auth, catExp, 'Facture T', '2026-09-15', 5000, { defaultAccountId: account });
+
+      await http.post(`/deadlines/${deadlineId}/payments`).set(...auth()).send({ amount: 5000, accountId: account, paidDate: '2026-09-15' }).expect(201);
+
+      const body = await monthly(auth);
+      expect(findMonth(body, '2026-09').total_expense).toBe(5000);
+    });
+  });
+
+  describe('U — paiement partiel dans le même mois : réel + reste prévu = montant total, jamais deux fois', () => {
+    it('échéance 10 000, payé 4 000 en septembre, reste 6 000 dû en septembre → total septembre = 10 000', async () => {
+      const { auth } = await newHousehold();
+      const account = await newAccount(auth, 'Compte U', 20000);
+      const catExp = await newCategory(auth, 'Dépenses U');
+      const { deadlineId } = await newDeadline(auth, catExp, 'Facture U', '2026-09-20', 10000, { defaultAccountId: account });
+
+      await http.post(`/deadlines/${deadlineId}/payments`).set(...auth()).send({ amount: 4000, accountId: account, paidDate: '2026-09-10' }).expect(201);
+
+      const body = await monthly(auth);
+      const sep = findMonth(body, '2026-09');
+      expect(sep.total_expense).toBe(10000);
+      const realItem = sep.expense_items.find((i: any) => i.realized === true);
+      const prevuItem = sep.expense_items.find((i: any) => i.realized === false);
+      expect(realItem.amount).toBe(4000);
+      expect(prevuItem.amount).toBe(6000);
+    });
+  });
+
+  describe('V — date réelle différente de la date prévue (dépense) : le réel compte dans SON mois réel', () => {
+    it('échéance due le 30 septembre mais payée le 28 août → août contient le réel, septembre ne le contient plus', async () => {
+      const { auth } = await newHousehold();
+      const account = await newAccount(auth, 'Compte V', 20000);
+      const catExp = await newCategory(auth, 'Dépenses V');
+      const { deadlineId } = await newDeadline(auth, catExp, 'Facture V', '2026-09-30', 7000, { defaultAccountId: account });
+
+      await http.post(`/deadlines/${deadlineId}/payments`).set(...auth()).send({ amount: 7000, accountId: account, paidDate: '2026-08-28' }).expect(201);
+
+      const body = await monthly(auth, { at: '2026-08-01', horizonMonths: 3 });
+      const aug = findMonth(body, '2026-08');
+      const sep = findMonth(body, '2026-09');
+      expect(aug.total_expense).toBe(7000);
+      const item = aug.expense_items.find((i: any) => i.label === 'Facture V');
+      expect(item.realized).toBe(true);
+      expect(item.date).toBe('2026-08-28');
+      expect(sep.total_expense).toBe(0);
+    });
+  });
+
+  describe('W — date réelle différente de la date prévue (revenu) : le réel compte dans SON mois réel', () => {
+    it('revenu prévu le 10 septembre mais reçu le 28 août → août contient le réel, septembre ne contient plus le prévu', async () => {
+      const { auth } = await newHousehold();
+      const account = await newAccount(auth, 'Compte W');
+      const { occurrenceId } = await newIncome(auth, account, 'Prime W', 12000, '2026-09-10');
+
+      await http
+        .post(`/income-occurrences/${occurrenceId}/confirm`)
+        .set(...auth())
+        .send({ actualAmount: 12000, actualDate: '2026-08-28', accountId: account })
+        .expect(201);
+
+      const body = await monthly(auth, { at: '2026-08-01', horizonMonths: 3 });
+      const aug = findMonth(body, '2026-08');
+      const sep = findMonth(body, '2026-09');
+      expect(aug.total_income).toBe(12000);
+      const item = aug.income_items.find((i: any) => i.label === 'Prime W');
+      expect(item.realized).toBe(true);
+      expect(item.date).toBe('2026-08-28');
+      expect(sep.total_income).toBe(0);
+    });
+  });
+
+  describe('X — besoin de financement temporaire suit la trésorerie projetée, jamais le cumul de flux seul', () => {
+    it('trésorerie initiale 3 000, cumul au point bas -5 000 → trésorerie projetée -2 000 → besoin temporaire = 2 000 (pas 5 000)', async () => {
+      const { auth } = await newHousehold();
+      const account = await newAccount(auth, 'Compte X', 3000);
+      const catExp = await newCategory(auth, 'Dépenses X');
+      await newDeadline(auth, catExp, 'Grosse charge X', '2026-09-15', 5000, { defaultAccountId: account });
+
+      const body = await monthly(auth, { horizonMonths: 3 });
+      const sep = findMonth(body, '2026-09');
+      expect(sep.cumulative_balance).toBe(-5000);
+      expect(sep.projected_cash_balance).toBe(-2000);
+      expect(body.summary.opening_cash_balance).toBe(3000);
+      expect(body.summary.cash_low_point).toEqual({ month: '2026-09', value: -2000 });
+      expect(body.summary.max_financing_need).toBe(2000);
+    });
+  });
+
+  describe('Y — trésorerie initiale : règle d\'union explicite entre filtres Revenus et Dépenses', () => {
+    it('un filtre "Tous" (non fourni) fait couvrir tous les comptes actifs ; deux filtres explicites font l\'union', async () => {
+      const { auth } = await newHousehold();
+      const accA = await newAccount(auth, 'Compte Y1', 1000);
+      const accB = await newAccount(auth, 'Compte Y2', 2000);
+
+      const incomeFilterOnly = await monthly(auth, { incomeAccountIds: accA }); // expenseAccountIds omis = "Tous"
+      expect(incomeFilterOnly.summary.opening_cash_balance).toBe(3000);
+      expect([...incomeFilterOnly.summary.treasury_account_ids].sort()).toEqual([accA, accB].sort());
+
+      const bothFilteredOnA = await monthly(auth, { incomeAccountIds: accA, expenseAccountIds: accA });
+      expect(bothFilteredOnA.summary.opening_cash_balance).toBe(1000);
+      expect(bothFilteredOnA.summary.treasury_account_ids).toEqual([accA]);
+    });
+  });
+
+  describe('Z — simulation : le déplacement recalcule aussi trésorerie projetée / point bas / besoin de financement', () => {
+    it('déplacer une grosse charge de novembre à décembre déplace le creux de trésorerie, sans faire disparaître le besoin', async () => {
+      const { auth } = await newHousehold();
+      const account = await newAccount(auth, 'Compte Z', 4000);
+      const catExp = await newCategory(auth, 'Dépenses Z');
+      const { deadlineId } = await newDeadline(auth, catExp, 'PC Z', '2026-11-15', 9000, {
+        defaultAccountId: account,
+        obligationStatus: 'optionnelle_souscrite',
+      });
+
+      const res = await http
+        .post('/projection/monthly/simulate')
+        .set(...auth())
+        .send({ at: REF, horizonMonths: 6, moves: [{ deadlineId, newDate: '2026-12-15' }] })
+        .expect(201);
+
+      const baseline = res.body.baseline;
+      const scenario = res.body.scenario;
+      // Baseline : trésorerie 4000 - 9000 = -5000 dès novembre → besoin temporaire 5000.
+      expect(baseline.summary.max_financing_need).toBe(5000);
+      expect(baseline.summary.cash_low_point.month).toBe('2026-11');
+
+      // Scénario : la charge est décalée en décembre — le creux se déplace lui aussi,
+      // preuve que le déplacement est réellement recalculé (jamais juste réaffiché) :
+      // le besoin ne disparaît pas, il se DÉCALE (même montant, mois différent).
+      expect(scenario.summary.cash_low_point.month).toBe('2026-12');
+      expect(scenario.summary.max_financing_need).toBe(5000);
     });
   });
 });

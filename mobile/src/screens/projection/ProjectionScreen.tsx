@@ -48,13 +48,14 @@ function ExpenseRow({
       <TouchableOpacity style={{ flex: 1 }} onPress={() => onOpenDetail(item)} disabled={item.entityType !== 'deadline'}>
         <Text style={styles.itemLabel}>{item.label}</Text>
         <View style={styles.itemBadgeRow}>
+          <Text style={item.realized ? styles.itemBadgeRealized : styles.itemBadgePrevu}>{item.realized ? 'Réel' : 'Prévu'}</Text>
           {item.category && <Text style={styles.itemBadge}>{CATEGORY_LABEL[item.category]}</Text>}
           {item.amountStatus === 'estime' && <Text style={styles.itemBadgeWarning}>Estimée</Text>}
         </View>
       </TouchableOpacity>
       <View style={{ alignItems: 'flex-end' }}>
         <Text style={styles.itemAmount}>{formatDh(item.amount)}</Text>
-        {item.entityType === 'deadline' && (
+        {item.entityType === 'deadline' && !item.realized && (
           <TouchableOpacity testID={`move-${item.entityId}`} onPress={() => onMove(item)}>
             <Text style={styles.moveLink}>{item.movable ? 'Déplacer' : 'Simuler un décalage'}</Text>
           </TouchableOpacity>
@@ -67,7 +68,12 @@ function ExpenseRow({
 function IncomeRow({ item }: { item: MonthlyLineItem }) {
   return (
     <View style={styles.itemRow}>
-      <Text style={styles.itemLabel}>{item.label}</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.itemLabel}>{item.label}</Text>
+        <View style={styles.itemBadgeRow}>
+          <Text style={item.realized ? styles.itemBadgeRealized : styles.itemBadgePrevu}>{item.realized ? 'Réel' : 'Prévu'}</Text>
+        </View>
+      </View>
       <Text style={[styles.itemAmount, styles.itemAmountPositive]}>+{formatDh(item.amount)}</Text>
     </View>
   );
@@ -110,7 +116,12 @@ function MonthCard({
           <Text style={[styles.monthStatus, displayed.balance < 0 ? styles.balanceNegative : styles.balancePositive]}>
             {displayed.balance < 0 ? 'Déficitaire' : 'Positif'}
           </Text>
-          <Text style={styles.cumulLine}>cumul {displayed.cumulative_balance >= 0 ? '+' : ''}{formatDh(displayed.cumulative_balance)}</Text>
+          <Text style={styles.cumulLine}>
+            Balance cumulée {displayed.cumulative_balance >= 0 ? '+' : ''}{formatDh(displayed.cumulative_balance)}
+          </Text>
+          <Text style={[styles.treasuryLine, displayed.projected_cash_balance < 0 && styles.balanceNegative]}>
+            Trésorerie projetée {formatDh(displayed.projected_cash_balance)}
+          </Text>
         </View>
       </TouchableOpacity>
 
@@ -415,11 +426,19 @@ export function ProjectionScreen() {
             Mois le plus déficitaire : {data.summary.worst_month.month} ({formatDh(data.summary.worst_month.balance)})
           </Text>
         )}
-        {data.summary.max_financing_need !== null && (
-          <Text style={styles.summaryLine}>Besoin maximal de financement temporaire : {formatDh(data.summary.max_financing_need)}</Text>
+
+        {/* Round 4bis §6-§9 : "Balance cumulée" (flux purs) N'EST PAS "Trésorerie" (compte
+            tenu du disponible réel initial) — deux notions toujours affichées séparément,
+            jamais confondues sous un même libellé. */}
+        <Text style={styles.summaryLine}>Trésorerie initiale (comptes inclus) : {formatDh(data.summary.opening_cash_balance)}</Text>
+        {data.summary.cash_low_point && (
+          <Text style={styles.summaryLine}>
+            Point bas de trésorerie : {data.summary.cash_low_point.month} ({formatDh(data.summary.cash_low_point.value)})
+          </Text>
         )}
-        {data.summary.first_positive_cumulative_month && (
-          <Text style={styles.summaryLine}>Retour à une situation positive : {data.summary.first_positive_cumulative_month}</Text>
+        <Text style={styles.summaryLine}>Besoin temporaire de financement : {formatDh(data.summary.max_financing_need)}</Text>
+        {data.summary.first_positive_cash_balance_month && (
+          <Text style={styles.summaryLine}>Retour à une trésorerie positive : {data.summary.first_positive_cash_balance_month}</Text>
         )}
       </View>
 
@@ -537,6 +556,7 @@ const styles = StyleSheet.create({
   monthBalance: { fontSize: 16, fontWeight: '800' },
   monthStatus: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', marginTop: 2 },
   cumulLine: { fontSize: 10, color: '#6B747C', marginTop: 2 },
+  treasuryLine: { fontSize: 10, color: '#172436', fontWeight: '600', marginTop: 2 },
   balancePositive: { color: '#2E7D5B' },
   balanceNegative: { color: '#B3261E' },
   impactRow: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#EDEBE6' },
@@ -554,6 +574,8 @@ const styles = StyleSheet.create({
   itemBadgeRow: { flexDirection: 'row', marginTop: 2 },
   itemBadge: { fontSize: 10, color: '#6B747C', backgroundColor: '#EDEBE6', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2, marginRight: 4 },
   itemBadgeWarning: { fontSize: 10, color: '#8A6D1D', backgroundColor: '#FFF7E6', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2 },
+  itemBadgeRealized: { fontSize: 10, color: '#2E7D5B', backgroundColor: '#E6F4EC', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2, marginRight: 4, fontWeight: '700' },
+  itemBadgePrevu: { fontSize: 10, color: '#6B747C', backgroundColor: '#EDEBE6', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2, marginRight: 4 },
   itemAmount: { fontSize: 13, fontWeight: '700', color: '#B3261E' },
   itemAmountPositive: { color: '#2E7D5B' },
   moveLink: { fontSize: 11, color: '#172436', fontWeight: '600', marginTop: 4 },
