@@ -6,6 +6,7 @@ import { DateField } from '../../ui/DateField';
 import { FREQUENCY_LABEL } from '../../ui/frequency';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import * as api from '../../api/client';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface Child {
   id: string;
@@ -307,7 +308,7 @@ export function SchoolWizardScreen() {
           <TextInput testID="gate-lastName" style={styles.input} placeholder="Nom" value={newChildLast} onChangeText={setNewChildLast} onFocus={handleFocus} />
           {childError ? <Text style={styles.error}>{childError}</Text> : null}
           <TouchableOpacity testID="gate-submit" style={styles.navButtonPrimary} onPress={onCreateChild} disabled={creatingChild}>
-            {creatingChild ? <ActivityIndicator color="#fff" /> : <Text style={styles.navButtonPrimaryText}>Ajouter un enfant</Text>}
+            {creatingChild ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.navButtonPrimaryText}>Ajouter un enfant</Text>}
           </TouchableOpacity>
           <TouchableOpacity style={[styles.navButton, { marginTop: 12 }]} onPress={() => navigation.goBack()}>
             <Text style={styles.navButtonText}>Annuler</Text>
@@ -546,7 +547,7 @@ export function SchoolWizardScreen() {
           </TouchableOpacity>
         ) : (
           <TouchableOpacity testID="nav-submit" style={styles.navButtonPrimary} onPress={onSubmit} disabled={submitting}>
-            {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.navButtonPrimaryText}>Créer le plan</Text>}
+            {submitting ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.navButtonPrimaryText}>Créer le plan</Text>}
           </TouchableOpacity>
         )}
       </View>
@@ -671,75 +672,75 @@ function PosteEditor({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2', paddingTop: 40 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F6F5F2' },
-  scroll: { padding: 24 },
-  stepCounter: { fontSize: 11, color: '#6B747C', textAlign: 'center' },
-  title: { fontSize: 20, fontWeight: '700', color: '#172436', textAlign: 'center', marginBottom: 8 },
-  stepHint: { fontSize: 12, color: '#6B747C', marginBottom: 12 },
-  sectionLabel: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 8, marginTop: 12 },
-  hint: { fontSize: 11, color: '#6B747C', marginBottom: 8, fontStyle: 'italic' },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  container: { flex: 1, backgroundColor: colors.background, paddingTop: 40 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+  scroll: { padding: spacing.xxl },
+  stepCounter: { fontSize: 11, color: colors.textSecondary, textAlign: 'center' },
+  title: { fontSize: 20, fontWeight: '700', color: colors.textPrimary, textAlign: 'center', marginBottom: spacing.sm },
+  stepHint: { fontSize: 12, color: colors.textSecondary, marginBottom: spacing.md },
+  sectionLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm, marginTop: 12 },
+  hint: { fontSize: 11, color: colors.textSecondary, marginBottom: spacing.sm, fontStyle: 'italic' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  toggleLabel: { fontSize: 14, fontWeight: '600', color: '#172436', flex: 1, marginRight: 8 },
+  toggleLabel: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, flex: 1, marginRight: spacing.sm },
   input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginBottom: 10,
     fontSize: 14,
     borderWidth: 1,
-    borderColor: '#E3E1DC',
+    borderColor: colors.border,
   },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap' },
   chip: {
-    backgroundColor: '#fff',
-    borderRadius: 999,
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginRight: 8,
-    marginBottom: 8,
+    paddingVertical: spacing.sm,
+    marginRight: spacing.sm,
+    marginBottom: spacing.sm,
     borderWidth: 1,
-    borderColor: '#E3E1DC',
+    borderColor: colors.border,
   },
-  chipActive: { backgroundColor: '#172436', borderColor: '#172436' },
-  chipText: { fontSize: 13, color: '#172436' },
-  chipTextActive: { color: '#fff', fontWeight: '600' },
-  miniLabel: { fontSize: 11, color: '#6B747C', fontWeight: '600', marginBottom: 4 },
+  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipText: { fontSize: 13, color: colors.textPrimary },
+  chipTextActive: { color: colors.textOnPrimary, fontWeight: '600' },
+  miniLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', marginBottom: 4 },
   termMonthBox: { flex: 1 },
   termMonthInput: { textAlign: 'center' },
-  distributeButton: { backgroundColor: '#172436', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  distributeButtonText: { color: '#fff', fontWeight: '600', fontSize: 12 },
-  posteBlock: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#E3E1DC' },
-  segment: { flexDirection: 'row', backgroundColor: '#EDEBE6', borderRadius: 10, padding: 4, marginBottom: 10 },
-  segmentItem: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
-  segmentActive: { backgroundColor: '#fff' },
-  segmentText: { fontSize: 12, color: '#6B747C', fontWeight: '600' },
-  segmentTextActive: { color: '#172436' },
-  termCard: { backgroundColor: '#F6F5F2', borderRadius: 10, padding: 10, marginBottom: 8 },
-  termTitle: { fontSize: 12, fontWeight: '700', color: '#172436', marginBottom: 6 },
-  autoHint: { fontSize: 10, color: '#B8860B', marginTop: -6, marginBottom: 4, fontStyle: 'italic' },
-  extraBlock: { marginBottom: 8, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#E3E1DC' },
-  addExtraButton: { alignItems: 'center', paddingVertical: 8, marginBottom: 8 },
-  addExtraButtonText: { color: '#172436', fontWeight: '600', fontSize: 13 },
-  recapHeader: { fontSize: 16, fontWeight: '700', color: '#172436' },
-  recapSub: { fontSize: 12, color: '#6B747C', marginBottom: 12 },
-  recapRow: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#E3E1DC' },
-  recapLabel: { fontSize: 13, fontWeight: '600', color: '#172436' },
-  recapDate: { fontSize: 11, color: '#6B747C', marginTop: 2 },
-  recapAmount: { fontSize: 13, fontWeight: '700', color: '#172436' },
-  recapStatus: { fontSize: 10, color: '#B8860B', marginTop: 2 },
-  recapStatusUnknown: { color: '#B3261E', fontWeight: '600' },
-  totalsCard: { backgroundColor: '#fff', borderRadius: 10, padding: 14, marginTop: 8, borderWidth: 1, borderColor: '#E3E1DC' },
-  totalsLine: { fontSize: 13, fontWeight: '700', color: '#172436', marginBottom: 4 },
-  totalsLineWarning: { color: '#B3261E' },
-  navRow: { flexDirection: 'row', paddingTop: 20, paddingHorizontal: 20, gap: 12 },
-  navButton: { flex: 1, paddingVertical: 14, alignItems: 'center', borderRadius: 10, backgroundColor: '#EDEBE6' },
-  navButtonText: { color: '#172436', fontWeight: '600', fontSize: 14 },
-  navButtonPrimary: { flex: 1, paddingVertical: 14, alignItems: 'center', borderRadius: 10, backgroundColor: '#172436', marginTop: 8 },
-  navButtonPrimaryText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  error: { color: '#B3261E', fontSize: 13, marginTop: 8 },
-  gateTitle: { fontSize: 18, fontWeight: '700', color: '#172436', textAlign: 'center', marginBottom: 8 },
-  gateHelp: { fontSize: 13, color: '#6B747C', textAlign: 'center', marginBottom: 20 },
+  distributeButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.sm },
+  distributeButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 12 },
+  posteBlock: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  segment: { flexDirection: 'row', backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: 4, marginBottom: 10 },
+  segmentItem: { flex: 1, paddingVertical: spacing.sm, borderRadius: radius.sm, alignItems: 'center' },
+  segmentActive: { backgroundColor: colors.surface },
+  segmentText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+  segmentTextActive: { color: colors.textPrimary },
+  termCard: { backgroundColor: colors.background, borderRadius: radius.md, padding: 10, marginBottom: spacing.sm },
+  termTitle: { fontSize: 12, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 },
+  autoHint: { fontSize: 10, color: colors.warning, marginTop: -6, marginBottom: 4, fontStyle: 'italic' },
+  extraBlock: { marginBottom: spacing.sm, paddingBottom: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
+  addExtraButton: { alignItems: 'center', paddingVertical: spacing.sm, marginBottom: spacing.sm },
+  addExtraButtonText: { color: colors.textPrimary, fontWeight: '600', fontSize: 13 },
+  recapHeader: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
+  recapSub: { fontSize: 12, color: colors.textSecondary, marginBottom: 12 },
+  recapRow: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  recapLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
+  recapDate: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  recapAmount: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
+  recapStatus: { fontSize: 10, color: colors.warning, marginTop: 2 },
+  recapStatusUnknown: { color: colors.danger, fontWeight: '600' },
+  totalsCard: { backgroundColor: colors.surface, borderRadius: radius.md, padding: 14, marginTop: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  totalsLine: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginBottom: 4 },
+  totalsLineWarning: { color: colors.danger },
+  navRow: { flexDirection: 'row', paddingTop: spacing.xl, paddingHorizontal: spacing.xl, gap: spacing.md },
+  navButton: { flex: 1, paddingVertical: 14, alignItems: 'center', borderRadius: radius.md, backgroundColor: colors.surfaceSecondary },
+  navButtonText: { color: colors.textPrimary, fontWeight: '600', fontSize: 14 },
+  navButtonPrimary: { flex: 1, paddingVertical: 14, alignItems: 'center', borderRadius: radius.md, backgroundColor: colors.primary, marginTop: spacing.sm },
+  navButtonPrimaryText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 14 },
+  error: { color: colors.danger, fontSize: 13, marginTop: spacing.sm },
+  gateTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, textAlign: 'center', marginBottom: spacing.sm },
+  gateHelp: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.xl },
 });

@@ -5,6 +5,7 @@ import { useBottomInset } from '../../ui/useBottomInset';
 import { DateField } from '../../ui/DateField';
 import * as api from '../../api/client';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
+import { colors, radius, spacing } from '../../ui/theme';
 
 interface Provision {
   id: string;
@@ -233,7 +234,7 @@ export function TravelWizardScreen() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={submitting}>
-          {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Créer le plan Voyage</Text>}
+          {submitting ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Créer le plan Voyage</Text>}
         </TouchableOpacity>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.cancel}>Annuler</Text>
@@ -244,50 +245,50 @@ export function TravelWizardScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F6F5F2' },
-  scroll: { padding: 24, paddingTop: 40 },
-  title: { fontSize: 18, fontWeight: '700', color: '#172436', marginBottom: 4 },
-  intro: { fontSize: 13, color: '#6B747C', lineHeight: 19, marginBottom: 16 },
-  sectionLabel: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 8, marginTop: 12 },
-  hint: { fontSize: 11, color: '#6B747C', marginBottom: 8, fontStyle: 'italic' },
-  row: { flexDirection: 'row', gap: 8 },
+  container: { flex: 1, backgroundColor: colors.background },
+  scroll: { padding: spacing.xxl, paddingTop: 40 },
+  title: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: 4 },
+  intro: { fontSize: 13, color: colors.textSecondary, lineHeight: 19, marginBottom: spacing.lg },
+  sectionLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm, marginTop: 12 },
+  hint: { fontSize: 11, color: colors.textSecondary, marginBottom: spacing.sm, fontStyle: 'italic' },
+  row: { flexDirection: 'row', gap: spacing.sm },
   input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginBottom: 10,
     fontSize: 14,
     borderWidth: 1,
-    borderColor: '#E3E1DC',
+    borderColor: colors.border,
   },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: spacing.sm },
   chip: {
-    backgroundColor: '#fff',
-    borderRadius: 999,
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginRight: 8,
-    marginBottom: 8,
+    paddingVertical: spacing.sm,
+    marginRight: spacing.sm,
+    marginBottom: spacing.sm,
     borderWidth: 1,
-    borderColor: '#E3E1DC',
+    borderColor: colors.border,
   },
-  chipActive: { backgroundColor: '#172436', borderColor: '#172436' },
-  chipText: { fontSize: 13, color: '#172436' },
-  chipTextActive: { color: '#fff', fontWeight: '600' },
-  posteBlock: { backgroundColor: '#fff', borderRadius: 10, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#E3E1DC' },
-  toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  toggleLabel: { fontSize: 14, fontWeight: '600', color: '#172436', flex: 1, marginRight: 8 },
-  toggleLabelSmall: { fontSize: 12, color: '#6B747C', flex: 1, marginRight: 8 },
-  extraBlock: { marginBottom: 8, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#E3E1DC' },
-  addExtraButton: { alignItems: 'center', paddingVertical: 8, marginBottom: 8 },
-  addExtraButtonText: { color: '#172436', fontWeight: '600', fontSize: 13 },
-  totalCard: { backgroundColor: '#fff', borderRadius: 14, padding: 16, marginTop: 12, marginBottom: 16 },
-  totalLabel: { fontSize: 12, color: '#6B747C', fontWeight: '600' },
-  totalValue: { fontSize: 24, fontWeight: '800', color: '#172436', marginTop: 4 },
-  totalMeta: { fontSize: 11, color: '#6B747C', marginTop: 4 },
-  button: { backgroundColor: '#172436', borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  cancel: { color: '#6B747C', textAlign: 'center', marginTop: 16, fontSize: 13, marginBottom: 24 },
-  error: { color: '#B3261E', fontSize: 13, marginBottom: 8 },
+  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipText: { fontSize: 13, color: colors.textPrimary },
+  chipTextActive: { color: colors.textOnPrimary, fontWeight: '600' },
+  posteBlock: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  toggleLabel: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, flex: 1, marginRight: spacing.sm },
+  toggleLabelSmall: { fontSize: 12, color: colors.textSecondary, flex: 1, marginRight: spacing.sm },
+  extraBlock: { marginBottom: spacing.sm, paddingBottom: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
+  addExtraButton: { alignItems: 'center', paddingVertical: spacing.sm, marginBottom: spacing.sm },
+  addExtraButtonText: { color: colors.textPrimary, fontWeight: '600', fontSize: 13 },
+  totalCard: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.lg, marginTop: 12, marginBottom: spacing.lg },
+  totalLabel: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+  totalValue: { fontSize: 24, fontWeight: '800', color: colors.textPrimary, marginTop: 4 },
+  totalMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 4 },
+  button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.sm },
+  buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 15 },
+  cancel: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.lg, fontSize: 13, marginBottom: spacing.xxl },
+  error: { color: colors.danger, fontSize: 13, marginBottom: spacing.sm },
 });
