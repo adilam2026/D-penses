@@ -241,11 +241,11 @@ describe('QuickAddScreen — Transfert entre comptes (§11)', () => {
     expect(screen.queryByTestId('quickadd-dest-account-select-option-acc-1')).toBeNull();
   });
 
-  it('bouton de confirmation libellé "Confirmer le transfert" et interdit montant<=0', async () => {
+  it('bouton de confirmation libellé "CONFIRMER LE TRANSFERT" et interdit montant<=0', async () => {
     await render(<QuickAddScreen />);
-    await waitFor(() => screen.getByText('Confirmer le transfert'));
+    await waitFor(() => screen.getByText('CONFIRMER LE TRANSFERT'));
 
-    await fireEvent.press(screen.getByText('Confirmer le transfert'));
+    await fireEvent.press(screen.getByText('CONFIRMER LE TRANSFERT'));
 
     await waitFor(() => screen.getByText('Montant invalide'));
     expect(mockedApi.createTransfer).not.toHaveBeenCalled();

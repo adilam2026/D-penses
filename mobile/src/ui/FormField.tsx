@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
+import { StyleProp, StyleSheet, Text, TextInput, TextInputProps, View, ViewStyle } from 'react-native';
 import { colors, radius, spacing, typography } from './theme';
 
 export interface FormFieldProps extends Omit<TextInputProps, 'style'> {
@@ -9,6 +9,8 @@ export interface FormFieldProps extends Omit<TextInputProps, 'style'> {
   /** Texte d'aide affiché sous le champ quand il n'y a pas d'erreur. */
   helperText?: string;
   testID?: string;
+  /** Échappatoire pour un usage en ligne (ex. montant + bouton côte à côte) — jamais utilisé pour changer label/contour/focus/erreur, seulement l'agencement du conteneur (flex/marges). */
+  containerStyle?: StyleProp<ViewStyle>;
 }
 
 /**
@@ -19,12 +21,12 @@ export interface FormFieldProps extends Omit<TextInputProps, 'style'> {
  * utilisant useKeyboardAwareScroll passe toujours son `handleFocus` ici pour
  * garder le défilement clavier sûr (aucun changement de ce mécanisme).
  */
-export function FormField({ label, error, helperText, testID, editable, onFocus, onBlur, ...inputProps }: FormFieldProps) {
+export function FormField({ label, error, helperText, testID, editable, onFocus, onBlur, containerStyle, ...inputProps }: FormFieldProps) {
   const [focused, setFocused] = useState(false);
   const disabled = editable === false;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, containerStyle]}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <TextInput
         {...inputProps}

@@ -521,7 +521,7 @@ export function QuickAddScreen() {
                 {submitting ? (
                   <ActivityIndicator color={colors.textOnPrimary} />
                 ) : (
-                  <Text style={styles.buttonText}>{mode === 'transfert' ? 'Confirmer le transfert' : 'Enregistrer'}</Text>
+                  <Text style={styles.buttonText}>{mode === 'transfert' ? 'CONFIRMER LE TRANSFERT' : 'Enregistrer'}</Text>
                 )}
               </TouchableOpacity>
             )}

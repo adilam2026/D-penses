@@ -37,6 +37,7 @@ jest.mock('../../../api/client', () => {
     listAccounts: jest.fn(),
     listReconciliations: jest.fn(),
     updateAccount: jest.fn(),
+    createTransfer: jest.fn(),
   };
 });
 
@@ -44,6 +45,7 @@ const mockedApi = api as jest.Mocked<typeof api>;
 
 const ACTIVE_ACCOUNT = { id: 'acc1', name: 'Compte principal', type: 'courant', status: 'actif' as const, soldeCourant: 1000, reservedByEnvelopes: 0 };
 const ARCHIVED_ACCOUNT = { ...ACTIVE_ACCOUNT, status: 'archive' as const };
+const OTHER_ACCOUNT = { id: 'acc2', name: 'Épargne', type: 'epargne' as const, status: 'actif' as const, soldeCourant: 2000, reservedByEnvelopes: 0 };
 
 function mockConfirmAlert(buttonText = 'Archiver') {
   const RN = require('react-native');
@@ -119,4 +121,26 @@ it('Réactiver appelle updateAccount(status=actif)', async () => {
   await fireEvent.press(screen.getByTestId('account-reactivate'));
 
   await waitFor(() => expect(mockedApi.updateAccount).toHaveBeenCalledWith('acc1', { status: 'actif' }));
+});
+
+it('transfert : sélecteur compact + preview avant/après sur les 2 comptes, bouton CONFIRMER LE TRANSFERT', async () => {
+  mockedApi.getAccount.mockResolvedValue(ACTIVE_ACCOUNT);
+  mockedApi.listAccounts.mockResolvedValue([ACTIVE_ACCOUNT, OTHER_ACCOUNT]);
+  mockedApi.createTransfer.mockResolvedValue({});
+  await render(<AccountDetailScreen />);
+
+  await waitFor(() => expect(screen.getByTestId('account-transfer-dest-select')).toBeTruthy());
+  expect(screen.queryByTestId('account-transfer-preview')).toBeNull();
+
+  fireEvent.press(screen.getByTestId('account-transfer-dest-select'));
+  await waitFor(() => expect(screen.getByTestId('account-transfer-dest-select-option-acc2')).toBeTruthy());
+  await fireEvent.press(screen.getByTestId('account-transfer-dest-select-option-acc2'));
+  await fireEvent.changeText(screen.getByTestId('account-transfer-amount-input'), '300');
+
+  await waitFor(() => expect(screen.getByTestId('account-transfer-preview')).toBeTruthy());
+  expect(screen.getByText('1 000 → 700 DH')).toBeTruthy();
+  expect(screen.getByText('2 000 → 2 300 DH')).toBeTruthy();
+
+  await fireEvent.press(screen.getByText('CONFIRMER LE TRANSFERT'));
+  await waitFor(() => expect(mockedApi.createTransfer).toHaveBeenCalledWith({ fromAccountId: 'acc1', toAccountId: 'acc2', amount: 300 }));
 });

@@ -9,7 +9,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -18,6 +17,7 @@ import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { ChoiceSheet } from '../../ui/ChoiceSheet';
 import { FormField } from '../../ui/FormField';
+import { Select } from '../../ui/Select';
 import { colors, radius, spacing } from '../../ui/theme';
 
 type AccountType = 'courant' | 'epargne' | 'especes' | 'autre';
@@ -275,8 +275,9 @@ export function AccountDetailScreen() {
         <Text style={styles.sectionTitle}>Rapprochement</Text>
         <Text style={styles.help}>Saisissez le solde constaté (ex. sur votre relevé bancaire) pour vérifier s'il correspond au solde calculé.</Text>
         <View style={styles.row}>
-          <TextInput
-            style={[styles.input, { flex: 1 }]}
+          <FormField
+            testID="account-reconcile-balance-input"
+            containerStyle={styles.rowField}
             placeholder="Solde constaté (DH)"
             keyboardType="decimal-pad"
             value={declaredBalance}
@@ -297,8 +298,8 @@ export function AccountDetailScreen() {
             </Text>
             {r.status === 'pending' && n(r.discrepancy) !== 0 && (
               <View style={styles.adjustBox}>
-                <TextInput
-                  style={styles.input}
+                <FormField
+                  testID="account-adjust-reason-input"
                   placeholder="Raison (facultatif, ex. Frais bancaires)"
                   value={pendingReconciliation?.id === r.id ? adjustReason : ''}
                   onChangeText={setAdjustReason}
@@ -324,30 +325,48 @@ export function AccountDetailScreen() {
           <Text style={styles.help}>Créez un second compte pour pouvoir y transférer de l'argent.</Text>
         ) : (
           <>
-            <View style={styles.chipRow}>
-              {otherAccounts.map((a) => (
-                <TouchableOpacity
-                  key={a.id}
-                  style={[styles.chip, toAccountId === a.id && styles.chipActive]}
-                  onPress={() => setToAccountId(a.id)}
-                >
-                  <Text style={[styles.chipText, toAccountId === a.id && styles.chipTextActive]}>{a.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <View style={styles.row}>
-              <TextInput
-                style={[styles.input, { flex: 1 }]}
-                placeholder="Montant (DH)"
-                keyboardType="decimal-pad"
-                value={transferAmount}
-                onChangeText={setTransferAmount}
-                onFocus={handleFocus}
-              />
-              <TouchableOpacity style={styles.button} onPress={onTransfer} disabled={transferring}>
-                {transferring ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Transférer</Text>}
-              </TouchableOpacity>
-            </View>
+            <Select
+              testID="account-transfer-dest-select"
+              label="Compte destination"
+              placeholder="Choisir le compte destination"
+              value={toAccountId}
+              onChange={setToAccountId}
+              options={otherAccounts.map((a) => ({ value: a.id, label: a.name, sublabel: `${a.soldeCourant.toLocaleString('fr-FR')} DH` }))}
+            />
+            <FormField
+              testID="account-transfer-amount-input"
+              label="Montant"
+              placeholder="Montant (DH)"
+              keyboardType="decimal-pad"
+              value={transferAmount}
+              onChangeText={setTransferAmount}
+              onFocus={handleFocus}
+            />
+            {(() => {
+              const numericAmount = Number(transferAmount.replace(',', '.'));
+              const to = otherAccounts.find((a) => a.id === toAccountId);
+              if (!to || !numericAmount || numericAmount <= 0) return null;
+              return (
+                <View style={styles.transferPreview} testID="account-transfer-preview">
+                  <Text style={styles.transferPreviewTitle}>APRÈS TRANSFERT</Text>
+                  <View style={styles.transferPreviewRow}>
+                    <Text style={styles.transferPreviewName}>{account.name}</Text>
+                    <Text style={styles.transferPreviewValue}>
+                      {account.soldeCourant.toLocaleString('fr-FR')} → {(account.soldeCourant - numericAmount).toLocaleString('fr-FR')} DH
+                    </Text>
+                  </View>
+                  <View style={styles.transferPreviewRow}>
+                    <Text style={styles.transferPreviewName}>{to.name}</Text>
+                    <Text style={styles.transferPreviewValue}>
+                      {to.soldeCourant.toLocaleString('fr-FR')} → {(to.soldeCourant + numericAmount).toLocaleString('fr-FR')} DH
+                    </Text>
+                  </View>
+                </View>
+              );
+            })()}
+            <TouchableOpacity style={styles.buttonConfirm} onPress={onTransfer} disabled={transferring}>
+              {transferring ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonConfirmText}>CONFIRMER LE TRANSFERT</Text>}
+            </TouchableOpacity>
             {transferError ? <Text style={styles.error}>{transferError}</Text> : null}
           </>
         )}
@@ -432,6 +451,7 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginTop: 12, marginBottom: 6 },
   help: { fontSize: 12, color: colors.textSecondary, marginBottom: 10 },
   row: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  rowField: { flex: 1, marginBottom: 0, marginRight: spacing.sm },
   input: {
     backgroundColor: colors.surface,
     borderRadius: radius.md,
@@ -445,6 +465,13 @@ const styles = StyleSheet.create({
   },
   button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
   buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 13 },
+  transferPreview: { backgroundColor: colors.background, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm },
+  transferPreviewTitle: { fontSize: 10, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.5, marginBottom: spacing.sm },
+  transferPreviewRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  transferPreviewName: { fontSize: 13, color: colors.textPrimary, fontWeight: '600' },
+  transferPreviewValue: { fontSize: 13, color: colors.textPrimary, fontWeight: '700' },
+  buttonConfirm: { backgroundColor: colors.success, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
+  buttonConfirmText: { color: colors.textOnPrimary, fontWeight: '700', fontSize: 14, letterSpacing: 0.3 },
   buttonSecondary: { backgroundColor: colors.surfaceActive, borderRadius: radius.md, paddingVertical: 10, alignItems: 'center' },
   buttonSecondaryText: { color: colors.textPrimary, fontWeight: '600', fontSize: 12 },
   card: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
