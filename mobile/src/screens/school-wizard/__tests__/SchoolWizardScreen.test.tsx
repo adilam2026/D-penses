@@ -73,6 +73,14 @@ async function pressNext() {
   currentStep++;
 }
 
+// R6 finition UX/UI §2 — l'enfant concerné se choisit désormais via le
+// sélecteur multi-select compact (jamais une liste de chips brute).
+async function selectChild(id: string) {
+  fireEvent.press(screen.getByTestId('school-wizard-children-select'));
+  await fireEvent.press(await screen.findByTestId(`school-wizard-children-select-option-${id}`));
+  await fireEvent.press(screen.getByTestId('school-wizard-children-select-done'));
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockHandleFocus.mockClear();
@@ -106,7 +114,7 @@ describe('A. Prérequis enfant', () => {
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(mockGoBack).not.toHaveBeenCalled();
     // L'enfant nouvellement créé est présélectionné.
-    expect(screen.getByTestId('child-chip-c1').props.style).toEqual(expect.objectContaining({ backgroundColor: '#172436' }));
+    expect(screen.getByText('Dina')).toBeTruthy();
   });
 });
 
@@ -176,7 +184,7 @@ describe('E. Inconnu ≠ 0', () => {
     await render(<SchoolWizardScreen />);
     await waitFor(() => expect(screen.getByTestId('nav-next')).toBeTruthy());
 
-    await fireEvent.press(screen.getByTestId('child-chip-c1'));
+    await selectChild('c1');
     await goToStep(3); // Étape 4 : Frais de rentrée
     await fireEvent(screen.getByTestId('toggle-Fournitures'), 'valueChange', true);
     // Aucun montant saisi pour Fournitures — laissé vide.
@@ -198,7 +206,7 @@ describe('E. Inconnu ≠ 0', () => {
 
     await render(<SchoolWizardScreen />);
     await waitFor(() => expect(screen.getByTestId('nav-next')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('child-chip-c1'));
+    await selectChild('c1');
     await goToStep(5);
     await fireEvent.press(screen.getByTestId('nav-submit'));
 
@@ -287,7 +295,7 @@ describe('G. Garderie/Activités — fréquences élargies (recette post-Vague 3
 
     await render(<SchoolWizardScreen />);
     await waitFor(() => expect(screen.getByTestId('nav-next')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('child-chip-c1'));
+    await selectChild('c1');
 
     await goToStep(2); // Services scolaires
     await fireEvent(screen.getByTestId('toggle-Garderie'), 'valueChange', true);
@@ -323,7 +331,7 @@ describe('G. Garderie/Activités — fréquences élargies (recette post-Vague 3
 
     await render(<SchoolWizardScreen />);
     await waitFor(() => expect(screen.getByTestId('nav-next')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('child-chip-c1'));
+    await selectChild('c1');
 
     await goToStep(4); // Vie scolaire
     await fireEvent(screen.getByTestId('toggle-Sorties / activités'), 'valueChange', true);
@@ -347,7 +355,7 @@ describe('F. Récapitulatif — 9 lignes attendues', () => {
     mockedApi.listChildren.mockResolvedValue([{ id: 'c1', firstName: 'Dina', lastName: 'TAHA' }]);
     await render(<SchoolWizardScreen />);
     await waitFor(() => expect(screen.getByTestId('nav-next')).toBeTruthy());
-    await fireEvent.press(screen.getByTestId('child-chip-c1'));
+    await selectChild('c1');
 
     await goToStep(1); // Scolarité
     await fireEvent.changeText(screen.getByTestId('scolarite-annual'), '54500');

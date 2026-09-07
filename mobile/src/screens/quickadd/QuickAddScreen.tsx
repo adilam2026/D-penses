@@ -357,28 +357,47 @@ export function QuickAddScreen() {
                 />
                 {budgetHint ? <Text style={styles.hint}>{budgetHint}</Text> : null}
 
-                {categoryId && categoryTypes.length > 0 && (
-                  <>
-                    <Text style={styles.sectionLabel}>Type</Text>
-                    <View style={styles.chipRow}>
-                      {categoryTypes
-                        .filter((t) => t.active)
-                        .map((t) => (
-                          <TouchableOpacity
-                            key={t.id}
-                            testID={`type-chip-${t.name}`}
-                            style={[styles.chip, categoryTypeId === t.id && styles.chipActive]}
-                            onPress={() => onSelectCategoryType(t.id)}
-                          >
-                            <Text style={[styles.chipText, categoryTypeId === t.id && styles.chipTextActive]}>{t.name}</Text>
+                {categoryId &&
+                  categoryTypes.length > 0 &&
+                  (() => {
+                    const activeTypes = categoryTypes.filter((t) => t.active);
+                    // R6 finition UX/UI §2 — au-delà de 4 choix, sélecteur compact plutôt
+                    // qu'un mur de chips (règle : 2-4 choix courts = chips, sinon Select).
+                    return activeTypes.length > 4 ? (
+                      <>
+                        <Select
+                          testID="quickadd-type-select"
+                          label="Type"
+                          placeholder="Choisir un type"
+                          value={categoryTypeId}
+                          onChange={onSelectCategoryType}
+                          options={activeTypes.map((t) => ({ value: t.id, label: t.name }))}
+                        />
+                        <TouchableOpacity testID="add-type-toggle" onPress={() => setAddingType((v) => !v)}>
+                          <Text style={styles.addLink}>+ Nouveau type</Text>
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={styles.sectionLabel}>Type</Text>
+                        <View style={styles.chipRow}>
+                          {activeTypes.map((t) => (
+                            <TouchableOpacity
+                              key={t.id}
+                              testID={`type-chip-${t.name}`}
+                              style={[styles.chip, categoryTypeId === t.id && styles.chipActive]}
+                              onPress={() => onSelectCategoryType(t.id)}
+                            >
+                              <Text style={[styles.chipText, categoryTypeId === t.id && styles.chipTextActive]}>{t.name}</Text>
+                            </TouchableOpacity>
+                          ))}
+                          <TouchableOpacity testID="add-type-toggle" style={styles.chipAdd} onPress={() => setAddingType((v) => !v)}>
+                            <Text style={styles.chipAddText}>+ Nouveau type</Text>
                           </TouchableOpacity>
-                        ))}
-                      <TouchableOpacity testID="add-type-toggle" style={styles.chipAdd} onPress={() => setAddingType((v) => !v)}>
-                        <Text style={styles.chipAddText}>+ Nouveau type</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </>
-                )}
+                        </View>
+                      </>
+                    );
+                  })()}
                 {categoryId && categoryTypes.length === 0 && (
                   <TouchableOpacity testID="add-type-toggle" onPress={() => setAddingType((v) => !v)}>
                     <Text style={styles.addLink}>+ Ajouter un type pour cette catégorie</Text>
@@ -408,7 +427,22 @@ export function QuickAddScreen() {
                     // (sauf l'action pour en créer un, toujours disponible).
                     return (
                       <>
-                        {subtypes.length > 0 && (
+                        {subtypes.length > 4 && (
+                          <>
+                            <Select
+                              testID="quickadd-subtype-select"
+                              label="Sous-type (facultatif)"
+                              placeholder="Choisir un sous-type"
+                              value={categorySubtypeId}
+                              onChange={(v) => setCategorySubtypeId(categorySubtypeId === v ? null : v)}
+                              options={subtypes.map((s) => ({ value: s.id, label: s.name }))}
+                            />
+                            <TouchableOpacity testID="add-subtype-toggle" onPress={() => setAddingSubtype((v) => !v)}>
+                              <Text style={styles.addLink}>+ Nouveau sous-type</Text>
+                            </TouchableOpacity>
+                          </>
+                        )}
+                        {subtypes.length > 0 && subtypes.length <= 4 && (
                           <>
                             <Text style={styles.sectionLabel}>Sous-type (facultatif)</Text>
                             <View style={styles.chipRow}>

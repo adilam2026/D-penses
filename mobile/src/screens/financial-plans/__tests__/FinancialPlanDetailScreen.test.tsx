@@ -193,9 +193,11 @@ it('§3 — Dupliquer propose la sélection explicite des enfants, jamais hérit
   await waitFor(() => screen.getByTestId('plan-menu-option-dupliquer'));
   await fireEvent.press(screen.getByTestId('plan-menu-option-dupliquer'));
 
-  await waitFor(() => screen.getByTestId('plan-duplicate-child-c2'));
+  await waitFor(() => screen.getByTestId('plan-duplicate-children-select'));
   // Aucun enfant pré-coché : sélection explicite, jamais héritée de l'original.
-  await fireEvent.press(screen.getByTestId('plan-duplicate-child-c2'));
+  fireEvent.press(screen.getByTestId('plan-duplicate-children-select'));
+  await fireEvent.press(await screen.findByTestId('plan-duplicate-children-select-option-c2'));
+  await fireEvent.press(screen.getByTestId('plan-duplicate-children-select-done'));
   await fireEvent.press(screen.getByTestId('plan-duplicate-next'));
 
   // Clôture §10 — récapitulatif explicite obligatoire avant toute écriture :

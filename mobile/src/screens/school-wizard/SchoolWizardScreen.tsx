@@ -7,6 +7,7 @@ import { FREQUENCY_LABEL } from '../../ui/frequency';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import * as api from '../../api/client';
 import { colors, radius, spacing } from '../../ui/theme';
+import { MultiSelect } from '../../ui/MultiSelect';
 
 interface Child {
   id: string;
@@ -181,10 +182,6 @@ export function SchoolWizardScreen() {
     }
   }
 
-  function toggleChild(id: string) {
-    setSelectedChildIds((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));
-  }
-
   function applyScolariteAnnual() {
     const total = Number(scolariteAnnual.replace(',', '.'));
     const totalMonths = termMonths[0] + termMonths[1] + termMonths[2];
@@ -323,19 +320,13 @@ export function SchoolWizardScreen() {
       case 0:
         return (
           <View>
-            <Text style={styles.sectionLabel}>Enfant(s) concerné(s)</Text>
-            <View style={styles.chipRow}>
-              {children.map((c) => (
-                <TouchableOpacity
-                  key={c.id}
-                  testID={`child-chip-${c.id}`}
-                  style={[styles.chip, selectedChildIds.includes(c.id) && styles.chipActive]}
-                  onPress={() => toggleChild(c.id)}
-                >
-                  <Text style={[styles.chipText, selectedChildIds.includes(c.id) && styles.chipTextActive]}>{c.firstName}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <MultiSelect
+              testID="school-wizard-children-select"
+              label="Enfant(s) concerné(s)"
+              value={selectedChildIds}
+              onChange={setSelectedChildIds}
+              options={children.map((c) => ({ value: c.id, label: c.firstName }))}
+            />
 
             <Text style={styles.sectionLabel}>Établissement (optionnel)</Text>
             <TextInput style={styles.input} value={schoolName} onChangeText={setSchoolName} placeholder="Nom de l'établissement" onFocus={handleFocus} />

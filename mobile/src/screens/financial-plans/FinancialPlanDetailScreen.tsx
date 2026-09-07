@@ -4,6 +4,7 @@ import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInpu
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { ChoiceSheet } from '../../ui/ChoiceSheet';
+import { MultiSelect } from '../../ui/MultiSelect';
 import { DateField } from '../../ui/DateField';
 import { colors, radius, spacing } from '../../ui/theme';
 
@@ -195,10 +196,6 @@ export function FinancialPlanDetailScreen() {
     setDuplicateError(null);
     loadChildren();
     setDuplicateOpen(true);
-  }
-
-  function toggleDuplicateChild(childId: string) {
-    setDuplicateChildIds((current) => (current.includes(childId) ? current.filter((c) => c !== childId) : [...current, childId]));
   }
 
   function onGoToRecap() {
@@ -403,23 +400,13 @@ export function FinancialPlanDetailScreen() {
               <Text style={styles.modalTitle}>Dupliquer le plan</Text>
               <TextInput style={styles.modalInput} value={duplicateLabel} onChangeText={setDuplicateLabel} placeholder="Nom de la copie" testID="plan-duplicate-label" />
               {children.length > 0 && (
-                <>
-                  <Text style={styles.modalSubLabel}>Enfant(s) bénéficiaire(s) de la copie</Text>
-                  <View style={styles.chipRow}>
-                    {children.map((c) => (
-                      <TouchableOpacity
-                        key={c.id}
-                        testID={`plan-duplicate-child-${c.id}`}
-                        style={[styles.chip, duplicateChildIds.includes(c.id) && styles.chipActive]}
-                        onPress={() => toggleDuplicateChild(c.id)}
-                      >
-                        <Text style={[styles.chipText, duplicateChildIds.includes(c.id) && styles.chipTextActive]}>
-                          {c.firstName} {c.lastName}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </>
+                <MultiSelect
+                  testID="plan-duplicate-children-select"
+                  label="Enfant(s) bénéficiaire(s) de la copie"
+                  value={duplicateChildIds}
+                  onChange={setDuplicateChildIds}
+                  options={children.map((c) => ({ value: c.id, label: `${c.firstName} ${c.lastName}` }))}
+                />
               )}
               {duplicateError && <Text style={styles.error}>{duplicateError}</Text>}
               <View style={styles.modalActions}>

@@ -63,6 +63,27 @@ async function selectCategory(categoryId: string) {
   await fireEvent.press(await screen.findByTestId(`quickadd-category-select-option-${categoryId}`));
 }
 
+// R6 finition UX/UI §2 — au-delà de 4 types actifs, sélecteur compact plutôt qu'un mur de chips.
+describe('QuickAddScreen — Type en sélecteur compact au-delà de 4 choix', () => {
+  it('plus de 4 types actifs → Select au lieu des chips', async () => {
+    mockedApi.listCategoryTypes.mockResolvedValue([
+      { id: 't1', name: 'Courses', active: true, subtypes: [] },
+      { id: 't2', name: 'Restaurant', active: true, subtypes: [] },
+      { id: 't3', name: 'Carburant', active: true, subtypes: [] },
+      { id: 't4', name: 'Loisirs', active: true, subtypes: [] },
+      { id: 't5', name: 'Santé', active: true, subtypes: [] },
+    ]);
+    await renderScreen();
+    await selectCategory('cat-alim');
+
+    await waitFor(() => expect(screen.getByTestId('quickadd-type-select')).toBeTruthy());
+    expect(screen.queryByTestId('type-chip-Courses')).toBeNull();
+
+    fireEvent.press(screen.getByTestId('quickadd-type-select'));
+    await waitFor(() => expect(screen.getByTestId('quickadd-type-select-option-t3')).toBeTruthy());
+  });
+});
+
 describe('QuickAddScreen — Catégorie → Type → Sous-type (Vague 2 §21)', () => {
   it('sélectionner une catégorie charge et affiche uniquement les types de CETTE catégorie', async () => {
     mockedApi.listCategoryTypes.mockResolvedValue([
