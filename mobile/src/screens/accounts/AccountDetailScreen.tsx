@@ -8,6 +8,7 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -29,6 +30,7 @@ interface Account {
   name: string;
   type: string;
   status: 'actif' | 'archive';
+  includeInOperationalTreasury: boolean;
   soldeCourant: number;
   reservedByEnvelopes: number;
 }
@@ -80,6 +82,7 @@ export function AccountDetailScreen() {
   const [editOpen, setEditOpen] = useState(false);
   const [editName, setEditName] = useState('');
   const [editType, setEditType] = useState<AccountType>('courant');
+  const [editIncludeInPilotage, setEditIncludeInPilotage] = useState(true);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [archiveError, setArchiveError] = useState<string | null>(null);
@@ -166,6 +169,7 @@ export function AccountDetailScreen() {
     setMenuOpen(false);
     setEditName(account.name);
     setEditType(account.type as AccountType);
+    setEditIncludeInPilotage(account.includeInOperationalTreasury);
     setEditError(null);
     setEditOpen(true);
   }
@@ -178,7 +182,7 @@ export function AccountDetailScreen() {
     setEditSaving(true);
     setEditError(null);
     try {
-      await api.updateAccount(accountId, { name: editName.trim(), type: editType });
+      await api.updateAccount(accountId, { name: editName.trim(), type: editType, includeInOperationalTreasury: editIncludeInPilotage });
       setEditOpen(false);
       await load();
     } catch (err) {
@@ -238,10 +242,15 @@ export function AccountDetailScreen() {
       <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
         <View style={styles.heroCard}>
           <View style={styles.heroHeaderRow}>
-            <Text style={styles.heroLabel}>
-              {account.name}
-              {account.status === 'archive' ? ' · Archivé' : ''}
-            </Text>
+            <View style={{ flexShrink: 1 }}>
+              <Text style={styles.heroLabel}>
+                {account.name}
+                {account.status === 'archive' ? ' · Archivé' : ''}
+              </Text>
+              {/* R6.1 §10 — badge discret, jamais un masquage : un compte hors pilotage
+                  reste visible avec son solde, seulement exclu des calculs. */}
+              {!account.includeInOperationalTreasury && <Text style={styles.offPilotBadge}>Hors pilotage</Text>}
+            </View>
             <TouchableOpacity testID="account-menu-button" style={styles.menuButton} onPress={() => setMenuOpen(true)}>
               <Text style={styles.menuButtonText}>•••</Text>
             </TouchableOpacity>
@@ -401,6 +410,16 @@ export function AccountDetailScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
+              {/* R6.1 §8 — bascule accessible aussi en modification. */}
+              <View style={styles.pilotageRow}>
+                <View style={{ flex: 1, marginRight: spacing.sm }}>
+                  <Text style={styles.pilotageLabel}>Inclure ce compte dans ma situation financière</Text>
+                  <Text style={styles.pilotageHelp}>
+                    Si désactivé, ce compte reste visible mais n'est pas pris en compte dans les calculs de trésorerie et de projection.
+                  </Text>
+                </View>
+                <Switch testID="account-edit-pilotage-switch" value={editIncludeInPilotage} onValueChange={setEditIncludeInPilotage} />
+              </View>
               {editError && <Text style={styles.error}>{editError}</Text>}
               <View style={styles.modalActions}>
                 <TouchableOpacity style={styles.modalButtonSecondary} onPress={() => setEditOpen(false)}>
@@ -426,6 +445,17 @@ const styles = StyleSheet.create({
   heroHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   heroLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '600', flexShrink: 1 },
   heroValue: { fontSize: 28, fontWeight: '800', color: colors.textPrimary, marginTop: 4 },
+  offPilotBadge: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginTop: spacing.xs,
+    alignSelf: 'flex-start',
+  },
   menuButton: { paddingHorizontal: 10, paddingVertical: 2 },
   menuButtonText: { fontSize: 18, fontWeight: '700', color: colors.textSecondary },
   reactivateButton: { backgroundColor: colors.primary, borderRadius: radius.sm, paddingVertical: 10, alignItems: 'center', marginTop: 12 },
@@ -494,5 +524,8 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { fontSize: 13, color: colors.textPrimary },
   chipTextActive: { color: colors.textOnPrimary, fontWeight: '600' },
+  pilotageRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.xs, marginBottom: spacing.sm },
+  pilotageLabel: { fontSize: 12, fontWeight: '600', color: colors.textPrimary },
+  pilotageHelp: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
   error: { color: colors.danger, fontSize: 13, marginBottom: spacing.sm },
 });

@@ -231,11 +231,15 @@ async function realizedItems(
 }
 
 /**
- * Comptes inclus dans la trésorerie initiale (Round 4bis §9) — règle d'UNION
- * explicite, jamais ambiguë : si l'un des deux filtres Revenus/Dépenses vaut
- * "Tous", la trésorerie couvre tous les comptes actifs (Tous ∪ X = Tous) ;
- * sinon elle couvre l'union des deux listes explicites (la sentinelle "compte
- * non déterminé" n'est jamais un compte réel, donc jamais incluse ici).
+ * Comptes inclus dans la trésorerie initiale (Round 4bis §9, restreint par
+ * R6.1 §12) — règle d'UNION explicite, jamais ambiguë : si l'un des deux
+ * filtres Revenus/Dépenses vaut "Tous", la trésorerie couvre tous les comptes
+ * actifs INCLUS DANS LE PILOTAGE (Tous ∪ X = Tous des comptes pilotés, jamais
+ * tous les comptes de la base) ; sinon elle couvre l'union des deux listes
+ * explicites, elle-même toujours restreinte aux comptes pilotés — un compte
+ * marqué hors pilotage ne revient jamais automatiquement dans la trésorerie
+ * initiale, quel que soit le filtre choisi (la sentinelle "compte non
+ * déterminé" n'est jamais un compte réel, donc jamais incluse ici).
  */
 async function treasuryAccountIds(
   tx: TxClient,
@@ -243,8 +247,11 @@ async function treasuryAccountIds(
   incomeAccountIds: string[] | null | undefined,
   expenseAccountIds: string[] | null | undefined,
 ): Promise<string[]> {
-  const activeAccounts = await tx.financialAccount.findMany({ where: { householdId, status: 'actif' }, select: { id: true } });
-  const allIds = activeAccounts.map((a) => a.id);
+  const pilotedAccounts = await tx.financialAccount.findMany({
+    where: { householdId, status: 'actif', includeInOperationalTreasury: true },
+    select: { id: true },
+  });
+  const allIds = pilotedAccounts.map((a) => a.id);
   if (incomeAccountIds == null || expenseAccountIds == null) return allIds;
   const union = new Set([...incomeAccountIds, ...expenseAccountIds].filter((id) => id !== UNDETERMINED_ACCOUNT));
   return allIds.filter((id) => union.has(id));

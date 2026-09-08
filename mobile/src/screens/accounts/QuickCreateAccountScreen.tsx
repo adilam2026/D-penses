@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { accountCreatedBus } from '../../state/events';
@@ -28,6 +28,7 @@ export function QuickCreateAccountScreen() {
   const [name, setName] = useState('');
   const [type, setType] = useState<AccountType>('courant');
   const [initialBalance, setInitialBalance] = useState('');
+  const [includeInPilotage, setIncludeInPilotage] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,7 +41,7 @@ export function QuickCreateAccountScreen() {
     setSubmitting(true);
     try {
       const balance = initialBalance.trim() ? Number(initialBalance.replace(',', '.')) : 0;
-      const account = await api.createAccount({ name: name.trim(), type, initialBalance: balance });
+      const account = await api.createAccount({ name: name.trim(), type, initialBalance: balance, includeInOperationalTreasury: includeInPilotage });
       accountCreatedBus.emit({ id: account.id, name: account.name, type });
       navigation.goBack();
     } catch (err) {
@@ -76,6 +77,17 @@ export function QuickCreateAccountScreen() {
           onChangeText={setInitialBalance}
         />
 
+        {/* R6.1 §8 — bascule à la création, Oui par défaut. */}
+        <View style={styles.pilotageRow}>
+          <View style={{ flex: 1, marginRight: spacing.sm }}>
+            <Text style={styles.pilotageLabel}>Inclure ce compte dans ma situation financière</Text>
+            <Text style={styles.pilotageHelp}>
+              Si désactivé, ce compte reste visible mais n'est pas pris en compte dans les calculs de trésorerie et de projection.
+            </Text>
+          </View>
+          <Switch testID="quickcreate-account-pilotage-switch" value={includeInPilotage} onValueChange={setIncludeInPilotage} />
+        </View>
+
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <TouchableOpacity style={styles.button} onPress={onCreate} disabled={submitting} testID="quickcreate-account-submit">
@@ -109,6 +121,9 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { fontSize: 13, color: colors.textPrimary },
   chipTextActive: { color: colors.textOnPrimary, fontWeight: '600' },
+  pilotageRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.xs, marginBottom: spacing.sm },
+  pilotageLabel: { fontSize: 12, fontWeight: '600', color: colors.textPrimary },
+  pilotageHelp: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
   button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.sm },
   buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 15 },
   cancel: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.md, fontSize: 13 },

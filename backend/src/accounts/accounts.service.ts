@@ -92,7 +92,7 @@ export class AccountsService {
       if (!account) throw new NotFoundException('Compte introuvable');
       const updated = await tx.financialAccount.update({
         where: { id },
-        data: { name: dto.name, type: dto.type, status: dto.status },
+        data: { name: dto.name, type: dto.type, status: dto.status, includeInOperationalTreasury: dto.includeInOperationalTreasury },
       });
       return { ...updated, soldeCourant: await this.getBalance(id) };
     });

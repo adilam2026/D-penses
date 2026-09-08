@@ -11,6 +11,7 @@ interface Account {
   id: string;
   name: string;
   soldeCourant: number;
+  includeInOperationalTreasury: boolean;
 }
 
 interface DeadlineItem {
@@ -314,12 +315,16 @@ export function HomeScreen() {
               <Text style={styles.blockTitle}>MA SITUATION</Text>
               {accounts.slice(0, 4).map((a) => (
                 <TouchableOpacity key={a.id} style={styles.accountRow} onPress={() => navigation.getParent()?.navigate('AccountDetail', { id: a.id })}>
-                  <Text style={styles.accountName}>{a.name}</Text>
+                  <View style={{ flexShrink: 1 }}>
+                    <Text style={styles.accountName}>{a.name}</Text>
+                    {/* R6.1 §10 — badge discret : compte visible, seulement exclu des calculs. */}
+                    {!a.includeInOperationalTreasury && <Text style={styles.offPilotBadge}>Hors pilotage</Text>}
+                  </View>
                   <Text style={styles.accountAmount}>{a.soldeCourant.toLocaleString('fr-FR')} DH</Text>
                 </TouchableOpacity>
               ))}
               <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Total</Text>
+                <Text style={styles.totalLabel}>Patrimoine total</Text>
                 <Text style={styles.totalValue}>{summary.patrimoine_liquide_total.toLocaleString('fr-FR')} DH</Text>
               </View>
               <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Accounts')}>
@@ -511,6 +516,17 @@ const styles = StyleSheet.create({
 
   accountRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },
   accountName: { fontSize: 13, color: colors.textPrimary, fontWeight: '600' },
+  offPilotBadge: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginTop: spacing.xs,
+    alignSelf: 'flex-start',
+  },
   accountAmount: { fontSize: 13, color: colors.textPrimary, fontWeight: '700' },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 10 },
   totalLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '700' },

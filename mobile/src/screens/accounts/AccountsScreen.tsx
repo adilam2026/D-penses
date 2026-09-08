@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, RefreshControl, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { FormField } from '../../ui/FormField';
@@ -13,6 +13,7 @@ interface Account {
   status: 'actif' | 'archive';
   soldeCourant: number;
   isFavorite: boolean;
+  includeInOperationalTreasury: boolean;
 }
 
 type AccountType = 'courant' | 'especes' | 'epargne' | 'autre';
@@ -33,6 +34,7 @@ export function AccountsScreen() {
   const [name, setName] = useState('');
   const [type, setType] = useState<AccountType>('courant');
   const [initialBalance, setInitialBalance] = useState('');
+  const [includeInPilotage, setIncludeInPilotage] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -60,9 +62,10 @@ export function AccountsScreen() {
     setCreating(true);
     try {
       const balance = initialBalance.trim() ? Number(initialBalance.replace(',', '.')) : 0;
-      await api.createAccount({ name: name.trim(), type, initialBalance: balance });
+      await api.createAccount({ name: name.trim(), type, initialBalance: balance, includeInOperationalTreasury: includeInPilotage });
       setName('');
       setInitialBalance('');
+      setIncludeInPilotage(true);
       await load();
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Création impossible');
@@ -99,6 +102,9 @@ export function AccountsScreen() {
                 {TYPE_LABEL[item.type as AccountType] ?? item.type}
                 {item.status === 'archive' ? ' · Archivé' : ''}
               </Text>
+              {/* R6.1 §10 — badge discret, jamais un masquage : un compte hors pilotage
+                  reste visible avec son solde, seulement exclu des calculs. */}
+              {!item.includeInOperationalTreasury && <Text style={styles.offPilotBadge}>Hors pilotage</Text>}
             </View>
             <Text style={styles.rowBalance}>{item.soldeCourant.toLocaleString('fr-FR')} DH</Text>
           </TouchableOpacity>
@@ -117,8 +123,8 @@ export function AccountsScreen() {
         </View>
         <FormField placeholder="Nom (ex. Compte principal)" value={name} onChangeText={setName} />
         <View style={styles.createRow}>
-          <TextInput
-            style={[styles.input, { flex: 1 }]}
+          <FormField
+            containerStyle={styles.balanceField}
             placeholder="Solde initial (DH, facultatif)"
             keyboardType="decimal-pad"
             value={initialBalance}
@@ -127,6 +133,16 @@ export function AccountsScreen() {
           <TouchableOpacity style={styles.addButton} onPress={onCreate} disabled={creating}>
             {creating ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.addButtonText}>+</Text>}
           </TouchableOpacity>
+        </View>
+        {/* R6.1 §8 — bascule à la création, Oui par défaut. */}
+        <View style={styles.pilotageRow}>
+          <View style={{ flex: 1, marginRight: spacing.sm }}>
+            <Text style={styles.pilotageLabel}>Inclure ce compte dans ma situation financière</Text>
+            <Text style={styles.pilotageHelp}>
+              Si désactivé, ce compte reste visible mais n'est pas pris en compte dans les calculs de trésorerie et de projection.
+            </Text>
+          </View>
+          <Switch testID="account-create-pilotage-switch" value={includeInPilotage} onValueChange={setIncludeInPilotage} />
         </View>
         {error ? <Text style={styles.error}>{error}</Text> : null}
       </View>
@@ -149,6 +165,17 @@ const styles = StyleSheet.create({
   rowArchived: { opacity: 0.55 },
   rowName: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
   rowType: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  offPilotBadge: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginTop: spacing.xs,
+    alignSelf: 'flex-start',
+  },
   rowBalance: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
   createBox: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.sm },
   sectionLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm },
@@ -166,18 +193,12 @@ const styles = StyleSheet.create({
   typeChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   typeChipText: { fontSize: 12, color: colors.textPrimary },
   typeChipTextActive: { color: colors.textOnPrimary, fontWeight: '600' },
-  createRow: { flexDirection: 'row', marginBottom: spacing.sm, alignItems: 'center' },
-  input: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginRight: spacing.sm,
-  },
+  createRow: { flexDirection: 'row', alignItems: 'center' },
+  balanceField: { flex: 1, marginRight: spacing.sm },
   addButton: { backgroundColor: colors.primary, width: 44, height: 44, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   addButtonText: { color: colors.textOnPrimary, fontSize: 20, fontWeight: '700' },
+  pilotageRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.xs, marginBottom: spacing.sm },
+  pilotageLabel: { fontSize: 12, fontWeight: '600', color: colors.textPrimary },
+  pilotageHelp: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
   error: { color: colors.danger, fontSize: 13 },
 });

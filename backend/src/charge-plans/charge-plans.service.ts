@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
+import { getDeadlineBalances } from '../common/ledger/ledger.util';
 import { CreateChargePlanDto } from './dto/create-charge-plan.dto';
 import { CreateDeadlineDto } from './dto/create-deadline.dto';
 import { UpdateChargePlanDto } from './dto/update-charge-plan.dto';
@@ -186,11 +187,21 @@ export class ChargePlansService {
     });
   }
 
+  /**
+   * R6.1 (§13, correctif) : `deadline.findMany` seul ne renvoie jamais reste_a_payer —
+   * cette colonne n'existe que sur la vue deadline_with_balance (RG-016), jamais sur la
+   * table `deadline` elle-même. L'omettre laissait le mobile calculer `Number(undefined)`
+   * = NaN puis l'afficher tel quel — une échéance avec un montant pourtant connu
+   * paraissait alors sans valeur. Même utilitaire batché que findAllOpen (deadlines.service.ts),
+   * jamais un recalcul divergent.
+   */
   async listDeadlines(userId: string, householdId: string, chargePlanId: string) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
       await this.assertOwned(tx, chargePlanId, householdId);
-      return tx.deadline.findMany({ where: { chargePlanId }, orderBy: { dueDate: 'asc' } });
+      const deadlines = await tx.deadline.findMany({ where: { chargePlanId }, orderBy: { dueDate: 'asc' } });
+      const balances = await getDeadlineBalances(tx, deadlines.map((d) => d.id));
+      return deadlines.map((d) => ({ ...d, resteAPayer: balances.get(d.id)?.resteAPayer ?? null }));
     });
   }
 }

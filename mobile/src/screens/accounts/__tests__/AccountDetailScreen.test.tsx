@@ -43,9 +43,25 @@ jest.mock('../../../api/client', () => {
 
 const mockedApi = api as jest.Mocked<typeof api>;
 
-const ACTIVE_ACCOUNT = { id: 'acc1', name: 'Compte principal', type: 'courant', status: 'actif' as const, soldeCourant: 1000, reservedByEnvelopes: 0 };
+const ACTIVE_ACCOUNT = {
+  id: 'acc1',
+  name: 'Compte principal',
+  type: 'courant',
+  status: 'actif' as const,
+  includeInOperationalTreasury: true,
+  soldeCourant: 1000,
+  reservedByEnvelopes: 0,
+};
 const ARCHIVED_ACCOUNT = { ...ACTIVE_ACCOUNT, status: 'archive' as const };
-const OTHER_ACCOUNT = { id: 'acc2', name: 'Épargne', type: 'epargne' as const, status: 'actif' as const, soldeCourant: 2000, reservedByEnvelopes: 0 };
+const OTHER_ACCOUNT = {
+  id: 'acc2',
+  name: 'Épargne',
+  type: 'epargne' as const,
+  status: 'actif' as const,
+  includeInOperationalTreasury: true,
+  soldeCourant: 2000,
+  reservedByEnvelopes: 0,
+};
 
 function mockConfirmAlert(buttonText = 'Archiver') {
   const RN = require('react-native');
@@ -86,7 +102,42 @@ it('Modifier enregistre le nom et le type via updateAccount', async () => {
   await fireEvent.press(screen.getByTestId('account-edit-type-epargne'));
   await fireEvent.press(screen.getByTestId('account-edit-save'));
 
-  await waitFor(() => expect(mockedApi.updateAccount).toHaveBeenCalledWith('acc1', { name: 'Compte renommé', type: 'epargne' }));
+  await waitFor(() =>
+    expect(mockedApi.updateAccount).toHaveBeenCalledWith('acc1', {
+      name: 'Compte renommé',
+      type: 'epargne',
+      includeInOperationalTreasury: true,
+    }),
+  );
+});
+
+it('Modifier permet de désactiver le pilotage du compte', async () => {
+  mockedApi.getAccount.mockResolvedValue(ACTIVE_ACCOUNT);
+  mockedApi.updateAccount.mockResolvedValue({ ...ACTIVE_ACCOUNT, includeInOperationalTreasury: false });
+  await render(<AccountDetailScreen />);
+  await waitFor(() => expect(screen.getByTestId('account-menu-button')).toBeTruthy());
+  await fireEvent.press(screen.getByTestId('account-menu-button'));
+  await waitFor(() => expect(screen.getByTestId('account-menu-option-modifier')).toBeTruthy());
+  await fireEvent.press(screen.getByTestId('account-menu-option-modifier'));
+
+  await waitFor(() => expect(screen.getByTestId('account-edit-form')).toBeTruthy());
+  await fireEvent(screen.getByTestId('account-edit-pilotage-switch'), 'valueChange', false);
+  await fireEvent.press(screen.getByTestId('account-edit-save'));
+
+  await waitFor(() =>
+    expect(mockedApi.updateAccount).toHaveBeenCalledWith('acc1', {
+      name: 'Compte principal',
+      type: 'courant',
+      includeInOperationalTreasury: false,
+    }),
+  );
+});
+
+it('affiche le badge "Hors pilotage" pour un compte exclu', async () => {
+  mockedApi.getAccount.mockResolvedValue({ ...ACTIVE_ACCOUNT, includeInOperationalTreasury: false });
+  await render(<AccountDetailScreen />);
+
+  await waitFor(() => expect(screen.getByText('Hors pilotage')).toBeTruthy());
 });
 
 it('Archiver demande confirmation puis appelle updateAccount(status=archive)', async () => {
