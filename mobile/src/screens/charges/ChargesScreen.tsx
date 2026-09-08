@@ -10,7 +10,7 @@ interface NextDeadline {
   id: string;
   dueDate: string;
   amountStatus: 'inconnu' | 'estime' | 'confirme';
-  resteAPayer: number | string | null;
+  resteAPayer: number | string | null | undefined;
 }
 
 interface ChargePlan {
@@ -23,9 +23,14 @@ interface ChargePlan {
 
 const STATUS_LABEL: Record<string, string> = { inconnu: 'Inconnu', estime: 'Estimé', confirme: 'Confirmé' };
 
-function n(v: number | string | null): number | null {
-  if (v === null) return null;
-  return typeof v === 'number' ? v : Number(v);
+// R6.2 (§2, correctif NaN DH) : v peut être null (montant inconnu, cas normal)
+// OU undefined (champ absent de la réponse — jamais un cas normal, mais ne
+// doit RIEN afficher plutôt que "NaN DH"/Number(undefined)) — jamais rendu
+// tel quel : Number.isFinite() rejette explicitement NaN/Infinity.
+function n(v: number | string | null | undefined): number | null {
+  if (v === null || v === undefined) return null;
+  const parsed = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function formatShortDate(iso: string) {
@@ -83,7 +88,20 @@ export function ChargesScreen() {
             {next ? ` · ${formatShortDate(next.dueDate)} · ${STATUS_LABEL[next.amountStatus]}` : ' · Aucune échéance ouverte'}
           </Text>
         </View>
-        {next && n(next.resteAPayer) !== null && <Text style={styles.rowAmount}>{n(next.resteAPayer)!.toLocaleString('fr-FR')} DH</Text>}
+        {next && (() => {
+          const amount = n(next.resteAPayer);
+          // R6.2 (§2) : jamais NaN/N/A pour un montant connu, "Montant inconnu"
+          // explicite si l'échéance n'a réellement aucun montant (amountStatus
+          // inconnu) — jamais une case vide silencieuse qui pourrait faire
+          // croire à un oubli d'affichage plutôt qu'à un montant non renseigné.
+          if (amount !== null) {
+            return <Text style={styles.rowAmount}>{amount.toLocaleString('fr-FR')} DH</Text>;
+          }
+          if (next.amountStatus === 'inconnu') {
+            return <Text style={styles.rowAmountUnknown}>Montant inconnu</Text>;
+          }
+          return null;
+        })()}
       </TouchableOpacity>
     );
   }
@@ -148,6 +166,7 @@ const styles = StyleSheet.create({
   rowLabel: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
   rowMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
   rowAmount: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginLeft: spacing.sm },
+  rowAmountUnknown: { fontSize: 12, fontStyle: 'italic', color: colors.textSecondary, marginLeft: spacing.sm },
   inactiveToggle: { marginTop: 8, marginBottom: 4 },
   inactiveToggleText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
 });

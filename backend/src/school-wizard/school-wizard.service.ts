@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { SchoolWizardDto } from './dto/school-wizard.dto';
+import { createAlreadyPaidDeadline } from '../common/ledger/already-paid.util';
 
 /**
  * Assistant « Ajouter les frais scolaires » (§17) — crée en une seule action un
@@ -62,14 +63,26 @@ export class SchoolWizardService {
           },
         });
 
-        await tx.deadline.create({
-          data: {
-            chargePlanId: chargePlan.id,
-            dueDate: new Date(item.dueDate),
-            amountCurrent: amountStatus === 'inconnu' ? null : item.amount,
-            amountStatus,
-          },
-        });
+        if (item.alreadyPaid) {
+          if (item.alreadyPaid.accountId) {
+            const account = await tx.financialAccount.findFirst({ where: { id: item.alreadyPaid.accountId, householdId } });
+            if (!account) throw new NotFoundException('Compte introuvable dans ce foyer');
+          }
+          await createAlreadyPaidDeadline(tx, chargePlan.id, new Date(item.dueDate), userId, {
+            amount: item.alreadyPaid.amount,
+            paidDate: new Date(item.alreadyPaid.paidDate),
+            accountId: item.alreadyPaid.accountId,
+          });
+        } else {
+          await tx.deadline.create({
+            data: {
+              chargePlanId: chargePlan.id,
+              dueDate: new Date(item.dueDate),
+              amountCurrent: amountStatus === 'inconnu' ? null : item.amount,
+              amountStatus,
+            },
+          });
+        }
 
         chargePlans.push(chargePlan);
       }

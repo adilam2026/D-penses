@@ -73,6 +73,13 @@ enum TransferType {
   depot_especes
 }
 
+// R6.2 (§10) — même convention actif/inactif que ChargePlanStatus/IncomeSourceStatus,
+// enum dédié pour ne jamais coupler RecurringTransfer à un autre domaine par accident.
+enum RecurringTransferStatus {
+  actif
+  inactif
+}
+
 // ---------- Lot 2 — Revenus & charges de base ----------
 
 enum IncomeSourceStatus {
@@ -260,23 +267,24 @@ model Household {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  memberships      HouseholdMembership[]
-  children         Child[]
-  categories       Category[]
-  settings         HouseholdSettings?
-  invites          HouseholdInvite[]
-  accounts         FinancialAccount[]
-  transfers        AccountTransfer[]
-  incomeSources    IncomeSource[]
-  chargePlans      ChargePlan[]
-  variableBudgets  VariableBudget[]
-  adHocExpenses    AdHocExpense[]
-  financialPlans   FinancialPlan[]
-  savingsPockets   SavingsPocket[]
-  provisions       Provision[]
-  goals            Goal[]
-  categoryTypes    CategoryType[]
-  categorySubtypes CategorySubtype[]
+  memberships        HouseholdMembership[]
+  children           Child[]
+  categories         Category[]
+  settings           HouseholdSettings?
+  invites            HouseholdInvite[]
+  accounts           FinancialAccount[]
+  transfers          AccountTransfer[]
+  recurringTransfers RecurringTransfer[]
+  incomeSources      IncomeSource[]
+  chargePlans        ChargePlan[]
+  variableBudgets    VariableBudget[]
+  adHocExpenses      AdHocExpense[]
+  financialPlans     FinancialPlan[]
+  savingsPockets     SavingsPocket[]
+  provisions         Provision[]
+  goals              Goal[]
+  categoryTypes      CategoryType[]
+  categorySubtypes   CategorySubtype[]
 
   @@map("household")
 }
@@ -495,6 +503,8 @@ model FinancialAccount {
   adjustments            Adjustment[]
   transfersFrom          AccountTransfer[]        @relation("TransferFrom")
   transfersTo            AccountTransfer[]        @relation("TransferTo")
+  recurringTransfersFrom RecurringTransfer[]      @relation("RecurringTransferFrom")
+  recurringTransfersTo   RecurringTransfer[]      @relation("RecurringTransferTo")
   incomeSourcesAsDefault IncomeSource[]           @relation("IncomeSourceDefaultAccount")
   incomeOccurrences      IncomeOccurrence[]       @relation("IncomeOccurrenceAccount")
   chargePlansAsDefault   ChargePlan[]             @relation("ChargePlanDefaultAccount")
@@ -563,27 +573,69 @@ model Adjustment {
 
 // RG-085 : sortie du compte source + entrée du compte destination, impact net foyer = 0 si interne.
 model AccountTransfer {
-  id            String         @id @default(uuid())
-  householdId   String         @map("household_id")
-  fromAccountId String?        @map("from_account_id")
-  toAccountId   String?        @map("to_account_id")
-  amount        Decimal        @map("amount") @db.Decimal(14, 2)
-  plannedDate   DateTime       @map("planned_date")
-  actualDate    DateTime?      @map("actual_date")
-  status        TransferStatus @default(prevu)
-  type          TransferType   @default(interne)
-  confirmedById String?        @map("confirmed_by_id")
-  createdAt     DateTime       @default(now()) @map("created_at")
+  id                  String         @id @default(uuid())
+  householdId         String         @map("household_id")
+  fromAccountId       String?        @map("from_account_id")
+  toAccountId         String?        @map("to_account_id")
+  amount              Decimal        @map("amount") @db.Decimal(14, 2)
+  plannedDate         DateTime       @map("planned_date")
+  actualDate          DateTime?      @map("actual_date")
+  status              TransferStatus @default(prevu)
+  type                TransferType   @default(interne)
+  confirmedById       String?        @map("confirmed_by_id")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  // R6.2 (§10) — NULL = transfert ponctuel saisi manuellement (comportement historique
+  // inchangé). Renseigné = occurrence générée par ensureRecurringTransfersUntil à partir
+  // d'un RecurringTransfer, même patron que Deadline.chargePlanId/IncomeOccurrence.
+  // incomeSourceId — jamais un second type de transfert, uniquement sa provenance.
+  recurringTransferId String?        @map("recurring_transfer_id")
 
-  household   Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  fromAccount FinancialAccount? @relation("TransferFrom", fields: [fromAccountId], references: [id])
-  toAccount   FinancialAccount? @relation("TransferTo", fields: [toAccountId], references: [id])
+  household         Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  fromAccount       FinancialAccount?  @relation("TransferFrom", fields: [fromAccountId], references: [id])
+  toAccount         FinancialAccount?  @relation("TransferTo", fields: [toAccountId], references: [id])
+  recurringTransfer RecurringTransfer? @relation(fields: [recurringTransferId], references: [id])
 
+  // Anti-doublon pour ensureRecurringTransfersUntil (createMany skipDuplicates) — une même
+  // RecurringTransfer ne peut jamais avoir deux occurrences à la même plannedDate (même
+  // patron que Deadline[chargePlanId,dueDate]/IncomeOccurrence[incomeSourceId,usualDate]).
+  // Autorise plusieurs lignes recurringTransferId=NULL (transferts ponctuels, Postgres
+  // n'applique jamais l'unicité entre NULLs).
+  @@unique([recurringTransferId, plannedDate])
   @@index([householdId])
   @@index([fromAccountId])
   @@index([toAccountId])
   @@index([plannedDate])
   @@map("account_transfer")
+}
+
+// R6.2 (§10) — Transfert récurrent : objet dédié, JAMAIS modélisé comme une ChargePlan
+// (un transfert n'est ni un revenu ni une dépense, cf. monthly-projection.util.ts §15/§17
+// qui exclut déjà tout transfert des totaux consolidés — ce moteur n'est jamais dérangé).
+// Génère des AccountTransfer (statut prevu) via ensureRecurringTransfersUntil, EXACTEMENT
+// le même moteur occurrenceDatesInRange que IncomeSource/ChargePlan — jamais un 3e calcul
+// de dates. Un transfert prévu généré ici ne modifie jamais un solde réel (RG-085 inchangée) :
+// seule sa confirmation explicite (AccountsService.confirmTransfer, déjà existant) le fait.
+model RecurringTransfer {
+  id                   String                  @id @default(uuid())
+  householdId          String                  @map("household_id")
+  label                String
+  fromAccountId        String?                 @map("from_account_id")
+  toAccountId          String?                 @map("to_account_id")
+  amount               Decimal                 @map("amount") @db.Decimal(14, 2)
+  recurrenceRule       RecurrenceFrequency     @map("recurrence_rule")
+  recurrenceAnchorDate DateTime                @map("recurrence_anchor_date") @db.Date
+  note                 String?
+  status               RecurringTransferStatus @default(actif)
+  createdAt            DateTime                @default(now()) @map("created_at")
+  updatedAt            DateTime                @updatedAt @map("updated_at")
+
+  household   Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  fromAccount FinancialAccount? @relation("RecurringTransferFrom", fields: [fromAccountId], references: [id])
+  toAccount   FinancialAccount? @relation("RecurringTransferTo", fields: [toAccountId], references: [id])
+  transfers   AccountTransfer[]
+
+  @@index([householdId])
+  @@map("recurring_transfer")
 }
 
 // ============================================================
@@ -652,23 +704,30 @@ model IncomeOccurrence {
 // generation_mode = auto_frequence pour le Lot 2 (le calendrier_manuel du Lot 4
 // réutilisera le même modèle sans jamais nécessiter de refonte, cf. doc02 §C.4).
 model ChargePlan {
-  id               String                   @id @default(uuid())
-  householdId      String                   @map("household_id")
-  label            String
-  categoryId       String?                  @map("category_id")
-  generationMode   ChargePlanGenerationMode @default(auto_frequence) @map("generation_mode")
-  recurrenceRule   RecurrenceFrequency?     @map("recurrence_rule")
-  defaultAccountId String?                  @map("default_account_id")
-  obligationStatus ObligationStatus         @default(obligatoire) @map("obligation_status")
+  id                   String                   @id @default(uuid())
+  householdId          String                   @map("household_id")
+  label                String
+  categoryId           String?                  @map("category_id")
+  generationMode       ChargePlanGenerationMode @default(auto_frequence) @map("generation_mode")
+  recurrenceRule       RecurrenceFrequency?     @map("recurrence_rule")
+  // R6.2 (§1) : ancre de récurrence éditable indépendamment de startDate (qui reste la
+  // date de création originelle, jamais réécrite) — mêmes rôle et convention que
+  // IncomeSource.recurrenceAnchorDate. NULL = ensureChargeDeadlinesUntil retombe sur
+  // startDate (comportement historique inchangé pour les plans jamais modifiés depuis).
+  // Éditer "prochaine échéance"/fréquence ne touche jamais les Deadline déjà générées
+  // (RG implicite §3) : seule la génération FUTURE change d'ancre.
+  recurrenceAnchorDate DateTime?                @map("recurrence_anchor_date") @db.Date
+  defaultAccountId     String?                  @map("default_account_id")
+  obligationStatus     ObligationStatus         @default(obligatoire) @map("obligation_status")
   // RG-110 : un ChargePlan appartient à 0 ou 1 FinancialPlan — jamais un conteneur
   // universel obligatoire (§9), une dépense de courses n'y est jamais rattachée.
-  financialPlanId  String?                  @map("financial_plan_id")
-  startDate        DateTime                 @map("start_date") @db.Date
-  endDate          DateTime?                @map("end_date") @db.Date
-  priorityLevel    Int                      @default(1) @map("priority_level")
-  status           ChargePlanStatus         @default(actif)
-  createdAt        DateTime                 @default(now()) @map("created_at")
-  updatedAt        DateTime                 @updatedAt @map("updated_at")
+  financialPlanId      String?                  @map("financial_plan_id")
+  startDate            DateTime                 @map("start_date") @db.Date
+  endDate              DateTime?                @map("end_date") @db.Date
+  priorityLevel        Int                      @default(1) @map("priority_level")
+  status               ChargePlanStatus         @default(actif)
+  createdAt            DateTime                 @default(now()) @map("created_at")
+  updatedAt            DateTime                 @updatedAt @map("updated_at")
 
   household      Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
   category       Category?         @relation(fields: [categoryId], references: [id])
@@ -724,7 +783,13 @@ model Payment {
   deadlineId    String            @map("deadline_id")
   amount        Decimal           @map("amount") @db.Decimal(14, 2)
   paidDate      DateTime          @map("paid_date")
-  accountId     String            @map("account_id")
+  // R6.2 (§5 CAS B) : NULL uniquement pour un paiement HISTORIQUE reconstitué sans compte
+  // connu (ex. uniforme déjà acheté avant l'usage de l'app) — jamais pour un paiement
+  // normal (payments.service.ts continue d'exiger un compte réel, RG implicite §19).
+  // Un Payment sans compte n'apparaît dans AUCUNE ledger_entry rattachée à un compte
+  // (WHERE account_id = fa.id ne matche jamais NULL) : aucun solde n'est débité, mais
+  // reste_a_payer (deadline_with_balance, indépendant du compte) reste correct.
+  accountId     String?           @map("account_id")
   type          PaymentType       @default(paiement)
   direction     PaymentDirection? @map("direction")
   fundingSource FundingSource     @default(compte) @map("funding_source")
@@ -734,10 +799,10 @@ model Payment {
   notes         String?
   createdAt     DateTime          @default(now()) @map("created_at")
 
-  deadline   Deadline         @relation(fields: [deadlineId], references: [id], onDelete: Cascade)
-  account    FinancialAccount @relation("PaymentAccount", fields: [accountId], references: [id])
-  provision  Provision?       @relation(fields: [provisionId], references: [id])
-  recordedBy User             @relation(fields: [recordedById], references: [id])
+  deadline   Deadline          @relation(fields: [deadlineId], references: [id], onDelete: Cascade)
+  account    FinancialAccount? @relation("PaymentAccount", fields: [accountId], references: [id])
+  provision  Provision?        @relation(fields: [provisionId], references: [id])
+  recordedBy User              @relation(fields: [recordedById], references: [id])
 
   @@index([deadlineId])
   @@index([accountId])

@@ -45,6 +45,17 @@ export class CreateChargePlanDto {
   @IsISO8601()
   startDate!: string;
 
+  /**
+   * R6.2 (§1) : ancre de récurrence — remplace la notion de "jour du mois"/
+   * anchorDay jamais demandée à part : l'utilisateur saisit une date complète
+   * de "prochaine échéance", jamais un jour isolé. Absent = ensureChargeDeadlinesUntil
+   * retombe sur startDate (comportement historique). Miroir exact de
+   * IncomeSource.recurrenceAnchorDate.
+   */
+  @IsOptional()
+  @IsISO8601()
+  recurrenceAnchorDate?: string;
+
   @IsOptional()
   @IsISO8601()
   endDate?: string;

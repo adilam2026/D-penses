@@ -3,7 +3,7 @@ import { RlsContextService } from '../common/prisma/rls-context.service';
 import { computeProjection, ProjectionResult } from '../common/ledger/projection.util';
 import { computeMonthlyProjection, MonthlyProjectionResult } from '../common/ledger/monthly-projection.util';
 import { addDaysUTC } from '../common/ledger/variable-budget.util';
-import { ensureChargeDeadlinesUntil, ensureIncomeOccurrencesUntil } from '../common/ledger/occurrence-generation.util';
+import { ensureChargeDeadlinesUntil, ensureIncomeOccurrencesUntil, ensureRecurringTransfersUntil } from '../common/ledger/occurrence-generation.util';
 
 type TxClient = ReturnType<RlsContextService['getClient']>;
 
@@ -34,6 +34,7 @@ export class ProjectionService {
       // cet appel — jamais une constante séparée, l'appelant fournit déjà tout.
       await ensureIncomeOccurrencesUntil(tx, householdId, horizonEnd);
       await ensureChargeDeadlinesUntil(tx, householdId, horizonEnd);
+      await ensureRecurringTransfersUntil(tx, householdId, horizonEnd);
       return this.toApi(await computeProjection(tx, householdId, referenceDate, horizonEnd));
     });
   }
@@ -71,6 +72,7 @@ export class ProjectionService {
       const horizonEnd = this.monthsHorizonEnd(referenceDate, months);
       await ensureIncomeOccurrencesUntil(tx, householdId, horizonEnd);
       await ensureChargeDeadlinesUntil(tx, householdId, horizonEnd);
+      await ensureRecurringTransfersUntil(tx, householdId, horizonEnd);
       const result = await computeMonthlyProjection(tx, householdId, referenceDate, months, { incomeAccountIds, expenseAccountIds });
       return this.toMonthlyApi(result);
     });
@@ -98,6 +100,7 @@ export class ProjectionService {
       const horizonEnd = this.monthsHorizonEnd(referenceDate, months);
       await ensureIncomeOccurrencesUntil(tx, householdId, horizonEnd);
       await ensureChargeDeadlinesUntil(tx, householdId, horizonEnd);
+      await ensureRecurringTransfersUntil(tx, householdId, horizonEnd);
 
       const options = { incomeAccountIds, expenseAccountIds };
       const baseline = await computeMonthlyProjection(tx, householdId, referenceDate, months, options);
@@ -150,6 +153,7 @@ export class ProjectionService {
         balance: m.balance,
         cumulative_balance: m.cumulativeBalance,
         projected_cash_balance: m.projectedCashBalance,
+        planned_transfer_net_treasury_impact: m.plannedTransferNetTreasuryImpact,
         income_items: m.incomeItems,
         expense_items: m.expenseItems,
         movable_expense_total: m.movableExpenseTotal,

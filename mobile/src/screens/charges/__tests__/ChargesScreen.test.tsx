@@ -59,6 +59,43 @@ it('affiche une ligne compacte (libellé, fréquence, prochaine échéance) et t
   expect(mockNavigate).toHaveBeenCalledWith('ChargePlanDetail', { id: 'cp1' });
 });
 
+it('R6.2 §2 / TEST G : resteAPayer absent de la réponse (undefined) — jamais "NaN DH" pour un montant connu', async () => {
+  // Reproduit le bug réel observé sur APK Samsung : le backend omettait
+  // resteAPayer sur la prochaine échéance retournée par GET /charge-plans
+  // (undefined, pas null) alors que amountStatus/le montant sous-jacent
+  // étaient bien connus — Number(undefined) donnait "NaN DH" à l'affichage.
+  mockedApi.listChargePlans.mockResolvedValue([
+    {
+      id: 'cp1',
+      label: 'Loyer',
+      recurrenceRule: 'mensuel',
+      status: 'actif',
+      deadlines: [{ id: 'd1', dueDate: '2026-09-16', amountStatus: 'confirme', resteAPayer: undefined }],
+    },
+  ]);
+  await render(<ChargesScreen />);
+  await waitFor(() => screen.getByText('Loyer'));
+
+  expect(screen.queryByText(/NaN/)).toBeNull();
+});
+
+it('R6.2 §2 / TEST H : montant réellement inconnu affiché explicitement ("Montant inconnu"), jamais NaN ni vide silencieux', async () => {
+  mockedApi.listChargePlans.mockResolvedValue([
+    {
+      id: 'cp1',
+      label: 'Assurance moto',
+      recurrenceRule: 'annuel',
+      status: 'actif',
+      deadlines: [{ id: 'd1', dueDate: '2026-12-01', amountStatus: 'inconnu', resteAPayer: null }],
+    },
+  ]);
+  await render(<ChargesScreen />);
+  await waitFor(() => screen.getByText('Assurance moto'));
+
+  expect(screen.getByText('Montant inconnu')).toBeTruthy();
+  expect(screen.queryByText(/NaN/)).toBeNull();
+});
+
 it('les charges arrêtées (status=inactif) restent accessibles, repliées par défaut', async () => {
   mockedApi.listChargePlans.mockResolvedValue([
     { id: 'cp1', label: 'Actif', recurrenceRule: 'mensuel', status: 'actif', deadlines: [] },

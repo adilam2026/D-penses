@@ -146,6 +146,14 @@ export class PaymentsService {
           "Un paiement financé par une enveloppe ne peut pas être corrigé partiellement — utilisez Annuler puis un nouveau paiement",
         );
       }
+      if (!original.accountId) {
+        // R6.2 (§5) : un paiement historique "déjà payé" sans compte connu n'a jamais
+        // débité de solde réel — le corriger ici n'aurait aucun sens (rien à ajuster
+        // sur un compte). Modifier le montant historique passe par le ChargePlan (§3).
+        throw new BadRequestException(
+          "Ce paiement historique n'est rattaché à aucun compte — utilisez la modification de l'échéance pour corriger son montant",
+        );
+      }
 
       const originalAmount = toNumber(original.amount);
       const delta = round2(dto.correctedAmount - originalAmount);
@@ -228,7 +236,9 @@ export class PaymentsService {
       return {
         reversal,
         deadline: { ...updatedDeadline, resteAPayer: balance?.resteAPayer ?? null },
-        soldeCourant: await getAccountBalance(tx, original.accountId),
+        // R6.2 (§5) : un paiement historique sans compte n'a jamais eu de solde à
+        // rapporter — jamais 0 (qui laisserait croire à un compte réel débité à 0).
+        soldeCourant: original.accountId ? await getAccountBalance(tx, original.accountId) : null,
       };
     });
   }

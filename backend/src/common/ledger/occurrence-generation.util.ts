@@ -90,7 +90,12 @@ export async function ensureChargeDeadlinesUntil(tx: TxClient, householdId: stri
   for (const plan of plans) {
     if (!plan.recurrenceRule) continue;
     const effectiveEnd = plan.endDate && plan.endDate.getTime() < horizonEnd.getTime() ? plan.endDate : horizonEnd;
-    const dates = occurrenceDatesInRange(plan.recurrenceRule as RecurrenceRule, plan.startDate, plan.startDate, toUtcMidnight(effectiveEnd));
+    // R6.2 (§1) : recurrenceAnchorDate ("prochaine échéance", éditable sans
+    // jamais toucher l'historique — cf. ChargePlansService.update) prime sur
+    // startDate (qui reste la date de création originelle, jamais réécrite).
+    // NULL = comportement historique inchangé (aucun plan jamais modifié).
+    const anchor = plan.recurrenceAnchorDate ?? plan.startDate;
+    const dates = occurrenceDatesInRange(plan.recurrenceRule as RecurrenceRule, anchor, anchor, toUtcMidnight(effectiveEnd));
     if (dates.length === 0) continue;
 
     // Référence résolue une fois par plan, sur l'état déjà existant en base —
@@ -110,4 +115,45 @@ export async function ensureChargeDeadlinesUntil(tx: TxClient, householdId: stri
 
     await tx.deadline.createMany({ data: rows, skipDuplicates: true });
   }
+}
+
+/**
+ * R6.2 (§10-12) : génération idempotente des occurrences futures d'un
+ * RecurringTransfer — même patron EXACT que ensureChargeDeadlinesUntil
+ * (createMany + skipDuplicates sur la contrainte unique
+ * [recurringTransferId, plannedDate]), jamais un second moteur de récurrence.
+ *
+ * Toujours status='prevu' (§10/§11) : une occurrence générée n'est JAMAIS
+ * auto-confirmée, même si sa date est dans le passé au moment de la
+ * génération — contrairement à AccountsService.createTransfer (saisie
+ * manuelle ponctuelle), qui reste le seul chemin d'auto-confirmation
+ * immédiate. Confirmer une occurrence prévue reste une action explicite de
+ * l'utilisateur (AccountsService.confirmTransfer, déjà réutilisable tel
+ * quel — jamais un second mécanisme de confirmation).
+ */
+export async function ensureRecurringTransfersUntil(tx: TxClient, householdId: string, horizonEnd: Date): Promise<void> {
+  const recurringTransfers = await tx.recurringTransfer.findMany({
+    where: { householdId, status: 'actif', recurrenceRule: { notIn: ['ponctuel'] } },
+  });
+  if (recurringTransfers.length === 0) return;
+
+  const rows: Prisma.AccountTransferCreateManyInput[] = [];
+  for (const rt of recurringTransfers) {
+    const dates = occurrenceDatesInRange(rt.recurrenceRule as RecurrenceRule, rt.recurrenceAnchorDate, rt.recurrenceAnchorDate, horizonEnd);
+    for (const plannedDate of dates) {
+      rows.push({
+        householdId,
+        fromAccountId: rt.fromAccountId,
+        toAccountId: rt.toAccountId,
+        amount: rt.amount,
+        plannedDate,
+        status: 'prevu',
+        type: 'interne',
+        recurringTransferId: rt.id,
+      });
+    }
+  }
+  if (rows.length === 0) return;
+
+  await tx.accountTransfer.createMany({ data: rows, skipDuplicates: true });
 }

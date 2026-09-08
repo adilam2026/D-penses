@@ -112,7 +112,9 @@ export class TransactionsService {
             amount: -toNumber(p.amount),
             date: p.paidDate,
             accountId: p.accountId,
-            accountName: p.account.name,
+            // R6.2 (§5 CAS B) : un paiement historique "déjà payé" sans compte connu
+            // n'a débité aucun compte réel — jamais un nom de compte inventé.
+            accountName: p.account?.name ?? null,
             note: p.notes ?? null,
             deadline: { id: p.deadline.id, dueDate: p.deadline.dueDate, chargePlanLabel: cp.label },
             financialPlan: cp.financialPlan ? { id: cp.financialPlan.id, label: cp.financialPlan.label } : null,

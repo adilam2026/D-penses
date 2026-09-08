@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { toNumber } from '../common/ledger/ledger.util';
 import { computeHorizon, DASHBOARD_FALLBACK_HORIZON_DAYS } from '../common/ledger/treasury.util';
-import { ensureChargeDeadlinesUntil, ensureIncomeOccurrencesUntil } from '../common/ledger/occurrence-generation.util';
+import { ensureChargeDeadlinesUntil, ensureIncomeOccurrencesUntil, ensureRecurringTransfersUntil } from '../common/ledger/occurrence-generation.util';
 
 export type CalendarEventKind = 'revenu_prevu' | 'facture_attendue' | 'echeance' | 'montant_inconnu' | 'echeance_payee';
 
@@ -38,6 +38,7 @@ export class CalendarService {
       const generationHorizon = to ?? new Date(referenceDate.getTime() + DASHBOARD_FALLBACK_HORIZON_DAYS * 86400000);
       await ensureIncomeOccurrencesUntil(tx, householdId, generationHorizon);
       await ensureChargeDeadlinesUntil(tx, householdId, generationHorizon);
+      await ensureRecurringTransfersUntil(tx, householdId, generationHorizon);
 
       const rangeStart = from ?? referenceDate;
       const rangeEnd = to ?? (await computeHorizon(tx, householdId, referenceDate)).date;

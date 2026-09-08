@@ -27,6 +27,7 @@ import { ProvisionsModule } from './provisions/provisions.module';
 import { GoalsModule } from './goals/goals.module';
 import { ProjectionModule } from './projection/projection.module';
 import { SimulationModule } from './simulation/simulation.module';
+import { RecurringTransfersModule } from './recurring-transfers/recurring-transfers.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -56,6 +57,7 @@ import { AppController } from './app.controller';
     GoalsModule,
     ProjectionModule,
     SimulationModule,
+    RecurringTransfersModule,
   ],
   controllers: [AppController],
   providers: [

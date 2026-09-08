@@ -3,7 +3,7 @@ import { RlsContextService } from '../common/prisma/rls-context.service';
 import { round2, toNumber } from '../common/ledger/ledger.util';
 import { computeDisponibleLibre, computeNextDeadline, DASHBOARD_FALLBACK_HORIZON_DAYS } from '../common/ledger/treasury.util';
 import { computeProvisionCoverage } from '../common/ledger/provision.util';
-import { ensureChargeDeadlinesUntil, ensureIncomeOccurrencesUntil } from '../common/ledger/occurrence-generation.util';
+import { ensureChargeDeadlinesUntil, ensureIncomeOccurrencesUntil, ensureRecurringTransfersUntil } from '../common/ledger/occurrence-generation.util';
 import { ActionsService } from '../actions/actions.service';
 import { VariableBudgetsService } from '../variable-budgets/variable-budgets.service';
 import { FinancialPlansService } from '../financial-plans/financial-plans.service';
@@ -41,6 +41,7 @@ export class DashboardService {
       const generationHorizon = new Date(referenceDate.getTime() + DASHBOARD_FALLBACK_HORIZON_DAYS * 86400000);
       await ensureIncomeOccurrencesUntil(tx, householdId, generationHorizon);
       await ensureChargeDeadlinesUntil(tx, householdId, generationHorizon);
+      await ensureRecurringTransfersUntil(tx, householdId, generationHorizon);
 
       const disponible = await computeDisponibleLibre(tx, householdId, referenceDate);
       const nextDeadline = await computeNextDeadline(tx, householdId, referenceDate);

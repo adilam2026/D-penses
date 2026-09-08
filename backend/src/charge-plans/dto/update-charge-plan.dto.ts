@@ -1,8 +1,9 @@
-import { IsIn, IsISO8601, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
+import { IsIn, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
 
 const OBLIGATION_VALUES = ['obligatoire', 'optionnelle_envisagee', 'optionnelle_souscrite', 'optionnelle_refusee'] as const;
 const RECURRENCE_VALUES = ['hebdomadaire', 'mensuel', 'trimestriel', 'semestriel', 'annuel', 'ponctuel'] as const;
 const STATUS_VALUES = ['actif', 'inactif'] as const;
+const AMOUNT_STATUS_VALUES = ['inconnu', 'estime', 'confirme'] as const;
 
 /**
  * §6 : l'utilisateur doit pouvoir changer explicitement envisagée → souscrite
@@ -26,6 +27,32 @@ export class UpdateChargePlanDto {
   @IsOptional()
   @IsIn(RECURRENCE_VALUES)
   recurrenceRule?: (typeof RECURRENCE_VALUES)[number];
+
+  /**
+   * R6.2 (§1/§3) : "prochaine échéance" éditable — une modification ne touche
+   * JAMAIS les Deadline déjà générées (ChargePlansService.update supprime
+   * uniquement celles encore 'ouverte' sans aucun Payment, jamais l'historique) ;
+   * seule la génération future en tient compte. null = retombe sur startDate.
+   */
+  @IsOptional()
+  @IsISO8601()
+  recurrenceAnchorDate?: string | null;
+
+  /**
+   * R6.2 (§3) : modifier le montant d'une charge récurrente — s'applique
+   * uniquement aux Deadline encore 'ouverte' (jamais un paiement, même
+   * partiel) ; une échéance déjà payée garde son montant historique. Même
+   * couple obligatoire/exclusif que CreateDeadlineDto (RG-102/103) : fournir
+   * l'un sans l'autre est refusé, sauf amountStatus=inconnu qui exige
+   * l'absence d'amountCurrent.
+   */
+  @IsOptional()
+  @IsNumber()
+  amountCurrent?: number;
+
+  @IsOptional()
+  @IsIn(AMOUNT_STATUS_VALUES)
+  amountStatus?: (typeof AMOUNT_STATUS_VALUES)[number];
 
   @IsOptional()
   @IsUUID()

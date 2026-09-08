@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { getDeadlineBalances } from '../common/ledger/ledger.util';
+import { createAlreadyPaidDeadline } from '../common/ledger/already-paid.util';
 import { CreateChargePlanDto } from './dto/create-charge-plan.dto';
 import { CreateDeadlineDto } from './dto/create-deadline.dto';
 import { UpdateChargePlanDto } from './dto/update-charge-plan.dto';
@@ -42,6 +43,7 @@ export class ChargePlansService {
           obligationStatus: dto.obligationStatus ?? 'obligatoire',
           financialPlanId: dto.financialPlanId,
           startDate: new Date(dto.startDate),
+          recurrenceAnchorDate: dto.recurrenceAnchorDate ? new Date(dto.recurrenceAnchorDate) : undefined,
           endDate: dto.endDate ? new Date(dto.endDate) : undefined,
           priorityLevel: dto.priorityLevel ?? 1,
           children: dto.childIds?.length ? { create: dto.childIds.map((childId) => ({ childId })) } : undefined,
@@ -56,10 +58,18 @@ export class ChargePlansService {
    * ouverte) inclus en une requête (Prisma nested include), jamais un appel
    * N+1 par plan : permet une liste "Charges récurrentes" compacte (une ligne
    * = un ChargePlan + sa prochaine échéance), sans dupliquer de calcul.
+   *
+   * R6.2 (§2, correctif NaN DH) : `deadline.findMany`/l'include Prisma seul ne
+   * renvoie jamais reste_a_payer (colonne propre à la vue deadline_with_balance,
+   * RG-016 — même cause déjà documentée pour listDeadlines ci-dessous). Le
+   * mobile calculait alors `Number(undefined)` = NaN et l'affichait "NaN DH"
+   * pour une charge dont le montant était pourtant connu. Même utilitaire
+   * batché que listDeadlines, un seul aller-retour SQL pour tous les plans.
    */
   async findAll(userId: string, householdId: string) {
-    return this.rlsContext.run(userId, householdId, () =>
-      this.rlsContext.getClient().chargePlan.findMany({
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const plans = await tx.chargePlan.findMany({
         where: { householdId },
         orderBy: { createdAt: 'desc' },
         include: {
@@ -70,15 +80,32 @@ export class ChargePlansService {
             take: 1,
           },
         },
-      }),
-    );
+      });
+      const deadlineIds = plans.flatMap((p) => p.deadlines.map((d) => d.id));
+      const balances = await getDeadlineBalances(tx, deadlineIds);
+      return plans.map((p) => ({
+        ...p,
+        deadlines: p.deadlines.map((d) => ({ ...d, resteAPayer: balances.get(d.id)?.resteAPayer ?? null })),
+      }));
+    });
   }
 
-  /** §6 : transition explicite d'obligation_status (ex. envisagée → souscrite/refusée) ; §9 : rattachement FinancialPlan. */
+  /**
+   * §6 : transition explicite d'obligation_status (ex. envisagée → souscrite/refusée) ;
+   * §9 : rattachement FinancialPlan.
+   *
+   * R6.2 (§3) : édition étendue à fréquence/prochaine échéance/montant, avec la
+   * même règle dans les deux cas — jamais rétroactif. Une Deadline déjà
+   * touchée par un paiement (financialStatus ≠ 'ouverte', ou 'ouverte' avec un
+   * Payment — cas d'un remboursement total qui rouvre l'échéance) garde son
+   * montant ET reste alignée sur l'ancienne fréquence/ancre ; seules les
+   * Deadline encore 'ouverte' SANS aucun Payment (purement générées,
+   * jamais consultées par l'utilisateur) sont concernées.
+   */
   async update(userId: string, householdId: string, id: string, dto: UpdateChargePlanDto) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
-      await this.assertOwned(tx, id, householdId);
+      const existing = await this.assertOwned(tx, id, householdId);
 
       if (dto.financialPlanId) {
         const plan = await tx.financialPlan.findFirst({ where: { id: dto.financialPlanId, householdId } });
@@ -94,12 +121,30 @@ export class ChargePlansService {
         if (!account) throw new NotFoundException('Compte par défaut introuvable dans ce foyer');
       }
 
-      return tx.chargePlan.update({
+      const existingAnchorIso = existing.recurrenceAnchorDate ? existing.recurrenceAnchorDate.toISOString().slice(0, 10) : null;
+      const recurrenceChanged =
+        (dto.recurrenceRule !== undefined && dto.recurrenceRule !== existing.recurrenceRule) ||
+        (dto.recurrenceAnchorDate !== undefined && (dto.recurrenceAnchorDate ?? null) !== existingAnchorIso);
+
+      let amountStatus: 'inconnu' | 'estime' | 'confirme' | undefined;
+      if (dto.amountCurrent !== undefined || dto.amountStatus !== undefined) {
+        amountStatus = dto.amountStatus ?? 'estime';
+        if (amountStatus === 'inconnu' && dto.amountCurrent !== undefined) {
+          throw new BadRequestException('amount_current doit être absent quand amount_status = inconnu (RG-102/103)');
+        }
+        if (amountStatus !== 'inconnu' && dto.amountCurrent === undefined) {
+          throw new BadRequestException('amount_current est obligatoire sauf si amount_status = inconnu');
+        }
+      }
+
+      const updated = await tx.chargePlan.update({
         where: { id },
         data: {
           label: dto.label,
           categoryId: dto.categoryId === undefined ? undefined : dto.categoryId,
           recurrenceRule: dto.recurrenceRule,
+          recurrenceAnchorDate:
+            dto.recurrenceAnchorDate === undefined ? undefined : dto.recurrenceAnchorDate ? new Date(dto.recurrenceAnchorDate) : null,
           defaultAccountId: dto.defaultAccountId === undefined ? undefined : dto.defaultAccountId,
           endDate: dto.endDate === undefined ? undefined : dto.endDate ? new Date(dto.endDate) : null,
           obligationStatus: dto.obligationStatus,
@@ -108,6 +153,29 @@ export class ChargePlansService {
         },
         include: { children: true },
       });
+
+      // §3 : jamais l'historique — seule la génération future doit refléter la
+      // nouvelle ancre/fréquence. ensureChargeDeadlinesUntil (appelé
+      // paresseusement par chaque consommateur : Dashboard/Projection/Calendar)
+      // les régénère alignées, sans second moteur.
+      if (recurrenceChanged) {
+        await tx.deadline.deleteMany({
+          where: { chargePlanId: id, financialStatus: 'ouverte', payments: { none: {} } },
+        });
+      }
+
+      if (amountStatus !== undefined) {
+        await tx.deadline.updateMany({
+          where: { chargePlanId: id, financialStatus: 'ouverte', payments: { none: {} } },
+          data: {
+            amountCurrent: amountStatus === 'inconnu' ? null : dto.amountCurrent,
+            amountStatus,
+            confirmedAt: amountStatus === 'confirme' ? new Date() : null,
+          },
+        });
+      }
+
+      return updated;
     });
   }
 
@@ -158,11 +226,28 @@ export class ChargePlansService {
   /**
    * Crée une Deadline rattachée au plan. RG-102/103 : amount_current est NULL
    * si et seulement si amount_status = inconnu — jamais 0 dans ce cas.
+   *
+   * R6.2 (§4-9) : dto.alreadyPaid crée directement une échéance "déjà payée"
+   * (soldée + son Payment historique, CAS A/B — cf. already-paid.util.ts),
+   * jamais une échéance ouverte classique.
    */
   async createDeadline(userId: string, householdId: string, chargePlanId: string, dto: CreateDeadlineDto) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
       await this.assertOwned(tx, chargePlanId, householdId);
+
+      if (dto.alreadyPaid) {
+        if (dto.alreadyPaid.accountId) {
+          const account = await tx.financialAccount.findFirst({ where: { id: dto.alreadyPaid.accountId, householdId } });
+          if (!account) throw new NotFoundException('Compte introuvable dans ce foyer');
+        }
+        const { deadline } = await createAlreadyPaidDeadline(tx, chargePlanId, new Date(dto.dueDate), userId, {
+          amount: dto.alreadyPaid.amount,
+          paidDate: new Date(dto.alreadyPaid.paidDate),
+          accountId: dto.alreadyPaid.accountId,
+        });
+        return deadline;
+      }
 
       const amountStatus = dto.amountStatus ?? (dto.amountCurrent !== undefined ? 'estime' : 'inconnu');
       if (amountStatus === 'inconnu') {

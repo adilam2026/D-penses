@@ -37,6 +37,19 @@ type TxClient = Prisma.TransactionClient;
  *
  * Ni transfert (§15), ni mouvement de Provision/Poche, ni Provision elle-même
  * (§17 F) — réel ou prévu — n'entrent jamais dans revenus/dépenses consolidés.
+ *
+ * R6.2 (§12) — EXCEPTION UNIQUE ET CIBLÉE à cette exclusion : un transfert
+ * encore `prevu` (récurrent ou ponctuel — même impact, jamais deux logiques)
+ * dont un compte source/destination fait partie de la trésorerie pilotée
+ * (treasuryAccountIds) ajuste `cashRunning`/`projectedCashBalance` du mois de
+ * sa `plannedDate`, EXACTEMENT comme un transfert confirmé le fait déjà pour
+ * le solde réel actuel (computeTreasurySummary, treasury.util.ts — même
+ * logique des 4 combinaisons piloté/hors-pilotage, jamais réimplémentée).
+ * Ceci NE touche JAMAIS `balance`/`cumulativeBalance` (qui restent des flux
+ * revenus−dépenses purs, jamais un transfert) — uniquement la trésorerie
+ * projetée, qui doit refléter que l'argent quitte/rejoint le périmètre
+ * piloté. Un transfert entre deux comptes pilotés a un impact net de 0
+ * (RG implicite §11 CAS A) — jamais une dépense globale artificielle.
  */
 
 export const UNDETERMINED_ACCOUNT = '__undetermined__';
@@ -64,6 +77,10 @@ export interface MonthBucket {
   balance: number;
   cumulativeBalance: number;
   projectedCashBalance: number; // Round 4bis §7 — trésorerie initiale + cumul des flux
+  // R6.2 (§12) — impact net des transferts encore `prevu` sur la trésorerie pilotée
+  // ce mois-ci (signé : positif = entrée nette, négatif = sortie nette) — jamais
+  // dans balance/cumulativeBalance, uniquement appliqué à projectedCashBalance.
+  plannedTransferNetTreasuryImpact: number;
   incomeItems: MonthlyLineItem[];
   expenseItems: MonthlyLineItem[];
   movableExpenseTotal: number; // §10 "dépenses potentiellement décalables"
@@ -258,6 +275,42 @@ async function treasuryAccountIds(
 }
 
 /**
+ * R6.2 (§12) — impact net, par mois, des transferts encore `prevu` (récurrents
+ * ou ponctuels) sur la trésorerie pilotée. Même formule que
+ * computeTreasurySummary pour un transfert confirmé (treasury.util.ts) :
+ * source piloté → -amount, destination pilotée → +amount, les deux à la fois
+ * s'annulent exactement (jamais réimplémentée séparément, juste appliquée à
+ * `prevu` au lieu de `confirme`). Un compte hors du périmètre `treasuryIds`
+ * ne contribue jamais (CAS D — 0 impact).
+ */
+async function plannedTransferTreasuryImpacts(
+  tx: TxClient,
+  householdId: string,
+  ref: Date,
+  horizonEnd: Date,
+  treasuryIds: string[],
+): Promise<Map<string, number>> {
+  const impacts = new Map<string, number>();
+  if (treasuryIds.length === 0) return impacts;
+  const treasurySet = new Set(treasuryIds);
+
+  const transfers = await tx.accountTransfer.findMany({
+    where: { householdId, status: 'prevu', plannedDate: { gte: ref, lte: horizonEnd } },
+  });
+  for (const t of transfers) {
+    const amount = toNumber(t.amount);
+    if (amount === 0) continue;
+    let net = 0;
+    if (t.fromAccountId && treasurySet.has(t.fromAccountId)) net -= amount;
+    if (t.toAccountId && treasurySet.has(t.toAccountId)) net += amount;
+    if (net === 0) continue; // CAS A (piloté→piloté) ou CAS D (hors→hors) : jamais d'impact
+    const key = monthKey(t.plannedDate);
+    impacts.set(key, round2((impacts.get(key) ?? 0) + net));
+  }
+  return impacts;
+}
+
+/**
  * Point d'entrée unique (§19) : une seule invocation de computeProjection couvrant
  * TOUT l'horizon demandé (jusqu'à 60 mois) pour la couche prévue, 2 requêtes
  * ciblées pour la couche réelle, 1 requête batchée pour la trésorerie initiale —
@@ -278,7 +331,10 @@ export async function computeMonthlyProjection(
     realizedItems(tx, householdId, ref, horizonEnd),
     treasuryAccountIds(tx, householdId, options.incomeAccountIds, options.expenseAccountIds),
   ]);
-  const treasuryBalances = await getAccountBalances(tx, treasuryIds);
+  const [treasuryBalances, transferImpacts] = await Promise.all([
+    getAccountBalances(tx, treasuryIds),
+    plannedTransferTreasuryImpacts(tx, householdId, ref, horizonEnd, treasuryIds),
+  ]);
   const openingCashBalance = round2(treasuryIds.reduce((sum, id) => sum + (treasuryBalances.get(id) ?? 0), 0));
 
   // ---------- Construction des mois vides (§3) : un bucket par mois, même sans événement ----------
@@ -296,6 +352,7 @@ export async function computeMonthlyProjection(
       balance: 0,
       cumulativeBalance: 0,
       projectedCashBalance: 0,
+      plannedTransferNetTreasuryImpact: 0,
       incomeItems: [],
       expenseItems: [],
       movableExpenseTotal: 0,
@@ -395,7 +452,10 @@ export async function computeMonthlyProjection(
     bucket.balance = round2(bucket.totalIncome - bucket.totalExpense);
     cumulative = round2(cumulative + bucket.balance);
     bucket.cumulativeBalance = cumulative;
-    cashRunning = round2(cashRunning + bucket.balance);
+    // R6.2 (§12) — appliqué à cashRunning UNIQUEMENT (jamais à balance/cumulativeBalance,
+    // qui restent des flux revenus−dépenses purs).
+    bucket.plannedTransferNetTreasuryImpact = transferImpacts.get(bucket.month) ?? 0;
+    cashRunning = round2(cashRunning + bucket.balance + bucket.plannedTransferNetTreasuryImpact);
     bucket.projectedCashBalance = cashRunning;
 
     totalIncome = round2(totalIncome + bucket.totalIncome);

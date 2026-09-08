@@ -5,6 +5,23 @@ const OBLIGATION_VALUES = ['obligatoire', 'optionnelle_envisagee', 'optionnelle_
 const RECURRENCE_VALUES = ['hebdomadaire', 'mensuel', 'trimestriel', 'semestriel', 'annuel', 'ponctuel'] as const;
 
 /**
+ * R6.2 (§4-9, §8) : poste déjà réglé AVANT la saisie de ce plan (ex. Uniforme
+ * 3400 DH payé en août pour un plan créé en septembre) — accountId reste
+ * facultatif (CAS A/B, cf. already-paid.util.ts).
+ */
+export class SchoolWizardAlreadyPaidDto {
+  @IsNumber()
+  amount!: number;
+
+  @IsISO8601()
+  paidDate!: string;
+
+  @IsOptional()
+  @IsUUID()
+  accountId?: string;
+}
+
+/**
  * Une étape de l'assistant (§17) : scolarité T1/T2/T3, fournitures, uniforme,
  * sorties, restauration, garderie, assurance, réinscription, autres. Toutes les
  * étapes sont passables côté mobile — l'absence d'un élément dans `items`
@@ -45,6 +62,17 @@ export class SchoolWizardItemDto {
   @IsArray()
   @IsUUID(undefined, { each: true })
   childIds?: string[];
+
+  /**
+   * R6.2 (§4-9, §8) : si fourni, ce poste est créé directement soldé + son
+   * Payment historique (jamais une échéance ouverte) — amount/dueDate du
+   * poste ne servent alors que d'affichage/plan, le montant réellement payé
+   * fait foi (cf. already-paid.util.ts).
+   */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SchoolWizardAlreadyPaidDto)
+  alreadyPaid?: SchoolWizardAlreadyPaidDto;
 }
 
 export class SchoolWizardDto {
