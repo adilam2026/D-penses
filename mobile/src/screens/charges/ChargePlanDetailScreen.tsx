@@ -1,10 +1,11 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { Select } from '../../ui/Select';
 import { FormField } from '../../ui/FormField';
+import { DateField } from '../../ui/DateField';
 import { frequencyOptions } from '../../ui/frequency';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { colors, radius, spacing } from '../../ui/theme';
@@ -20,6 +21,7 @@ interface ChargePlan {
   label: string;
   categoryId: string | null;
   recurrenceRule: string | null;
+  recurrenceAnchorDate: string | null;
   status: 'actif' | 'inactif';
   obligationStatus: string;
 }
@@ -32,6 +34,8 @@ interface Deadline {
   financialStatus: 'ouverte' | 'partiellement_payee' | 'soldee' | 'annulee';
   resteAPayer: number | string | null;
 }
+
+const AMOUNT_STATUS_LABEL: Record<'estime' | 'confirme' | 'inconnu', string> = { estime: 'Estimé', confirme: 'Confirmé', inconnu: 'Inconnu' };
 
 const STATUS_LABEL: Record<Deadline['financialStatus'], string> = {
   ouverte: 'Ouverte',
@@ -73,6 +77,15 @@ export function ChargePlanDetailScreen() {
   const [label, setLabel] = useState('');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [recurrenceRule, setRecurrenceRule] = useState('ponctuel');
+  // R6.2 (§1/§3) : une seule "prochaine échéance" éditable, jamais un jour du
+  // mois séparé — modifier ce champ ne touche jamais l'historique (seules les
+  // échéances encore ouvertes sans paiement sont régénérées côté backend).
+  const [anchorDate, setAnchorDate] = useState('');
+  // R6.2 (§3) : édition de montant optionnelle et explicite — ne s'applique
+  // qu'aux échéances futures encore ouvertes, jamais rétroactive.
+  const [editAmount, setEditAmount] = useState(false);
+  const [amountStatus, setAmountStatus] = useState<'estime' | 'confirme' | 'inconnu'>('estime');
+  const [amount, setAmount] = useState('');
   const [saving, setSaving] = useState(false);
   const [togglingStatus, setTogglingStatus] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -88,6 +101,10 @@ export function ChargePlanDetailScreen() {
       setLabel(p.label);
       setCategoryId(p.categoryId);
       setRecurrenceRule(p.recurrenceRule ?? 'ponctuel');
+      setAnchorDate(p.recurrenceAnchorDate ? String(p.recurrenceAnchorDate).slice(0, 10) : '');
+      setEditAmount(false);
+      setAmountStatus('estime');
+      setAmount('');
     } finally {
       setLoading(false);
     }
@@ -105,12 +122,24 @@ export function ChargePlanDetailScreen() {
       setError('Un libellé est requis');
       return;
     }
+    if (recurrenceRule !== 'ponctuel' && !anchorDate) {
+      setError('La prochaine échéance est requise pour une charge récurrente');
+      return;
+    }
+    if (editAmount && amountStatus !== 'inconnu' && (!amount.trim() || Number(amount.replace(',', '.')) <= 0)) {
+      setError('Montant invalide');
+      return;
+    }
     setSaving(true);
     try {
       await api.updateChargePlan(id, {
         label: label.trim(),
         categoryId: categoryId ?? null,
         recurrenceRule: recurrenceRule === 'ponctuel' ? undefined : recurrenceRule,
+        recurrenceAnchorDate: recurrenceRule === 'ponctuel' ? null : anchorDate,
+        ...(editAmount
+          ? { amountStatus, amountCurrent: amountStatus !== 'inconnu' ? Number(amount.replace(',', '.')) : undefined }
+          : {}),
       });
       await load();
     } catch (err) {
@@ -195,6 +224,35 @@ export function ChargePlanDetailScreen() {
           onChange={setRecurrenceRule}
         />
 
+        {recurrenceRule !== 'ponctuel' && <DateField label="Prochaine échéance" value={anchorDate} onChange={setAnchorDate} />}
+
+        <View style={styles.toggleRow}>
+          <Text style={styles.toggleLabel}>Modifier le montant des prochaines échéances</Text>
+          <Switch testID="chargeplan-edit-amount-switch" value={editAmount} onValueChange={setEditAmount} />
+        </View>
+        {editAmount && (
+          <>
+            <View style={styles.segment}>
+              {(['estime', 'confirme', 'inconnu'] as const).map((s) => (
+                <TouchableOpacity key={s} style={[styles.segmentItem, amountStatus === s && styles.segmentActive]} onPress={() => setAmountStatus(s)}>
+                  <Text style={[styles.segmentText, amountStatus === s && styles.segmentTextActive]}>{AMOUNT_STATUS_LABEL[s]}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {amountStatus !== 'inconnu' && (
+              <FormField
+                testID="chargeplan-amount-input"
+                placeholder="Montant (DH)"
+                keyboardType="decimal-pad"
+                value={amount}
+                onChangeText={setAmount}
+                onFocus={handleFocus}
+              />
+            )}
+            <Text style={styles.amountHint}>S'applique uniquement aux échéances futures encore ouvertes — jamais à une échéance déjà payée.</Text>
+          </>
+        )}
+
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <TouchableOpacity style={styles.button} onPress={onSave} disabled={saving} testID="chargeplan-save">
           {saving ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Enregistrer</Text>}
@@ -241,6 +299,14 @@ const styles = StyleSheet.create({
   inactiveBanner: { backgroundColor: colors.dangerLight, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.lg },
   inactiveBannerText: { color: colors.danger, fontSize: 12, fontWeight: '600' },
   label: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: 6 },
+  toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm, marginTop: spacing.xs },
+  toggleLabel: { fontSize: 13, color: colors.textPrimary, flex: 1, marginRight: spacing.sm },
+  segment: { flexDirection: 'row', backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: 4, marginBottom: spacing.sm },
+  segmentItem: { flex: 1, paddingVertical: 10, borderRadius: radius.sm, alignItems: 'center' },
+  segmentActive: { backgroundColor: colors.surface },
+  segmentText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+  segmentTextActive: { color: colors.textPrimary },
+  amountHint: { fontSize: 11, color: colors.textSecondary, marginBottom: spacing.sm },
   error: { color: colors.danger, fontSize: 13, marginBottom: spacing.sm },
   button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center' },
   buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 14 },

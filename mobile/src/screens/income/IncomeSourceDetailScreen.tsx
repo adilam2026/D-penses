@@ -28,6 +28,7 @@ interface SourceDetail {
   label: string;
   usualAmount: number | string;
   recurrenceRule: string | null;
+  recurrenceAnchorDate: string | null;
   status: 'actif' | 'inactif';
 }
 
@@ -76,6 +77,10 @@ export function IncomeSourceDetailScreen() {
   const [editLabel, setEditLabel] = useState(routeLabel ?? '');
   const [editAmount, setEditAmount] = useState('');
   const [editRecurrence, setEditRecurrence] = useState('ponctuel');
+  // R6.2 (§1) : une seule "prochaine échéance" éditable, jamais un jour du
+  // mois séparé — modifier ce champ ne touche jamais l'historique des
+  // occurrences déjà générées, seule la génération future en tient compte.
+  const [editAnchorDate, setEditAnchorDate] = useState('');
   const [saving, setSaving] = useState(false);
   const [togglingStatus, setTogglingStatus] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -102,6 +107,7 @@ export function IncomeSourceDetailScreen() {
       setEditLabel(s.label);
       setEditAmount(String(n(s.usualAmount)));
       setEditRecurrence(s.recurrenceRule ?? 'ponctuel');
+      setEditAnchorDate(s.recurrenceAnchorDate ? String(s.recurrenceAnchorDate).slice(0, 10) : '');
     } finally {
       setLoading(false);
     }
@@ -118,12 +124,17 @@ export function IncomeSourceDetailScreen() {
       setEditError('Montant invalide');
       return;
     }
+    if (editRecurrence !== 'ponctuel' && !editAnchorDate) {
+      setEditError('Le prochain versement est requis pour un revenu récurrent');
+      return;
+    }
     setSaving(true);
     try {
       await api.updateIncomeSource(sourceId, {
         label: editLabel.trim(),
         usualAmount: numericAmount,
         recurrenceRule: editRecurrence === 'ponctuel' ? undefined : editRecurrence,
+        recurrenceAnchorDate: editRecurrence === 'ponctuel' ? null : editAnchorDate,
       });
       await load();
     } catch (err) {
@@ -245,6 +256,7 @@ export function IncomeSourceDetailScreen() {
           options={frequencyOptions(RECURRENCE_VALUES)}
           onChange={setEditRecurrence}
         />
+        {editRecurrence !== 'ponctuel' && <DateField label="Prochain versement" value={editAnchorDate} onChange={setEditAnchorDate} />}
         {editError ? <Text style={styles.error}>{editError}</Text> : null}
         <TouchableOpacity style={styles.button} onPress={onSaveSource} disabled={saving} testID="income-source-save">
           {saving ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Enregistrer</Text>}

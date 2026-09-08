@@ -46,6 +46,7 @@ jest.mock('../../../api/client', () => {
     listChildren: jest.fn(),
     createChild: jest.fn(),
     submitSchoolWizard: jest.fn(),
+    listAccounts: jest.fn(),
   };
 });
 
@@ -85,6 +86,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockHandleFocus.mockClear();
   currentStep = 0;
+  mockedApi.listAccounts.mockResolvedValue([]);
 });
 
 describe('A. Prérequis enfant', () => {
@@ -385,5 +387,59 @@ describe('F. Récapitulatif — 9 lignes attendues', () => {
     expect(screen.getByText('1 000 DH')).toBeTruthy();
     expect(screen.getByText('500 DH')).toBeTruthy();
     expect(screen.getAllByText(/Estimé — à confirmer plus tard/).length).toBe(9);
+  });
+});
+
+describe('R6.2 §4-9/§8 — "Déjà payé" sur un poste', () => {
+  it('cocher "Déjà payé" révèle Montant payé/Date de paiement/Compte (facultatif) et les envoie dans le payload', async () => {
+    mockedApi.listChildren.mockResolvedValue([{ id: 'c1', firstName: 'Dina', lastName: 'TAHA' }]);
+    mockedApi.listAccounts.mockResolvedValue([{ id: 'acc1', name: 'SG Adil' }]);
+    mockedApi.submitSchoolWizard.mockResolvedValue({ financialPlan: { id: 'plan1' }, chargePlans: [] });
+    await render(<SchoolWizardScreen />);
+    await waitFor(() => expect(screen.getByTestId('nav-next')).toBeTruthy());
+    await selectChild('c1');
+
+    await goToStep(3); // Frais de rentrée
+    await fireEvent(screen.getByTestId('toggle-Uniforme'), 'valueChange', true);
+
+    // Les champs "déjà payé" sont masqués tant que la case n'est pas cochée (§8, compact).
+    expect(screen.queryByTestId('Uniforme-already-paid-amount')).toBeNull();
+
+    await fireEvent(screen.getByTestId('Uniforme-already-paid-switch'), 'valueChange', true);
+    await fireEvent.changeText(screen.getByTestId('Uniforme-already-paid-amount'), '3400');
+    await fireEvent.changeText(screen.getByTestId('date-Date de paiement'), '2026-08-25');
+    await fireEvent.press(screen.getByTestId('Uniforme-already-paid-account-select'));
+    await fireEvent.press(await screen.findByTestId('Uniforme-already-paid-account-select-option-acc1'));
+
+    await goToStep(5); // Récapitulatif
+    await fireEvent.press(screen.getByTestId('nav-submit'));
+
+    await waitFor(() => expect(mockedApi.submitSchoolWizard).toHaveBeenCalled());
+    const [payload] = mockedApi.submitSchoolWizard.mock.calls[0];
+    const uniforme = payload.items.find((it: any) => it.label === 'Uniforme');
+    expect(uniforme!.alreadyPaid).toEqual({ amount: 3400, paidDate: '2026-08-25', accountId: 'acc1' });
+  });
+
+  it('le compte reste facultatif (CAS B) — aucun compte sélectionné n\'envoie accountId: undefined', async () => {
+    mockedApi.listChildren.mockResolvedValue([{ id: 'c1', firstName: 'Dina', lastName: 'TAHA' }]);
+    mockedApi.listAccounts.mockResolvedValue([{ id: 'acc1', name: 'SG Adil' }]);
+    mockedApi.submitSchoolWizard.mockResolvedValue({ financialPlan: { id: 'plan1' }, chargePlans: [] });
+    await render(<SchoolWizardScreen />);
+    await waitFor(() => expect(screen.getByTestId('nav-next')).toBeTruthy());
+    await selectChild('c1');
+
+    await goToStep(3);
+    await fireEvent(screen.getByTestId('toggle-Uniforme'), 'valueChange', true);
+    await fireEvent(screen.getByTestId('Uniforme-already-paid-switch'), 'valueChange', true);
+    await fireEvent.changeText(screen.getByTestId('Uniforme-already-paid-amount'), '3400');
+    await fireEvent.changeText(screen.getByTestId('date-Date de paiement'), '2026-08-25');
+
+    await goToStep(5);
+    await fireEvent.press(screen.getByTestId('nav-submit'));
+
+    await waitFor(() => expect(mockedApi.submitSchoolWizard).toHaveBeenCalled());
+    const [payload] = mockedApi.submitSchoolWizard.mock.calls[0];
+    const uniforme = payload.items.find((it: any) => it.label === 'Uniforme');
+    expect(uniforme!.alreadyPaid).toEqual({ amount: 3400, paidDate: '2026-08-25', accountId: undefined });
   });
 });

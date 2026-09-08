@@ -10,6 +10,15 @@ import * as api from '../../../api/client';
  */
 jest.mock('../../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
 
+jest.mock('../../../ui/DateField', () => {
+  const { TextInput } = require('react-native');
+  return {
+    DateField: ({ value, onChange, label }: { value: string; onChange: (v: string) => void; label?: string }) => (
+      <TextInput testID={label ? `date-${label}` : 'date-field'} value={value} onChangeText={onChange} />
+    ),
+  };
+});
+
 const mockNavigate = jest.fn();
 const mockGoBack = jest.fn();
 jest.mock('@react-navigation/native', () => ({
@@ -35,7 +44,15 @@ jest.mock('../../../api/client', () => {
 
 const mockedApi = api as jest.Mocked<typeof api>;
 
-const PLAN = { id: 'cp1', label: 'Internet', categoryId: null, recurrenceRule: 'mensuel', status: 'actif' as const, obligationStatus: 'obligatoire' };
+const PLAN = {
+  id: 'cp1',
+  label: 'Internet',
+  categoryId: null,
+  recurrenceRule: 'mensuel',
+  recurrenceAnchorDate: '2026-09-27',
+  status: 'actif' as const,
+  obligationStatus: 'obligatoire',
+};
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -91,6 +108,25 @@ it('affiche une erreur claire quand la suppression est refusée (historique de p
 
   await waitFor(() => screen.getByText(/historique de paiement/));
   expect(mockGoBack).not.toHaveBeenCalled();
+});
+
+it('R6.2 §1/§3 : modifie la prochaine échéance et, optionnellement, le montant des échéances futures', async () => {
+  mockedApi.updateChargePlan.mockResolvedValue({ ...PLAN, recurrenceAnchorDate: '2026-10-27' });
+  await render(<ChargePlanDetailScreen />);
+  await waitFor(() => screen.getByTestId('date-Prochaine échéance'));
+
+  await fireEvent.changeText(screen.getByTestId('date-Prochaine échéance'), '2026-10-27');
+  await fireEvent(screen.getByTestId('chargeplan-edit-amount-switch'), 'valueChange', true);
+  await fireEvent.press(screen.getByText('Confirmé'));
+  await fireEvent.changeText(screen.getByTestId('chargeplan-amount-input'), '349');
+  await fireEvent.press(screen.getByTestId('chargeplan-save'));
+
+  await waitFor(() =>
+    expect(mockedApi.updateChargePlan).toHaveBeenCalledWith(
+      'cp1',
+      expect.objectContaining({ recurrenceAnchorDate: '2026-10-27', amountStatus: 'confirme', amountCurrent: 349 }),
+    ),
+  );
 });
 
 it('taper une échéance navigue vers DeadlineDetail', async () => {

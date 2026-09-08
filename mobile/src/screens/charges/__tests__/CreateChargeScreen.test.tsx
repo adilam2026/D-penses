@@ -63,7 +63,25 @@ it('fréquence via sélecteur compact, et crée la charge avec la fréquence cho
   await fireEvent.press(screen.getByTestId('create-charge-submit'));
 
   await waitFor(() =>
-    expect(mockedApi.createChargePlan).toHaveBeenCalledWith(expect.objectContaining({ label: 'Assurance', recurrenceRule: 'trimestriel' })),
+    expect(mockedApi.createChargePlan).toHaveBeenCalledWith(
+      expect.objectContaining({ label: 'Assurance', recurrenceRule: 'trimestriel', recurrenceAnchorDate: expect.any(String) }),
+    ),
   );
   expect(mockGoBack).toHaveBeenCalled();
+});
+
+it('R6.2 §1 : la même date pilote la première échéance ET l\'ancre de récurrence (jamais un jour du mois séparé)', async () => {
+  mockedApi.createChargePlan.mockResolvedValue({ id: 'cp1' });
+  mockedApi.createDeadline.mockResolvedValue({ id: 'd1' });
+  await render(<CreateChargeScreen />);
+  await waitFor(() => screen.getByTestId('charge-frequency-select'));
+
+  await fireEvent.changeText(screen.getByPlaceholderText('Ex. Internet, Loyer, École'), 'Internet');
+  await fireEvent.press(screen.getByText('Confirmé'));
+  await fireEvent.changeText(screen.getByPlaceholderText('Montant (DH)'), '299');
+  await fireEvent.press(screen.getByTestId('create-charge-submit'));
+
+  await waitFor(() => expect(mockedApi.createChargePlan).toHaveBeenCalled());
+  const [payload] = mockedApi.createChargePlan.mock.calls[0];
+  expect(payload.recurrenceAnchorDate).toBe(payload.startDate);
 });

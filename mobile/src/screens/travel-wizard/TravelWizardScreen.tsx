@@ -21,6 +21,10 @@ interface ItemState {
   amount: string;
   unknown: boolean;
   dueDate: string;
+  // R6.2 (§13-14) : true dès que l'utilisateur choisit lui-même une date pour
+  // ce poste — à partir de là, un changement de date de début du voyage ne
+  // touche plus jamais cette valeur (règle 3/5).
+  dueDateCustomized: boolean;
 }
 
 interface ExtraItem {
@@ -28,10 +32,11 @@ interface ExtraItem {
   amount: string;
   unknown: boolean;
   dueDate: string;
+  dueDateCustomized: boolean;
 }
 
 function newItem(dueDate: string, included = true): ItemState {
-  return { included, amount: '', unknown: false, dueDate };
+  return { included, amount: '', unknown: false, dueDate, dueDateCustomized: false };
 }
 
 function todayIso() {
@@ -58,8 +63,12 @@ export function TravelWizardScreen() {
   const [provisions, setProvisions] = useState<Provision[]>([]);
   const [linkedProvisionId, setLinkedProvisionId] = useState<string | null>(null);
 
+  // R6.2 (§13-14) : date par défaut = date de début du voyage (règle 1), jamais
+  // "aujourd'hui" — periodStart vaut déjà todayIso() à ce stade (état initialisé
+  // juste au-dessus, même ordre de rendu React), donc identique au comportement
+  // historique tant que l'utilisateur n'a pas encore changé la date du voyage.
   const [postes, setPostes] = useState<Record<string, ItemState>>(
-    Object.fromEntries(DEFAULT_POSTES.map((label) => [label, newItem(todayIso(), label !== 'Imprévus')])),
+    Object.fromEntries(DEFAULT_POSTES.map((label) => [label, newItem(periodStart, label !== 'Imprévus')])),
   );
   const [autres, setAutres] = useState<ExtraItem[]>([]);
 
@@ -69,6 +78,21 @@ export function TravelWizardScreen() {
   useEffect(() => {
     api.listProvisions().then(setProvisions);
   }, []);
+
+  // R6.2 (§13-14, règles 1/3/4) : un changement de date de début du voyage met
+  // à jour UNIQUEMENT la valeur par défaut des dates pas encore personnalisées
+  // — jamais une date déjà choisie par l'utilisateur (dueDateCustomized=true).
+  useEffect(() => {
+    setPostes((prev) => {
+      const next: Record<string, ItemState> = {};
+      for (const [label, item] of Object.entries(prev)) {
+        next[label] = item.dueDateCustomized ? item : { ...item, dueDate: periodStart };
+      }
+      return next;
+    });
+    setAutres((prev) => prev.map((extra) => (extra.dueDateCustomized ? extra : { ...extra, dueDate: periodStart })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periodStart]);
 
   function updatePoste(label: string, value: ItemState) {
     setPostes((prev) => ({ ...prev, [label]: value }));
@@ -181,7 +205,11 @@ export function TravelWizardScreen() {
                       onFocus={handleFocus}
                     />
                   )}
-                  <DateField value={item.dueDate} onChange={(dueDate) => updatePoste(label, { ...item, dueDate })} />
+                  <DateField
+                    label={`Date prévue — ${label}`}
+                    value={item.dueDate}
+                    onChange={(dueDate) => updatePoste(label, { ...item, dueDate, dueDateCustomized: true })}
+                  />
                 </>
               )}
             </View>
@@ -215,12 +243,16 @@ export function TravelWizardScreen() {
                 onFocus={handleFocus}
               />
             )}
-            <DateField value={extra.dueDate} onChange={(dueDate) => setAutres((prev) => prev.map((e, j) => (j === i ? { ...e, dueDate } : e)))} />
+            <DateField
+              label={`Date prévue — poste ${i + 1}`}
+              value={extra.dueDate}
+              onChange={(dueDate) => setAutres((prev) => prev.map((e, j) => (j === i ? { ...e, dueDate, dueDateCustomized: true } : e)))}
+            />
           </View>
         ))}
         <TouchableOpacity
           style={styles.addExtraButton}
-          onPress={() => setAutres((prev) => [...prev, { label: '', amount: '', unknown: false, dueDate: periodStart }])}
+          onPress={() => setAutres((prev) => [...prev, { label: '', amount: '', unknown: false, dueDate: periodStart, dueDateCustomized: false }])}
         >
           <Text style={styles.addExtraButtonText}>+ Ajouter un poste</Text>
         </TouchableOpacity>

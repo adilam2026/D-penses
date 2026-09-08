@@ -10,6 +10,15 @@ import * as api from '../../../api/client';
  */
 jest.mock('../../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
 
+jest.mock('../../../ui/DateField', () => {
+  const { TextInput } = require('react-native');
+  return {
+    DateField: ({ value, onChange, label }: { value: string; onChange: (v: string) => void; label?: string }) => (
+      <TextInput testID={label ? `date-${label}` : 'date-field'} value={value} onChangeText={onChange} />
+    ),
+  };
+});
+
 const mockNavigate = jest.fn();
 const mockGoBack = jest.fn();
 let mockRouteParams: { mode?: string } = {};
@@ -32,6 +41,7 @@ jest.mock('../../../api/client', () => {
     createCategorySubtype: jest.fn(),
     createExpense: jest.fn(),
     createTransfer: jest.fn(),
+    createRecurringTransfer: jest.fn(),
   };
 });
 
@@ -269,6 +279,35 @@ describe('QuickAddScreen — Transfert entre comptes (§11)', () => {
     await fireEvent.press(screen.getByText('CONFIRMER LE TRANSFERT'));
 
     await waitFor(() => screen.getByText('Montant invalide'));
+    expect(mockedApi.createTransfer).not.toHaveBeenCalled();
+  });
+
+  it('R6.2 §10-12 : basculer sur "Récurrent" crée un RecurringTransfer (objet séparé), jamais un transfert ponctuel', async () => {
+    mockedApi.createRecurringTransfer.mockResolvedValue({ id: 'rt-1' });
+    await render(<QuickAddScreen />);
+    await waitFor(() => screen.getByTestId('quickadd-transfer-kind-recurrent'));
+
+    await fireEvent.press(screen.getByTestId('quickadd-transfer-kind-recurrent'));
+    await fireEvent.changeText(screen.getByTestId('quickadd-transfer-label-input'), 'Épargne Lamiaa');
+    await fireEvent.changeText(screen.getByPlaceholderText('Montant (DH)'), '1000');
+    await fireEvent.press(screen.getByTestId('quickadd-dest-account-select'));
+    await fireEvent.press(await screen.findByTestId('quickadd-dest-account-select-option-acc-2'));
+    await fireEvent.changeText(screen.getByTestId('date-Prochain transfert'), '2026-09-28');
+
+    await fireEvent.press(screen.getByText('CRÉER LE TRANSFERT RÉCURRENT'));
+
+    await waitFor(() =>
+      expect(mockedApi.createRecurringTransfer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          label: 'Épargne Lamiaa',
+          fromAccountId: 'acc-1',
+          toAccountId: 'acc-2',
+          amount: 1000,
+          recurrenceRule: 'mensuel',
+          recurrenceAnchorDate: '2026-09-28',
+        }),
+      ),
+    );
     expect(mockedApi.createTransfer).not.toHaveBeenCalled();
   });
 });

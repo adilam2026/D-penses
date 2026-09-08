@@ -5,6 +5,7 @@ import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { Select } from '../../ui/Select';
 import { FormField } from '../../ui/FormField';
+import { DateField } from '../../ui/DateField';
 import { frequencyOptions } from '../../ui/frequency';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { accountCreatedBus } from '../../state/events';
@@ -23,16 +24,6 @@ interface Category {
 
 const RECURRENCE_VALUES = ['hebdomadaire', 'mensuel', 'trimestriel', 'semestriel', 'annuel', 'ponctuel'] as const;
 
-/** Jour habituel → date d'ancrage du mois courant, clampée (règle jour 29/30/31, Lot 11 §1). */
-function anchorDateForDay(day: number): string {
-  const now = new Date();
-  const year = now.getUTCFullYear();
-  const month = now.getUTCMonth();
-  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  const clamped = Math.min(day, daysInMonth);
-  return new Date(Date.UTC(year, month, clamped)).toISOString().slice(0, 10);
-}
-
 /**
  * Recette post-Vague 3 (§2/§3/§7) — écran dédié pour créer une source de
  * revenu, séparé de la liste (IncomeScreen). Compte et fréquence via
@@ -48,7 +39,10 @@ export function CreateIncomeScreen() {
   const [label, setLabel] = useState('');
   const [amount, setAmount] = useState('');
   const [recurrence, setRecurrence] = useState('mensuel');
-  const [anchorDay, setAnchorDay] = useState('');
+  // R6.2 (§1) : une seule date complète de "prochain versement", jamais un
+  // jour du mois isolé — le backend (recurrenceAnchorDate) dérive lui-même
+  // toutes les occurrences suivantes à partir de cette ancre.
+  const [anchorDate, setAnchorDate] = useState('');
   const [accountId, setAccountId] = useState<string | null>(null);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -103,9 +97,8 @@ export function CreateIncomeScreen() {
       promptCreateAccount();
       return;
     }
-    const dayNumber = Number(anchorDay);
-    if (recurrence !== 'ponctuel' && (!dayNumber || dayNumber < 1 || dayNumber > 31)) {
-      setError('Jour habituel invalide (1 à 31)');
+    if (recurrence !== 'ponctuel' && !anchorDate) {
+      setError('La date du prochain versement est requise');
       return;
     }
     setCreating(true);
@@ -116,7 +109,7 @@ export function CreateIncomeScreen() {
         defaultAccountId: accountId,
         isRecurring: recurrence !== 'ponctuel',
         recurrenceRule: recurrence,
-        recurrenceAnchorDate: recurrence !== 'ponctuel' ? anchorDateForDay(dayNumber) : undefined,
+        recurrenceAnchorDate: recurrence !== 'ponctuel' ? anchorDate : undefined,
         categoryId: categoryId ?? undefined,
       });
       navigation.goBack();
@@ -146,18 +139,7 @@ export function CreateIncomeScreen() {
 
         <Select testID="income-frequency-select" label="Fréquence" value={recurrence} options={frequencyOptions(RECURRENCE_VALUES)} onChange={setRecurrence} />
 
-        {recurrence !== 'ponctuel' && (
-          <FormField
-            testID="income-anchor-day-input"
-            label="Jour habituel de versement"
-            placeholder="1 à 31"
-            keyboardType="number-pad"
-            maxLength={2}
-            value={anchorDay}
-            onChangeText={setAnchorDay}
-            onFocus={handleFocus}
-          />
-        )}
+        {recurrence !== 'ponctuel' && <DateField label="Prochain versement" value={anchorDate} onChange={setAnchorDate} />}
 
         {accounts.length > 0 && (
           <Select

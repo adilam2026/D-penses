@@ -7,6 +7,15 @@ import * as api from '../../../api/client';
 /** Recette post-Vague 3 (§5) — modifier/désactiver/supprimer une source de revenu, sans jamais casser l'historique reçu. */
 jest.mock('../../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
 
+jest.mock('../../../ui/DateField', () => {
+  const { TextInput } = require('react-native');
+  return {
+    DateField: ({ value, onChange, label }: { value: string; onChange: (v: string) => void; label?: string }) => (
+      <TextInput testID={label ? `date-${label}` : 'date-field'} value={value} onChangeText={onChange} />
+    ),
+  };
+});
+
 const mockGoBack = jest.fn();
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({ goBack: mockGoBack, navigate: jest.fn() }),
@@ -32,7 +41,14 @@ jest.mock('../../../api/client', () => {
 
 const mockedApi = api as jest.Mocked<typeof api>;
 
-const SOURCE = { id: 's1', label: 'Salaire', usualAmount: 10000, recurrenceRule: 'mensuel', status: 'actif' as const };
+const SOURCE = {
+  id: 's1',
+  label: 'Salaire',
+  usualAmount: 10000,
+  recurrenceRule: 'mensuel',
+  recurrenceAnchorDate: '2026-09-27',
+  status: 'actif' as const,
+};
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -51,6 +67,19 @@ it('modifie le montant habituel de la source', async () => {
   await fireEvent.press(screen.getByTestId('income-source-save'));
 
   await waitFor(() => expect(mockedApi.updateIncomeSource).toHaveBeenCalledWith('s1', expect.objectContaining({ usualAmount: 11000 })));
+});
+
+it('R6.2 §1 : modifie le prochain versement (recurrenceAnchorDate), sans jour du mois séparé', async () => {
+  mockedApi.updateIncomeSource.mockResolvedValue({ ...SOURCE, recurrenceAnchorDate: '2026-10-27' });
+  await render(<IncomeSourceDetailScreen />);
+  await waitFor(() => screen.getByTestId('date-Prochain versement'));
+
+  await fireEvent.changeText(screen.getByTestId('date-Prochain versement'), '2026-10-27');
+  await fireEvent.press(screen.getByTestId('income-source-save'));
+
+  await waitFor(() =>
+    expect(mockedApi.updateIncomeSource).toHaveBeenCalledWith('s1', expect.objectContaining({ recurrenceAnchorDate: '2026-10-27' })),
+  );
 });
 
 it('"Arrêter la récurrence" bascule status=inactif', async () => {

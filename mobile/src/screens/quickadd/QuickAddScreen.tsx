@@ -17,9 +17,16 @@ import { accountCreatedBus } from '../../state/events';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { Select } from '../../ui/Select';
 import { FormField } from '../../ui/FormField';
+import { DateField } from '../../ui/DateField';
+import { frequencyOptions } from '../../ui/frequency';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
 
 type Mode = 'depense' | 'revenu' | 'paiement' | 'transfert';
+
+// R6.2 (§10-12) : un transfert récurrent reste un objet séparé (RecurringTransfer),
+// jamais une ChargePlan — 'ponctuel' n'existe pas côté récurrent (POST /accounts/transfers
+// reste le seul chemin pour un transfert sans répétition).
+const RECURRING_TRANSFER_RULES = ['hebdomadaire', 'mensuel', 'trimestriel', 'semestriel', 'annuel'] as const;
 
 interface Account {
   id: string;
@@ -88,6 +95,14 @@ export function QuickAddScreen() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountId, setAccountId] = useState<string | null>(null);
   const [toAccountId, setToAccountId] = useState<string | null>(null);
+
+  // R6.2 (§10-12) : Ponctuel (comportement historique, POST /accounts/transfers)
+  // vs Récurrent (nouvel objet séparé RecurringTransfer, POST /recurring-transfers).
+  const [transferKind, setTransferKind] = useState<'ponctuel' | 'recurrent'>('ponctuel');
+  const [transferLabel, setTransferLabel] = useState('');
+  const [transferRecurrenceRule, setTransferRecurrenceRule] = useState<string>('mensuel');
+  const [transferAnchorDate, setTransferAnchorDate] = useState('');
+  const [transferNote, setTransferNote] = useState('');
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState<string | null>(null);
@@ -247,6 +262,16 @@ export function QuickAddScreen() {
       promptCreateAccount();
       return;
     }
+    if (mode === 'transfert' && transferKind === 'recurrent') {
+      if (!transferLabel.trim()) {
+        setError('Un libellé est requis pour un transfert récurrent');
+        return;
+      }
+      if (!transferAnchorDate) {
+        setError('Le prochain transfert est requis');
+        return;
+      }
+    }
 
     setSubmitting(true);
     try {
@@ -281,7 +306,19 @@ export function QuickAddScreen() {
           setSubmitting(false);
           return;
         }
-        await api.createTransfer({ fromAccountId: accountId!, toAccountId, amount: numericAmount, plannedDate: today });
+        if (transferKind === 'recurrent') {
+          await api.createRecurringTransfer({
+            label: transferLabel.trim(),
+            fromAccountId: accountId!,
+            toAccountId,
+            amount: numericAmount,
+            recurrenceRule: transferRecurrenceRule as (typeof RECURRING_TRANSFER_RULES)[number],
+            recurrenceAnchorDate: transferAnchorDate,
+            note: transferNote.trim() || undefined,
+          });
+        } else {
+          await api.createTransfer({ fromAccountId: accountId!, toAccountId, amount: numericAmount, plannedDate: today });
+        }
       }
       navigation.goBack();
     } catch (err) {
@@ -516,6 +553,31 @@ export function QuickAddScreen() {
 
             {mode === 'transfert' && (
               <>
+                <View style={styles.segment}>
+                  {(['ponctuel', 'recurrent'] as const).map((k) => (
+                    <TouchableOpacity
+                      key={k}
+                      testID={`quickadd-transfer-kind-${k}`}
+                      style={[styles.segmentItem, transferKind === k && styles.segmentActive]}
+                      onPress={() => setTransferKind(k)}
+                    >
+                      <Text style={[styles.segmentText, transferKind === k && styles.segmentTextActive]}>
+                        {k === 'ponctuel' ? 'Ponctuel' : 'Récurrent'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {transferKind === 'recurrent' && (
+                  <FormField
+                    testID="quickadd-transfer-label-input"
+                    placeholder="Libellé (ex. Épargne Lamiaa)"
+                    value={transferLabel}
+                    onChangeText={setTransferLabel}
+                    onFocus={handleFocus}
+                  />
+                )}
+
                 <Select
                   testID="quickadd-dest-account-select"
                   label="Compte destination"
@@ -527,7 +589,27 @@ export function QuickAddScreen() {
                     .map((a) => ({ value: a.id, label: a.name, sublabel: `${a.soldeCourant.toLocaleString('fr-FR')} DH` }))}
                 />
 
-                {(() => {
+                {transferKind === 'recurrent' && (
+                  <>
+                    <Select
+                      testID="quickadd-transfer-frequency-select"
+                      label="Fréquence"
+                      value={transferRecurrenceRule}
+                      options={frequencyOptions(RECURRING_TRANSFER_RULES)}
+                      onChange={setTransferRecurrenceRule}
+                    />
+                    <DateField label="Prochain transfert" value={transferAnchorDate} onChange={setTransferAnchorDate} />
+                    <FormField
+                      testID="quickadd-transfer-note-input"
+                      placeholder="Note (facultatif)"
+                      value={transferNote}
+                      onChangeText={setTransferNote}
+                      onFocus={handleFocus}
+                    />
+                  </>
+                )}
+
+                {transferKind === 'ponctuel' && (() => {
                   const numericAmount = Number(amount.replace(',', '.'));
                   const from = accounts.find((a) => a.id === accountId);
                   const to = accounts.find((a) => a.id === toAccountId);
@@ -562,7 +644,9 @@ export function QuickAddScreen() {
                 {submitting ? (
                   <ActivityIndicator color={colors.textOnPrimary} />
                 ) : (
-                  <Text style={styles.buttonText}>{mode === 'transfert' ? 'CONFIRMER LE TRANSFERT' : 'Enregistrer'}</Text>
+                  <Text style={styles.buttonText}>
+                    {mode === 'transfert' ? (transferKind === 'recurrent' ? 'CRÉER LE TRANSFERT RÉCURRENT' : 'CONFIRMER LE TRANSFERT') : 'Enregistrer'}
+                  </Text>
                 )}
               </TouchableOpacity>
             )}
@@ -580,6 +664,11 @@ export function QuickAddScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   scroll: { padding: spacing.xxl, paddingTop: 40 },
+  segment: { flexDirection: 'row', backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: 4, marginBottom: spacing.sm },
+  segmentItem: { flex: 1, paddingVertical: 10, borderRadius: radius.sm, alignItems: 'center' },
+  segmentActive: { backgroundColor: colors.surface },
+  segmentText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+  segmentTextActive: { color: colors.textPrimary },
   transferPreview: {
     backgroundColor: colors.surface,
     borderRadius: radius.md,

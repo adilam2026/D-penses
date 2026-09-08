@@ -66,6 +66,10 @@ export function CreateChargeScreen() {
         label: label.trim(),
         startDate: dueDate,
         recurrenceRule: recurrence === 'ponctuel' ? undefined : recurrence,
+        // R6.2 (§1) : une seule date saisie ("prochaine échéance") pilote à la
+        // fois la première Deadline (ci-dessous) et l'ancre de génération
+        // future — jamais un jour du mois demandé séparément.
+        recurrenceAnchorDate: recurrence === 'ponctuel' ? undefined : dueDate,
         categoryId: categoryId ?? undefined,
       });
       await api.createDeadline(plan.id, {
@@ -96,7 +100,7 @@ export function CreateChargeScreen() {
           onChange={setRecurrence}
         />
 
-        <DateField label="Date d'échéance" value={dueDate} onChange={setDueDate} />
+        <DateField label={recurrence === 'ponctuel' ? "Date d'échéance" : 'Prochaine échéance'} value={dueDate} onChange={setDueDate} />
 
         <Text style={styles.label}>Montant</Text>
         <View style={styles.segment}>

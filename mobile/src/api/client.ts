@@ -204,6 +204,7 @@ export const createChargePlan = (data: {
   startDate: string;
   categoryId?: string;
   recurrenceRule?: string;
+  recurrenceAnchorDate?: string;
   childIds?: string[];
 }) => apiFetch('/charge-plans', { method: 'POST', body: data });
 
@@ -237,6 +238,23 @@ export const listOpenDeadlines = () => apiFetch('/deadlines');
 
 export const createTransfer = (data: { fromAccountId?: string; toAccountId?: string; amount: number; plannedDate?: string }) =>
   apiFetch('/accounts/transfers', { method: 'POST', body: data });
+
+/**
+ * R6.2 (§10-12) : "Ajouter > Transfert > Récurrent" — objet séparé d'une charge
+ * (jamais une ChargePlan, RG implicite §10). recurrenceRule n'accepte jamais
+ * 'ponctuel' ici — un transfert sans répétition passe par createTransfer.
+ */
+export const createRecurringTransfer = (data: {
+  label: string;
+  fromAccountId: string;
+  toAccountId: string;
+  amount: number;
+  recurrenceRule: 'hebdomadaire' | 'mensuel' | 'trimestriel' | 'semestriel' | 'annuel';
+  recurrenceAnchorDate: string;
+  note?: string;
+}) => apiFetch('/recurring-transfers', { method: 'POST', body: data });
+
+export const listRecurringTransfers = () => apiFetch('/recurring-transfers');
 
 // R5 clôture §1 — Annuler un transfert "prevu" (rien n'a bougé) / Annuler par miroir atomique (confirmé).
 export const cancelTransfer = (id: string) => apiFetch(`/accounts/transfers/${id}/cancel`, { method: 'POST' });
@@ -331,6 +349,9 @@ export const updateChargePlan = (
     label?: string;
     categoryId?: string | null;
     recurrenceRule?: string;
+    recurrenceAnchorDate?: string | null;
+    amountCurrent?: number;
+    amountStatus?: 'inconnu' | 'estime' | 'confirme';
     defaultAccountId?: string | null;
     obligationStatus?: string;
     financialPlanId?: string | null;
@@ -377,6 +398,8 @@ export interface SchoolWizardItem {
   obligationStatus?: string;
   recurrenceRule?: 'hebdomadaire' | 'mensuel' | 'trimestriel' | 'semestriel' | 'annuel';
   childIds?: string[];
+  /** R6.2 (§4-9, §8) : poste déjà réglé avant la saisie de ce plan (ex. Uniforme payé en août). */
+  alreadyPaid?: { amount: number; paidDate: string; accountId?: string };
 }
 
 export const submitSchoolWizard = (data: { label: string; childIds: string[]; periodStart: string; periodEnd: string; items: SchoolWizardItem[] }) =>

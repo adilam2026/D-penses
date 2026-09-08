@@ -8,11 +8,17 @@ import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import * as api from '../../api/client';
 import { colors, radius, spacing } from '../../ui/theme';
 import { MultiSelect } from '../../ui/MultiSelect';
+import { Select } from '../../ui/Select';
 
 interface Child {
   id: string;
   firstName: string;
   lastName: string;
+}
+
+interface Account {
+  id: string;
+  name: string;
 }
 
 /**
@@ -31,6 +37,24 @@ interface TermState {
   dueDate: string;
 }
 
+/**
+ * R6.2 (§4-9, §8) : poste déjà réglé AVANT la saisie de ce plan (ex. Uniforme
+ * payé en août). accountId reste facultatif (CAS A compte connu / CAS B
+ * compte inconnu — cf. already-paid.util.ts côté backend). Jamais proposé
+ * sur un poste trimestriel (Scolarité/Restauration T1/T2/T3) — l'ambiguïté
+ * "quel trimestre ?" sortirait du périmètre sûr de cette version.
+ */
+interface AlreadyPaidState {
+  active: boolean;
+  amount: string;
+  paidDate: string;
+  accountId: string | null;
+}
+
+function newAlreadyPaid(): AlreadyPaidState {
+  return { active: false, amount: '', paidDate: todayIso(), accountId: null };
+}
+
 interface PosteState {
   included: boolean;
   unknown: boolean;
@@ -38,12 +62,14 @@ interface PosteState {
   amount: string;
   dueDate: string;
   terms: [TermState, TermState, TermState];
+  alreadyPaid: AlreadyPaidState;
 }
 
 interface ExtraItem {
   label: string;
   amount: string;
   dueDate: string;
+  alreadyPaid: AlreadyPaidState;
 }
 
 interface BuiltItem {
@@ -52,6 +78,7 @@ interface BuiltItem {
   dueDate: string;
   obligationStatus?: string;
   recurrenceRule?: Exclude<Frequency, 'ponctuel' | 'trimestriel'>;
+  alreadyPaid?: { amount: number; paidDate: string; accountId?: string };
 }
 
 function todayIso(): string {
@@ -74,6 +101,7 @@ function newPoste(dueDate: string, included = false): PosteState {
     amount: '',
     dueDate,
     terms: [newTerm(dueDate), newTerm(dueDate), newTerm(dueDate)],
+    alreadyPaid: newAlreadyPaid(),
   };
 }
 
@@ -121,6 +149,8 @@ export function SchoolWizardScreen() {
 
   const [children, setChildren] = useState<Child[]>([]);
   const [loadingChildren, setLoadingChildren] = useState(true);
+  // R6.2 (§4-9, §8) : comptes disponibles pour "Compte débité" (facultatif) sur un poste déjà payé.
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [newChildFirst, setNewChildFirst] = useState('');
   const [newChildLast, setNewChildLast] = useState('');
   const [creatingChild, setCreatingChild] = useState(false);
@@ -159,6 +189,7 @@ export function SchoolWizardScreen() {
 
   useEffect(() => {
     loadChildren();
+    api.listAccounts().then(setAccounts);
   }, [loadChildren]);
 
   async function onCreateChild() {
@@ -231,6 +262,15 @@ export function SchoolWizardScreen() {
           // §10 : toute fréquence non ponctuelle devient un ChargePlan récurrent réel
           // (même moteur générique que les charges/revenus, jamais une 2e logique).
           recurrenceRule: poste.frequency !== 'ponctuel' ? poste.frequency : undefined,
+          // R6.2 (§4-9) : poste déjà réglé — le montant réellement payé fait foi,
+          // jamais celui saisi ci-dessus (qui peut rester une estimation du coût total).
+          alreadyPaid: poste.alreadyPaid.active
+            ? {
+                amount: Number(poste.alreadyPaid.amount.replace(',', '.')) || 0,
+                paidDate: poste.alreadyPaid.paidDate,
+                accountId: poste.alreadyPaid.accountId ?? undefined,
+              }
+            : undefined,
         });
       }
     }
@@ -246,7 +286,18 @@ export function SchoolWizardScreen() {
     for (const extra of autres) {
       if (!extra.label.trim()) continue;
       const amount = extra.amount.trim() === '' ? null : Number(extra.amount.replace(',', '.')) || null;
-      items.push({ label: extra.label.trim(), amount, dueDate: extra.dueDate });
+      items.push({
+        label: extra.label.trim(),
+        amount,
+        dueDate: extra.dueDate,
+        alreadyPaid: extra.alreadyPaid.active
+          ? {
+              amount: Number(extra.alreadyPaid.amount.replace(',', '.')) || 0,
+              paidDate: extra.alreadyPaid.paidDate,
+              accountId: extra.alreadyPaid.accountId ?? undefined,
+            }
+          : undefined,
+      });
     }
     return items;
   }
@@ -396,6 +447,7 @@ export function SchoolWizardScreen() {
                 termMonths={termMonths}
                 hint="Forfait de l'établissement — jamais un calcul prix du repas × nombre de repas."
                 onFocus={handleFocus}
+                accounts={accounts}
               />
             </PosteToggle>
 
@@ -411,6 +463,7 @@ export function SchoolWizardScreen() {
                 termMonths={termMonths}
                 allowedFrequencies={['mensuel', 'trimestriel', 'annuel', 'ponctuel']}
                 onFocus={handleFocus}
+                accounts={accounts}
               />
             </PosteToggle>
           </View>
@@ -419,13 +472,37 @@ export function SchoolWizardScreen() {
         return (
           <View>
             <PosteToggle label="Uniforme" included={uniforme.included} onToggle={(included) => setUniforme({ ...uniforme, included })}>
-              <PosteEditor label="Uniforme" poste={uniforme} onChange={setUniforme} termMonths={termMonths} allowedFrequencies={['ponctuel']} onFocus={handleFocus} />
+              <PosteEditor
+                label="Uniforme"
+                poste={uniforme}
+                onChange={setUniforme}
+                termMonths={termMonths}
+                allowedFrequencies={['ponctuel']}
+                onFocus={handleFocus}
+                accounts={accounts}
+              />
             </PosteToggle>
             <PosteToggle label="Fournitures" included={fournitures.included} onToggle={(included) => setFournitures({ ...fournitures, included })}>
-              <PosteEditor label="Fournitures" poste={fournitures} onChange={setFournitures} termMonths={termMonths} allowedFrequencies={['ponctuel']} onFocus={handleFocus} />
+              <PosteEditor
+                label="Fournitures"
+                poste={fournitures}
+                onChange={setFournitures}
+                termMonths={termMonths}
+                allowedFrequencies={['ponctuel']}
+                onFocus={handleFocus}
+                accounts={accounts}
+              />
             </PosteToggle>
             <PosteToggle label="Assurance" included={assurance.included} onToggle={(included) => setAssurance({ ...assurance, included })}>
-              <PosteEditor label="Assurance" poste={assurance} onChange={setAssurance} termMonths={termMonths} allowedFrequencies={['ponctuel']} onFocus={handleFocus} />
+              <PosteEditor
+                label="Assurance"
+                poste={assurance}
+                onChange={setAssurance}
+                termMonths={termMonths}
+                allowedFrequencies={['ponctuel']}
+                onFocus={handleFocus}
+                accounts={accounts}
+              />
             </PosteToggle>
           </View>
         );
@@ -440,6 +517,7 @@ export function SchoolWizardScreen() {
                 termMonths={termMonths}
                 allowedFrequencies={['mensuel', 'trimestriel', 'ponctuel']}
                 onFocus={handleFocus}
+                accounts={accounts}
               />
             </PosteToggle>
             <PosteToggle label="Réinscription" included={reinscription.included} onToggle={(included) => setReinscription({ ...reinscription, included })}>
@@ -450,6 +528,7 @@ export function SchoolWizardScreen() {
                 termMonths={termMonths}
                 allowedFrequencies={['ponctuel']}
                 onFocus={handleFocus}
+                accounts={accounts}
               />
             </PosteToggle>
 
@@ -472,9 +551,19 @@ export function SchoolWizardScreen() {
                   onFocus={handleFocus}
                 />
                 <DateField value={extra.dueDate} onChange={(dueDate) => setAutres((prev) => prev.map((e, j) => (j === i ? { ...e, dueDate } : e)))} />
+                <AlreadyPaidEditor
+                  testIdPrefix={`extra-${i}`}
+                  value={extra.alreadyPaid}
+                  accounts={accounts}
+                  onChange={(alreadyPaid) => setAutres((prev) => prev.map((e, j) => (j === i ? { ...e, alreadyPaid } : e)))}
+                  onFocus={handleFocus}
+                />
               </View>
             ))}
-            <TouchableOpacity style={styles.addExtraButton} onPress={() => setAutres((prev) => [...prev, { label: '', amount: '', dueDate: todayIso() }])}>
+            <TouchableOpacity
+              style={styles.addExtraButton}
+              onPress={() => setAutres((prev) => [...prev, { label: '', amount: '', dueDate: todayIso(), alreadyPaid: newAlreadyPaid() }])}
+            >
               <Text style={styles.addExtraButtonText}>+ Ajouter une ligne</Text>
             </TouchableOpacity>
           </View>
@@ -573,6 +662,7 @@ function PosteEditor({
   forceIncluded,
   allowedFrequencies = ['ponctuel', 'mensuel', 'trimestriel'],
   onFocus,
+  accounts = [],
 }: {
   label: string;
   poste: PosteState;
@@ -583,6 +673,7 @@ function PosteEditor({
   allowedFrequencies?: Frequency[];
   /** Correctif post-Vague 3 (§1) — même mécanisme keyboard-aware que les autres écrans de saisie, jamais dupliqué : passé par le parent (module-level component, pas de closure). */
   onFocus?: (e: FocusEvent) => void;
+  accounts?: Account[];
 }) {
   const freqLabels = FREQUENCY_LABEL;
 
@@ -656,6 +747,66 @@ function PosteEditor({
           )}
           <DateField value={poste.dueDate} onChange={(dueDate) => onChange({ ...poste, dueDate })} />
           {poste.frequency === 'mensuel' && <Text style={styles.hint}>Les échéances suivantes seront générées automatiquement (même moteur que les charges récurrentes).</Text>}
+          <AlreadyPaidEditor
+            testIdPrefix={label}
+            value={poste.alreadyPaid}
+            accounts={accounts}
+            onChange={(alreadyPaid) => onChange({ ...poste, alreadyPaid })}
+            onFocus={onFocus}
+          />
+        </>
+      )}
+    </View>
+  );
+}
+
+/**
+ * R6.2 (§4-9, §8) : "☐ Déjà payé" — compact, replié par défaut (champs
+ * masqués tant que la case n'est pas cochée, §8 "contrôle simple/compact").
+ * Compte débité facultatif (CAS A compte connu / CAS B compte inconnu,
+ * déjà géré côté backend — cf. already-paid.util.ts) — jamais requis ici.
+ */
+function AlreadyPaidEditor({
+  testIdPrefix,
+  value,
+  accounts,
+  onChange,
+  onFocus,
+}: {
+  testIdPrefix: string;
+  value: AlreadyPaidState;
+  accounts: Account[];
+  onChange: (v: AlreadyPaidState) => void;
+  onFocus?: (e: FocusEvent) => void;
+}) {
+  return (
+    <View>
+      <View style={styles.toggleRow}>
+        <Text style={styles.toggleLabel}>Déjà payé</Text>
+        <Switch testID={`${testIdPrefix}-already-paid-switch`} value={value.active} onValueChange={(active) => onChange({ ...value, active })} />
+      </View>
+      {value.active && (
+        <>
+          <TextInput
+            testID={`${testIdPrefix}-already-paid-amount`}
+            style={styles.input}
+            placeholder="Montant réellement payé (DH)"
+            keyboardType="decimal-pad"
+            value={value.amount}
+            onChangeText={(amount) => onChange({ ...value, amount })}
+            onFocus={onFocus}
+          />
+          <DateField label="Date de paiement" value={value.paidDate} onChange={(paidDate) => onChange({ ...value, paidDate })} />
+          {accounts.length > 0 && (
+            <Select
+              testID={`${testIdPrefix}-already-paid-account-select`}
+              label="Compte débité (facultatif)"
+              placeholder="Compte inconnu / non précisé"
+              value={value.accountId}
+              onChange={(accountId) => onChange({ ...value, accountId })}
+              options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+            />
+          )}
         </>
       )}
     </View>
