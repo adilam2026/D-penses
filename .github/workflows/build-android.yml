@@ -111,6 +111,25 @@ jobs:
           echo "SHA-256 (APK réel, pas l'archive d'upload) :"
           sha256sum "$APK"
 
+      - name: Diagnostic non-bloquant — vérifier que le bundle contient bien les chaînes R6
+        # Étape strictement diagnostique (CI uniquement, aucun impact sur le contenu de
+        # l'APK) : recherche dans le bundle JS RÉELLEMENT embarqué des chaînes visibles
+        # ajoutées par la passe R6 (boutons "CONFIRMER LE PAIEMENT"/"CONFIRMER LE
+        # TRANSFERT", introduits dans ce lot) — preuve factuelle que le JS packagé
+        # correspond bien au code source de ce commit, pas à un bundle plus ancien.
+        # N'échoue jamais le build (|| true) : sert uniquement à lire le résultat dans
+        # les logs du job.
+        working-directory: mobile
+        run: |
+          echo "--- Recherche de chaînes R6 dans le bundle JS embarqué ---"
+          grep -ac "CONFIRMER LE PAIEMENT" /tmp/apk-bundle-check/index.android.bundle \
+            && echo "OK: 'CONFIRMER LE PAIEMENT' trouvé dans le bundle" \
+            || echo "ABSENT: 'CONFIRMER LE PAIEMENT' introuvable dans le bundle"
+          grep -ac "CONFIRMER LE TRANSFERT" /tmp/apk-bundle-check/index.android.bundle \
+            && echo "OK: 'CONFIRMER LE TRANSFERT' trouvé dans le bundle" \
+            || echo "ABSENT: 'CONFIRMER LE TRANSFERT' introuvable dans le bundle"
+          true
+
       - uses: actions/upload-artifact@v4
         with:
           name: depenses-android-release-apk
