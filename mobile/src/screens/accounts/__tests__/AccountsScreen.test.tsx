@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { AccountsScreen } from '../AccountsScreen';
 import * as api from '../../../api/client';
 
@@ -20,10 +20,14 @@ jest.mock('../../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
 
 jest.mock('../../../api/client', () => {
   const actual = jest.requireActual('../../../api/client');
-  return { ...actual, listAllAccounts: jest.fn() };
+  return { ...actual, listAllAccounts: jest.fn(), createAccount: jest.fn() };
 });
 
 const mockedApi = api as jest.Mocked<typeof api>;
+
+beforeEach(() => {
+  jest.clearAllMocks();
+});
 
 it('liste tous les comptes (via listAllAccounts) et affiche un badge "Archivé" pour les comptes archivés', async () => {
   mockedApi.listAllAccounts.mockResolvedValue([
@@ -37,4 +41,48 @@ it('liste tous les comptes (via listAllAccounts) et affiche un badge "Archivé" 
   expect(screen.getByText('Vieux compte')).toBeTruthy();
   expect(screen.getByText(/Archivé/)).toBeTruthy();
   expect(mockedApi.listAllAccounts).toHaveBeenCalled();
+});
+
+it('R6.1 §10 : un compte exclu du pilotage affiche un badge "Hors pilotage" (jamais masqué)', async () => {
+  mockedApi.listAllAccounts.mockResolvedValue([
+    { id: 'a3', name: 'Livret bloqué', type: 'epargne', status: 'actif', soldeCourant: 5000, isFavorite: false, includeInOperationalTreasury: false },
+  ]);
+
+  await render(<AccountsScreen />);
+
+  await waitFor(() => expect(screen.getByText('Livret bloqué')).toBeTruthy());
+  expect(screen.getByText('Hors pilotage')).toBeTruthy();
+});
+
+it('R6.1 §8 : la bascule "Inclure ce compte dans ma situation financière" est activée par défaut et transmise à la création', async () => {
+  mockedApi.listAllAccounts.mockResolvedValue([]);
+  mockedApi.createAccount.mockResolvedValue({});
+  await render(<AccountsScreen />);
+  await waitFor(() => screen.getByTestId('account-create-pilotage-switch'));
+
+  await fireEvent.changeText(screen.getByPlaceholderText('Nom (ex. Compte principal)'), 'Nouveau compte');
+  await fireEvent.press(screen.getByText('+'));
+
+  await waitFor(() =>
+    expect(mockedApi.createAccount).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Nouveau compte', includeInOperationalTreasury: true }),
+    ),
+  );
+});
+
+it('R6.1 §8 : désactiver la bascule avant création exclut le compte du pilotage', async () => {
+  mockedApi.listAllAccounts.mockResolvedValue([]);
+  mockedApi.createAccount.mockResolvedValue({});
+  await render(<AccountsScreen />);
+  await waitFor(() => screen.getByTestId('account-create-pilotage-switch'));
+
+  await fireEvent(screen.getByTestId('account-create-pilotage-switch'), 'valueChange', false);
+  await fireEvent.changeText(screen.getByPlaceholderText('Nom (ex. Compte principal)'), 'Livret bloqué');
+  await fireEvent.press(screen.getByText('+'));
+
+  await waitFor(() =>
+    expect(mockedApi.createAccount).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Livret bloqué', includeInOperationalTreasury: false }),
+    ),
+  );
 });

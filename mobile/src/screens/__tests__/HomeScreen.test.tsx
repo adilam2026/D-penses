@@ -195,6 +195,18 @@ describe('Accueil — état configuré (§7-17/§31)', () => {
     await waitFor(() => screen.getByText('DISPONIBLE LIBRE'));
     expect(screen.queryByText(/action.*à traiter/)).toBeNull();
   });
+
+  it('R6.1 §10 : "Ma situation" affiche "Patrimoine total" et un badge "Hors pilotage" sur un compte exclu', async () => {
+    mockedApi.listAccounts.mockResolvedValue([
+      { id: 'acc-cih', name: 'CIH', soldeCourant: 15000, includeInOperationalTreasury: true },
+      { id: 'acc-livret', name: 'Livret bloqué', soldeCourant: 30000, includeInOperationalTreasury: false },
+    ]);
+    await render(<HomeScreen />);
+    await waitFor(() => screen.getByText('CIH'));
+
+    expect(screen.getByText('Patrimoine total')).toBeTruthy();
+    expect(screen.getByText('Hors pilotage')).toBeTruthy();
+  });
 });
 
 /** Correctif post-Vague 3 (point 1) — la priorité de "Mes plans" doit intégrer
