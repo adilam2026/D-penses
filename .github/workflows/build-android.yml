@@ -10,10 +10,11 @@ on:
       api_url:
         description: >
           URL publique HTTPS du backend (EXPO_PUBLIC_API_URL) que l'APK doit
-          appeler. Laisser vide pour garder le comportement actuel de l'app
-          (repli sur http://localhost:3000, injoignable depuis un téléphone).
-        required: false
-        default: ''
+          appeler, ex. https://d-penses-production.up.railway.app (sans slash
+          final). Obligatoire — un build avec cette valeur absente, vide,
+          localhost/127.0.0.1/10.0.2.2 ou non-HTTPS est refusé avant même de
+          lancer le build natif (cf. étape "Valider EXPO_PUBLIC_API_URL").
+        required: true
 
 jobs:
   build:
@@ -23,6 +24,28 @@ jobs:
         working-directory: mobile
     steps:
       - uses: actions/checkout@v4
+
+      - name: Valider EXPO_PUBLIC_API_URL (fail-fast, avant tout build)
+        # Un build ne doit jamais pouvoir être déclaré valide avec une
+        # API_BASE_URL vide, localhost, ou non-HTTPS embarquée dans l'APK —
+        # vérifié ici en quelques secondes, avant les ~10 minutes de build
+        # natif, plutôt que découvert après coup dans le bundle.
+        env:
+          API_URL: ${{ github.event.inputs.api_url }}
+        run: |
+          if [ -z "$API_URL" ]; then
+            echo "::error::api_url est vide — build refusé (EXPO_PUBLIC_API_URL ne doit jamais être vide)"
+            exit 1
+          fi
+          if ! printf '%s' "$API_URL" | grep -qE '^https://'; then
+            echo "::error::api_url doit être une URL HTTPS publique (reçu: $API_URL)"
+            exit 1
+          fi
+          if printf '%s' "$API_URL" | grep -qiE '(localhost|127\.0\.0\.1|10\.0\.2\.2)'; then
+            echo "::error::api_url ne doit jamais référencer localhost/127.0.0.1/10.0.2.2 (reçu: $API_URL)"
+            exit 1
+          fi
+          echo "api_url validée : $API_URL"
 
       - uses: actions/setup-node@v4
         with:
@@ -61,9 +84,9 @@ jobs:
         # prebuild — aucun keystore de production à créer pour ce build.
         working-directory: mobile/android
         env:
-          # Vide par défaut = comportement actuel de l'app (localhost, cf. rapport
-          # Lot 9 §13/§14). Renseigné uniquement si l'input api_url est fourni au
-          # déclenchement manuel — jamais une décision d'infrastructure prise ici.
+          # Validée (non vide, HTTPS, jamais localhost/127.0.0.1/10.0.2.2) par
+          # l'étape "Valider EXPO_PUBLIC_API_URL" ci-dessus, qui a déjà fait
+          # échouer le build avant d'en arriver ici si ce n'était pas le cas.
           EXPO_PUBLIC_API_URL: ${{ github.event.inputs.api_url }}
         run: |
           set -o pipefail
@@ -100,6 +123,8 @@ jobs:
         # "...source-commit-local" + "host component..." accolés par hasard, aucune URL
         # réelle. Calcule aussi le SHA-256 de l'APK réel (pas de l'archive zip d'upload).
         working-directory: mobile
+        env:
+          API_URL: ${{ github.event.inputs.api_url }}
         run: |
           APK=android/app/build/outputs/apk/release/app-release.apk
           rm -rf /tmp/apk-bundle-check && mkdir -p /tmp/apk-bundle-check
@@ -108,6 +133,13 @@ jobs:
             echo "URL localhost/127.0.0.1/10.0.2.2 trouvée dans le bundle JS embarqué — build refusé" && exit 1
           fi
           echo "Aucune URL localhost/127.0.0.1/10.0.2.2 dans assets/index.android.bundle"
+          # Preuve positive : l'URL backend validée doit être réellement présente
+          # dans le bundle JS embarqué (pas seulement injectée sans effet).
+          if ! grep -aF "$API_URL" /tmp/apk-bundle-check/index.android.bundle > /dev/null; then
+            echo "::error::$API_URL absente du bundle JS embarqué — EXPO_PUBLIC_API_URL n'a pas été réellement embarquée"
+            exit 1
+          fi
+          echo "URL backend confirmée présente dans assets/index.android.bundle : $API_URL"
           echo "SHA-256 (APK réel, pas l'archive d'upload) :"
           sha256sum "$APK"
 
