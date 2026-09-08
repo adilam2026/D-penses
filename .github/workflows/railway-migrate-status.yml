@@ -1,0 +1,90 @@
+name: Railway PROD — Vérification des migrations Prisma (diagnostic uniquement)
+
+# Alternative à railway-diagnose.yml (bloqué par RAILWAY_TOKEN) : se connecte
+# DIRECTEMENT à la base PROD via DATABASE_URL_PROD (Repository secret), sans
+# passer par le Railway CLI/RAILWAY_TOKEN. Lecture seule stricte : exécute
+# uniquement `prisma migrate status`, JAMAIS `prisma migrate deploy` — ce
+# workflow ne modifie ni le schéma ni les données de PROD, il constate.
+#
+# Sécurité : DATABASE_URL_PROD n'est jamais échoué (echo/cat/set -x) dans
+# aucune étape ci-dessous ; en complément, GitHub Actions masque automatiquement
+# toute occurrence littérale d'un secret référencé via env: dans les logs du
+# job, y compris si un message d'erreur Prisma venait à la reproduire.
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate-status:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Installer les dépendances (backend)
+        run: npm ci
+
+      - name: Générer le client Prisma
+        run: npx prisma generate
+
+      - name: prisma migrate status sur PROD (diagnostic — jamais migrate deploy)
+        id: status
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+        run: |
+          set -o pipefail
+          # Ne jamais utiliser `set -x` ici et ne jamais echo/cat $DATABASE_URL —
+          # seule la sortie de `prisma migrate status` elle-même est capturée.
+          npx prisma migrate status > migrate-status.txt 2>&1 || true
+          cat migrate-status.txt
+
+      - name: Interpréter le résultat (connexion / migrations en attente / migration R6.2)
+        run: |
+          set -o pipefail
+          OUT="migrate-status.txt"
+          TARGET_MIGRATION="20260908160000_r6_2_corrections_deja_paye_isole_solde"
+
+          echo "============================================================"
+
+          if grep -qiE "Can't reach database server|P1001|P1000|ECONNREFUSED|authentication failed|timed out" "$OUT"; then
+            echo "Connexion base PROD : KO"
+            echo "prisma migrate status : KO (impossible d'interroger la base — voir extrait ci-dessus)"
+            echo "============================================================"
+            exit 1
+          fi
+          echo "Connexion base PROD : OK"
+
+          if grep -qi "have not yet been applied" "$OUT"; then
+            echo "prisma migrate status : KO (migrations en attente)"
+            echo ""
+            echo "Migration(s) en attente :"
+            # Les lignes de migrations en attente suivent directement "have not yet been applied:"
+            # et s'arrêtent à la première ligne vide ou au conseil "To apply migrations...".
+            awk '/have not yet been applied/{flag=1; next} /^$/{flag=0} flag' "$OUT"
+            echo ""
+            if grep -q "$TARGET_MIGRATION" "$OUT"; then
+              echo "Migration R6.2 ($TARGET_MIGRATION) : MANQUANTE EN PROD"
+            else
+              echo "Migration R6.2 ($TARGET_MIGRATION) : déjà appliquée (une AUTRE migration est en attente — voir liste ci-dessus)"
+            fi
+            echo "============================================================"
+            exit 1
+          fi
+
+          if grep -qi "Database schema is up to date" "$OUT"; then
+            echo "prisma migrate status : OK (aucune migration en attente)"
+            echo "Migration R6.2 ($TARGET_MIGRATION) : appliquée"
+            echo "============================================================"
+            exit 0
+          fi
+
+          echo "prisma migrate status : KO (sortie inattendue, voir l'extrait ci-dessus — ni \"up to date\" ni liste de migrations en attente détectée)"
+          echo "============================================================"
+          exit 1
