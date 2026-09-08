@@ -146,12 +146,16 @@ export class PaymentsService {
           "Un paiement financé par une enveloppe ne peut pas être corrigé partiellement — utilisez Annuler puis un nouveau paiement",
         );
       }
-      if (!original.accountId) {
-        // R6.2 (§5) : un paiement historique "déjà payé" sans compte connu n'a jamais
-        // débité de solde réel — le corriger ici n'aurait aucun sens (rien à ajuster
-        // sur un compte). Modifier le montant historique passe par le ChargePlan (§3).
+      if (original.isHistoricalImport) {
+        // R6.2 corrections finales §1 : un paiement de reprise historique "déjà
+        // payé" n'a jamais débité de solde réel — qu'un compte historique soit
+        // connu (accountId renseigné, à titre d'information) ou non. Le corriger
+        // ici créerait une vraie écriture d'ajustement qui débiterait pour de
+        // vrai un compte aujourd'hui — jamais pour un montant déjà réglé avant
+        // la reprise de données. Modifier le montant historique passe par le
+        // ChargePlan (§3).
         throw new BadRequestException(
-          "Ce paiement historique n'est rattaché à aucun compte — utilisez la modification de l'échéance pour corriger son montant",
+          "Ce paiement est une reprise historique (« déjà payé ») — utilisez la modification de l'échéance pour corriger son montant",
         );
       }
 
@@ -179,7 +183,10 @@ export class PaymentsService {
       return {
         correction,
         deadline: { ...updatedDeadline, resteAPayer: balance?.resteAPayer ?? null },
-        soldeCourant: await getAccountBalance(tx, original.accountId),
+        // original.accountId est garanti non-null ici : le guard isHistoricalImport
+        // ci-dessus a déjà exclu le seul cas où accountId peut être NULL (reprise
+        // historique) — un paiement normal (create()) exige toujours un compte réel.
+        soldeCourant: await getAccountBalance(tx, original.accountId!),
       };
     });
   }
@@ -210,6 +217,10 @@ export class PaymentsService {
           amount: original.amount,
           paidDate: new Date(),
           accountId: original.accountId,
+          // R6.2 corrections finales §1 : propage le marqueur de l'original — annuler
+          // un paiement de reprise historique ne doit jamais créditer pour de vrai un
+          // compte qui n'avait jamais été débité pour de vrai (symétrie stricte).
+          isHistoricalImport: original.isHistoricalImport,
           type: 'remboursement',
           fundingSource: original.fundingSource,
           provisionId: original.provisionId,
@@ -236,9 +247,10 @@ export class PaymentsService {
       return {
         reversal,
         deadline: { ...updatedDeadline, resteAPayer: balance?.resteAPayer ?? null },
-        // R6.2 (§5) : un paiement historique sans compte n'a jamais eu de solde à
-        // rapporter — jamais 0 (qui laisserait croire à un compte réel débité à 0).
-        soldeCourant: original.accountId ? await getAccountBalance(tx, original.accountId) : null,
+        // R6.2 corrections finales §1 : un paiement de reprise historique n'a jamais
+        // débité de solde réel (même avec un compte historique connu) — jamais un
+        // soldeCourant qui laisserait croire que cette action a changé un solde réel.
+        soldeCourant: !original.isHistoricalImport && original.accountId ? await getAccountBalance(tx, original.accountId) : null,
       };
     });
   }

@@ -35,14 +35,18 @@ interface TermState {
   amount: string;
   autoFilled: boolean;
   dueDate: string;
+  // R6.2 corrections finales §3 — chaque échéance (T1/T2/T3) porte son propre
+  // statut "déjà payé" : pas d'ambiguïté "quel trimestre ?" puisque le statut
+  // est individuel à CHAQUE tranche, jamais un champ global sur le poste.
+  alreadyPaid: AlreadyPaidState;
 }
 
 /**
- * R6.2 (§4-9, §8) : poste déjà réglé AVANT la saisie de ce plan (ex. Uniforme
- * payé en août). accountId reste facultatif (CAS A compte connu / CAS B
- * compte inconnu — cf. already-paid.util.ts côté backend). Jamais proposé
- * sur un poste trimestriel (Scolarité/Restauration T1/T2/T3) — l'ambiguïté
- * "quel trimestre ?" sortirait du périmètre sûr de cette version.
+ * R6.2 (§4-9, §8 ; corrections finales §3) : poste (ou échéance individuelle
+ * T1/T2/T3) déjà réglé AVANT la saisie de ce plan (ex. Uniforme payé en août,
+ * ou Scolarité T1 payée avant la création du plan en septembre). accountId
+ * reste facultatif (CAS A compte connu / CAS B compte inconnu — cf.
+ * already-paid.util.ts côté backend).
  */
 interface AlreadyPaidState {
   active: boolean;
@@ -90,7 +94,7 @@ function round2(value: number): number {
 }
 
 function newTerm(dueDate: string): TermState {
-  return { amount: '', autoFilled: true, dueDate };
+  return { amount: '', autoFilled: true, dueDate, alreadyPaid: newAlreadyPaid() };
 }
 
 function newPoste(dueDate: string, included = false): PosteState {
@@ -250,7 +254,21 @@ export function SchoolWizardScreen() {
         const labels = ['T1', 'T2', 'T3'];
         poste.terms.forEach((term, i) => {
           const amount = term.amount.trim() === '' ? null : Number(term.amount.replace(',', '.')) || null;
-          items.push({ label: `${label} ${labels[i]}`, amount, dueDate: term.dueDate, obligationStatus });
+          items.push({
+            label: `${label} ${labels[i]}`,
+            amount,
+            dueDate: term.dueDate,
+            obligationStatus,
+            // R6.2 corrections finales §3 — "déjà payé" par échéance : le montant
+            // réellement payé de CE trimestre fait foi, jamais celui saisi ci-dessus.
+            alreadyPaid: term.alreadyPaid.active
+              ? {
+                  amount: Number(term.alreadyPaid.amount.replace(',', '.')) || 0,
+                  paidDate: term.alreadyPaid.paidDate,
+                  accountId: term.alreadyPaid.accountId ?? undefined,
+                }
+              : undefined,
+          });
         });
       } else {
         const amount = poste.unknown ? null : Number(poste.amount.replace(',', '.')) || null;
@@ -429,6 +447,7 @@ export function SchoolWizardScreen() {
               forceIncluded
               allowedFrequencies={['trimestriel']}
               onFocus={handleFocus}
+              accounts={accounts}
             />
           </View>
         );
@@ -724,6 +743,17 @@ function PosteEditor({
               }}
             />
             {i > 0 && poste.terms[i].autoFilled && poste.terms[i].amount !== '' && <Text style={styles.autoHint}>Estimation automatique — modifiable</Text>}
+            <AlreadyPaidEditor
+              testIdPrefix={`${label}-term-${i}`}
+              value={poste.terms[i].alreadyPaid}
+              accounts={accounts}
+              onChange={(alreadyPaid) => {
+                const terms = [...poste.terms] as [TermState, TermState, TermState];
+                terms[i] = { ...terms[i], alreadyPaid };
+                onChange({ ...poste, terms });
+              }}
+              onFocus={onFocus}
+            />
           </View>
         ))
       ) : (

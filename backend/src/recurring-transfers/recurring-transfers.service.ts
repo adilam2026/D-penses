@@ -2,6 +2,8 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { CreateRecurringTransferDto } from './dto/create-recurring-transfer.dto';
 import { UpdateRecurringTransferDto } from './dto/update-recurring-transfer.dto';
+import { ensureRecurringTransfersUntil } from '../common/ledger/occurrence-generation.util';
+import { DASHBOARD_FALLBACK_HORIZON_DAYS } from '../common/ledger/treasury.util';
 
 /**
  * RecurringTransfer (R6.2 §10-12) — un transfert récurrent reste un
@@ -39,15 +41,28 @@ export class RecurringTransfersService {
     });
   }
 
+  /**
+   * R6.2 corrections finales §4 — génération paresseuse AVANT lecture (même
+   * horizon que Dashboard/Calendar/Projection, DASHBOARD_FALLBACK_HORIZON_DAYS,
+   * jamais une nouvelle constante) : sans cet appel, un transfert récurrent
+   * tout juste créé n'aurait aucune occurrence 'prevu' tant qu'aucun autre
+   * écran (Dashboard/Calendar/Projection) n'a été consulté — l'écran de
+   * gestion doit toujours pouvoir afficher un "Prochain transfert" à jour.
+   */
   async findAll(userId: string, householdId: string) {
-    return this.rlsContext.run(userId, householdId, () =>
-      this.rlsContext.getClient().recurringTransfer.findMany({ where: { householdId }, orderBy: { createdAt: 'desc' } }),
-    );
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const generationHorizon = new Date(Date.now() + DASHBOARD_FALLBACK_HORIZON_DAYS * 86400000);
+      await ensureRecurringTransfersUntil(tx, householdId, generationHorizon);
+      return tx.recurringTransfer.findMany({ where: { householdId }, orderBy: { createdAt: 'desc' } });
+    });
   }
 
   async findOne(userId: string, householdId: string, id: string) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
+      const generationHorizon = new Date(Date.now() + DASHBOARD_FALLBACK_HORIZON_DAYS * 86400000);
+      await ensureRecurringTransfersUntil(tx, householdId, generationHorizon);
       return this.assertOwned(tx, id, householdId);
     });
   }

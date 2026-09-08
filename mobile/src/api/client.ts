@@ -256,6 +256,37 @@ export const createRecurringTransfer = (data: {
 
 export const listRecurringTransfers = () => apiFetch('/recurring-transfers');
 
+export const getRecurringTransfer = (id: string) => apiFetch(`/recurring-transfers/${id}`);
+
+/**
+ * R6.2 corrections finales §4 — édition d'un transfert récurrent : ne touche
+ * jamais les occurrences déjà confirmées (RecurringTransfersService.update
+ * ne supprime que les 'prevu' quand la récurrence change), status=inactif =
+ * "arrêter la récurrence" (jamais une suppression, l'historique reste
+ * consultable).
+ */
+export const updateRecurringTransfer = (
+  id: string,
+  data: Partial<{
+    label: string;
+    fromAccountId: string;
+    toAccountId: string;
+    amount: number;
+    recurrenceRule: 'hebdomadaire' | 'mensuel' | 'trimestriel' | 'semestriel' | 'annuel';
+    recurrenceAnchorDate: string;
+    note: string;
+    status: 'actif' | 'inactif';
+  }>,
+) => apiFetch(`/recurring-transfers/${id}`, { method: 'PATCH', body: data });
+
+// R6.2 corrections finales §4/§5 — historique/occurrences (toutes les AccountTransfer du
+// foyer) : le détail d'un transfert récurrent filtre côté client par recurringTransferId,
+// même patron déjà utilisé côté tests e2e (generatedTransfers()) — jamais un second endpoint.
+export const listTransfers = () => apiFetch('/accounts/transfers');
+
+/** R6.2 corrections finales §5 — confirme une occurrence encore "prevu" : débit/crédit réel atomique. */
+export const confirmTransfer = (id: string) => apiFetch(`/accounts/transfers/${id}/confirm`, { method: 'POST' });
+
 // R5 clôture §1 — Annuler un transfert "prevu" (rien n'a bougé) / Annuler par miroir atomique (confirmé).
 export const cancelTransfer = (id: string) => apiFetch(`/accounts/transfers/${id}/cancel`, { method: 'POST' });
 

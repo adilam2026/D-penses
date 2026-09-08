@@ -37,6 +37,8 @@ import { ProjectionScreen } from '../screens/projection/ProjectionScreen';
 import { SimulatorScreen } from '../screens/simulation/SimulatorScreen';
 import { OnboardingWizardScreen } from '../screens/onboarding/OnboardingWizardScreen';
 import { EpargneScreen } from '../screens/savings/EpargneScreen';
+import { RecurringTransfersScreen } from '../screens/recurring-transfers/RecurringTransfersScreen';
+import { RecurringTransferDetailScreen } from '../screens/recurring-transfers/RecurringTransferDetailScreen';
 import { HamburgerMenuScreen } from '../screens/HamburgerMenuScreen';
 import { HouseholdMembersScreen } from '../screens/household/HouseholdMembersScreen';
 import { CategoriesScreen } from '../screens/settings/CategoriesScreen';
@@ -95,6 +97,8 @@ export function RootNavigator() {
       <Stack.Screen name="HouseholdConfig" component={HouseholdConfigScreen} options={{ headerShown: true, title: 'Configuration du foyer' }} />
       <Stack.Screen name="ResetFinancialData" component={ResetFinancialDataScreen} options={{ headerShown: true, title: 'Réinitialiser mes données' }} />
       <Stack.Screen name="Enveloppes" component={EpargneScreen} options={{ headerShown: true, title: 'Enveloppes' }} />
+      <Stack.Screen name="RecurringTransfers" component={RecurringTransfersScreen} options={{ headerShown: true, title: 'Transferts récurrents' }} />
+      <Stack.Screen name="RecurringTransferDetail" component={RecurringTransferDetailScreen} options={{ headerShown: true, title: 'Transfert récurrent' }} />
       <Stack.Screen name="QuickAdd" component={QuickAddScreen} options={{ presentation: 'modal' }} />
       <Stack.Screen name="Accounts" component={AccountsScreen} options={{ headerShown: true, title: 'Comptes' }} />
       <Stack.Screen name="AccountDetail" component={AccountDetailScreen} options={{ headerShown: true, title: 'Compte' }} />

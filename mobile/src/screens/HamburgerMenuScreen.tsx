@@ -32,6 +32,7 @@ const SECTIONS: { title: string; items: MenuItem[] }[] = [
       { label: 'Budgets', icon: 'pie-chart-outline', route: 'Budgets' },
       { label: 'Enveloppes', icon: 'wallet-outline', route: 'Enveloppes' },
       { label: 'Objectifs', icon: 'flag-outline', route: 'Goals' },
+      { label: 'Transferts récurrents', icon: 'swap-horizontal-outline', route: 'RecurringTransfers' },
     ],
   },
   {

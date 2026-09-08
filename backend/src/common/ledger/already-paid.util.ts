@@ -23,16 +23,25 @@ export interface AlreadyPaidInput {
  * déterministe au moment de la saisie (jamais une ambiguïté à trancher plus
  * tard), contrairement à un paiement normal où le solde peut encore évoluer.
  *
- * CAS A (accountId connu, ex. Uniforme 3400 DH payé le 25/08/2026 depuis SG
- * Adil) : Payment.accountId renseigné — débite l'historique du compte comme
- * tout paiement réel (account_current_balance l'inclut normalement).
+ * R6.2 corrections finales §1 (CRITIQUE) — isHistoricalImport=true dans TOUS
+ * les cas, que le compte soit connu ou non. accountId n'est PLUS le proxy de
+ * "reprise historique" : ce sont deux informations orthogonales.
  *
- * CAS B (accountId absent/inconnu) : Payment.accountId = NULL — reste_a_payer
- * reste 0 (deadline_with_balance ne filtre jamais par compte, RG-016) MAIS
- * aucun solde de compte réel n'est débité : NULL ne matche jamais un compte
- * dans account_current_balance (RG-015 §5 CAS B) — jamais un retrait
- * artificiel du solde ACTUEL d'un compte pour une dépense déjà réglée avant
- * l'entrée dans l'app.
+ * CAS A (accountId connu, ex. Uniforme 3400 DH payé le 25/08/2026 depuis SG
+ * Adil) : Payment.accountId renseigné à titre d'INFORMATION (mémorisé,
+ * consultable dans l'historique du plan) MAIS Payment.isHistoricalImport=true
+ * exclut la ligne de account_current_balance (ledger_entry.excluded_from_
+ * balance) — le paiement a déjà eu lieu avant la reprise de données, il ne
+ * doit jamais redébiter le solde ACTUEL de SG Adil aujourd'hui.
+ *
+ * CAS B (accountId absent/inconnu) : Payment.accountId = NULL, même exclusion
+ * via isHistoricalImport=true.
+ *
+ * Dans les deux cas : reste_a_payer reste 0 (deadline_with_balance lit
+ * directement la table payment, indépendamment du compte/de l'exclusion —
+ * RG-016) et aucun solde de compte réel n'est débité aujourd'hui — jamais un
+ * retrait artificiel du solde ACTUEL d'un compte pour une dépense déjà
+ * réglée avant l'entrée dans l'app.
  *
  * Dans les deux cas : exclue des échéances ouvertes (financialStatus='soldee'
  * dès la création, jamais 'ouverte'), donc jamais reproposée dans "Payer",
@@ -58,6 +67,7 @@ export async function createAlreadyPaidDeadline(tx: TxClient, chargePlanId: stri
       amount: input.amount,
       paidDate: input.paidDate,
       accountId: input.accountId ?? null,
+      isHistoricalImport: true,
       type: 'paiement',
       fundingSource: 'compte',
       recordedById,

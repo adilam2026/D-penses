@@ -420,6 +420,74 @@ describe('R6.2 §4-9/§8 — "Déjà payé" sur un poste', () => {
     expect(uniforme!.alreadyPaid).toEqual({ amount: 3400, paidDate: '2026-08-25', accountId: 'acc1' });
   });
 
+});
+
+describe('R6.2 corrections finales §3 — "Déjà payé" par échéance (T1/T2/T3), jamais au niveau global du poste', () => {
+  it('Scolarité T1 déjà payée / T2 et T3 restent des postes ouverts normaux', async () => {
+    mockedApi.listChildren.mockResolvedValue([{ id: 'c1', firstName: 'Dina', lastName: 'TAHA' }]);
+    mockedApi.listAccounts.mockResolvedValue([{ id: 'acc1', name: 'SG Adil' }]);
+    mockedApi.submitSchoolWizard.mockResolvedValue({ financialPlan: { id: 'plan1' }, chargePlans: [] });
+    await render(<SchoolWizardScreen />);
+    await waitFor(() => expect(screen.getByTestId('nav-next')).toBeTruthy());
+    await selectChild('c1');
+
+    await goToStep(1); // Scolarité
+    await fireEvent.changeText(screen.getByTestId('Scolarité-term-0-amount'), '21800');
+    await fireEvent.changeText(screen.getByTestId('Scolarité-term-1-amount'), '16350');
+    await fireEvent.changeText(screen.getByTestId('Scolarité-term-2-amount'), '16350');
+
+    // Les champs "déjà payé" sont indépendants par tranche — jamais un seul contrôle global.
+    expect(screen.queryByTestId('Scolarité-term-0-already-paid-amount')).toBeNull();
+    await fireEvent(screen.getByTestId('Scolarité-term-0-already-paid-switch'), 'valueChange', true);
+    await fireEvent.changeText(screen.getByTestId('Scolarité-term-0-already-paid-amount'), '21800');
+    await fireEvent.press(screen.getByTestId('Scolarité-term-0-already-paid-account-select'));
+    await fireEvent.press(await screen.findByTestId('Scolarité-term-0-already-paid-account-select-option-acc1'));
+
+    // T2/T3 n'ont jamais leur propre case cochée : aucun champ "déjà payé" révélé pour eux.
+    expect(screen.queryByTestId('Scolarité-term-1-already-paid-amount')).toBeNull();
+    expect(screen.queryByTestId('Scolarité-term-2-already-paid-amount')).toBeNull();
+
+    await goToStep(5);
+    await fireEvent.press(screen.getByTestId('nav-submit'));
+
+    await waitFor(() => expect(mockedApi.submitSchoolWizard).toHaveBeenCalled());
+    const [payload] = mockedApi.submitSchoolWizard.mock.calls[0];
+    const t1 = payload.items.find((it: any) => it.label === 'Scolarité T1');
+    const t2 = payload.items.find((it: any) => it.label === 'Scolarité T2');
+    const t3 = payload.items.find((it: any) => it.label === 'Scolarité T3');
+    expect(t1!.alreadyPaid).toEqual({ amount: 21800, paidDate: expect.any(String), accountId: 'acc1' });
+    expect(t2!.alreadyPaid).toBeUndefined();
+    expect(t3!.alreadyPaid).toBeUndefined();
+    expect(t2!.amount).toBe(16350); // T2 reste un poste ouvert normal, montant conservé
+  });
+
+  it('Restauration T1 déjà payée (sans compte connu) / tranches suivantes ouvertes', async () => {
+    mockedApi.listChildren.mockResolvedValue([{ id: 'c1', firstName: 'Dina', lastName: 'TAHA' }]);
+    mockedApi.submitSchoolWizard.mockResolvedValue({ financialPlan: { id: 'plan1' }, chargePlans: [] });
+    await render(<SchoolWizardScreen />);
+    await waitFor(() => expect(screen.getByTestId('nav-next')).toBeTruthy());
+    await selectChild('c1');
+
+    await goToStep(2); // Services scolaires
+    await fireEvent(screen.getByTestId('toggle-Restauration'), 'valueChange', true);
+    await fireEvent.press(screen.getByTestId('Restauration-freq-trimestriel'));
+    await fireEvent.changeText(screen.getByTestId('Restauration-term-0-amount'), '1200');
+    await fireEvent(screen.getByTestId('Restauration-term-0-already-paid-switch'), 'valueChange', true);
+    await fireEvent.changeText(screen.getByTestId('Restauration-term-0-already-paid-amount'), '1200');
+
+    await goToStep(5);
+    await fireEvent.press(screen.getByTestId('nav-submit'));
+
+    await waitFor(() => expect(mockedApi.submitSchoolWizard).toHaveBeenCalled());
+    const [payload] = mockedApi.submitSchoolWizard.mock.calls[0];
+    const t1 = payload.items.find((it: any) => it.label === 'Restauration T1');
+    const t2 = payload.items.find((it: any) => it.label === 'Restauration T2');
+    expect(t1!.alreadyPaid).toEqual({ amount: 1200, paidDate: expect.any(String), accountId: undefined });
+    expect(t2!.alreadyPaid).toBeUndefined();
+  });
+});
+
+describe('R6.2 §4-9/§8 — "Déjà payé" sur un poste (suite)', () => {
   it('le compte reste facultatif (CAS B) — aucun compte sélectionné n\'envoie accountId: undefined', async () => {
     mockedApi.listChildren.mockResolvedValue([{ id: 'c1', firstName: 'Dina', lastName: 'TAHA' }]);
     mockedApi.listAccounts.mockResolvedValue([{ id: 'acc1', name: 'SG Adil' }]);

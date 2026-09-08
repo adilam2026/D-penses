@@ -783,13 +783,21 @@ model Payment {
   deadlineId    String            @map("deadline_id")
   amount        Decimal           @map("amount") @db.Decimal(14, 2)
   paidDate      DateTime          @map("paid_date")
-  // R6.2 (§5 CAS B) : NULL uniquement pour un paiement HISTORIQUE reconstitué sans compte
-  // connu (ex. uniforme déjà acheté avant l'usage de l'app) — jamais pour un paiement
-  // normal (payments.service.ts continue d'exiger un compte réel, RG implicite §19).
-  // Un Payment sans compte n'apparaît dans AUCUNE ledger_entry rattachée à un compte
-  // (WHERE account_id = fa.id ne matche jamais NULL) : aucun solde n'est débité, mais
-  // reste_a_payer (deadline_with_balance, indépendant du compte) reste correct.
+  // R6.2 (§5 CAS B) : NULL soit pour un paiement HISTORIQUE reconstitué sans compte
+  // connu, soit (RG implicite) jamais pour un paiement normal (payments.service.ts
+  // continue d'exiger un compte réel). accountId N'EST PLUS le proxy de "reprise
+  // historique" (corrections finales R6.2 §1) : un CAS A (compte historique connu)
+  // garde accountId renseigné mais reste exclu du solde via isHistoricalImport.
   accountId     String?           @map("account_id")
+  // R6.2 corrections finales §1 — sémantique explicite de reprise historique,
+  // orthogonale à accountId. true = paiement reconstitué AVANT la reprise de
+  // données (montant/date/compte conservés à titre d'information, historique
+  // consultable) mais JAMAIS débité de la trésorerie actuelle (cf. ledger_entry
+  // .excluded_from_balance + account_current_balance). false = paiement normal
+  // du cycle courant, impacte réellement le solde comme avant. reste_a_payer
+  // (deadline_with_balance, lecture directe de payment) est inchangé dans les
+  // deux cas : un paiement historique solde bien l'échéance.
+  isHistoricalImport Boolean      @default(false) @map("is_historical_import")
   type          PaymentType       @default(paiement)
   direction     PaymentDirection? @map("direction")
   fundingSource FundingSource     @default(compte) @map("funding_source")

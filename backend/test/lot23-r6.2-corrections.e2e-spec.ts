@@ -356,7 +356,7 @@ describe('R6.2 — corrections (e2e)', () => {
       return res.body.id as string;
     }
 
-    it('M/S. CAS A — compte connu : reste à payer 0, historique correctement lié au compte, solde débité normalement', async () => {
+    it('M/S. CAS A — compte connu : reste à payer 0, compte historique conservé à titre d\'information, MAIS solde actuel jamais débité (corrections finales §1 CRITIQUE)', async () => {
       const { auth } = await newHousehold();
       const account = await newAccount(auth, 'SG Adil', 10000);
       const cat = await newCategory(auth, 'Uniforme M');
@@ -367,10 +367,10 @@ describe('R6.2 — corrections (e2e)', () => {
         .expect(201);
 
       // paid_date choisie APRÈS la création du compte (donc après le snapshot déclaré à
-      // la création, cf. account_current_balance : movements_since ne compte que les
-      // ledger_entry postérieures au snapshot) — sinon l'exemple d'énoncé (paiement
-      // "déjà réglé" antérieur à la déclaration du compte dans l'app) ne débiterait
-      // jamais rien, par construction de la vue, indépendamment du CAS A/B.
+      // la création) — même avec une date postérieure au snapshot, is_historical_import
+      // exclut la ligne de account_current_balance : la preuve est robuste indépendamment
+      // de la date, contrairement à l'ancien comportement (CAS A) qui n'était protégé que
+      // par un paid_date antérieur au snapshot.
       const paidDate = '2030-01-01';
       const deadline = await http
         .post(`/charge-plans/${cp.body.id}/deadlines`)
@@ -386,11 +386,13 @@ describe('R6.2 — corrections (e2e)', () => {
 
       const payments = await http.get(`/deadlines/${deadline.body.id}/payments`).set(...auth()).expect(200);
       expect(payments.body).toHaveLength(1);
-      expect(payments.body[0].accountId).toBe(account); // S. compte connu → historique correctement lié
+      expect(payments.body[0].accountId).toBe(account); // S. compte connu → conservé à titre d'information
       expect(String(payments.body[0].paidDate).slice(0, 10)).toBe(paidDate); // R. date réelle conservée
 
+      // Corrections finales §1 (CRITIQUE) — le paiement a déjà eu lieu AVANT la reprise de
+      // données : jamais un débit réel du solde ACTUEL de SG Adil aujourd'hui.
       const balance = await http.get(`/accounts/${account}`).set(...auth()).expect(200);
-      expect(Number(balance.body.currentBalance ?? balance.body.soldeCourant)).toBe(10000 - 3400); // débit réel du compte connu
+      expect(Number(balance.body.currentBalance ?? balance.body.soldeCourant)).toBe(10000);
     });
 
     it('T. CAS B — compte inconnu : reste à payer 0 mais aucun débit artificiel du solde actuel d\'aucun compte', async () => {
