@@ -2,6 +2,7 @@ import React from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing } from './theme';
+import { useBottomInset } from './useBottomInset';
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -29,12 +30,14 @@ interface ChoiceSheetProps {
  * confirmation destructive simple (Annuler/Supprimer) ou un message informatif.
  */
 export function ChoiceSheet({ visible, title, options, onClose, cancelLabel = 'Annuler', testID }: ChoiceSheetProps) {
+  // R6.3 (point I safe-area) — jamais un paddingBottom codé en dur.
+  const bottomInset = useBottomInset(8);
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} testID={testID}>
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.backdrop} />
       </TouchableWithoutFeedback>
-      <View style={styles.sheet}>
+      <View style={[styles.sheet, { paddingBottom: bottomInset }]}>
         <View style={styles.handle} />
         <Text style={styles.title}>{title}</Text>
         {options.map((o) => (
@@ -75,7 +78,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radius.xl + 6,
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.md,
-    paddingBottom: spacing.xxl + 4,
   },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D9D5CC', alignSelf: 'center', marginBottom: spacing.md },
   title: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.lg },

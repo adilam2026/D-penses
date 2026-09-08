@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { useQuickActions } from '../state/QuickActionsContext';
 import { ChoiceSheet } from './ChoiceSheet';
+import { useBottomInset } from './useBottomInset';
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -35,6 +36,9 @@ export function QuickActionsSheet() {
   const { visible, close } = useQuickActions();
   const [checking, setChecking] = useState<string | null>(null);
   const [planChoiceOpen, setPlanChoiceOpen] = useState(false);
+  // R6.3 (point I safe-area) — jamais un paddingBottom codé en dur : la barre
+  // système Android (gestes ou 3 boutons) doit toujours être évitée.
+  const bottomInset = useBottomInset(12);
 
   function goToQuickAdd(mode: 'depense' | 'revenu' | 'paiement' | 'transfert') {
     close();
@@ -109,7 +113,7 @@ export function QuickActionsSheet() {
         <TouchableWithoutFeedback onPress={close}>
           <View style={styles.backdrop} />
         </TouchableWithoutFeedback>
-        <View style={styles.sheet} testID="quick-actions-sheet">
+        <View style={[styles.sheet, { paddingBottom: bottomInset }]} testID="quick-actions-sheet">
           <View style={styles.handle} />
           <Text style={styles.title}>Ajouter</Text>
           <View style={styles.grid}>
@@ -162,7 +166,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     paddingHorizontal: 20,
     paddingTop: 12,
-    paddingBottom: 28,
   },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D9D5CC', alignSelf: 'center', marginBottom: 12 },
   title: { fontSize: 16, fontWeight: '700', color: '#172436', marginBottom: 16 },

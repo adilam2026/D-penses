@@ -65,12 +65,27 @@ export class ChargePlansService {
    * mobile calculait alors `Number(undefined)` = NaN et l'affichait "NaN DH"
    * pour une charge dont le montant était pourtant connu. Même utilitaire
    * batché que listDeadlines, un seul aller-retour SQL pour tous les plans.
+   *
+   * R6.3 (point I) — cette liste alimente UNIQUEMENT l'écran "Charges
+   * récurrentes" (seul appelant, cf. charge-plans.controller.ts) : elle ne
+   * doit représenter que les VRAIS objets récurrents autonomes, jamais les
+   * postes ponctuels d'un plan (Uniforme, Fournitures du School Wizard,
+   * postes du Travel Wizard...) qui restent consultables dans leur propre
+   * contexte (FinancialPlanDetailScreen, GET /financial-plans/:id, non
+   * filtré ici — endpoint distinct). Le discriminant est financialPlanId
+   * (RG-110 : nul ⇔ ChargePlan autonome hors plan) et non recurrenceRule —
+   * generationMode 'calendrier_manuel' est un mode légitime de charge
+   * récurrente autonome (échéances ajoutées une à une, ex. facture à
+   * montant variable) et n'a jamais de recurrenceRule, alors qu'un poste de
+   * plan (financialPlanId non nul) n'est jamais récurrent au sens de cet
+   * écran. Un filtre au niveau de la requête, jamais un simple filtrage
+   * visuel côté mobile qui laisserait l'API mélanger les deux concepts.
    */
   async findAll(userId: string, householdId: string) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
       const plans = await tx.chargePlan.findMany({
-        where: { householdId },
+        where: { householdId, financialPlanId: null },
         orderBy: { createdAt: 'desc' },
         include: {
           children: true,

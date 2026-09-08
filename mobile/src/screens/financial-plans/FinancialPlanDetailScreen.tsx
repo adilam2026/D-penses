@@ -60,8 +60,11 @@ const STATUS_LABEL: Record<DeadlineRow['financialStatus'], string> = {
   annulee: 'Annulée',
 };
 
+// R6.3 (point H) — les échéances certaines d'un plan (ex. École T1 sept./T2
+// janv./T3 avril) s'étalent souvent sur deux années civiles : l'année doit
+// toujours être explicite dans cette liste, jamais seulement jour/mois.
 function formatShortDate(iso: string) {
-  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 interface UnknownItem {

@@ -306,10 +306,17 @@ describe('Lot 9 — Recette V1 (scénario familial complet, A-P) (e2e)', () => {
     expect(costsWael.body.chargesCommunesNonVentilees.length).toBeGreaterThan(0);
 
     // Aucune duplication : un seul FinancialPlan, un seul ChargePlan par ligne (9 lignes).
+    // R6.3 (point I) : GET /charge-plans ne liste plus les postes rattachés à un plan
+    // (financialPlanId non nul) — l'unicité se vérifie donc via le détail du plan
+    // lui-même (deadlinesCertain + unknownItems couvrent les 9 lignes : 8 connues, 1
+    // « Restauration » inconnue), jamais via la liste "Charges récurrentes".
     const allPlans = await http.get('/financial-plans').set(...h.auth()).expect(200);
     expect(allPlans.body.filter((p: { id: string }) => p.id === planId)).toHaveLength(1);
-    const chargePlans = await http.get('/charge-plans').set(...h.auth()).expect(200);
-    expect(chargePlans.body.filter((cp: { financialPlanId: string | null }) => cp.financialPlanId === planId)).toHaveLength(9);
+    const chargePlanIds = new Set([
+      ...plan.body.deadlinesCertain.map((d: { chargePlanId: string }) => d.chargePlanId),
+      ...plan.body.unknownItems.map((u: { chargePlanId: string }) => u.chargePlanId),
+    ]);
+    expect(chargePlanIds.size).toBe(9);
   });
 
   // =========================================================================

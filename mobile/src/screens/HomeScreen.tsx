@@ -323,9 +323,21 @@ export function HomeScreen() {
                   <Text style={styles.accountAmount}>{a.soldeCourant.toLocaleString('fr-FR')} DH</Text>
                 </TouchableOpacity>
               ))}
+              {/* R6.3 (point D) — le montant PRINCIPAL de "Ma situation" ne compte
+                  que les comptes pilotés (includeInOperationalTreasury=true),
+                  jamais le patrimoine global : c'est operational_treasury, pas
+                  patrimoine_liquide_total, qui alimente déjà tous les calculs
+                  (Disponible libre, Engagé...) — cette hiérarchie visuelle rend
+                  simplement explicite ce qui était déjà vrai côté moteur. Le
+                  patrimoine global reste affiché, en second, jamais recalculé
+                  ailleurs. */}
               <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Patrimoine total</Text>
-                <Text style={styles.totalValue}>{summary.patrimoine_liquide_total.toLocaleString('fr-FR')} DH</Text>
+                <Text style={styles.totalLabel}>Trésorerie pilotée</Text>
+                <Text style={styles.totalValue} testID="home-piloted-total">{summary.operational_treasury.toLocaleString('fr-FR')} DH</Text>
+              </View>
+              <View style={styles.totalRowSecondary}>
+                <Text style={styles.totalLabelSecondary}>Patrimoine total (avec hors pilotage)</Text>
+                <Text style={styles.totalValueSecondary} testID="home-global-total">{summary.patrimoine_liquide_total.toLocaleString('fr-FR')} DH</Text>
               </View>
               <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Accounts')}>
                 <Text style={styles.linkText}>Voir mes comptes →</Text>
@@ -539,6 +551,9 @@ const styles = StyleSheet.create({
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 10 },
   totalLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '700' },
   totalValue: { fontSize: 16, color: colors.textPrimary, fontWeight: '800' },
+  totalRowSecondary: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 4 },
+  totalLabelSecondary: { fontSize: 11, color: colors.textSecondary },
+  totalValueSecondary: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
   linkText: { color: colors.success, fontSize: 12, fontWeight: '700', marginTop: 10 },
 
   breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.xs },

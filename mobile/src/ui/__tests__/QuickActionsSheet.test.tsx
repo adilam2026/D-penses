@@ -5,6 +5,8 @@ import { QuickActionsSheet } from '../QuickActionsSheet';
 import { QuickActionsProvider, useQuickActions } from '../../state/QuickActionsContext';
 import * as api from '../../api/client';
 
+jest.mock('../useBottomInset', () => ({ useBottomInset: () => 16 }));
+
 /**
  * Tests de la bottom sheet "+" (Vague 3 §3/§4/§31) : les 6 actions, ouverture/
  * fermeture, et l'anticipation des prérequis (jamais une impasse — même

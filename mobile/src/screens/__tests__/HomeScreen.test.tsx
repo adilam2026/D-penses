@@ -196,7 +196,7 @@ describe('Accueil — état configuré (§7-17/§31)', () => {
     expect(screen.queryByText(/action.*à traiter/)).toBeNull();
   });
 
-  it('R6.1 §10 : "Ma situation" affiche "Patrimoine total" et un badge "Hors pilotage" sur un compte exclu', async () => {
+  it('R6.1 §10 / R6.3 point D : "Ma situation" affiche "Trésorerie pilotée" en principal (comptes pilotés uniquement), "Patrimoine total" en secondaire, et un badge "Hors pilotage" sur un compte exclu', async () => {
     mockedApi.listAccounts.mockResolvedValue([
       { id: 'acc-cih', name: 'CIH', soldeCourant: 15000, includeInOperationalTreasury: true },
       { id: 'acc-livret', name: 'Livret bloqué', soldeCourant: 30000, includeInOperationalTreasury: false },
@@ -204,7 +204,11 @@ describe('Accueil — état configuré (§7-17/§31)', () => {
     await render(<HomeScreen />);
     await waitFor(() => screen.getByText('CIH'));
 
-    expect(screen.getByText('Patrimoine total')).toBeTruthy();
+    // §D — le montant PRINCIPAL est la trésorerie pilotée (45000, comptes includeInOperationalTreasury=true),
+    // jamais le patrimoine global (52000, avec le livret hors pilotage) qui reste secondaire.
+    expect(screen.getByText('Trésorerie pilotée')).toBeTruthy();
+    expect(screen.getByTestId('home-piloted-total')).toBeTruthy();
+    expect(screen.getByText('Patrimoine total (avec hors pilotage)')).toBeTruthy();
     expect(screen.getByText('Hors pilotage')).toBeTruthy();
   });
 });
