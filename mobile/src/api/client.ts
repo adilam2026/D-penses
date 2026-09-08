@@ -468,6 +468,7 @@ export const updateHouseholdSettings = (data: {
   seuilAVenirDays?: number;
   seuilAPayerDays?: number;
   homeBannerDismissed?: boolean;
+  closingDay?: number;
 }) => apiFetch('/households/settings', { method: 'PATCH', body: data });
 
 // Vague 3 §25/§28 — étape d'onboarding marquée "non applicable"/"plus tard", partagée

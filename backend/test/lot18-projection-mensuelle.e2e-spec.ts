@@ -640,4 +640,70 @@ describe('Round 4 — Projection Globale Mensuelle (e2e)', () => {
       expect(scenario.summary.max_financing_need).toBe(5000);
     });
   });
+
+  describe('AA — R6.3 (points A/C/J) : jour de clôture financière du foyer', () => {
+    it('clôture=25 : un salaire réel confirmé le 27/09 appartient à la période Octobre, jamais Septembre — la date réelle reste 27/09', async () => {
+      const { auth } = await newHousehold();
+      await http.patch('/households/settings').set(...auth()).send({ closingDay: 25 }).expect(200);
+      const account = await newAccount(auth, 'Compte AA', 1000);
+      const { occurrenceId } = await newIncome(auth, account, 'Salaire AA', 15000, '2026-09-27');
+      await http
+        .post(`/income-occurrences/${occurrenceId}/confirm`)
+        .set(...auth())
+        .send({ actualAmount: 15000, actualDate: '2026-09-27', accountId: account })
+        .expect(201);
+
+      const body = await monthly(auth, { horizonMonths: 3 });
+      const sep = findMonth(body, '2026-09');
+      const oct = findMonth(body, '2026-10');
+
+      // La Balance de septembre n'inclut pas ce salaire — jamais 0 dans l'autre sens non plus.
+      expect(sep.income_items.find((i: any) => i.label === 'Salaire AA')).toBeUndefined();
+      expect(sep.total_income).toBe(0);
+
+      // La Balance d'octobre l'inclut, avec la date RÉELLE inchangée (27/09, jamais réécrite en 01/10).
+      const item = oct.income_items.find((i: any) => i.label === 'Salaire AA');
+      expect(item).toBeDefined();
+      expect(item.realized).toBe(true);
+      expect(item.amount).toBe(15000);
+      expect(item.date).toBe('2026-09-27');
+      expect(oct.total_income).toBe(15000);
+    });
+
+    it('clôture=25 : le libellé de période "Septembre 2026" couvre bien 26/08 → 25/09, un revenu le 25/09 y reste rattaché', async () => {
+      const { auth } = await newHousehold();
+      await http.patch('/households/settings').set(...auth()).send({ closingDay: 25 }).expect(200);
+      const account = await newAccount(auth, 'Compte AA2', 0);
+      const { occurrenceId } = await newIncome(auth, account, 'Salaire AA2', 8000, '2026-09-25');
+      await http
+        .post(`/income-occurrences/${occurrenceId}/confirm`)
+        .set(...auth())
+        .send({ actualAmount: 8000, actualDate: '2026-09-25', accountId: account })
+        .expect(201);
+
+      const body = await monthly(auth, { horizonMonths: 3 });
+      const sep = findMonth(body, '2026-09');
+      expect(sep.label).toBe('Septembre 2026');
+      expect(sep.total_income).toBe(8000);
+    });
+
+    it("clôture=25 : un transfert R6.2 encore prévu au 27/09 (sortie de trésorerie pilotée) impacte Octobre, jamais Septembre (point J)", async () => {
+      const { auth } = await newHousehold();
+      await http.patch('/households/settings').set(...auth()).send({ closingDay: 25 }).expect(200);
+      const source = await newAccount(auth, 'Source AA3', 5000);
+      // Destination hors pilotage : sortie nette non nulle (CAS B, §11), pour observer dans quel mois elle tombe.
+      const destRes = await http.post('/accounts').set(...auth()).send({ name: 'Dest AA3 hors pilotage', type: 'courant', initialBalance: 0, includeInOperationalTreasury: false }).expect(201);
+      await http
+        .post('/accounts/transfers')
+        .set(...auth())
+        .send({ fromAccountId: source, toAccountId: destRes.body.id, amount: 1000, plannedDate: '2026-09-27' })
+        .expect(201);
+
+      const body = await monthly(auth, { horizonMonths: 3 });
+      const sep = findMonth(body, '2026-09');
+      const oct = findMonth(body, '2026-10');
+      expect(sep.planned_transfer_net_treasury_impact).toBe(0); // rien en Septembre : le 27/09 appartient à Octobre
+      expect(oct.planned_transfer_net_treasury_impact).toBe(-1000); // sortie de trésorerie pilotée, rattachée à SA période réelle
+    });
+  });
 });

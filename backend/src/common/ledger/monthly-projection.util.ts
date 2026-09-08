@@ -1,6 +1,15 @@
 import { Prisma } from '@prisma/client';
 import { getAccountBalances, round2, toNumber } from './ledger.util';
 import { computeProjection, ProjectionEventSummary } from './projection.util';
+import {
+  DEFAULT_CLOSING_DAY,
+  financialPeriodKeyOf,
+  financialPeriodKeyString,
+  financialPeriodLabel,
+  getFinancialPeriodBounds,
+  getFinancialPeriodOf,
+  shiftFinancialPeriod,
+} from './financial-period.util';
 
 type TxClient = Prisma.TransactionClient;
 
@@ -129,27 +138,22 @@ function toUtcMidnight(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
 
-function monthKey(date: Date): string {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+/**
+ * R6.3 (points A/C) — période FINANCIÈRE d'une date réelle (jamais son mois
+ * civil brut) : moteur unique financial-period.util.ts, jamais un second
+ * calcul de bucketing. closingDay=31 (défaut HouseholdSettings) reproduit à
+ * l'identique le découpage par mois civil d'avant R6.3.
+ */
+function monthKey(date: Date, closingDay: number): string {
+  return financialPeriodKeyOf(date, closingDay);
 }
 
-const MONTH_LABELS_FR = [
-  'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
-  'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre',
-];
-
-function monthLabel(year: number, monthIndex0: number): string {
-  return `${MONTH_LABELS_FR[monthIndex0]} ${year}`;
-}
-
-/** Dernier jour du mois `horizonMonths - 1` après le mois de `referenceDate` (horizon inclusif). */
-function computeHorizonEnd(referenceDate: Date, horizonMonths: number): Date {
+/** Dernière date réelle de la période financière `horizonMonths - 1` après celle de `referenceDate` (horizon inclusif). */
+function computeHorizonEnd(referenceDate: Date, horizonMonths: number, closingDay: number): Date {
   const ref = toUtcMidnight(referenceDate);
-  const targetMonthIndex0 = ref.getUTCMonth() + horizonMonths - 1;
-  const targetYear = ref.getUTCFullYear() + Math.floor(targetMonthIndex0 / 12);
-  const normalizedMonth = ((targetMonthIndex0 % 12) + 12) % 12;
-  // Jour 0 du mois SUIVANT = dernier jour du mois cible (astuce Date UTC standard).
-  return new Date(Date.UTC(targetYear, normalizedMonth + 1, 0));
+  const refPeriod = getFinancialPeriodOf(ref, closingDay);
+  const targetPeriod = shiftFinancialPeriod(refPeriod, horizonMonths - 1);
+  return getFinancialPeriodBounds(targetPeriod.year, targetPeriod.monthIndex0, closingDay).end;
 }
 
 function accountIncluded(accountId: string | null, accountKnown: boolean, filter: string[] | null | undefined): boolean {
@@ -190,6 +194,7 @@ async function realizedItems(
   householdId: string,
   ref: Date,
   horizonEnd: Date,
+  closingDay: number,
 ): Promise<{ income: RealBucketing[]; expense: RealBucketing[] }> {
   const income: RealBucketing[] = [];
   const expense: RealBucketing[] = [];
@@ -203,7 +208,7 @@ async function realizedItems(
     if (payeNet === 0) continue;
     const cp = p.deadline.chargePlan;
     expense.push({
-      month: monthKey(p.paidDate),
+      month: monthKey(p.paidDate, closingDay),
       item: {
         entityType: 'deadline',
         entityId: p.deadlineId,
@@ -229,7 +234,7 @@ async function realizedItems(
     const amount = round2(toNumber(o.actualAmount));
     if (amount === 0) continue;
     income.push({
-      month: monthKey(o.actualDate),
+      month: monthKey(o.actualDate, closingDay),
       item: {
         entityType: 'income_occurrence',
         entityId: o.id,
@@ -289,6 +294,7 @@ async function plannedTransferTreasuryImpacts(
   ref: Date,
   horizonEnd: Date,
   treasuryIds: string[],
+  closingDay: number,
 ): Promise<Map<string, number>> {
   const impacts = new Map<string, number>();
   if (treasuryIds.length === 0) return impacts;
@@ -304,7 +310,10 @@ async function plannedTransferTreasuryImpacts(
     if (t.fromAccountId && treasurySet.has(t.fromAccountId)) net -= amount;
     if (t.toAccountId && treasurySet.has(t.toAccountId)) net += amount;
     if (net === 0) continue; // CAS A (piloté→piloté) ou CAS D (hors→hors) : jamais d'impact
-    const key = monthKey(t.plannedDate);
+    // R6.3 (point J) — un transfert récurrent R6.2 se rattache lui aussi à SA période
+    // financière réelle (ex. clôture=25, transfert planifié le 27/09 → période Octobre),
+    // exactement comme un paiement/revenu réel — même moteur, jamais un second calcul.
+    const key = monthKey(t.plannedDate, closingDay);
     impacts.set(key, round2((impacts.get(key) ?? 0) + net));
   }
   return impacts;
@@ -324,29 +333,34 @@ export async function computeMonthlyProjection(
   options: MonthlyProjectionOptions = {},
 ): Promise<MonthlyProjectionResult> {
   const ref = toUtcMidnight(referenceDate);
-  const horizonEnd = computeHorizonEnd(ref, horizonMonths);
+  // R6.3 (points A/C/J) — jour de clôture du foyer (financial-period.util.ts, moteur
+  // unique) : défaut 31 si le foyer n'a pas encore de HouseholdSettings, rétrocompatible
+  // à l'identique avec le découpage par mois civil d'avant R6.3.
+  const settings = await tx.householdSettings.findUnique({ where: { householdId } });
+  const closingDay = settings?.closingDay ?? DEFAULT_CLOSING_DAY;
+  const horizonEnd = computeHorizonEnd(ref, horizonMonths, closingDay);
 
   const [projection, realized, treasuryIds] = await Promise.all([
     computeProjection(tx, householdId, ref, horizonEnd, [], false, options.dateOverrides),
-    realizedItems(tx, householdId, ref, horizonEnd),
+    realizedItems(tx, householdId, ref, horizonEnd, closingDay),
     treasuryAccountIds(tx, householdId, options.incomeAccountIds, options.expenseAccountIds),
   ]);
   const [treasuryBalances, transferImpacts] = await Promise.all([
     getAccountBalances(tx, treasuryIds),
-    plannedTransferTreasuryImpacts(tx, householdId, ref, horizonEnd, treasuryIds),
+    plannedTransferTreasuryImpacts(tx, householdId, ref, horizonEnd, treasuryIds, closingDay),
   ]);
   const openingCashBalance = round2(treasuryIds.reduce((sum, id) => sum + (treasuryBalances.get(id) ?? 0), 0));
 
-  // ---------- Construction des mois vides (§3) : un bucket par mois, même sans événement ----------
+  // ---------- Construction des périodes financières vides (§3) : un bucket par
+  // période, même sans événement — jamais le mois civil brut de `ref` (point A).
   const buckets = new Map<string, MonthBucket>();
+  const refPeriod = getFinancialPeriodOf(ref, closingDay);
   for (let i = 0; i < horizonMonths; i += 1) {
-    const monthIndex0 = ref.getUTCMonth() + i;
-    const year = ref.getUTCFullYear() + Math.floor(monthIndex0 / 12);
-    const normalizedMonth = ((monthIndex0 % 12) + 12) % 12;
-    const key = `${year}-${String(normalizedMonth + 1).padStart(2, '0')}`;
+    const period = shiftFinancialPeriod(refPeriod, i);
+    const key = financialPeriodKeyString(period);
     buckets.set(key, {
       month: key,
-      label: monthLabel(year, normalizedMonth),
+      label: financialPeriodLabel(period),
       totalIncome: 0,
       totalExpense: 0,
       balance: 0,
@@ -388,7 +402,7 @@ export async function computeMonthlyProjection(
   // ---------- Couche PRÉVUE (déjà calculée par computeProjection, §19 — aucun recalcul) ----------
   for (const day of projection.timeline) {
     const dayDate = new Date(`${day.date}T00:00:00.000Z`);
-    const bucket = buckets.get(monthKey(dayDate));
+    const bucket = buckets.get(monthKey(dayDate, closingDay));
     if (!bucket) continue; // hors horizon demandé (ne devrait pas arriver, garde défensive)
 
     for (const e of day.events) {

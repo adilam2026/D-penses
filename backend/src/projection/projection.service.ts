@@ -4,6 +4,7 @@ import { computeProjection, ProjectionResult } from '../common/ledger/projection
 import { computeMonthlyProjection, MonthlyProjectionResult } from '../common/ledger/monthly-projection.util';
 import { addDaysUTC } from '../common/ledger/variable-budget.util';
 import { ensureChargeDeadlinesUntil, ensureIncomeOccurrencesUntil, ensureRecurringTransfersUntil } from '../common/ledger/occurrence-generation.util';
+import { DEFAULT_CLOSING_DAY, getFinancialPeriodBounds, getFinancialPeriodOf, shiftFinancialPeriod } from '../common/ledger/financial-period.util';
 
 type TxClient = ReturnType<RlsContextService['getClient']>;
 
@@ -69,7 +70,7 @@ export class ProjectionService {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
       const referenceDate = at ? new Date(at) : new Date();
-      const horizonEnd = this.monthsHorizonEnd(referenceDate, months);
+      const horizonEnd = await this.monthsHorizonEnd(tx, householdId, referenceDate, months);
       await ensureIncomeOccurrencesUntil(tx, householdId, horizonEnd);
       await ensureChargeDeadlinesUntil(tx, householdId, horizonEnd);
       await ensureRecurringTransfersUntil(tx, householdId, horizonEnd);
@@ -97,7 +98,7 @@ export class ProjectionService {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
       const referenceDate = at ? new Date(at) : new Date();
-      const horizonEnd = this.monthsHorizonEnd(referenceDate, months);
+      const horizonEnd = await this.monthsHorizonEnd(tx, householdId, referenceDate, months);
       await ensureIncomeOccurrencesUntil(tx, householdId, horizonEnd);
       await ensureChargeDeadlinesUntil(tx, householdId, horizonEnd);
       await ensureRecurringTransfersUntil(tx, householdId, horizonEnd);
@@ -131,12 +132,21 @@ export class ProjectionService {
     return months;
   }
 
-  private monthsHorizonEnd(referenceDate: Date, horizonMonths: number): Date {
+  /**
+   * R6.3 (points A/C) — borne de génération des occurrences récurrentes, alignée sur
+   * le MÊME moteur de période financière que computeMonthlyProjection (jamais un
+   * second calcul divergent) : sans ceci, un jour de clôture < fin de mois civil peut
+   * faire pointer la dernière période financière demandée APRÈS ce qu'un calcul
+   * purement calendaire aurait généré, laissant le dernier mois de l'horizon
+   * silencieusement incomplet (échéances/occurrences non générées).
+   */
+  private async monthsHorizonEnd(tx: TxClient, householdId: string, referenceDate: Date, horizonMonths: number): Promise<Date> {
     const ref = new Date(Date.UTC(referenceDate.getUTCFullYear(), referenceDate.getUTCMonth(), referenceDate.getUTCDate()));
-    const targetMonthIndex0 = ref.getUTCMonth() + horizonMonths - 1;
-    const targetYear = ref.getUTCFullYear() + Math.floor(targetMonthIndex0 / 12);
-    const normalizedMonth = ((targetMonthIndex0 % 12) + 12) % 12;
-    return new Date(Date.UTC(targetYear, normalizedMonth + 1, 0));
+    const settings = await tx.householdSettings.findUnique({ where: { householdId } });
+    const closingDay = settings?.closingDay ?? DEFAULT_CLOSING_DAY;
+    const refPeriod = getFinancialPeriodOf(ref, closingDay);
+    const targetPeriod = shiftFinancialPeriod(refPeriod, horizonMonths - 1);
+    return getFinancialPeriodBounds(targetPeriod.year, targetPeriod.monthIndex0, closingDay).end;
   }
 
   /** Contrat API en snake_case explicite (§31 Lot 7), étendu Round 4 pour la vue mensuelle. */

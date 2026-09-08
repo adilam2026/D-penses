@@ -1,4 +1,4 @@
-import { IsBoolean, IsIn, IsInt, IsNumber, IsOptional, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsNumber, IsOptional, Max, Min } from 'class-validator';
 
 const PROJECTION_MODES = ['contractuel', 'rythme_reel', 'prudent_max'] as const;
 
@@ -28,4 +28,11 @@ export class UpdateHouseholdSettingsDto {
   @IsOptional()
   @IsBoolean()
   homeBannerDismissed?: boolean;
+
+  // R6.3 (point A) — jour de clôture financière du foyer (financial-period.util.ts).
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(31)
+  closingDay?: number;
 }

@@ -49,7 +49,11 @@ const EMPTY_SUMMARY = {
   is_complete: true,
   contains_estimates: false,
   unknown_commitments_count: 0,
+  horizon_date: '2026-10-15',
+  horizon_source: 'income' as const,
+  horizon_is_fallback: false,
   deadlineItems: [],
+  variableBudgetItems: [],
   optionsEnvisagees: { total: 0, hasUnknown: false },
   actionsATraiter: [],
   budgetsResume: [],
@@ -92,7 +96,7 @@ describe('Accueil — état configuré (§7-17/§31)', () => {
     ...EMPTY_SUMMARY,
     operational_treasury: 45000,
     reserved_amount: 20000,
-    committed_amount: 0,
+    committed_amount: 21800,
     safety_buffer: 10000,
     free_available: 15000,
     patrimoine_liquide_total: 45000,
@@ -105,6 +109,7 @@ describe('Accueil — état configuré (§7-17/§31)', () => {
         amountStatus: 'confirme' as const,
         resteAPayer: 21800,
         coverageStatus: 'non_couverte' as const,
+        engagementNonCouvert: 21800,
       },
     ],
     financialPlansResume: [
@@ -151,6 +156,20 @@ describe('Accueil — état configuré (§7-17/§31)', () => {
     await waitFor(() => screen.getByText('CIH'));
     await fireEvent.press(screen.getByText('CIH'));
     expect(mockNavigate).toHaveBeenCalledWith('AccountDetail', { id: 'acc-cih' });
+  });
+
+  it('R6.3 (point B) : la ligne "Engagé" est cliquable → EngagedDetail avec exactement le montant Home et les composantes de la même source', async () => {
+    await render(<HomeScreen />);
+    await waitFor(() => screen.getByTestId('home-engaged-row'));
+    await fireEvent.press(screen.getByTestId('home-engaged-row'));
+    expect(mockNavigate).toHaveBeenCalledWith(
+      'EngagedDetail',
+      expect.objectContaining({
+        committedAmount: CONFIGURED_SUMMARY.committed_amount,
+        deadlineItems: CONFIGURED_SUMMARY.deadlineItems,
+        variableBudgetItems: CONFIGURED_SUMMARY.variableBudgetItems,
+      }),
+    );
   });
 
   it('une échéance est cliquable → DeadlineDetail', async () => {

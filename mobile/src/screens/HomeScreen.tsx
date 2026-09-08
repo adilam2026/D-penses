@@ -22,6 +22,13 @@ interface DeadlineItem {
   amountStatus: 'inconnu' | 'estime' | 'confirme';
   resteAPayer: number | null;
   coverageStatus: 'couverte' | 'partielle' | 'non_couverte' | 'sans_objet';
+  engagementNonCouvert: number | null;
+}
+
+interface VariableBudgetItem {
+  variableBudgetId: string;
+  amount: number;
+  categoryName: string;
 }
 
 interface FinancialPlanResume {
@@ -64,7 +71,11 @@ interface DashboardSummary {
   is_complete: boolean;
   contains_estimates: boolean;
   unknown_commitments_count: number;
+  horizon_date: string;
+  horizon_source: 'income' | 'fallback';
+  horizon_is_fallback: boolean;
   deadlineItems: DeadlineItem[];
+  variableBudgetItems: VariableBudgetItem[];
   optionsEnvisagees: { total: number; hasUnknown: boolean };
   actionsATraiter: ActionItem[];
   budgetsResume: Array<{ id: string; categoryName: string }>;
@@ -362,7 +373,9 @@ export function HomeScreen() {
               </Text>
               {freeAvailableInfoOpen && (
                 <Text style={styles.infoText}>
-                  Votre disponible libre tient compte de l'argent réservé et de votre coussin de sécurité.
+                  Votre disponible libre tient compte de l'argent réservé et de votre coussin de sécurité, jusqu'au{' '}
+                  {formatLongDate(summary.horizon_date)}
+                  {summary.horizon_is_fallback ? ' (aucun revenu prévu connu, horizon par défaut)' : ' (prochain revenu prévu)'}.
                 </Text>
               )}
               {!summary.is_complete && (
@@ -374,10 +387,22 @@ export function HomeScreen() {
               <Text style={styles.breakdownLabel}>Trésorerie</Text>
               <Text style={styles.breakdownValue}>{summary.operational_treasury.toLocaleString('fr-FR')} DH</Text>
             </View>
-            <View style={styles.breakdownRow}>
-              <Text style={styles.breakdownLabel}>Engagé</Text>
+            <TouchableOpacity
+              style={styles.breakdownRow}
+              testID="home-engaged-row"
+              onPress={() =>
+                navigation.getParent()?.navigate('EngagedDetail', {
+                  committedAmount: summary.committed_amount,
+                  deadlineItems: summary.deadlineItems,
+                  variableBudgetItems: summary.variableBudgetItems,
+                  horizonDate: summary.horizon_date,
+                  horizonIsFallback: summary.horizon_is_fallback,
+                })
+              }
+            >
+              <Text style={styles.breakdownLabel}>Engagé ›</Text>
               <Text style={styles.breakdownValue}>{summary.committed_amount.toLocaleString('fr-FR')} DH</Text>
-            </View>
+            </TouchableOpacity>
             <View style={styles.breakdownRow}>
               <Text style={styles.breakdownLabel}>Réservé</Text>
               <Text style={styles.breakdownValue}>{summary.reserved_amount.toLocaleString('fr-FR')} DH</Text>

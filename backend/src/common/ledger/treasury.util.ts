@@ -156,6 +156,12 @@ export interface CommittedItem {
   amountStatus: 'inconnu' | 'estime' | 'confirme';
   resteAPayer: number | null;
   coverageStatus: CommittedItemCoverageStatus;
+  // R6.3 (point B) — contribution RÉELLE de cette ligne à DeadlineCommitments.knownAmount
+  // (jamais resteAPayer seul : diffère quand une Provision liée couvre une partie).
+  // null pour une ligne à montant inconnu (jamais comptée, RG-103). Sert à ce que
+  // Σ engagementNonCouvert (deadlineItems) + Σ amount (variableBudgetItems) =
+  // committed_amount, par construction — jamais un second calcul côté mobile.
+  engagementNonCouvert: number | null;
 }
 
 export interface DeadlineCommitments {
@@ -214,7 +220,7 @@ export async function computeDeadlineCommitments(tx: TxClient, householdId: stri
 
       if (d.amountStatus === 'inconnu') {
         unknownCount += 1;
-        items.push({ id: d.id, chargePlanId: cp.id, chargePlanLabel: cp.label, dueDate: d.dueDate, amountStatus: 'inconnu', resteAPayer: null, coverageStatus: 'sans_objet' });
+        items.push({ id: d.id, chargePlanId: cp.id, chargePlanLabel: cp.label, dueDate: d.dueDate, amountStatus: 'inconnu', resteAPayer: null, coverageStatus: 'sans_objet', engagementNonCouvert: null });
         continue; // jamais compté 0 (RG-103)
       }
       if (d.amountStatus === 'estime') hasEstimates = true;
@@ -225,7 +231,7 @@ export async function computeDeadlineCommitments(tx: TxClient, householdId: stri
       knownAmount += engagement;
       const coverageStatus: CommittedItemCoverageStatus =
         resteAPayer <= 0 ? 'sans_objet' : engagement >= resteAPayer ? 'non_couverte' : engagement <= 0 ? 'couverte' : 'partielle';
-      items.push({ id: d.id, chargePlanId: cp.id, chargePlanLabel: cp.label, dueDate: d.dueDate, amountStatus: d.amountStatus, resteAPayer, coverageStatus });
+      items.push({ id: d.id, chargePlanId: cp.id, chargePlanLabel: cp.label, dueDate: d.dueDate, amountStatus: d.amountStatus, resteAPayer, coverageStatus, engagementNonCouvert: round2(engagement) });
     }
   }
 
@@ -401,6 +407,9 @@ export interface DisponibleLibreResult {
   hasEstimates: boolean;
   unknownCount: number;
   deadlineItems: CommittedItem[];
+  // R6.3 (point B) — même exigence que deadlineItems : composante VariableBudget de
+  // Montants_engagés, jamais visible seulement dans le total, pour Σ = committed_amount.
+  variableBudgetItems: VariableBudgetCommitmentItem[];
   envisagedTotal: number;
   envisagedHasUnknown: boolean;
 }
@@ -442,6 +451,7 @@ export async function computeDisponibleLibre(tx: TxClient, householdId: string, 
     hasEstimates: deadlineCommitments.hasEstimates,
     unknownCount: deadlineCommitments.unknownCount,
     deadlineItems: deadlineCommitments.items,
+    variableBudgetItems: variableBudgetCommitments.items,
     envisagedTotal: deadlineCommitments.envisagedTotal,
     envisagedHasUnknown: deadlineCommitments.envisagedHasUnknown,
   };

@@ -125,6 +125,14 @@ export class DashboardService {
         is_complete: !disponible.incomplet,
 
         deadlineItems: disponible.deadlineItems,
+        // R6.3 (point B) — même moteur/même appel que deadlineItems (computeDisponibleLibre) :
+        // Σ deadlineItems.engagementNonCouvert + Σ variableBudgetItems.amount = committed_amount,
+        // par construction (jamais un second calcul de détail côté mobile). categoryName
+        // enrichi ici depuis `budgets` déjà chargé ci-dessus, sans requête supplémentaire.
+        variableBudgetItems: disponible.variableBudgetItems.map((i) => ({
+          ...i,
+          categoryName: budgets.find((b) => b.id === i.variableBudgetId)?.category.name ?? '',
+        })),
         optionsEnvisagees: {
           total: disponible.envisagedTotal,
           hasUnknown: disponible.envisagedHasUnknown,

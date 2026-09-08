@@ -5,6 +5,11 @@ import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 
+function closingDayNextLabel(closingDay: string): string {
+  const d = Math.min(31, Math.max(1, Number(closingDay) || 31));
+  return d >= 31 ? '1er (mois suivant)' : String(d + 1);
+}
+
 const PROJECTION_MODE_LABEL: Record<string, string> = {
   contractuel: 'Contractuel (montant de référence)',
   rythme_reel: 'Rythme réel (déjà dépensé au prorata)',
@@ -19,6 +24,7 @@ export function PreferencesScreen() {
   const [securityMarginAmount, setSecurityMarginAmount] = useState('0');
   const [seuilAVenirDays, setSeuilAVenirDays] = useState('30');
   const [seuilAPayerDays, setSeuilAPayerDays] = useState('7');
+  const [closingDay, setClosingDay] = useState('31');
   const [mode, setMode] = useState('prudent_max');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -32,6 +38,7 @@ export function PreferencesScreen() {
         setSecurityMarginAmount(String(s.securityMarginAmount));
         setSeuilAVenirDays(String(s.seuilAVenirDays));
         setSeuilAPayerDays(String(s.seuilAPayerDays));
+        setClosingDay(String(s.closingDay ?? 31));
         setMode(s.variableBudgetProjectionMode);
       }
     } finally {
@@ -53,6 +60,7 @@ export function PreferencesScreen() {
         securityMarginAmount: Number(securityMarginAmount.replace(',', '.')) || 0,
         seuilAVenirDays: Number(seuilAVenirDays) || 0,
         seuilAPayerDays: Number(seuilAPayerDays) || 0,
+        closingDay: Math.min(31, Math.max(1, Number(closingDay) || 31)),
       });
       setSaved(true);
     } finally {
@@ -80,6 +88,16 @@ export function PreferencesScreen() {
 
       <Text style={styles.sectionLabel}>Seuil "à payer bientôt" (jours)</Text>
       <TextInput style={styles.input} keyboardType="number-pad" value={seuilAPayerDays} onChangeText={setSeuilAPayerDays} onFocus={handleFocus} />
+
+      {/* R6.3 (point A) — dimension analytique pure : ne modifie jamais aucune date réelle,
+          sert uniquement à rattacher les opérations à une période financière
+          (common/ledger/financial-period.util.ts, moteur unique réutilisé par Projection). */}
+      <Text style={styles.sectionLabel}>Jour de clôture du mois</Text>
+      <TextInput style={styles.input} keyboardType="number-pad" value={closingDay} onChangeText={setClosingDay} onFocus={handleFocus} />
+      <Text style={styles.help}>
+        Votre mois financier se termine le {closingDay || '31'}.{'\n'}
+        Les opérations à partir du {closingDayNextLabel(closingDay)} sont rattachées à la période financière suivante.
+      </Text>
 
       <Text style={styles.sectionLabel}>Mode de projection des budgets variables</Text>
       <Text style={styles.help}>{PROJECTION_MODE_LABEL[mode] ?? mode}</Text>

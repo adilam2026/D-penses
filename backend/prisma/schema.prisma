@@ -413,6 +413,12 @@ model HouseholdSettings {
   // (jamais réaffiché après ce choix, partagé au niveau du foyer comme le reste
   // de HouseholdSettings — même convention qu'onboardingSkippedSteps ci-dessus).
   homeBannerDismissed          Boolean                      @default(false) @map("home_banner_dismissed")
+  // R6.3 (point A) — jour de clôture financière du foyer (1-31), dimension analytique
+  // pure : ne modifie jamais une date réelle, sert uniquement à classer les opérations
+  // en périodes financières (common/ledger/financial-period.util.ts, moteur unique).
+  // Défaut 31 = clôture au dernier jour du mois, donc rétrocompatible à l'identique
+  // avec le découpage par mois civil déjà utilisé partout avant R6.3.
+  closingDay                   Int                          @default(31) @map("closing_day")
   createdAt                    DateTime                     @default(now()) @map("created_at")
   updatedAt                    DateTime                     @updatedAt @map("updated_at")
 
