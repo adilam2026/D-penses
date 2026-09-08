@@ -1,6 +1,5 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react-native';
-import { Alert } from 'react-native';
 import { ProjectionScreen } from '../ProjectionScreen';
 import * as api from '../../../api/client';
 
@@ -10,6 +9,11 @@ import * as api from '../../../api/client';
  * (jamais undefined, contrairement à un Stack.Screen racine) pour que la
  * navigation vers le détail d'une dépense fonctionne (même règle que
  * HomeScreen/TransactionsScreen, déjà correcte depuis Round 1).
+ *
+ * R6.1 §14 — le mode simulation (« Tester un scénario », déplacement de
+ * dépenses, comparaison avant/après) a été retiré : la « situation projetée
+ * fin de mois » (trésorerie initiale réelle + cumul des flux) est désormais
+ * l'indicateur principal affiché sur chaque carte mensuelle.
  */
 const mockParentNavigate = jest.fn();
 const mockGetParent = jest.fn(() => ({ navigate: mockParentNavigate }));
@@ -107,7 +111,6 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockedApi.listAccounts.mockResolvedValue(ACCOUNTS);
   mockedApi.getMonthlyProjection.mockResolvedValue(projectionFixture([monthBucket()]));
-  jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
 });
 
 it('ouvre l\'écran, affiche l\'horizon par défaut (12 mois) et le résumé', async () => {
@@ -179,22 +182,58 @@ it('navigue vers le détail d\'une dépense (échéance) au tap', async () => {
   expect(mockParentNavigate).toHaveBeenCalledWith('DeadlineDetail', { id: 'dl1' });
 });
 
-it('un mois déficitaire affiche la balance négative et le total décalable', async () => {
+it('aucun lien de déplacement n\'est proposé sur une dépense (R6.1 §14 — mode simulation retiré)', async () => {
+  await render(<ProjectionScreen />);
+  await waitFor(() => screen.getByTestId('month-toggle-2026-09'));
+  await fireEvent.press(screen.getByTestId('month-toggle-2026-09'));
+  await waitFor(() => screen.getByText('Charges'));
+
+  expect(screen.queryByTestId('move-dl1')).toBeNull();
+  expect(screen.queryByText('Déplacer')).toBeNull();
+  expect(screen.queryByText('Simuler un décalage')).toBeNull();
+  expect(screen.queryByText('Tester un scénario')).toBeNull();
+});
+
+it('un mois avec situation projetée négative affiche "Déficitaire" en rouge sur l\'indicateur principal', async () => {
   mockedApi.getMonthlyProjection.mockResolvedValue(
     projectionFixture([
-      monthBucket({ month: '2026-11', label: 'Novembre 2026', total_income: 30000, total_expense: 35000, balance: -5000, cumulative_balance: -5000, movable_expense_total: 20000 }),
+      monthBucket({
+        month: '2026-11',
+        label: 'Novembre 2026',
+        total_income: 30000,
+        total_expense: 35000,
+        balance: -5000,
+        cumulative_balance: -5000,
+        projected_cash_balance: -3000,
+        movable_expense_total: 20000,
+      }),
     ]),
   );
   await render(<ProjectionScreen />);
   await waitFor(() => screen.getByTestId('month-toggle-2026-11'));
 
   const monthCard = within(screen.getByTestId('month-card-2026-11'));
-  expect(monthCard.getByText('-5 000 DH')).toBeTruthy();
+  expect(monthCard.getByText('SITUATION PROJETÉE FIN DE MOIS')).toBeTruthy();
+  expect(monthCard.getByText('-3 000 DH')).toBeTruthy();
   expect(monthCard.getByText('Déficitaire')).toBeTruthy();
+  expect(monthCard.getByText(/Balance du mois -5 000 DH/)).toBeTruthy();
+  expect(monthCard.getByText(/Cumul des flux -5 000 DH/)).toBeTruthy();
 
   await fireEvent.press(screen.getByTestId('month-toggle-2026-11'));
   await waitFor(() => screen.getByText('Pourquoi ce déficit ?'));
   expect(screen.getByText('Dépenses potentiellement décalables : 20 000 DH')).toBeTruthy();
+});
+
+it('un mois avec une balance mensuelle négative mais une situation projetée positive reste marqué "Positif"', async () => {
+  mockedApi.getMonthlyProjection.mockResolvedValue(
+    projectionFixture([monthBucket({ balance: -1000, cumulative_balance: 4000, projected_cash_balance: 9000 })]),
+  );
+  await render(<ProjectionScreen />);
+  await waitFor(() => screen.getByTestId('month-toggle-2026-09'));
+
+  const monthCard = within(screen.getByTestId('month-card-2026-09'));
+  expect(monthCard.getByText('9 000 DH')).toBeTruthy();
+  expect(monthCard.getByText('Positif')).toBeTruthy();
 });
 
 it('projection incomplète : le mois affiche l\'avertissement et le libellé inconnu', async () => {
@@ -207,71 +246,7 @@ it('projection incomplète : le mois affiche l\'avertissement et le libellé inc
   expect(screen.getByText(/Facture inconnue/)).toBeTruthy();
 });
 
-it('« Déplacer » sur une dépense flexible démarre un scénario et affiche la comparaison avant/après', async () => {
-  const scenarioMonth = monthBucket({ total_expense: 0, balance: 30000, cumulative_balance: 30000, expense_items: [] });
-  mockedApi.simulateMonthlyProjection.mockResolvedValue({
-    baseline: projectionFixture([monthBucket()]),
-    scenario: projectionFixture([scenarioMonth]),
-  });
-  await render(<ProjectionScreen />);
-  await waitFor(() => screen.getByTestId('month-toggle-2026-09'));
-  await fireEvent.press(screen.getByTestId('month-toggle-2026-09'));
-  await waitFor(() => screen.getByTestId('move-dl1'));
-
-  await fireEvent.press(screen.getByTestId('move-dl1'));
-  await waitFor(() => screen.getByTestId('move-dialog'));
-  await fireEvent.press(screen.getByTestId('confirm-move'));
-
-  await waitFor(() => expect(mockedApi.simulateMonthlyProjection).toHaveBeenCalled());
-  await waitFor(() => screen.getByText(/SCÉNARIO EN COURS/));
-  expect(screen.getByText(/Impact/)).toBeTruthy();
-  // Aucune donnée réelle modifiée par la simulation elle-même.
-  expect(mockedApi.updateDeadline).not.toHaveBeenCalled();
-});
-
-it('« Réinitialiser le scénario » revient à la projection réelle', async () => {
-  mockedApi.simulateMonthlyProjection.mockResolvedValue({
-    baseline: projectionFixture([monthBucket()]),
-    scenario: projectionFixture([monthBucket({ total_expense: 0, balance: 30000 })]),
-  });
-  await render(<ProjectionScreen />);
-  await waitFor(() => screen.getByTestId('month-toggle-2026-09'));
-  await fireEvent.press(screen.getByTestId('month-toggle-2026-09'));
-  await waitFor(() => screen.getByTestId('move-dl1'));
-  await fireEvent.press(screen.getByTestId('move-dl1'));
-  await waitFor(() => screen.getByTestId('move-dialog'));
-  await fireEvent.press(screen.getByTestId('confirm-move'));
-  await waitFor(() => screen.getByTestId('reset-scenario'));
-
-  await fireEvent.press(screen.getByTestId('reset-scenario'));
-
-  await waitFor(() => expect(screen.queryByText(/SCÉNARIO EN COURS/)).toBeNull());
-});
-
-it('« Appliquer les modifications » persiste réellement le déplacement d\'une dépense flexible', async () => {
-  mockedApi.simulateMonthlyProjection.mockResolvedValue({
-    baseline: projectionFixture([monthBucket()]),
-    scenario: projectionFixture([monthBucket({ total_expense: 0, balance: 30000 })]),
-  });
-  mockedApi.updateDeadline.mockResolvedValue({});
-  await render(<ProjectionScreen />);
-  await waitFor(() => screen.getByTestId('month-toggle-2026-09'));
-  await fireEvent.press(screen.getByTestId('month-toggle-2026-09'));
-  await waitFor(() => screen.getByTestId('move-dl1'));
-  await fireEvent.press(screen.getByTestId('move-dl1'));
-  await waitFor(() => screen.getByTestId('move-dialog'));
-  await fireEvent.press(screen.getByTestId('confirm-move'));
-  await waitFor(() => screen.getByTestId('apply-scenario'));
-
-  await fireEvent.press(screen.getByTestId('apply-scenario'));
-  await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
-  const [, , buttons] = (Alert.alert as jest.Mock).mock.calls[0];
-  await buttons[1].onPress();
-
-  await waitFor(() => expect(mockedApi.updateDeadline).toHaveBeenCalledWith('dl1', expect.objectContaining({ dueDate: expect.any(String) })));
-});
-
-it('Round 4bis : une ligne réelle affiche le badge "Réel" et aucun lien de déplacement, une ligne prévue affiche "Prévu"', async () => {
+it('Round 4bis : une ligne réelle affiche le badge "Réel", une ligne prévue affiche "Prévu"', async () => {
   mockedApi.getMonthlyProjection.mockResolvedValue(
     projectionFixture([
       monthBucket({
@@ -297,11 +272,9 @@ it('Round 4bis : une ligne réelle affiche le badge "Réel" et aucun lien de dé
   await waitFor(() => screen.getByText('Facture payée'));
 
   expect(screen.getByText('Réel')).toBeTruthy();
-  // Un mouvement déjà réel ne propose plus de déplacement (ni réel ni simulé).
-  expect(screen.queryByTestId('move-dl3')).toBeNull();
 });
 
-it('Round 4bis : la carte résumé distingue "Trésorerie initiale" et "Balance cumulée" (jamais confondues)', async () => {
+it('R6.1 §14 : la carte résumé distingue "Trésorerie initiale" et "Cumul des flux" (jamais confondues)', async () => {
   mockedApi.getMonthlyProjection.mockResolvedValue({
     ...projectionFixture([monthBucket({ projected_cash_balance: 22000 })]),
     summary: {
@@ -327,34 +300,18 @@ it('Round 4bis : la carte résumé distingue "Trésorerie initiale" et "Balance 
   expect(screen.getByText(/20 000 DH/)).toBeTruthy();
   expect(screen.getByText(/Besoin temporaire de financement/)).toBeTruthy();
   const monthCard = within(screen.getByTestId('month-card-2026-09'));
-  expect(monthCard.getByText(/Balance cumulée/)).toBeTruthy();
-  expect(monthCard.getByText(/Trésorerie projetée/)).toBeTruthy();
-});
-
-it('une échéance contractuelle (non modifiable) propose "Simuler un décalage", jamais "Déplacer"', async () => {
-  mockedApi.getMonthlyProjection.mockResolvedValue(
-    projectionFixture([
-      monthBucket({
-        expense_items: [
-          { entityType: 'deadline', entityId: 'dl2', label: 'Prêt immobilier', date: '2026-09-05', amount: 8000, accountId: 'acc1', accountKnown: true, movable: false, category: 'obligatoire', realized: false },
-        ],
-      }),
-    ]),
-  );
-  await render(<ProjectionScreen />);
-  await waitFor(() => screen.getByTestId('month-toggle-2026-09'));
-  await fireEvent.press(screen.getByTestId('month-toggle-2026-09'));
-
-  await waitFor(() => screen.getByText('Simuler un décalage'));
-  expect(screen.queryByText('Déplacer')).toBeNull();
+  expect(monthCard.getByText(/Cumul des flux/)).toBeTruthy();
+  expect(monthCard.getByText('SITUATION PROJETÉE FIN DE MOIS')).toBeTruthy();
+  expect(monthCard.getByText('22 000 DH')).toBeTruthy();
 });
 
 /**
- * Recette téléphone réel §6/§7 : aide discrète expliquant les 3 notions
- * (balance du mois / balance cumulée / trésorerie projetée), repliée par
- * défaut pour ne pas surcharger l'écran.
+ * Recette téléphone réel §6/§7, terminologie mise à jour R6.1 §14 : aide
+ * discrète expliquant les 3 notions (balance du mois / cumul des flux /
+ * situation projetée fin de mois), repliée par défaut pour ne pas surcharger
+ * l'écran.
  */
-it('§6/§7 : aide "Balance/cumul/trésorerie" repliée par défaut, dépliable au tap', async () => {
+it('§6/§7 : aide "Balance/cumul/situation projetée" repliée par défaut, dépliable au tap', async () => {
   await render(<ProjectionScreen />);
   await waitFor(() => screen.getByTestId('projection-info-toggle'));
 
@@ -364,6 +321,6 @@ it('§6/§7 : aide "Balance/cumul/trésorerie" repliée par défaut, dépliable 
 
   const panel = within(screen.getByTestId('projection-info-panel'));
   expect(panel.getByText(/Balance du mois/)).toBeTruthy();
-  expect(panel.getByText(/Balance cumulée/)).toBeTruthy();
-  expect(panel.getByText(/Trésorerie projetée/)).toBeTruthy();
+  expect(panel.getByText(/Cumul des flux/)).toBeTruthy();
+  expect(panel.getByText(/Situation projetée fin de mois/)).toBeTruthy();
 });

@@ -1,11 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { MonthBucketApi, MonthlyLineItem, MonthlyProjectionApi, UNDETERMINED_ACCOUNT } from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
-import { DateField } from '../../ui/DateField';
 import { colors, radius, spacing } from '../../ui/theme';
 import { MultiSelect } from '../../ui/MultiSelect';
 
@@ -36,15 +35,7 @@ function monthLabel(m: MonthBucketApi): string {
  * une closure : même règle que partout ailleurs depuis le correctif du bug de
  * remount/focus, Vague 1).
  */
-function ExpenseRow({
-  item,
-  onOpenDetail,
-  onMove,
-}: {
-  item: MonthlyLineItem;
-  onOpenDetail: (item: MonthlyLineItem) => void;
-  onMove: (item: MonthlyLineItem) => void;
-}) {
+function ExpenseRow({ item, onOpenDetail }: { item: MonthlyLineItem; onOpenDetail: (item: MonthlyLineItem) => void }) {
   return (
     <View style={styles.itemRow}>
       <TouchableOpacity style={{ flex: 1 }} onPress={() => onOpenDetail(item)} disabled={item.entityType !== 'deadline'}>
@@ -55,14 +46,7 @@ function ExpenseRow({
           {item.amountStatus === 'estime' && <Text style={styles.itemBadgeWarning}>Estimée</Text>}
         </View>
       </TouchableOpacity>
-      <View style={{ alignItems: 'flex-end' }}>
-        <Text style={styles.itemAmount}>{formatDh(item.amount)}</Text>
-        {item.entityType === 'deadline' && !item.realized && (
-          <TouchableOpacity testID={`move-${item.entityId}`} onPress={() => onMove(item)}>
-            <Text style={styles.moveLink}>{item.movable ? 'Déplacer' : 'Simuler un décalage'}</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      <Text style={styles.itemAmount}>{formatDh(item.amount)}</Text>
     </View>
   );
 }
@@ -81,25 +65,26 @@ function IncomeRow({ item }: { item: MonthlyLineItem }) {
   );
 }
 
-/** Carte mensuelle compacte, dépliable (§5/§8) — jamais un tableau desktop compressé. */
+/**
+ * Carte mensuelle compacte, dépliable (§5/§8) — jamais un tableau desktop compressé.
+ * R6.1 §14 : la « situation projetée fin de mois » (trésorerie initiale réelle +
+ * cumul des flux) est désormais l'indicateur PRINCIPAL de chaque mois — la balance
+ * du mois seule (revenus − dépenses de ce mois) ne dit rien de la trésorerie
+ * réelle et ne doit donc plus porter la couleur/le poids visuel principal.
+ */
 function MonthCard({
   month,
-  scenarioMonth,
   expanded,
   onToggle,
   onOpenDetail,
-  onMove,
 }: {
   month: MonthBucketApi;
-  scenarioMonth?: MonthBucketApi;
   expanded: boolean;
   onToggle: () => void;
   onOpenDetail: (item: MonthlyLineItem) => void;
-  onMove: (item: MonthlyLineItem) => void;
 }) {
   const deficit = month.balance < 0;
-  const displayed = scenarioMonth ?? month;
-  const impact = scenarioMonth ? Math.round((scenarioMonth.balance - month.balance) * 100) / 100 : 0;
+  const situationDeficit = month.projected_cash_balance < 0;
 
   return (
     <View style={styles.monthCard} testID={`month-card-${month.month}`}>
@@ -107,36 +92,25 @@ function MonthCard({
         <View style={{ flex: 1 }}>
           <Text style={styles.monthTitle}>{monthLabel(month)}</Text>
           <Text style={styles.monthMeta}>
-            Revenus {formatDh(displayed.total_income)} · Dépenses {formatDh(displayed.total_expense)}
+            Revenus {formatDh(month.total_income)} · Dépenses {formatDh(month.total_expense)}
           </Text>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
-          <Text style={[styles.monthBalance, displayed.balance < 0 ? styles.balanceNegative : styles.balancePositive]}>
-            {displayed.balance >= 0 ? '+' : ''}
-            {formatDh(displayed.balance)}
+          <Text style={styles.situationLabel}>SITUATION PROJETÉE FIN DE MOIS</Text>
+          <Text style={[styles.monthBalance, situationDeficit ? styles.balanceNegative : styles.balancePositive]}>
+            {formatDh(month.projected_cash_balance)}
           </Text>
-          <Text style={[styles.monthStatus, displayed.balance < 0 ? styles.balanceNegative : styles.balancePositive]}>
-            {displayed.balance < 0 ? 'Déficitaire' : 'Positif'}
+          <Text style={[styles.monthStatus, situationDeficit ? styles.balanceNegative : styles.balancePositive]}>
+            {situationDeficit ? 'Déficitaire' : 'Positif'}
           </Text>
           <Text style={styles.cumulLine}>
-            Balance cumulée {displayed.cumulative_balance >= 0 ? '+' : ''}{formatDh(displayed.cumulative_balance)}
+            Balance du mois {month.balance >= 0 ? '+' : ''}{formatDh(month.balance)}
           </Text>
-          <Text style={[styles.treasuryLine, displayed.projected_cash_balance < 0 && styles.balanceNegative]}>
-            Trésorerie projetée {formatDh(displayed.projected_cash_balance)}
+          <Text style={styles.cumulLine}>
+            Cumul des flux {month.cumulative_balance >= 0 ? '+' : ''}{formatDh(month.cumulative_balance)}
           </Text>
         </View>
       </TouchableOpacity>
-
-      {scenarioMonth && (
-        <View style={styles.impactRow}>
-          <Text style={styles.impactLabel}>
-            Avant {month.balance >= 0 ? '+' : ''}{formatDh(month.balance)} · Scénario {scenarioMonth.balance >= 0 ? '+' : ''}{formatDh(scenarioMonth.balance)}
-          </Text>
-          <Text style={[styles.impactValue, impact < 0 ? styles.balanceNegative : styles.balancePositive]}>
-            Impact {impact >= 0 ? '+' : ''}{formatDh(impact)}
-          </Text>
-        </View>
-      )}
 
       {!month.is_complete && (
         <Text style={styles.warningText}>
@@ -165,15 +139,15 @@ function MonthCard({
           ) : (
             month.income_items.map((item) => <IncomeRow key={item.entityId + item.date} item={item} />)
           )}
-          <Text style={styles.detailTotalLine}>Total revenus {formatDh(displayed.total_income)}</Text>
+          <Text style={styles.detailTotalLine}>Total revenus {formatDh(month.total_income)}</Text>
 
           <Text style={styles.detailSectionTitle}>Dépenses</Text>
           {month.expense_items.length === 0 ? (
             <Text style={styles.emptyText}>Aucune dépense prévue ce mois-ci.</Text>
           ) : (
-            month.expense_items.map((item) => <ExpenseRow key={item.entityId + item.date} item={item} onOpenDetail={onOpenDetail} onMove={onMove} />)
+            month.expense_items.map((item) => <ExpenseRow key={item.entityId + item.date} item={item} onOpenDetail={onOpenDetail} />)
           )}
-          <Text style={styles.detailTotalLine}>Total dépenses {formatDh(displayed.total_expense)}</Text>
+          <Text style={styles.detailTotalLine}>Total dépenses {formatDh(month.total_expense)}</Text>
         </View>
       )}
     </View>
@@ -181,18 +155,19 @@ function MonthCard({
 }
 
 /**
- * Projection Globale Mensuelle (Round 4) — moteur backend unique
- * (monthly-projection.util.ts), jamais un second calcul mobile. Vue mensuelle
- * consolidée : revenus/dépenses/balance/cumul, filtre-compte, détail dépliable,
- * mode simulation (déplacement de dépenses flexibles ou décalage simulé d'une
- * échéance contractuelle) avec comparaison avant/après — aucune donnée réelle
- * modifiée tant que « Appliquer les modifications » n'est pas explicitement
- * confirmé, et uniquement pour les dépenses réellement modifiables (§11/§12).
+ * Projection Globale Mensuelle (Round 4, refonte R6.1 §14) — moteur backend
+ * unique (monthly-projection.util.ts), jamais un second calcul mobile. Vue
+ * mensuelle consolidée : revenus/dépenses/balance/cumul, filtre-compte, détail
+ * dépliable. Le mode simulation (déplacement de dépenses) a été retiré : il
+ * n'était jamais accessible qu'après un clic supplémentaire sur une dépense
+ * précise et créait une confusion (bouton « Tester un scénario » visible sans
+ * effet tant qu'aucune dépense n'était choisie) — la seule action encore
+ * possible sur une échéance est sa consultation via DeadlineDetail.
  */
 export function ProjectionScreen() {
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
-  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
+  const { scrollRef } = useKeyboardAwareScroll();
 
   const [horizonMonths, setHorizonMonths] = useState<number>(DEFAULT_HORIZON);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -204,16 +179,6 @@ export function ProjectionScreen() {
   const [data, setData] = useState<MonthlyProjectionApi | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedMonths, setExpandedMonths] = useState<Record<string, boolean>>({});
-
-  // Mode simulation (§12/§13) : `moves` reste purement local tant que
-  // "Appliquer les modifications" n'est pas confirmé — jamais un déplacement réel.
-  const [moves, setMoves] = useState<{ deadlineId: string; label: string; newDate: string; movable: boolean }[]>([]);
-  const [scenarioData, setScenarioData] = useState<MonthlyProjectionApi | null>(null);
-  const [scenarioLoading, setScenarioLoading] = useState(false);
-  const [applying, setApplying] = useState(false);
-
-  const [movingItem, setMovingItem] = useState<MonthlyLineItem | null>(null);
-  const [moveDate, setMoveDate] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -246,90 +211,11 @@ export function ProjectionScreen() {
     }, [load]),
   );
 
-  const recomputeScenario = useCallback(
-    async (nextMoves: typeof moves) => {
-      if (nextMoves.length === 0) {
-        setScenarioData(null);
-        return;
-      }
-      setScenarioLoading(true);
-      try {
-        const res = await api.simulateMonthlyProjection({
-          horizonMonths,
-          incomeAccountIds,
-          expenseAccountIds,
-          moves: nextMoves.map((m) => ({ deadlineId: m.deadlineId, newDate: m.newDate })),
-        });
-        setData(res.baseline);
-        setScenarioData(res.scenario);
-      } finally {
-        setScenarioLoading(false);
-      }
-    },
-    [horizonMonths, incomeAccountIds, expenseAccountIds],
-  );
-
-  function resetScenario() {
-    setMoves([]);
-    setScenarioData(null);
-    load();
-  }
-
-  function onOpenMoveDialog(item: MonthlyLineItem) {
-    setMovingItem(item);
-    setMoveDate(item.date);
-  }
-
-  async function onConfirmMove() {
-    if (!movingItem || !moveDate) return;
-    const nextMoves = [
-      ...moves.filter((m) => m.deadlineId !== movingItem.entityId),
-      { deadlineId: movingItem.entityId, label: movingItem.label, newDate: moveDate, movable: movingItem.movable },
-    ];
-    setMoves(nextMoves);
-    setMovingItem(null);
-    await recomputeScenario(nextMoves);
-  }
-
-  async function onApplyMoves() {
-    const applicable = moves.filter((m) => m.movable);
-    if (applicable.length === 0) {
-      Alert.alert('Aucune modification applicable', 'Les échéances contractuelles restent en simulation — seule leur date affichée ici, jamais la vraie date.');
-      return;
-    }
-    Alert.alert(
-      'Confirmer le déplacement',
-      `Déplacer réellement ${applicable.length} dépense(s) flexible(s) à la nouvelle date choisie ?`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Appliquer',
-          onPress: async () => {
-            setApplying(true);
-            try {
-              for (const m of applicable) {
-                await api.updateDeadline(m.deadlineId, { dueDate: m.newDate });
-              }
-              setMoves((prev) => prev.filter((m) => !m.movable));
-              setScenarioData(null);
-              await load();
-            } finally {
-              setApplying(false);
-            }
-          },
-        },
-      ],
-    );
-  }
-
   function onOpenDetail(item: MonthlyLineItem) {
     if (item.entityType === 'deadline') {
       navigation.getParent()?.navigate('DeadlineDetail', { id: item.entityId });
     }
   }
-
-  const scenarioMonthByKey: Record<string, MonthBucketApi> = {};
-  if (scenarioData) for (const m of scenarioData.months) scenarioMonthByKey[m.month] = m;
 
   if (loading || !data) {
     return (
@@ -388,13 +274,16 @@ export function ProjectionScreen() {
           <Text style={styles.warningText}>⚠ Projection incomplète — {data.summary.incomplete_months_count} mois avec montant(s) inconnu(s).</Text>
         )}
         <TouchableOpacity testID="projection-info-toggle" style={styles.infoToggleRow} onPress={() => setNotionsInfoOpen((v) => !v)}>
-          <Text style={styles.infoToggleText}>ⓘ Balance / cumul / trésorerie : quelle différence ?</Text>
+          <Text style={styles.infoToggleText}>ⓘ Balance / cumul / situation projetée : quelle différence ?</Text>
         </TouchableOpacity>
         {notionsInfoOpen && (
           <View style={styles.notionsInfoBox} testID="projection-info-panel">
             <Text style={styles.notionsInfoLine}>• Balance du mois : revenus − dépenses de CE mois uniquement.</Text>
-            <Text style={styles.notionsInfoLine}>• Balance cumulée : somme des balances mensuelles depuis le premier mois affiché (flux purs, part de zéro).</Text>
-            <Text style={styles.notionsInfoLine}>• Trésorerie projetée : trésorerie initiale réelle + balance cumulée — jamais confondue avec la balance cumulée seule.</Text>
+            <Text style={styles.notionsInfoLine}>• Cumul des flux : somme des balances mensuelles depuis le premier mois affiché (flux purs, part de zéro).</Text>
+            <Text style={styles.notionsInfoLine}>
+              • Situation projetée fin de mois : trésorerie initiale réelle + cumul des flux — c'est l'indicateur principal de chaque mois, jamais
+              confondu avec le cumul des flux seul.
+            </Text>
           </View>
         )}
         <View style={styles.summaryRow}>
@@ -426,61 +315,15 @@ export function ProjectionScreen() {
         )}
       </View>
 
-      <View style={styles.scenarioBar}>
-        {moves.length === 0 ? (
-          <TouchableOpacity testID="start-scenario" style={styles.scenarioButton} onPress={() => Alert.alert('Tester un scénario', "Ouvrez « Déplacer » ou « Simuler un décalage » sur une dépense pour démarrer un scénario.")}>
-            <Text style={styles.scenarioButtonText}>Tester un scénario</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.scenarioActiveBox}>
-            <Text style={styles.scenarioActiveTitle}>SCÉNARIO EN COURS ({moves.length} déplacement(s) simulé(s))</Text>
-            {scenarioLoading && <ActivityIndicator size="small" />}
-            <View style={styles.scenarioButtonsRow}>
-              <TouchableOpacity testID="reset-scenario" style={styles.scenarioSecondaryButton} onPress={resetScenario}>
-                <Text style={styles.scenarioSecondaryButtonText}>Réinitialiser le scénario</Text>
-              </TouchableOpacity>
-              <TouchableOpacity testID="apply-scenario" style={styles.scenarioButton} onPress={onApplyMoves} disabled={applying}>
-                {applying ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.scenarioButtonText}>Appliquer les modifications</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-      </View>
-
       {data.months.map((m) => (
         <MonthCard
           key={m.month}
           month={m}
-          scenarioMonth={scenarioMonthByKey[m.month]}
           expanded={!!expandedMonths[m.month]}
           onToggle={() => setExpandedMonths((prev) => ({ ...prev, [m.month]: !prev[m.month] }))}
           onOpenDetail={onOpenDetail}
-          onMove={onOpenMoveDialog}
         />
       ))}
-
-      {movingItem && (
-        <View style={styles.moveModal} testID="move-dialog">
-          <Text style={styles.moveModalTitle}>
-            {movingItem.movable ? 'Déplacer' : 'Simuler un décalage'} — {movingItem.label}
-          </Text>
-          <Text style={styles.moveModalSubtitle}>{formatDh(movingItem.amount)} · prévu le {movingItem.date}</Text>
-          {!movingItem.movable && (
-            <Text style={styles.warningText}>
-              Échéance obligatoire/contractuelle : la simulation ne change jamais la vraie date. Utilisez « Appliquer » uniquement pour les dépenses flexibles.
-            </Text>
-          )}
-          <DateField label="Nouvelle date prévue" value={moveDate} onChange={setMoveDate} />
-          <View style={styles.scenarioButtonsRow}>
-            <TouchableOpacity style={styles.scenarioSecondaryButton} onPress={() => setMovingItem(null)}>
-              <Text style={styles.scenarioSecondaryButtonText}>Annuler</Text>
-            </TouchableOpacity>
-            <TouchableOpacity testID="confirm-move" style={styles.scenarioButton} onPress={onConfirmMove}>
-              <Text style={styles.scenarioButtonText}>Confirmer</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
     </ScrollView>
   );
 }
@@ -529,27 +372,16 @@ const styles = StyleSheet.create({
   notionsInfoBox: { backgroundColor: colors.background, borderRadius: radius.md, padding: 10, marginBottom: 10 },
   notionsInfoLine: { fontSize: 11, color: colors.textPrimary, marginBottom: 4 },
   warningText: { fontSize: 12, color: colors.warning, fontWeight: '600', marginBottom: spacing.sm },
-  scenarioBar: { marginBottom: spacing.lg },
-  scenarioButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 12, paddingHorizontal: spacing.lg, alignItems: 'center', flex: 1 },
-  scenarioButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 14 },
-  scenarioSecondaryButton: { backgroundColor: colors.surfaceActive, borderRadius: radius.md, paddingVertical: 12, paddingHorizontal: spacing.lg, alignItems: 'center', flex: 1, marginRight: spacing.sm },
-  scenarioSecondaryButtonText: { color: colors.textPrimary, fontWeight: '600', fontSize: 14 },
-  scenarioButtonsRow: { flexDirection: 'row', marginTop: 10 },
-  scenarioActiveBox: { backgroundColor: colors.warningLight, borderRadius: radius.lg, padding: 14, borderWidth: 1, borderColor: colors.amberAccentBorder },
-  scenarioActiveTitle: { fontSize: 12, fontWeight: '800', color: colors.amberAccentText },
   monthCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, marginBottom: 10 },
   monthHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   monthTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
   monthMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 4 },
-  monthBalance: { fontSize: 16, fontWeight: '800' },
+  situationLabel: { fontSize: 9, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.4 },
+  monthBalance: { fontSize: 20, fontWeight: '800', marginTop: 2 },
   monthStatus: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', marginTop: 2 },
   cumulLine: { fontSize: 10, color: colors.textSecondary, marginTop: 2 },
-  treasuryLine: { fontSize: 10, color: colors.textPrimary, fontWeight: '600', marginTop: 2 },
   balancePositive: { color: colors.success },
   balanceNegative: { color: colors.danger },
-  impactRow: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.divider },
-  impactLabel: { fontSize: 11, color: colors.textSecondary },
-  impactValue: { fontSize: 13, fontWeight: '700', marginTop: 2 },
   monthDetail: { marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.divider },
   deficitBox: { backgroundColor: colors.dangerLight, borderRadius: radius.md, padding: 10, marginBottom: 10 },
   deficitTitle: { fontSize: 12, fontWeight: '700', color: colors.danger },
@@ -566,8 +398,4 @@ const styles = StyleSheet.create({
   itemBadgePrevu: { fontSize: 10, color: colors.textSecondary, backgroundColor: colors.surfaceSecondary, borderRadius: radius.pill, paddingHorizontal: 6, paddingVertical: 2, marginRight: 4 },
   itemAmount: { fontSize: 13, fontWeight: '700', color: colors.danger },
   itemAmountPositive: { color: colors.success },
-  moveLink: { fontSize: 11, color: colors.textPrimary, fontWeight: '600', marginTop: 4 },
-  moveModal: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.lg, marginTop: spacing.sm, borderWidth: 1, borderColor: colors.border },
-  moveModalTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginBottom: 4 },
-  moveModalSubtitle: { fontSize: 12, color: colors.textSecondary, marginBottom: 10 },
 });
