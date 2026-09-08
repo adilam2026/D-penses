@@ -17,7 +17,7 @@ import { accountCreatedBus } from '../../state/events';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { Select } from '../../ui/Select';
 import { FormField } from '../../ui/FormField';
-import { colors, radius, spacing } from '../../ui/theme';
+import { colors, elevation, radius, spacing } from '../../ui/theme';
 
 type Mode = 'depense' | 'revenu' | 'paiement' | 'transfert';
 
@@ -580,7 +580,15 @@ export function QuickAddScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   scroll: { padding: spacing.xxl, paddingTop: 40 },
-  transferPreview: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border },
+  transferPreview: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    ...elevation.card,
+  },
   transferPreviewTitle: { fontSize: 10, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.5, marginBottom: spacing.sm },
   transferPreviewRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   transferPreviewName: { fontSize: 13, color: colors.textPrimary, fontWeight: '600' },
@@ -609,7 +617,8 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.sm,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderStrong,
+    ...elevation.card,
   },
   pickRowLabel: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
   pickRowMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },

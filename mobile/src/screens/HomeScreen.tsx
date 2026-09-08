@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { useBottomInset } from '../ui/useBottomInset';
 import { ChoiceSheet } from '../ui/ChoiceSheet';
-import { colors, radius, spacing } from '../ui/theme';
+import { colors, elevation, radius, spacing } from '../ui/theme';
 
 interface Account {
   id: string;
@@ -511,7 +511,15 @@ const styles = StyleSheet.create({
   configBannerText: { color: colors.textPrimary, fontSize: 13, fontWeight: '700', textAlign: 'center' },
   configBannerClose: { paddingLeft: spacing.md, paddingVertical: spacing.xs },
 
-  block: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.lg, marginBottom: spacing.md },
+  block: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    ...elevation.card,
+  },
   blockTitle: { fontSize: 11, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.5, marginBottom: 10 },
 
   accountRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },

@@ -19,7 +19,7 @@ import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { ChoiceSheet } from '../../ui/ChoiceSheet';
 import { FormField } from '../../ui/FormField';
 import { Select } from '../../ui/Select';
-import { colors, radius, spacing } from '../../ui/theme';
+import { colors, elevation, radius, spacing } from '../../ui/theme';
 
 type AccountType = 'courant' | 'epargne' | 'especes' | 'autre';
 
@@ -441,7 +441,15 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
   scroll: { padding: spacing.xl },
-  heroCard: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: 18, marginBottom: spacing.xl },
+  heroCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: 18,
+    marginBottom: spacing.xl,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    ...elevation.raised,
+  },
   heroHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   heroLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '600', flexShrink: 1 },
   heroValue: { fontSize: 28, fontWeight: '800', color: colors.textPrimary, marginTop: 4 },
@@ -504,7 +512,15 @@ const styles = StyleSheet.create({
   buttonConfirmText: { color: colors.textOnPrimary, fontWeight: '700', fontSize: 14, letterSpacing: 0.3 },
   buttonSecondary: { backgroundColor: colors.surfaceActive, borderRadius: radius.md, paddingVertical: 10, alignItems: 'center' },
   buttonSecondaryText: { color: colors.textPrimary, fontWeight: '600', fontSize: 12 },
-  card: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    ...elevation.card,
+  },
   cardWarning: { borderColor: colors.danger, backgroundColor: colors.dangerLight },
   cardTitle: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
   cardMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },

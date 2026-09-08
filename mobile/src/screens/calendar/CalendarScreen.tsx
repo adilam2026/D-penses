@@ -3,7 +3,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as api from '../../api/client';
-import { colors, radius, spacing } from '../../ui/theme';
+import { colors, elevation, radius, spacing } from '../../ui/theme';
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -146,7 +146,17 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', marginRight: spacing.md, marginBottom: 4 },
   legendItemText: { fontSize: 11, color: colors.textPrimary, marginLeft: 4 },
   empty: { color: colors.textSecondary, textAlign: 'center', marginTop: 24 },
-  row: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    ...elevation.card,
+  },
   rowIcon: { marginRight: spacing.sm },
   rowBody: { flex: 1 },
   rowLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },

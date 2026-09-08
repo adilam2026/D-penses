@@ -6,7 +6,7 @@ import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { FormField } from '../../ui/FormField';
 import { Select } from '../../ui/Select';
-import { colors, radius, spacing } from '../../ui/theme';
+import { colors, elevation, radius, spacing } from '../../ui/theme';
 
 interface Deadline {
   id: string;
@@ -402,7 +402,15 @@ const styles = StyleSheet.create({
   heroStatus: { fontSize: 11, fontWeight: '700', color: '#C9D2E0', marginTop: spacing.sm, textTransform: 'uppercase', letterSpacing: 0.5 },
   heroAmountLabel: { fontSize: 11, color: '#C9D2E0', marginTop: spacing.sm },
   heroAmount: { fontSize: 26, fontWeight: '800', color: colors.textOnPrimary, marginTop: 2 },
-  card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.md },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    ...elevation.raised,
+  },
   sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.sm },
   noAccountCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border },
   noAccountText: { fontSize: 13, color: colors.textPrimary, marginBottom: spacing.md },

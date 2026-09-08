@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
-import { colors, radius, spacing } from '../../ui/theme';
+import { colors, elevation, radius, spacing } from '../../ui/theme';
 
 interface Pocket {
   id: string;
@@ -133,7 +133,15 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
   addLink: { color: colors.success, fontSize: 13, fontWeight: '600' },
   empty: { color: colors.textSecondary, fontSize: 13, marginBottom: spacing.sm },
-  card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, marginBottom: 10 },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    ...elevation.card,
+  },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
   natureBadge: { fontSize: 10, fontWeight: '700', color: colors.success, backgroundColor: colors.successLight, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3 },

@@ -4,7 +4,7 @@ import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, RefreshCon
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { FormField } from '../../ui/FormField';
-import { colors, radius, spacing } from '../../ui/theme';
+import { colors, elevation, radius, spacing } from '../../ui/theme';
 
 interface Account {
   id: string;
@@ -161,6 +161,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: 14,
     marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    ...elevation.card,
   },
   rowArchived: { opacity: 0.55 },
   rowName: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },

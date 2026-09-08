@@ -2,7 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
-import { colors, radius, spacing } from '../../ui/theme';
+import { colors, elevation, radius, spacing } from '../../ui/theme';
 
 interface LedgerEntry {
   kind: string;
@@ -129,6 +129,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: 14,
     marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    ...elevation.card,
   },
   rowLeft: { flexShrink: 1, paddingRight: spacing.sm },
   rowLabel: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },

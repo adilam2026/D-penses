@@ -2,7 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
-import { colors, radius, spacing } from '../../ui/theme';
+import { colors, elevation, radius, spacing } from '../../ui/theme';
 
 interface BudgetStatus {
   budgetPeriode: number;
@@ -112,7 +112,15 @@ const styles = StyleSheet.create({
   addButton: { backgroundColor: colors.primary, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: spacing.sm },
   addButtonText: { color: colors.textOnPrimary, fontSize: 12, fontWeight: '600' },
   empty: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.xxl },
-  card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.md },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    ...elevation.card,
+  },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
   statusBadge: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },

@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 /**
  * Design tokens D-Penses+ (Lot recette téléphone réel §15). Source UNIQUE des
  * couleurs de l'application — jamais un hex en dur dans un StyleSheet d'écran.
@@ -30,15 +32,38 @@ export const colors = {
   textPlaceholder: '#9AA0A6',
   textOnPrimary: '#FFFFFF',
 
-  // Fonds / surfaces
-  background: '#F6F5F2', // fond d'écran
+  // Fonds / surfaces — R6.1 §15 : fond légèrement plus soutenu (vs. #F6F5F2)
+  // pour que les cartes blanches se détachent réellement, pas seulement via
+  // un filet de bordure à peine visible.
+  background: '#EDEAE3',
   surface: '#FFFFFF', // carte principale
   surfaceSecondary: '#EDEBE6', // chip/diviseur/fond secondaire
   surfaceActive: '#EEF0F3', // sélection/état actif clair
 
-  // Bordures
+  // Bordures — `border` reste le filet discret existant (listes denses,
+  // séparateurs) ; `borderStrong` (R6.1 §15) est le nouveau contour visible
+  // utilisé sur les cartes principales, à la place d'un filet quasi invisible.
   border: '#E3E1DC',
+  borderStrong: '#D3CEC3',
   divider: '#EDEBE6',
+} as const;
+
+/**
+ * Relief (R6.1 §15) — la refonte R6 n'avait fait que centraliser les couleurs
+ * existantes sans ombre ni contour marqué (cartes "plates" dénoncées en
+ * recette). `card`/`raised` donnent un vrai relief perceptible aux cartes
+ * principales de chaque écran ; `elevation` (Android) et `shadow*` (iOS)
+ * doivent toujours être appliqués ensemble.
+ */
+export const elevation = {
+  card: Platform.select({
+    android: { elevation: 3 },
+    default: { shadowColor: '#172436', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 6 },
+  }),
+  raised: Platform.select({
+    android: { elevation: 6 },
+    default: { shadowColor: '#172436', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.14, shadowRadius: 12 },
+  }),
 } as const;
 
 /** Espacement cohérent (§18 densité) — jamais une valeur magique par écran. */
@@ -77,13 +102,14 @@ export const typography = {
  * A. information (neutre), B. action (mise en avant), C. alerte, D. résultat financier.
  */
 export const cardVariants = {
-  info: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg },
+  info: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, ...elevation.card },
   action: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     padding: spacing.lg,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderStrong,
+    ...elevation.card,
   },
   alert: {
     backgroundColor: colors.dangerLight,
@@ -104,6 +130,7 @@ export const cardVariants = {
     borderRadius: radius.xl,
     padding: spacing.lg,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderStrong,
+    ...elevation.raised,
   },
 } as const;

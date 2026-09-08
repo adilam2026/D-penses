@@ -5,7 +5,7 @@ import * as api from '../../api/client';
 import { MonthBucketApi, MonthlyLineItem, MonthlyProjectionApi, UNDETERMINED_ACCOUNT } from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
-import { colors, radius, spacing } from '../../ui/theme';
+import { colors, elevation, radius, spacing } from '../../ui/theme';
 import { MultiSelect } from '../../ui/MultiSelect';
 
 interface Account {
@@ -361,7 +361,15 @@ const styles = StyleSheet.create({
   chipTextActive: { color: colors.textOnPrimary, fontWeight: '600' },
   filterToggle: { color: colors.textPrimary, fontWeight: '600', fontSize: 13, marginBottom: spacing.md },
   filterBox: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, marginBottom: spacing.lg },
-  summaryCard: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.lg, marginBottom: spacing.lg },
+  summaryCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    ...elevation.raised,
+  },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   figure: { flex: 1 },
   figureLabel: { fontSize: 11, color: colors.textSecondary },
@@ -372,7 +380,15 @@ const styles = StyleSheet.create({
   notionsInfoBox: { backgroundColor: colors.background, borderRadius: radius.md, padding: 10, marginBottom: 10 },
   notionsInfoLine: { fontSize: 11, color: colors.textPrimary, marginBottom: 4 },
   warningText: { fontSize: 12, color: colors.warning, fontWeight: '600', marginBottom: spacing.sm },
-  monthCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, marginBottom: 10 },
+  monthCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    ...elevation.card,
+  },
   monthHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   monthTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
   monthMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 4 },

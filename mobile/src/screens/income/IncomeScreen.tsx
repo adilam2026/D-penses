@@ -4,7 +4,7 @@ import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, Toucha
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { FREQUENCY_LABEL } from '../../ui/frequency';
-import { colors, radius, spacing } from '../../ui/theme';
+import { colors, elevation, radius, spacing } from '../../ui/theme';
 
 interface NextOccurrence {
   id: string;
@@ -124,7 +124,18 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 11, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.5 },
   addLink: { color: colors.success, fontSize: 13, fontWeight: '700' },
   empty: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.xxl, fontSize: 13, lineHeight: 20 },
-  row: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12, marginBottom: spacing.sm },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    ...elevation.card,
+  },
   rowName: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
   rowMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
   rowAmount: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginLeft: spacing.sm },

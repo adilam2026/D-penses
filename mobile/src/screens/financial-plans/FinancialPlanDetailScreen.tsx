@@ -6,7 +6,7 @@ import { useBottomInset } from '../../ui/useBottomInset';
 import { ChoiceSheet } from '../../ui/ChoiceSheet';
 import { MultiSelect } from '../../ui/MultiSelect';
 import { DateField } from '../../ui/DateField';
-import { colors, radius, spacing } from '../../ui/theme';
+import { colors, elevation, radius, spacing } from '../../ui/theme';
 
 interface Child {
   id: string;
@@ -481,7 +481,15 @@ const styles = StyleSheet.create({
   figureLabel: { fontSize: 11, color: colors.textSecondary },
   figureValue: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginTop: 4 },
   figureValueHighlight: { color: colors.danger },
-  coverageCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, marginBottom: spacing.md },
+  coverageCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: 14,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    ...elevation.raised,
+  },
   coverageHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
   coverageTitle: { fontSize: 11, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.5 },
   coveragePercent: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
