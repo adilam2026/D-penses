@@ -78,6 +78,8 @@ function monthBucket(overrides: Partial<api.MonthBucketApi> = {}): api.MonthBuck
     contains_estimates: false,
     excluded_by_filter_count: 0,
     excluded_by_filter_total: 0,
+    planned_transfer_net_treasury_impact: 0,
+    planned_transfer_items: [],
     ...overrides,
   };
 }
@@ -169,6 +171,42 @@ it('déplie puis replie le détail d\'un mois', async () => {
 
   await fireEvent.press(screen.getByTestId('month-toggle-2026-09'));
   await waitFor(() => expect(screen.queryByText('Salaire')).toBeNull());
+});
+
+it('R6.4 (§6-9 / test P) : un transfert récurrent piloté→hors pilotage s\'affiche comme TRANSFERT distinct, jamais mêlé aux dépenses', async () => {
+  mockedApi.getMonthlyProjection.mockResolvedValue(
+    projectionFixture([
+      monthBucket({
+        month: '2026-10',
+        label: 'Octobre 2026',
+        planned_transfer_net_treasury_impact: -1000,
+        planned_transfer_items: [
+          {
+            id: 'transfer-1',
+            recurringTransferId: 'rt-1',
+            label: 'Épargne Lam',
+            date: '2026-09-28',
+            netAmount: -1000,
+            fromAccountName: 'SG Adil',
+            toAccountName: 'Épargne Lam',
+            direction: 'sortie_pilotee',
+          },
+        ],
+      }),
+    ]),
+  );
+  await render(<ProjectionScreen />);
+  await waitFor(() => screen.getByTestId('month-toggle-2026-10'));
+  await fireEvent.press(screen.getByTestId('month-toggle-2026-10'));
+
+  await waitFor(() => screen.getByText('TRANSFERT'));
+  expect(screen.getByText('Transfert vers Épargne Lam')).toBeTruthy();
+  expect(screen.getByText('-1 000 DH')).toBeTruthy();
+  expect(screen.getByText(/Impact net trésorerie pilotée -1 000 DH/)).toBeTruthy();
+
+  // R6.3 §7 — la date PRÉVUE réelle (28/09) n'est jamais déplacée artificiellement,
+  // même si l'occurrence appartient à la période financière octobre (clôture 25).
+  expect(screen.getByText('28 sept. 2026')).toBeTruthy();
 });
 
 it('navigue vers le détail d\'une dépense (échéance) au tap', async () => {

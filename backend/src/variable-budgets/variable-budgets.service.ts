@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { toNumber } from '../common/ledger/ledger.util';
 import {
@@ -131,21 +131,59 @@ export class VariableBudgetsService {
     return this.rlsContext.run(userId, householdId, () => this.detailOnTx(this.rlsContext.getClient(), householdId, id));
   }
 
-  /** §14 : révision en cours de période — l'historique des BudgetExpense n'est jamais réécrit. */
+  /**
+   * §14 : révision en cours de période — l'historique des BudgetExpense n'est
+   * jamais réécrit, seule la fenêtre de période COURANTE en avant change.
+   * R6.4 (§1) : referencePeriod/weekStartDay/categoryId sont maintenant
+   * modifiables au même titre — aucune contrainte d'historique dessus,
+   * contrairement à referenceAmount déjà géré ci-dessus.
+   */
   async update(userId: string, householdId: string, id: string, dto: UpdateVariableBudgetDto) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
       const budget = await tx.variableBudget.findFirst({ where: { id, householdId } });
       if (!budget) throw new NotFoundException('Budget introuvable');
 
+      if (dto.categoryId) {
+        const category = await tx.category.findFirst({ where: { id: dto.categoryId, OR: [{ householdId: null }, { householdId }] } });
+        if (!category) throw new NotFoundException('Catégorie introuvable');
+      }
+
       await tx.variableBudget.update({
         where: { id },
         data: {
           referenceAmount: dto.referenceAmount,
           endDate: dto.endDate !== undefined ? new Date(dto.endDate) : undefined,
+          referencePeriod: dto.referencePeriod,
+          weekStartDay: dto.weekStartDay,
+          categoryId: dto.categoryId,
         },
       });
       return this.detailOnTx(tx, householdId, id);
+    });
+  }
+
+  /**
+   * R6.4 (§1) : suppression physique bloquée dès qu'une BudgetExpense existe déjà
+   * (historique réel) — même RG implicite que ChargePlansService.remove, jamais
+   * silencieuse. Sans historique, suppression réelle ; sinon archivage (status=inactif),
+   * exclu de findActiveForCategory (pré-remplissage) mais consultable en détail.
+   */
+  async remove(userId: string, householdId: string, id: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const budget = await tx.variableBudget.findFirst({ where: { id, householdId } });
+      if (!budget) throw new NotFoundException('Budget introuvable');
+
+      const expenseCount = await tx.budgetExpense.count({ where: { variableBudgetId: id } });
+      if (expenseCount > 0) {
+        if (budget.status === 'inactif') throw new ConflictException('Ce budget est déjà archivé');
+        await tx.variableBudget.update({ where: { id }, data: { status: 'inactif' } });
+        return { deleted: false, archived: true };
+      }
+
+      await tx.variableBudget.delete({ where: { id } });
+      return { deleted: true, archived: false };
     });
   }
 
@@ -164,11 +202,15 @@ export class VariableBudgetsService {
     });
   }
 
+  // R6.4 (§1) : un budget archivé (status=inactif) reste dans findAll (badge, consultable)
+  // mais n'est plus jamais proposé au pré-remplissage/à la suggestion d'une dépense —
+  // même convention que les comptes archivés exclus des sélecteurs (Round3 PartB §15).
   private findActiveBudgetsRaw(tx: TxClient, householdId: string, categoryId: string, at: Date) {
     return tx.variableBudget.findMany({
       where: {
         householdId,
         categoryId,
+        status: 'actif',
         startDate: { lte: at },
         OR: [{ endDate: null }, { endDate: { gte: at } }],
       },

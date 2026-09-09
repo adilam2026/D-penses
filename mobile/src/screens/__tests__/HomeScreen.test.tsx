@@ -55,7 +55,6 @@ const EMPTY_SUMMARY = {
   deadlineItems: [],
   variableBudgetItems: [],
   optionsEnvisagees: { total: 0, hasUnknown: false },
-  actionsATraiter: [],
   budgetsResume: [],
   financialPlansResume: [],
   provisionsResume: [],
@@ -125,7 +124,6 @@ describe('Accueil — état configuré (§7-17/§31)', () => {
         completude: 'complet',
       },
     ],
-    actionsATraiter: [{ kind: 'montant_a_confirmer' as const, deadlineId: 'd2', message: 'Facture Internet à confirmer.' }],
   };
 
   beforeEach(() => {
@@ -194,13 +192,6 @@ describe('Accueil — état configuré (§7-17/§31)', () => {
     expect(mockNavigate).toHaveBeenCalledWith('Projection');
   });
 
-  it('une action à traiter est cliquable → ConfirmDeadline', async () => {
-    await render(<HomeScreen />);
-    await waitFor(() => screen.getByText('• Facture Internet à confirmer.'));
-    await fireEvent.press(screen.getByText('• Facture Internet à confirmer.'));
-    expect(mockNavigate).toHaveBeenCalledWith('ConfirmDeadline', { id: 'd2' });
-  });
-
   it('le bouton ☰ ouvre le menu hamburger', async () => {
     await render(<HomeScreen />);
     await waitFor(() => screen.getByTestId('hamburger-menu-button'));
@@ -208,11 +199,10 @@ describe('Accueil — état configuré (§7-17/§31)', () => {
     expect(mockNavigate).toHaveBeenCalledWith('HamburgerMenu');
   });
 
-  it("aucune carte 'actions à traiter' n'est affichée quand il n'y a rien à traiter", async () => {
-    mockedApi.getDashboardSummary.mockResolvedValue({ ...CONFIGURED_SUMMARY, actionsATraiter: [] });
+  it('R6.4 (§5 / test I) : le bloc "Actions à traiter" est absent de l\'accueil', async () => {
     await render(<HomeScreen />);
     await waitFor(() => screen.getByText('DISPONIBLE LIBRE'));
-    expect(screen.queryByText(/action.*à traiter/)).toBeNull();
+    expect(screen.queryByText(/action.*à traiter/i)).toBeNull();
   });
 
   it('R6.1 §10 / R6.3 point D : "Ma situation" affiche "Trésorerie pilotée" en principal (comptes pilotés uniquement), "Patrimoine total" en secondaire, et un badge "Hors pilotage" sur un compte exclu', async () => {

@@ -43,23 +43,6 @@ interface FinancialPlanResume {
   completude: string;
 }
 
-interface ActionItem {
-  kind:
-    | 'facture_attendue'
-    | 'montant_inconnu'
-    | 'montant_a_confirmer'
-    | 'option_a_decider'
-    | 'provision_insuffisante'
-    | 'contribution_a_confirmer'
-    | 'objectif_en_retard';
-  chargePlanId?: string;
-  deadlineId?: string;
-  provisionId?: string;
-  pocketMovementId?: string;
-  goalId?: string;
-  message: string;
-}
-
 interface DashboardSummary {
   seuil_a_payer_days: number;
   operational_treasury: number;
@@ -77,7 +60,6 @@ interface DashboardSummary {
   deadlineItems: DeadlineItem[];
   variableBudgetItems: VariableBudgetItem[];
   optionsEnvisagees: { total: number; hasUnknown: boolean };
-  actionsATraiter: ActionItem[];
   budgetsResume: Array<{ id: string; categoryName: string }>;
   financialPlansResume: FinancialPlanResume[];
   provisionsResume: Array<{ id: string; name: string; currentAmount: number; totalResteAPayer: number; totalUncovered: number }>;
@@ -189,25 +171,6 @@ function prioritizePlans(plans: FinancialPlanResume[]): FinancialPlanResume[] {
 
     return a.id.localeCompare(b.id);
   });
-}
-
-function actionTarget(a: ActionItem): { route: string; params: Record<string, string> } | null {
-  switch (a.kind) {
-    case 'facture_attendue':
-    case 'montant_inconnu':
-    case 'montant_a_confirmer':
-      return a.deadlineId ? { route: 'ConfirmDeadline', params: { id: a.deadlineId } } : null;
-    case 'option_a_decider':
-      return { route: 'Charges', params: {} };
-    case 'provision_insuffisante':
-      return a.provisionId ? { route: 'PocketDetail', params: { kind: 'provision', id: a.provisionId } } : null;
-    case 'contribution_a_confirmer':
-      return a.provisionId ? { route: 'PocketDetail', params: { kind: 'provision', id: a.provisionId } } : { route: 'Enveloppes', params: {} };
-    case 'objectif_en_retard':
-      return a.goalId ? { route: 'GoalDetail', params: { id: a.goalId } } : null;
-    default:
-      return null;
-  }
 }
 
 /**
@@ -501,28 +464,6 @@ export function HomeScreen() {
               </Text>
             )}
           </TouchableOpacity>
-
-          {/* Bloc 6 — Actions à traiter (jamais affiché si vide, §16) */}
-          {summary.actionsATraiter.length > 0 && (
-            <View style={styles.block}>
-              <Text style={styles.blockTitle}>
-                {summary.actionsATraiter.length} action{summary.actionsATraiter.length > 1 ? 's' : ''} à traiter
-              </Text>
-              {summary.actionsATraiter.slice(0, 5).map((a, i) => {
-                const target = actionTarget(a);
-                return (
-                  <TouchableOpacity
-                    key={i}
-                    style={styles.actionRow}
-                    disabled={!target}
-                    onPress={() => target && navigation.getParent()?.navigate(target.route, target.params)}
-                  >
-                    <Text style={styles.actionText}>• {a.message}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
         </>
       )}
     </ScrollView>
@@ -611,7 +552,4 @@ const styles = StyleSheet.create({
   planRemaining: { fontSize: 11, color: colors.textSecondary, marginTop: spacing.xs },
 
   projectionStatus: { fontSize: 12, fontWeight: '800', marginTop: spacing.sm },
-
-  actionRow: { paddingVertical: 6 },
-  actionText: { fontSize: 12, color: colors.textPrimary },
 });

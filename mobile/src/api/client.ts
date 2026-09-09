@@ -206,6 +206,12 @@ export const createChargePlan = (data: {
   recurrenceRule?: string;
   recurrenceAnchorDate?: string;
   childIds?: string[];
+  // R6.4 (§2) — "+ Ajouter une échéance" à un plan existant : un nouveau
+  // ChargePlan ponctuel (generationMode calendrier_manuel, financialPlanId
+  // du plan) + 1 Deadline, jamais un ChargePlan récurrent.
+  financialPlanId?: string;
+  generationMode?: 'auto_frequence' | 'calendrier_manuel';
+  obligationStatus?: 'obligatoire' | 'optionnelle_envisagee' | 'optionnelle_souscrite' | 'optionnelle_refusee';
 }) => apiFetch('/charge-plans', { method: 'POST', body: data });
 
 export const createDeadline = (
@@ -327,8 +333,15 @@ export const createVariableBudget = (data: {
   weekStartDay?: number;
 }) => apiFetch('/variable-budgets', { method: 'POST', body: data });
 
-export const updateVariableBudget = (id: string, data: { referenceAmount?: number; endDate?: string }) =>
-  apiFetch(`/variable-budgets/${id}`, { method: 'PATCH', body: data });
+export const updateVariableBudget = (
+  id: string,
+  data: { referenceAmount?: number; endDate?: string; referencePeriod?: 'semaine' | 'mois'; weekStartDay?: number; categoryId?: string },
+) => apiFetch(`/variable-budgets/${id}`, { method: 'PATCH', body: data });
+
+/** R6.4 (§1) — suppression réelle si aucune dépense historique n'existe encore ;
+ * sinon le backend archive (status=inactif) plutôt que de supprimer physiquement,
+ * retourné explicitement ({ deleted, archived }), jamais une suppression silencieuse. */
+export const deleteVariableBudget = (id: string) => apiFetch(`/variable-budgets/${id}`, { method: 'DELETE' });
 
 export const findActiveBudgetsForCategory = (categoryId: string) => apiFetch(`/variable-budgets/for-category/${categoryId}`);
 
@@ -583,6 +596,20 @@ export interface MonthlyLineItem {
   realized: boolean; // Round 4bis §1 — true = mouvement réel déjà survenu, false = encore prévu
 }
 
+// R6.4 (§6-§9) — un transfert récurrent reste un TRANSFERT, jamais rangé dans
+// income_items/expense_items : son impact trésorerie pilotée appartient
+// exclusivement à ces champs dédiés (CAS 1-4 déjà calculés côté backend).
+export interface PlannedTransferItem {
+  id: string;
+  recurringTransferId: string | null;
+  label: string;
+  date: string;
+  netAmount: number;
+  fromAccountName: string | null;
+  toAccountName: string | null;
+  direction: 'sortie_pilotee' | 'entree_pilotee';
+}
+
 export interface MonthBucketApi {
   month: string;
   label: string;
@@ -600,6 +627,8 @@ export interface MonthBucketApi {
   contains_estimates: boolean;
   excluded_by_filter_count: number;
   excluded_by_filter_total: number;
+  planned_transfer_net_treasury_impact: number;
+  planned_transfer_items: PlannedTransferItem[];
 }
 
 export interface MonthlyProjectionApi {

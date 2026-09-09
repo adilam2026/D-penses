@@ -34,7 +34,6 @@ jest.mock('../../api/client', () => {
       unknown_commitments_count: 0,
       deadlineItems: [],
       optionsEnvisagees: { total: 0, hasUnknown: false },
-      actionsATraiter: [],
       budgetsResume: [],
       financialPlansResume: [],
       provisionsResume: [],

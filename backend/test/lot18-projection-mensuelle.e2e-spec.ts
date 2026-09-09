@@ -704,6 +704,13 @@ describe('Round 4 — Projection Globale Mensuelle (e2e)', () => {
       const oct = findMonth(body, '2026-10');
       expect(sep.planned_transfer_net_treasury_impact).toBe(0); // rien en Septembre : le 27/09 appartient à Octobre
       expect(oct.planned_transfer_net_treasury_impact).toBe(-1000); // sortie de trésorerie pilotée, rattachée à SA période réelle
+
+      // R6.4 (§7/§9, test P) : la ligne itemisée suit la MÊME période financière que
+      // l'agrégat, et conserve la date RÉELLE (27/09), jamais déplacée au 1er octobre.
+      expect(sep.planned_transfer_items).toEqual([]);
+      expect(oct.planned_transfer_items).toHaveLength(1);
+      expect(oct.planned_transfer_items[0].date).toBe('2026-09-27');
+      expect(oct.planned_transfer_items[0].netAmount).toBe(-1000);
     });
   });
 });

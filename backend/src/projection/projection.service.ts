@@ -164,6 +164,9 @@ export class ProjectionService {
         cumulative_balance: m.cumulativeBalance,
         projected_cash_balance: m.projectedCashBalance,
         planned_transfer_net_treasury_impact: m.plannedTransferNetTreasuryImpact,
+        // R6.4 (§9) — jamais rangé dans income_items/expense_items : un transfert reste
+        // identifiable comme TRANSFERT, son impact appartient uniquement à la trésorerie pilotée.
+        planned_transfer_items: m.plannedTransferItems,
         income_items: m.incomeItems,
         expense_items: m.expenseItems,
         movable_expense_total: m.movableExpenseTotal,

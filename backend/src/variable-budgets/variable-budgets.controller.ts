@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { VariableBudgetsService } from './variable-budgets.service';
 import { CreateVariableBudgetDto } from './dto/create-variable-budget.dto';
 import { UpdateVariableBudgetDto } from './dto/update-variable-budget.dto';
@@ -38,5 +38,10 @@ export class VariableBudgetsController {
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateVariableBudgetDto, @CurrentUser() user: AuthenticatedUser) {
     return this.variableBudgets.update(user.sub, user.householdId!, id, dto);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.variableBudgets.remove(user.sub, user.householdId!, id);
   }
 }

@@ -78,6 +78,21 @@ export interface MonthlyLineItem {
   realized: boolean; // Round 4bis §1 — true = mouvement réel déjà survenu, false = encore prévu
 }
 
+// R6.4 (§6-9) — composante ITEMISÉE de plannedTransferNetTreasuryImpact : un transfert
+// reste un TRANSFERT (jamais rangé dans incomeItems/expenseItems/charges/budget), mais
+// doit être identifiable individuellement dans le détail d'une période (jusqu'ici
+// seul le NET agrégé du mois était exposé, aucune ligne par occurrence).
+export interface PlannedTransferItem {
+  id: string;
+  recurringTransferId: string | null;
+  label: string; // RecurringTransfer.label si récurrent, sinon "Transfert"
+  date: string; // plannedDate RÉELLE — jamais déplacée artificiellement (point 7)
+  netAmount: number; // signé, MÊME formule que l'agrégat plannedTransferNetTreasuryImpact
+  fromAccountName: string | null;
+  toAccountName: string | null;
+  direction: 'sortie_pilotee' | 'entree_pilotee';
+}
+
 export interface MonthBucket {
   month: string; // "2026-11"
   label: string; // "Novembre 2026"
@@ -90,6 +105,9 @@ export interface MonthBucket {
   // ce mois-ci (signé : positif = entrée nette, négatif = sortie nette) — jamais
   // dans balance/cumulativeBalance, uniquement appliqué à projectedCashBalance.
   plannedTransferNetTreasuryImpact: number;
+  // R6.4 (§9) — Σ netAmount de plannedTransferItems === plannedTransferNetTreasuryImpact,
+  // par construction (même boucle, jamais un second calcul).
+  plannedTransferItems: PlannedTransferItem[];
   incomeItems: MonthlyLineItem[];
   expenseItems: MonthlyLineItem[];
   movableExpenseTotal: number; // §10 "dépenses potentiellement décalables"
@@ -295,13 +313,15 @@ async function plannedTransferTreasuryImpacts(
   horizonEnd: Date,
   treasuryIds: string[],
   closingDay: number,
-): Promise<Map<string, number>> {
+): Promise<{ impacts: Map<string, number>; items: Map<string, PlannedTransferItem[]> }> {
   const impacts = new Map<string, number>();
-  if (treasuryIds.length === 0) return impacts;
+  const items = new Map<string, PlannedTransferItem[]>();
+  if (treasuryIds.length === 0) return { impacts, items };
   const treasurySet = new Set(treasuryIds);
 
   const transfers = await tx.accountTransfer.findMany({
     where: { householdId, status: 'prevu', plannedDate: { gte: ref, lte: horizonEnd } },
+    include: { recurringTransfer: true, fromAccount: true, toAccount: true },
   });
   for (const t of transfers) {
     const amount = toNumber(t.amount);
@@ -315,8 +335,20 @@ async function plannedTransferTreasuryImpacts(
     // exactement comme un paiement/revenu réel — même moteur, jamais un second calcul.
     const key = monthKey(t.plannedDate, closingDay);
     impacts.set(key, round2((impacts.get(key) ?? 0) + net));
+    const list = items.get(key) ?? [];
+    list.push({
+      id: t.id,
+      recurringTransferId: t.recurringTransferId,
+      label: t.recurringTransfer?.label ?? 'Transfert',
+      date: t.plannedDate.toISOString().slice(0, 10),
+      netAmount: round2(net),
+      fromAccountName: t.fromAccount?.name ?? null,
+      toAccountName: t.toAccount?.name ?? null,
+      direction: net < 0 ? 'sortie_pilotee' : 'entree_pilotee',
+    });
+    items.set(key, list);
   }
-  return impacts;
+  return { impacts, items };
 }
 
 /**
@@ -345,10 +377,11 @@ export async function computeMonthlyProjection(
     realizedItems(tx, householdId, ref, horizonEnd, closingDay),
     treasuryAccountIds(tx, householdId, options.incomeAccountIds, options.expenseAccountIds),
   ]);
-  const [treasuryBalances, transferImpacts] = await Promise.all([
+  const [treasuryBalances, transferResult] = await Promise.all([
     getAccountBalances(tx, treasuryIds),
     plannedTransferTreasuryImpacts(tx, householdId, ref, horizonEnd, treasuryIds, closingDay),
   ]);
+  const { impacts: transferImpacts, items: transferItems } = transferResult;
   const openingCashBalance = round2(treasuryIds.reduce((sum, id) => sum + (treasuryBalances.get(id) ?? 0), 0));
 
   // ---------- Construction des périodes financières vides (§3) : un bucket par
@@ -367,6 +400,7 @@ export async function computeMonthlyProjection(
       cumulativeBalance: 0,
       projectedCashBalance: 0,
       plannedTransferNetTreasuryImpact: 0,
+      plannedTransferItems: [],
       incomeItems: [],
       expenseItems: [],
       movableExpenseTotal: 0,
@@ -469,6 +503,7 @@ export async function computeMonthlyProjection(
     // R6.2 (§12) — appliqué à cashRunning UNIQUEMENT (jamais à balance/cumulativeBalance,
     // qui restent des flux revenus−dépenses purs).
     bucket.plannedTransferNetTreasuryImpact = transferImpacts.get(bucket.month) ?? 0;
+    bucket.plannedTransferItems = transferItems.get(bucket.month) ?? [];
     cashRunning = round2(cashRunning + bucket.balance + bucket.plannedTransferNetTreasuryImpact);
     bucket.projectedCashBalance = cashRunning;
 

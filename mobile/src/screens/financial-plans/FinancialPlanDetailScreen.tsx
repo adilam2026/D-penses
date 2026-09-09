@@ -6,7 +6,14 @@ import { useBottomInset } from '../../ui/useBottomInset';
 import { ChoiceSheet } from '../../ui/ChoiceSheet';
 import { MultiSelect } from '../../ui/MultiSelect';
 import { DateField } from '../../ui/DateField';
+import { Select } from '../../ui/Select';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
+
+const AMOUNT_STATUS_OPTIONS = [
+  { value: 'confirme', label: 'Confirmé' },
+  { value: 'estime', label: 'Estimé' },
+  { value: 'inconnu', label: 'Inconnu' },
+];
 
 interface Child {
   id: string;
@@ -136,6 +143,20 @@ export function FinancialPlanDetailScreen() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // R6.4 (§2) — "+ Ajouter une échéance" : un nouveau ChargePlan ponctuel
+  // (calendrier_manuel, financialPlanId=ce plan) + 1 Deadline — jamais un
+  // ChargePlan récurrent pour cette opération.
+  const [addOpen, setAddOpen] = useState(false);
+  const [addLabel, setAddLabel] = useState('');
+  const [addCategoryId, setAddCategoryId] = useState<string | null>(null);
+  const [addAmountStatus, setAddAmountStatus] = useState<'confirme' | 'estime' | 'inconnu'>('confirme');
+  const [addAmount, setAddAmount] = useState('');
+  const [addDueDate, setAddDueDate] = useState('');
+  const [addChildIds, setAddChildIds] = useState<string[]>([]);
+  const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -161,6 +182,66 @@ export function FinancialPlanDetailScreen() {
   const loadChildren = useCallback(async () => {
     setChildren(await api.listChildren());
   }, []);
+
+  function openAdd() {
+    setMenuOpen(false);
+    setAddLabel('');
+    setAddCategoryId(null);
+    setAddAmountStatus('confirme');
+    setAddAmount('');
+    setAddDueDate('');
+    setAddChildIds([]);
+    setAddError(null);
+    loadChildren();
+    api.listCategories().then((all: Array<{ id: string; name: string; kind: string }>) =>
+      setCategories(all.filter((c) => c.kind === 'expense' || c.kind === 'both')),
+    );
+    setAddOpen(true);
+  }
+
+  async function onCreateDeadline() {
+    if (!addLabel.trim()) {
+      setAddError('Le libellé est obligatoire');
+      return;
+    }
+    if (!addDueDate) {
+      setAddError("La date d'échéance est obligatoire");
+      return;
+    }
+    if (addAmountStatus !== 'inconnu' && (!addAmount.trim() || Number(addAmount.replace(',', '.')) <= 0)) {
+      setAddError('Montant invalide');
+      return;
+    }
+    setAdding(true);
+    setAddError(null);
+    try {
+      const newPlan = await api.createChargePlan({
+        label: addLabel.trim(),
+        startDate: addDueDate,
+        categoryId: addCategoryId ?? undefined,
+        childIds: addChildIds,
+        financialPlanId: id,
+        generationMode: 'calendrier_manuel',
+        // R6.4 (§2/§3) — 'optionnelle_souscrite' compte comme 'obligatoire' dans le coût
+        // connu/reste à financer du plan (financial-plans.service detailOnTx), mais reste
+        // une échéance dont la date peut encore être corrigée (DeadlinesService.update
+        // bloque ce champ uniquement pour 'obligatoire', réservé aux charges contractuelles
+        // générées automatiquement) — cohérent avec l'exigence "Modifier ... la date".
+        obligationStatus: 'optionnelle_souscrite',
+      });
+      await api.createDeadline(newPlan.id, {
+        dueDate: addDueDate,
+        amountCurrent: addAmountStatus !== 'inconnu' ? Number(addAmount.replace(',', '.')) : undefined,
+        amountStatus: addAmountStatus,
+      });
+      setAddOpen(false);
+      await load();
+    } catch (err) {
+      setAddError(err instanceof api.ApiError ? err.message : 'Création impossible');
+    } finally {
+      setAdding(false);
+    }
+  }
 
   function openEdit() {
     if (!detail) return;
@@ -343,10 +424,15 @@ export function FinancialPlanDetailScreen() {
       ) : (
         <>
           {detail.envisagedItems.map((i) => (
-            <View key={i.chargePlanId} style={styles.rowSimple}>
+            <TouchableOpacity
+              key={i.chargePlanId}
+              style={styles.rowSimple}
+              testID={`plan-envisaged-${i.chargePlanId}`}
+              onPress={() => navigation.navigate('ChargePlanDetail', { id: i.chargePlanId })}
+            >
               <Text style={styles.rowLabel}>{i.label}</Text>
-              <Text style={styles.rowMeta}>{i.amountKnown ? 'Montant connu' : 'À décider'}</Text>
-            </View>
+              <Text style={styles.rowMeta}>{i.amountKnown ? 'Montant connu' : 'À décider'} · Modifier →</Text>
+            </TouchableOpacity>
           ))}
           <Text style={styles.optionTotal}>Options envisagées : {detail.envisagedTotal.toLocaleString('fr-FR')} DH (jamais inclus ci-dessus)</Text>
         </>
@@ -370,11 +456,67 @@ export function FinancialPlanDetailScreen() {
         title={detail.label}
         onClose={() => setMenuOpen(false)}
         options={[
+          { key: 'ajouter', label: 'Ajouter une échéance', icon: 'add-circle-outline', onPress: openAdd },
           { key: 'modifier', label: 'Modifier', icon: 'create-outline', onPress: openEdit },
           { key: 'dupliquer', label: 'Dupliquer', icon: 'copy-outline', onPress: openDuplicate },
           { key: 'supprimer', label: 'Supprimer', icon: 'trash-outline', onPress: onRequestDelete },
         ]}
       />
+
+      <Modal visible={addOpen} transparent animationType="fade" onRequestClose={() => setAddOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <ScrollView contentContainerStyle={styles.modalCard} testID="plan-add-deadline-form">
+            <Text style={styles.modalTitle}>Ajouter une échéance</Text>
+            <TextInput style={styles.modalInput} value={addLabel} onChangeText={setAddLabel} placeholder="Libellé" testID="plan-add-deadline-label" />
+            {categories.length > 0 && (
+              <Select
+                testID="plan-add-deadline-category"
+                label="Catégorie"
+                placeholder="Sélectionner une catégorie"
+                value={addCategoryId}
+                onChange={setAddCategoryId}
+                options={categories.map((c) => ({ value: c.id, label: c.name }))}
+              />
+            )}
+            <Select
+              testID="plan-add-deadline-amount-status"
+              label="Montant"
+              value={addAmountStatus}
+              onChange={(v) => setAddAmountStatus(v as 'confirme' | 'estime' | 'inconnu')}
+              options={AMOUNT_STATUS_OPTIONS}
+            />
+            {addAmountStatus !== 'inconnu' && (
+              <TextInput
+                style={styles.modalInput}
+                value={addAmount}
+                onChangeText={setAddAmount}
+                placeholder="Montant (DH)"
+                keyboardType="decimal-pad"
+                testID="plan-add-deadline-amount"
+              />
+            )}
+            <DateField label="Date d'échéance" value={addDueDate} onChange={setAddDueDate} />
+            {children.length > 0 && (
+              <MultiSelect
+                testID="plan-add-deadline-children"
+                label="Enfant(s) bénéficiaire(s)"
+                value={addChildIds}
+                onChange={setAddChildIds}
+                options={children.map((c) => ({ value: c.id, label: `${c.firstName} ${c.lastName}` }))}
+              />
+            )}
+            {addError && <Text style={styles.error}>{addError}</Text>}
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalButtonSecondary} onPress={() => setAddOpen(false)}>
+                <Text style={styles.modalButtonSecondaryText}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity testID="plan-add-deadline-save" style={styles.modalButton} onPress={onCreateDeadline} disabled={adding}>
+                {adding ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.modalButtonText}>Ajouter</Text>}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
 
       <Modal visible={editOpen} transparent animationType="fade" onRequestClose={() => setEditOpen(false)}>
         <View style={styles.modalOverlay}>

@@ -587,6 +587,9 @@ describe('R6.2 — corrections (e2e)', () => {
       expect(bucket.planned_transfer_net_treasury_impact).toBe(0); // CAS A : les deux comptes sont pilotés, ça s'annule
       // jamais une charge : aucune ChargePlan créée, jamais compté dans les dépenses du mois
       expect(bucket.total_expense).toBe(0);
+      // R6.4 (§6-9) : net global 0 pour ce CAS → aucune ligne itemisée à afficher
+      // (rien à mettre en évidence en Projection puisque l'impact trésorerie pilotée est nul).
+      expect(bucket.planned_transfer_items).toEqual([]);
     });
 
     it('X. transfert récurrent piloté→hors pilotage : reste un TRANSFERT (jamais une dépense de consommation), réduit la trésorerie pilotée projetée', async () => {
@@ -603,6 +606,16 @@ describe('R6.2 — corrections (e2e)', () => {
       const bucket = await monthImpact(auth, '2026-09-01', '2026-09');
       expect(bucket.planned_transfer_net_treasury_impact).toBe(-1000);
       expect(bucket.total_expense).toBe(0); // jamais une dépense de consommation
+
+      // R6.4 (§9) : ligne itemisée distincte, identifiable comme TRANSFERT — jamais
+      // rangée dans charges/dépenses/budget, et la somme des netAmount == l'agrégat.
+      expect(bucket.planned_transfer_items).toHaveLength(1);
+      const item = bucket.planned_transfer_items[0];
+      expect(item.netAmount).toBe(-1000);
+      expect(item.direction).toBe('sortie_pilotee');
+      expect(item.fromAccountName).toBe('Compte courant X');
+      expect(item.toAccountName).toBe('Épargne perso Lamiaa X');
+      expect(item.date).toBe('2026-09-28'); // R6.3 §7 — jamais déplacée artificiellement
     });
 
     it('Y. transfert récurrent hors pilotage→piloté : augmente la trésorerie pilotée projetée', async () => {

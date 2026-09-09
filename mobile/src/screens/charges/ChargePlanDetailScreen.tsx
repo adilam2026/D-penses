@@ -16,6 +16,8 @@ interface Category {
   kind: 'income' | 'expense' | 'both';
 }
 
+type ObligationStatus = 'obligatoire' | 'optionnelle_envisagee' | 'optionnelle_souscrite' | 'optionnelle_refusee';
+
 interface ChargePlan {
   id: string;
   label: string;
@@ -23,8 +25,16 @@ interface ChargePlan {
   recurrenceRule: string | null;
   recurrenceAnchorDate: string | null;
   status: 'actif' | 'inactif';
-  obligationStatus: string;
+  obligationStatus: ObligationStatus;
+  financialPlanId: string | null;
 }
+
+const OBLIGATION_STATUS_OPTIONS: { value: ObligationStatus; label: string }[] = [
+  { value: 'obligatoire', label: 'Obligatoire' },
+  { value: 'optionnelle_envisagee', label: 'Option envisagée' },
+  { value: 'optionnelle_souscrite', label: 'Option retenue (souscrite)' },
+  { value: 'optionnelle_refusee', label: 'Option refusée' },
+];
 
 interface Deadline {
   id: string;
@@ -76,6 +86,11 @@ export function ChargePlanDetailScreen() {
 
   const [label, setLabel] = useState('');
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  // R6.4 (§4) — "Garderie T1/T2/T3" (options envisagées d'un plan) sont de simples
+  // ChargePlan : changer cet état (ex. envisagée → souscrite) suffit à les faire
+  // basculer d'"Options envisagées" vers les échéances certaines du plan, SANS
+  // double comptage (financial-plans.service.ts classe déjà sur ce seul champ).
+  const [obligationStatus, setObligationStatus] = useState<ObligationStatus>('obligatoire');
   const [recurrenceRule, setRecurrenceRule] = useState('ponctuel');
   // R6.2 (§1/§3) : une seule "prochaine échéance" éditable, jamais un jour du
   // mois séparé — modifier ce champ ne touche jamais l'historique (seules les
@@ -100,6 +115,7 @@ export function ChargePlanDetailScreen() {
       setCategories((categoryList as Category[]).filter((c) => c.kind === 'expense' || c.kind === 'both'));
       setLabel(p.label);
       setCategoryId(p.categoryId);
+      setObligationStatus(p.obligationStatus);
       setRecurrenceRule(p.recurrenceRule ?? 'ponctuel');
       setAnchorDate(p.recurrenceAnchorDate ? String(p.recurrenceAnchorDate).slice(0, 10) : '');
       setEditAmount(false);
@@ -135,6 +151,7 @@ export function ChargePlanDetailScreen() {
       await api.updateChargePlan(id, {
         label: label.trim(),
         categoryId: categoryId ?? null,
+        obligationStatus,
         recurrenceRule: recurrenceRule === 'ponctuel' ? undefined : recurrenceRule,
         recurrenceAnchorDate: recurrenceRule === 'ponctuel' ? null : anchorDate,
         ...(editAmount
@@ -204,6 +221,20 @@ export function ChargePlanDetailScreen() {
         )}
 
         <FormField testID="chargeplan-label-input" label="Libellé" value={label} onChangeText={setLabel} onFocus={handleFocus} />
+
+        {/* R6.4 (§4) — "Garderie T1/T2/T3" (options envisagées) sont modifiables ici :
+            changer cet état bascule automatiquement entre "Options envisagées" et
+            échéances certaines du plan (financial-plans.service.ts), jamais un double
+            comptage puisqu'un ChargePlan n'appartient jamais aux deux groupes à la fois. */}
+        {plan.financialPlanId && (
+          <Select
+            testID="chargeplan-obligation-status-select"
+            label="Statut de l'option"
+            value={obligationStatus}
+            onChange={(v) => setObligationStatus(v as ObligationStatus)}
+            options={OBLIGATION_STATUS_OPTIONS}
+          />
+        )}
 
         {categories.length > 0 && (
           <Select

@@ -840,6 +840,10 @@ model VariableBudget {
   weekStartDay    Int             @default(1) @map("week_start_day")
   startDate       DateTime        @map("start_date") @db.Date
   endDate         DateTime?       @map("end_date") @db.Date
+  // R6.4 (§1) : suppression physique bloquée dès qu'une BudgetExpense existe déjà
+  // (historique réel, même RG implicite que ChargePlansService.remove) — archivage
+  // via ce champ à la place, jamais un second "supprimé" implicite via endDate.
+  status          VariableBudgetStatus @default(actif)
   createdAt       DateTime        @default(now()) @map("created_at")
   updatedAt       DateTime        @updatedAt @map("updated_at")
 
@@ -849,6 +853,11 @@ model VariableBudget {
 
   @@index([householdId])
   @@map("variable_budget")
+}
+
+enum VariableBudgetStatus {
+  actif
+  inactif
 }
 
 // Une dépense réelle rattachée à un VariableBudget actif (§6/§8). Ne double

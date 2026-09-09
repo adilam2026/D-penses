@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
-import { MonthBucketApi, MonthlyLineItem, MonthlyProjectionApi, UNDETERMINED_ACCOUNT } from '../../api/client';
+import { MonthBucketApi, MonthlyLineItem, MonthlyProjectionApi, PlannedTransferItem, UNDETERMINED_ACCOUNT } from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
@@ -49,6 +49,39 @@ function ExpenseRow({ item, onOpenDetail }: { item: MonthlyLineItem; onOpenDetai
       <Text style={styles.itemAmount}>{formatDh(item.amount)}</Text>
     </View>
   );
+}
+
+/**
+ * R6.4 (§9) — ligne TRANSFERT dans le détail mensuel, jamais mêlée aux
+ * revenus/dépenses/budgets : format explicite "date / compte / TRANSFERT vers
+ * .../ montant signé", identifiable comme transfert au premier coup d'œil.
+ */
+function TransferRow({ item }: { item: PlannedTransferItem }) {
+  const isOutflow = item.direction === 'sortie_pilotee';
+  const otherAccount = isOutflow ? item.toAccountName : item.fromAccountName;
+  const description = isOutflow
+    ? `Transfert vers ${otherAccount ?? 'compte hors pilotage'}`
+    : `Transfert depuis ${otherAccount ?? 'compte hors pilotage'}`;
+  return (
+    <View style={styles.itemRow}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.itemLabel}>{item.label}</Text>
+        <View style={styles.itemBadgeRow}>
+          <Text style={styles.itemBadgeTransfer}>TRANSFERT</Text>
+          <Text style={styles.itemBadge}>{formatShortDate(item.date)}</Text>
+        </View>
+        <Text style={styles.transferDescription}>{description}</Text>
+      </View>
+      <Text style={[styles.itemAmount, item.netAmount >= 0 && styles.itemAmountPositive]}>
+        {item.netAmount >= 0 ? '+' : ''}
+        {formatDh(item.netAmount)}
+      </Text>
+    </View>
+  );
+}
+
+function formatShortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 function IncomeRow({ item }: { item: MonthlyLineItem }) {
@@ -148,6 +181,22 @@ function MonthCard({
             month.expense_items.map((item) => <ExpenseRow key={item.entityId + item.date} item={item} onOpenDetail={onOpenDetail} />)
           )}
           <Text style={styles.detailTotalLine}>Total dépenses {formatDh(month.total_expense)}</Text>
+
+          {month.planned_transfer_items.length > 0 && (
+            <>
+              {/* R6.4 (§6-9) — jamais rangé dans charges/dépenses/budget : son impact
+                  n'appartient qu'au calcul de trésorerie pilotée (plannedTransferNetTreasuryImpact,
+                  déjà appliqué à SITUATION PROJETÉE FIN DE MOIS ci-dessus). */}
+              <Text style={styles.detailSectionTitle}>Transferts</Text>
+              {month.planned_transfer_items.map((t) => (
+                <TransferRow key={t.id} item={t} />
+              ))}
+              <Text style={styles.detailTotalLine}>
+                Impact net trésorerie pilotée {month.planned_transfer_net_treasury_impact >= 0 ? '+' : ''}
+                {formatDh(month.planned_transfer_net_treasury_impact)}
+              </Text>
+            </>
+          )}
         </View>
       )}
     </View>
@@ -414,4 +463,6 @@ const styles = StyleSheet.create({
   itemBadgePrevu: { fontSize: 10, color: colors.textSecondary, backgroundColor: colors.surfaceSecondary, borderRadius: radius.pill, paddingHorizontal: 6, paddingVertical: 2, marginRight: 4 },
   itemAmount: { fontSize: 13, fontWeight: '700', color: colors.danger },
   itemAmountPositive: { color: colors.success },
+  itemBadgeTransfer: { fontSize: 10, color: colors.primary, backgroundColor: colors.surfaceActive, borderRadius: radius.pill, paddingHorizontal: 6, paddingVertical: 2, marginRight: 4, fontWeight: '700' },
+  transferDescription: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
 });

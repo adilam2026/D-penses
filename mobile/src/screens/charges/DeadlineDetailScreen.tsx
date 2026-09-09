@@ -1,15 +1,23 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { FormField } from '../../ui/FormField';
 import { Select } from '../../ui/Select';
+import { DateField } from '../../ui/DateField';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
+
+const AMOUNT_STATUS_OPTIONS = [
+  { value: 'confirme', label: 'Confirmé' },
+  { value: 'estime', label: 'Estimé' },
+  { value: 'inconnu', label: 'Inconnu' },
+];
 
 interface Deadline {
   id: string;
+  chargePlanId: string;
   dueDate: string;
   amountCurrent: number | string | null;
   amountStatus: 'inconnu' | 'estime' | 'confirme';
@@ -85,6 +93,18 @@ export function DeadlineDetailScreen() {
   const [confirmAmount, setConfirmAmount] = useState('');
   const [confirming, setConfirming] = useState(false);
 
+  // R6.4 (§3) — "Modifier" une échéance existante : libellé/catégorie sont des
+  // propriétés du ChargePlan parent (déjà éditables via ChargePlanDetailScreen,
+  // jamais dupliquées ici), montant/statut/date sont des propriétés de LA
+  // Deadline elle-même — c'est ici qu'on les modifie, un paiement réel n'est
+  // jamais affecté (PATCH /deadlines/:id, RG-104).
+  const [editOpen, setEditOpen] = useState(false);
+  const [editDueDate, setEditDueDate] = useState('');
+  const [editAmountStatus, setEditAmountStatus] = useState<'confirme' | 'estime' | 'inconnu'>('confirme');
+  const [editAmount, setEditAmount] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
   const [fundingSource, setFundingSource] = useState<'compte' | 'provision'>('compte');
   const [payAmount, setPayAmount] = useState('');
   const [payAccountId, setPayAccountId] = useState<string | null>(null);
@@ -141,6 +161,41 @@ export function DeadlineDetailScreen() {
       setError(err instanceof api.ApiError ? err.message : 'Confirmation impossible');
     } finally {
       setConfirming(false);
+    }
+  }
+
+  function openEdit() {
+    if (!deadline) return;
+    setEditDueDate(deadline.dueDate.slice(0, 10));
+    setEditAmountStatus(deadline.amountStatus);
+    setEditAmount(deadline.amountCurrent !== null ? String(n(deadline.amountCurrent)) : '');
+    setEditError(null);
+    setEditOpen(true);
+  }
+
+  async function onSaveEdit() {
+    if (!editDueDate) {
+      setEditError('La date est obligatoire');
+      return;
+    }
+    if (editAmountStatus !== 'inconnu' && (!editAmount.trim() || Number(editAmount.replace(',', '.')) <= 0)) {
+      setEditError('Montant invalide');
+      return;
+    }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      await api.updateDeadline(id, {
+        dueDate: editDueDate,
+        amountStatus: editAmountStatus,
+        amountCurrent: editAmountStatus !== 'inconnu' ? Number(editAmount.replace(',', '.')) : undefined,
+      });
+      setEditOpen(false);
+      await load();
+    } catch (err) {
+      setEditError(err instanceof api.ApiError ? err.message : 'Modification impossible');
+    } finally {
+      setEditSaving(false);
     }
   }
 
@@ -226,11 +281,21 @@ export function DeadlineDetailScreen() {
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
         <View style={styles.heroCard}>
-          <Text style={styles.heroLabel}>{deadline.chargePlan.label}</Text>
+          <View style={styles.heroHeaderRow}>
+            <Text style={styles.heroLabel}>{deadline.chargePlan.label}</Text>
+            {isOpen && (
+              <TouchableOpacity testID="deadline-edit-button" onPress={openEdit}>
+                <Text style={styles.heroEditLink}>Modifier</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           <Text style={styles.heroMeta}>Échéance du {formatDate(deadline.dueDate)}</Text>
           <Text style={styles.heroStatus}>{STATUS_LABEL[deadline.financialStatus]}</Text>
           <Text style={styles.heroAmountLabel}>Montant restant</Text>
           <Text style={styles.heroAmount}>{resteAPayer !== null ? `${resteAPayer.toLocaleString('fr-FR')} DH` : 'À confirmer'}</Text>
+          <TouchableOpacity testID="deadline-edit-chargeplan-link" onPress={() => navigation.navigate('ChargePlanDetail', { id: deadline.chargePlanId })}>
+            <Text style={styles.heroChargePlanLink}>Modifier le libellé / la catégorie →</Text>
+          </TouchableOpacity>
         </View>
 
         {isOpen && deadline.amountStatus !== 'confirme' && (
@@ -388,6 +453,34 @@ export function DeadlineDetailScreen() {
           </View>
         )}
       </ScrollView>
+
+      <Modal visible={editOpen} transparent animationType="fade" onRequestClose={() => setEditOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard} testID="deadline-edit-form">
+            <Text style={styles.modalTitle}>Modifier l'échéance</Text>
+            <DateField label="Date" value={editDueDate} onChange={setEditDueDate} />
+            <Select
+              testID="deadline-edit-amount-status"
+              label="Statut du montant"
+              value={editAmountStatus}
+              onChange={(v) => setEditAmountStatus(v as 'confirme' | 'estime' | 'inconnu')}
+              options={AMOUNT_STATUS_OPTIONS}
+            />
+            {editAmountStatus !== 'inconnu' && (
+              <FormField testID="deadline-edit-amount" label="Montant (DH)" keyboardType="decimal-pad" value={editAmount} onChangeText={setEditAmount} />
+            )}
+            {editError && <Text style={styles.error}>{editError}</Text>}
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalButtonSecondary} onPress={() => setEditOpen(false)}>
+                <Text style={styles.modalButtonSecondaryText}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity testID="deadline-edit-save" style={styles.modalButton} onPress={onSaveEdit} disabled={editSaving}>
+                {editSaving ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.modalButtonText}>Enregistrer</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -397,6 +490,9 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
   scroll: { padding: spacing.xl },
   heroCard: { backgroundColor: colors.primary, borderRadius: radius.xl, padding: spacing.lg, marginBottom: spacing.md },
+  heroHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  heroEditLink: { fontSize: 12, fontWeight: '600', color: colors.textOnPrimary, textDecorationLine: 'underline' },
+  heroChargePlanLink: { fontSize: 11, color: '#C9D2E0', marginTop: spacing.sm, textDecorationLine: 'underline' },
   heroLabel: { fontSize: 16, fontWeight: '700', color: colors.textOnPrimary },
   heroMeta: { fontSize: 12, color: '#C9D2E0', marginTop: 4 },
   heroStatus: { fontSize: 11, fontWeight: '700', color: '#C9D2E0', marginTop: spacing.sm, textTransform: 'uppercase', letterSpacing: 0.5 },
@@ -443,4 +539,12 @@ const styles = StyleSheet.create({
   buttonDanger: { flex: 1, backgroundColor: colors.dangerLight, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center' },
   buttonDangerText: { color: colors.danger, fontWeight: '600', fontSize: 13 },
   error: { color: colors.danger, fontSize: 13, marginBottom: spacing.sm, marginTop: spacing.sm },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)', alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
+  modalCard: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.xl, width: '100%' },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.md },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: spacing.md },
+  modalButton: { backgroundColor: colors.primary, borderRadius: radius.sm, paddingHorizontal: 18, paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
+  modalButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 13 },
+  modalButtonSecondary: { paddingHorizontal: 14, paddingVertical: 10, marginRight: 8 },
+  modalButtonSecondaryText: { color: colors.textSecondary, fontWeight: '600', fontSize: 13 },
 });
