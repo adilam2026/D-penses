@@ -1,0 +1,46 @@
+name: Railway PROD — Appliquer les migrations Prisma (migrate deploy)
+
+# Étape suivante de railway-migrate-status.yml (diagnostic uniquement) : ici,
+# et UNIQUEMENT ici, `prisma migrate deploy` est exécuté contre PROD via
+# DATABASE_URL_PROD (Repository secret) — jamais RAILWAY_TOKEN. Toujours
+# suivi d'un `prisma migrate status` pour confirmer 0 migration en attente
+# après coup.
+#
+# Sécurité : DATABASE_URL_PROD n'est jamais échoué (echo/cat/set -x) dans
+# aucune étape ci-dessous.
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate-deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Installer les dépendances (backend)
+        run: npm ci
+
+      - name: Générer le client Prisma
+        run: npx prisma generate
+
+      - name: prisma migrate deploy sur PROD
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+        run: npx prisma migrate deploy
+
+      - name: prisma migrate status sur PROD (confirmation post-déploiement)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+        run: |
+          set -o pipefail
+          npx prisma migrate status | tee migrate-status.txt
+          grep -qi "Database schema is up to date" migrate-status.txt
