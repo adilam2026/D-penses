@@ -4,20 +4,23 @@ name: Railway PROD — Smoke test bascule rôle (auth réelle + RLS + isolation)
 # variable Railway DATABASE_URL du service backend vers depenses_runtime.
 #
 # Distingue explicitement 4 choses dans le rapport final :
-#  - le parcours d'authentification RÉEL (signup + OTP + login) pour au moins
-#    un des deux foyers, tel que vécu par un utilisateur ; l'autre foyer peut
-#    utiliser le bypass emailVerifiedAt en dernier recours (bootstrap
-#    technique, PAS un test du parcours OTP) si un deuxième email n'est pas
-#    disponible ;
+#  - le parcours d'authentification RÉEL (signup + OTP + login) pour le foyer
+#    A ; le foyer B utilise le bypass emailVerifiedAt en dernier recours
+#    (bootstrap technique, PAS un test du parcours OTP) — nécessaire tant que
+#    l'envoi email (Resend, mode test sans domaine vérifié) n'accepte comme
+#    destinataire que l'adresse propriétaire du compte, donc un seul foyer
+#    peut recevoir un OTP réel ;
 #  - le fonctionnement DML normal via l'API (création compte/catégorie/plan) ;
 #  - l'isolation RLS inter-foyers (tentatives de substitution d'ID) ;
 #  - (le rôle PostgreSQL lui-même est vérifié séparément par
 #    railway-check-role.yml, exécuté sur le service backend une fois relancé).
 #
 # 3 phases séparées à déclencher successivement à la main (workflow_dispatch) :
-#   1) signup          -> déclenche les 2 signups réels, envoie les OTP par email
-#   2) verify_and_test -> valide les OTP (réel ou bypass explicite), crée 2
-#                          foyers jetables, exécute les tests d'isolation
+#   1) signup          -> déclenche le signup réel du foyer A (envoie l'OTP par
+#                          email) ; le foyer B n'est PAS créé ici (voir ci-dessus)
+#   2) verify_and_test -> valide l'OTP du foyer A (réel), provisionne le foyer B
+#                          directement en base (bypass_b=true), crée 2 foyers
+#                          jetables via l'API, exécute les tests d'isolation
 #   3) cleanup         -> supprime les foyers/utilisateurs de test (connexion
 #                          admin séparée, après les tests, jamais pendant)
 #
@@ -80,19 +83,11 @@ jobs:
           test "$code" = "201"
           echo "OTP réel envoyé à ${{ github.event.inputs.email_a }} (si bypass_a=false, vérifiez la boîte mail)."
 
-      - name: Signup réel — foyer B
-        run: |
-          set -o pipefail
-          code=$(curl -sS -o b.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/auth/signup" \
-            -H "Content-Type: application/json" \
-            -d "{\"email\":\"${{ github.event.inputs.email_b }}\",\"password\":\"SmokeTest_${{ github.event.inputs.run_tag }}!\",\"firstName\":\"Smoke\",\"lastName\":\"B\"}")
-          echo "HTTP $code"; cat b.json; echo
-          test "$code" = "201"
-          echo "OTP réel envoyé à ${{ github.event.inputs.email_b }} (si bypass_b=false, vérifiez la boîte mail)."
-
       - name: Rappel étape suivante
         run: |
-          echo "Relancez ce workflow avec phase=verify_and_test, en renseignant otp_a/otp_b (ou bypass_a/bypass_b) et le MÊME run_tag=${{ github.event.inputs.run_tag }}."
+          echo "Foyer B n'est PAS signup ici : Resend (mode test, sans domaine vérifié) refuse tout destinataire autre que l'adresse propriétaire du compte — /auth/signup pour un autre email échouerait en 500 avant même d'atteindre l'étape OTP."
+          echo "Foyer B est provisionné directement en base (bypass) lors de la phase verify_and_test : passez bypass_b=true."
+          echo "Relancez ce workflow avec phase=verify_and_test, en renseignant otp_a (ou bypass_a) pour le foyer A, bypass_b=true pour le foyer B, et le MÊME run_tag=${{ github.event.inputs.run_tag }}."
 
   verify_and_test:
     if: github.event.inputs.phase == 'verify_and_test'
@@ -112,21 +107,34 @@ jobs:
       - name: Générer le client Prisma
         run: npx prisma generate
 
-      - name: Bypass emailVerifiedAt (DERNIER RECOURS uniquement, par foyer)
+      - name: Bypass foyer (DERNIER RECOURS) — création/validation directe en base, sans passer par /auth/signup
+        # Ne passe jamais par /auth/signup pour un compte bypassé : Resend (mode
+        # test, sans domaine vérifié) rejette tout destinataire autre que
+        # l'adresse propriétaire du compte, /auth/signup échouerait en 500
+        # avant même d'atteindre l'étape OTP. Le compte est donc créé (ou mis à
+        # jour) directement, avec le même mot de passe que celui utilisé par
+        # l'étape de login qui suit, sans jamais tester le parcours OTP réel
+        # pour ce foyer.
         if: github.event.inputs.bypass_a == 'true' || github.event.inputs.bypass_b == 'true'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
         run: |
           cat > ./bypass.ts <<'EOF'
           import { PrismaClient } from '@prisma/client';
+          import * as bcrypt from 'bcryptjs';
           async function main() {
             const prisma = new PrismaClient();
+            const passwordHash = await bcrypt.hash(process.env.SMOKE_PASSWORD as string, 12);
             const emails: string[] = [];
             if (process.env.BYPASS_A === 'true') emails.push(process.env.EMAIL_A as string);
             if (process.env.BYPASS_B === 'true') emails.push(process.env.EMAIL_B as string);
             for (const email of emails) {
-              await prisma.user.update({ where: { email }, data: { emailVerifiedAt: new Date() } });
-              console.log(`BYPASS applique pour ${email} — parcours OTP NON teste pour ce foyer.`);
+              await prisma.user.upsert({
+                where: { email },
+                update: { emailVerifiedAt: new Date(), passwordHash },
+                create: { email, passwordHash, firstName: 'Smoke', lastName: 'Bypass', emailVerifiedAt: new Date() },
+              });
+              console.log(`BYPASS applique pour ${email} — compte cree/valide directement en base, parcours OTP NON teste pour ce foyer.`);
             }
             await prisma.$disconnect();
           }
@@ -134,6 +142,7 @@ jobs:
           EOF
           BYPASS_A="${{ github.event.inputs.bypass_a }}" BYPASS_B="${{ github.event.inputs.bypass_b }}" \
           EMAIL_A="${{ github.event.inputs.email_a }}" EMAIL_B="${{ github.event.inputs.email_b }}" \
+          SMOKE_PASSWORD="SmokeTest_${{ github.event.inputs.run_tag }}!" \
           npx ts-node -r tsconfig-paths/register ./bypass.ts
           rm -f ./bypass.ts
 
