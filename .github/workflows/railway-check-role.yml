@@ -35,7 +35,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
         run: |
-          cat > /tmp/check-role.ts <<'EOF'
+          cat > ./check-role.ts <<'EOF'
           import { PrismaClient } from '@prisma/client';
 
           async function main() {
@@ -64,4 +64,5 @@ jobs:
             process.exit(1);
           });
           EOF
-          npx ts-node -r tsconfig-paths/register /tmp/check-role.ts
+          npx ts-node -r tsconfig-paths/register ./check-role.ts
+          rm -f ./check-role.ts
