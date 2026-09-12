@@ -12,7 +12,7 @@
     "start": "node dist/main.js",
     "start:dev": "ts-node -r tsconfig-paths/register src/main.ts",
     "migrate:deploy": "prisma migrate deploy",
-    "deploy:start": "prisma migrate deploy && npm run prisma:seed && node dist/main.js",
+    "deploy:start": "DATABASE_URL=\"$DATABASE_URL_MIGRATION\" npx prisma migrate deploy && DATABASE_URL=\"$DATABASE_URL_MIGRATION\" npm run prisma:seed && node dist/main.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "ts-node prisma/seed.ts",
