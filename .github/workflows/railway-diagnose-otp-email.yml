@@ -1,0 +1,87 @@
+name: Railway PROD — Diagnostic OTP non reçu (lecture seule, jamais de bypass)
+
+# S0 (smoke test) : le signup des 2 comptes de test a renvoyé HTTP 201 mais
+# aucun OTP réel n'a été reçu par email. Ce workflow ne contourne RIEN — il
+# constate uniquement, via DATABASE_URL_PROD (admin, déjà existant), si le
+# code OTP a été créé en base pour les emails donnés, avec ses métadonnées
+# exactes (créé quand, expire quand, combien de tentatives, consommé ou non).
+#
+# Ne modifie aucune donnée, ne révèle jamais le code lui-même (seul son
+# hash existe en base de toute façon).
+on:
+  workflow_dispatch:
+    inputs:
+      email_a:
+        description: "Email du foyer A à diagnostiquer"
+        required: true
+      email_b:
+        description: "Email du foyer B à diagnostiquer"
+        required: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Installer les dépendances (backend)
+        run: npm ci
+      - name: Générer le client Prisma
+        run: npx prisma generate
+
+      - name: Constat — utilisateur + OTP créés en base pour ces emails
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+          EMAIL_A: ${{ github.event.inputs.email_a }}
+          EMAIL_B: ${{ github.event.inputs.email_b }}
+        run: |
+          cat > ./diagnose-otp.ts <<'EOF'
+          import { PrismaClient } from '@prisma/client';
+
+          async function report(prisma: PrismaClient, email: string) {
+            console.log(`--- ${email} ---`);
+            const user = await prisma.user.findUnique({ where: { email } });
+            if (!user) {
+              console.log('User : INTROUVABLE en base (le signup n\'aurait pas dû renvoyer 201 dans ce cas).');
+              return;
+            }
+            console.log(`User : trouvé (id=${user.id}, createdAt=${user.createdAt.toISOString()}, emailVerifiedAt=${user.emailVerifiedAt ?? 'NULL (attendu, pas encore vérifié)'})`);
+
+            const otps = await prisma.emailOtp.findMany({
+              where: { userId: user.id },
+              orderBy: { createdAt: 'desc' },
+            });
+            if (otps.length === 0) {
+              console.log('EmailOtp : AUCUNE ligne — le code n\'a jamais été créé (anomalie, contraire au code actuel de createAndSendOtp).');
+              return;
+            }
+            for (const otp of otps) {
+              console.log(
+                `EmailOtp : id=${otp.id} createdAt=${otp.createdAt.toISOString()} expiresAt=${otp.expiresAt.toISOString()} ` +
+                `consumedAt=${otp.consumedAt ? otp.consumedAt.toISOString() : 'NULL'} attempts=${otp.attempts}`
+              );
+            }
+            console.log(`RESULT ${email} : OTP CRÉÉ EN BASE = OUI (${otps.length} ligne(s)).`);
+          }
+
+          async function main() {
+            const prisma = new PrismaClient();
+            await report(prisma, process.env.EMAIL_A as string);
+            await report(prisma, process.env.EMAIL_B as string);
+            await prisma.$disconnect();
+          }
+
+          main().catch((e) => {
+            console.error(e);
+            process.exit(1);
+          });
+          EOF
+          npx ts-node -r tsconfig-paths/register ./diagnose-otp.ts
+          rm -f ./diagnose-otp.ts
