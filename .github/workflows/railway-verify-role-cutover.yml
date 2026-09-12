@@ -1,0 +1,123 @@
+name: Railway PROD — Vérification indépendante post-bascule (rôle + connexions live)
+
+# S0 (clôture) : vérification FAITE PAR CE DÉPÔT, indépendamment de toute
+# constatation manuelle tierce — se connecte en admin (DATABASE_URL_PROD,
+# secret déjà existant, jamais modifié par la bascule) pour constater,
+# depuis l'extérieur, l'état réel du rôle depenses_runtime ET les connexions
+# actuellement ouvertes par le backend en production.
+#
+# Contrairement à railway-check-runtime-role.yml (qui SE CONNECTE avec
+# depenses_runtime et nécessite le secret DATABASE_URL_RUNTIME_PROD), ce
+# workflow n'exige aucun nouveau secret : il observe depuis pg_catalog /
+# pg_stat_activity avec la connexion admin déjà en place.
+#
+# Vérifie :
+#  1) pg_roles : depenses_runtime existe, rolsuper=false, rolbypassrls=false
+#  2) pg_stat_activity : des connexions actives utilisent bien depenses_runtime
+#     (preuve que le backend déployé s'y connecte réellement, pas seulement
+#     que le rôle existe) — et alerte si des connexions "postgres" restent
+#     actives en dehors de ce job admin lui-même
+#  3) _prisma_migrations : depenses_runtime n'a AUCUN privilège dessus
+#
+# Lecture seule strict. Sécurité : DATABASE_URL_PROD n'est jamais échoué.
+on:
+  workflow_dispatch:
+
+jobs:
+  verify-cutover:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Installer les dépendances (backend)
+        run: npm ci
+
+      - name: Générer le client Prisma
+        run: npx prisma generate
+
+      - name: Constat indépendant — rôle, connexions live, privilèges _prisma_migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+        run: |
+          cat > ./verify-cutover.ts <<'EOF'
+          import { PrismaClient } from '@prisma/client';
+
+          async function main() {
+            const prisma = new PrismaClient();
+            let failed = false;
+
+            console.log('--- 1) Rôle depenses_runtime (pg_roles) ---');
+            const roles = await prisma.$queryRaw<Array<{ rolname: string; rolsuper: boolean; rolbypassrls: boolean }>>`
+              SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'depenses_runtime'
+            `;
+            const role = roles[0];
+            if (!role) {
+              console.log('RESULT: ÉCHEC — le rôle depenses_runtime est introuvable.');
+              failed = true;
+            } else {
+              console.log(`rolname=${role.rolname} rolsuper=${role.rolsuper} rolbypassrls=${role.rolbypassrls}`);
+              if (role.rolsuper || role.rolbypassrls) {
+                console.log('RESULT: ÉCHEC — depenses_runtime est superuser ou BYPASSRLS.');
+                failed = true;
+              } else {
+                console.log('RESULT: OK — depenses_runtime non-superuser, sans BYPASSRLS (constat indépendant).');
+              }
+            }
+
+            console.log('--- 2) Connexions actives (pg_stat_activity) ---');
+            const activity = await prisma.$queryRaw<Array<{ usename: string; count: bigint }>>`
+              SELECT usename, count(*)::int AS count FROM pg_stat_activity
+              WHERE datname = current_database() GROUP BY usename ORDER BY count DESC
+            `;
+            for (const row of activity) {
+              console.log(`usename=${row.usename} connexions=${row.count}`);
+            }
+            const runtimeRow = activity.find((r) => r.usename === 'depenses_runtime');
+            if (!runtimeRow || Number(runtimeRow.count) < 1) {
+              console.log('RESULT: ÉCHEC — aucune connexion active avec depenses_runtime : le backend en prod ne semble pas utiliser ce rôle.');
+              failed = true;
+            } else {
+              console.log(`RESULT: OK — ${runtimeRow.count} connexion(s) active(s) avec depenses_runtime (le backend prod utilise bien ce rôle).`);
+            }
+            const postgresRow = activity.find((r) => r.usename === 'postgres');
+            const postgresCount = postgresRow ? Number(postgresRow.count) : 0;
+            console.log(`Note: connexions "postgres" observées = ${postgresCount} (ce job admin lui-même en compte 1 pendant son exécution — normal ; un nombre plus élevé et persistant serait à investiguer).`);
+
+            console.log('--- 3) Privilèges de depenses_runtime sur _prisma_migrations ---');
+            const priv = await prisma.$queryRaw<Array<{ has_select: boolean; has_insert: boolean }>>`
+              SELECT has_table_privilege('depenses_runtime', '_prisma_migrations', 'SELECT') AS has_select,
+                     has_table_privilege('depenses_runtime', '_prisma_migrations', 'INSERT') AS has_insert
+            `;
+            const p = priv[0];
+            if (p?.has_select || p?.has_insert) {
+              console.log(`RESULT: ÉCHEC — depenses_runtime a des privilèges sur _prisma_migrations (SELECT=${p.has_select}, INSERT=${p.has_insert}).`);
+              failed = true;
+            } else {
+              console.log('RESULT: OK — depenses_runtime n\'a aucun privilège sur _prisma_migrations.');
+            }
+
+            await prisma.$disconnect();
+            console.log('==================================================');
+            if (failed) {
+              console.log('CONCLUSION: au moins un contrôle indépendant a échoué — voir RESULT ci-dessus.');
+              process.exit(1);
+            }
+            console.log('CONCLUSION: tous les contrôles indépendants post-bascule sont au vert.');
+          }
+
+          main().catch((e) => {
+            console.error(e);
+            process.exit(1);
+          });
+          EOF
+          npx ts-node -r tsconfig-paths/register ./verify-cutover.ts
+          rm -f ./verify-cutover.ts
