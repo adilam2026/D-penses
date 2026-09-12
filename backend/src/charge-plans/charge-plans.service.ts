@@ -19,6 +19,13 @@ export class ChargePlansService {
   async create(userId: string, householdId: string, dto: CreateChargePlanDto) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
+      if (dto.categoryId) {
+        // S0 (audit isolation §3) — categoryId n'était jamais vérifié ici, contrairement aux
+        // autres champs ci-dessous : un foyer pouvait rattacher une catégorie PRIVÉE d'un
+        // autre foyer à son propre ChargePlan. household_id NULL = catégorie système, partagée.
+        const category = await tx.category.findFirst({ where: { id: dto.categoryId, OR: [{ householdId }, { householdId: null }] } });
+        if (!category) throw new NotFoundException('Catégorie introuvable dans ce foyer');
+      }
       if (dto.defaultAccountId) {
         const account = await tx.financialAccount.findFirst({ where: { id: dto.defaultAccountId, householdId } });
         if (!account) throw new NotFoundException('Compte par défaut introuvable dans ce foyer');

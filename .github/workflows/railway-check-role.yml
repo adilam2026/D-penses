@@ -1,0 +1,67 @@
+name: Railway PROD — Vérifier le rôle PostgreSQL (lecture seule)
+
+# S0 (audit sécurité §4) : vérifie si le rôle utilisé par DATABASE_URL_PROD est
+# superuser ou a BYPASSRLS — dans les deux cas, FORCE ROW LEVEL SECURITY (Lot 0)
+# n'a AUCUN effet pour ce rôle et l'isolation par foyer démontrée par les tests
+# e2e ne serait plus garantie en production. Requête SQL en lecture seule
+# uniquement (pg_roles) — ne modifie ni le schéma ni les données.
+#
+# Sécurité : DATABASE_URL_PROD n'est jamais échoué (echo/cat/set -x) ci-dessous.
+on:
+  workflow_dispatch:
+
+jobs:
+  check-role:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Installer les dépendances (backend)
+        run: npm ci
+
+      - name: Générer le client Prisma
+        run: npx prisma generate
+
+      - name: Interroger pg_roles pour le rôle courant (lecture seule)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+        run: |
+          cat > /tmp/check-role.ts <<'EOF'
+          import { PrismaClient } from '@prisma/client';
+
+          async function main() {
+            const prisma = new PrismaClient();
+            const rows = await prisma.$queryRaw<Array<{ rolname: string; rolsuper: boolean; rolbypassrls: boolean }>>`
+              SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user
+            `;
+            await prisma.$disconnect();
+            const row = rows[0];
+            if (!row) {
+              console.log('RESULT: role introuvable dans pg_roles (inattendu)');
+              process.exit(1);
+            }
+            console.log(`current_user = ${row.rolname}`);
+            console.log(`rolsuper = ${row.rolsuper}`);
+            console.log(`rolbypassrls = ${row.rolbypassrls}`);
+            if (row.rolsuper || row.rolbypassrls) {
+              console.log('RESULT: DANGEREUX — ce rôle contourne RLS (superuser ou BYPASSRLS), FORCE ROW LEVEL SECURITY est sans effet pour lui.');
+              process.exit(1);
+            }
+            console.log('RESULT: SÛR — rôle non-superuser, sans BYPASSRLS, FORCE ROW LEVEL SECURITY s\'applique normalement.');
+          }
+
+          main().catch((e) => {
+            console.error(e);
+            process.exit(1);
+          });
+          EOF
+          npx ts-node -r tsconfig-paths/register /tmp/check-role.ts
