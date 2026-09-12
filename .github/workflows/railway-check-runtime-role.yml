@@ -1,0 +1,114 @@
+name: Railway PROD — Vérifier le rôle depenses_runtime (isolé, avant bascule)
+
+# S0 (bascule rôle runtime) : à exécuter APRÈS avoir créé le rôle depenses_runtime
+# en base (SQL fourni séparément, exécuté manuellement par l'utilisateur) et créé
+# le secret DATABASE_URL_RUNTIME_PROD, mais AVANT de faire pointer la variable
+# Railway DATABASE_URL du service backend vers ce rôle.
+#
+# Vérifie, en se connectant DIRECTEMENT avec depenses_runtime (et non postgres) :
+#  1) rolsuper = false, rolbypassrls = false (sinon FORCE ROW LEVEL SECURITY est sans effet)
+#  2) le rôle peut faire du DML (SELECT) sur une table applicative
+#  3) le rôle NE PEUT PAS faire de DDL (CREATE TABLE refusé) — preuve qu'aucun
+#     droit de migration ne lui a été accordé par erreur
+#
+# Lecture seule / non destructif : le test DDL est fait dans une transaction
+# annulée (ROLLBACK), aucune donnée applicative n'est modifiée.
+#
+# Sécurité : DATABASE_URL_RUNTIME_PROD n'est jamais échoué (echo/cat/set -x).
+on:
+  workflow_dispatch:
+
+jobs:
+  check-runtime-role:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Installer les dépendances (backend)
+        run: npm ci
+
+      - name: Générer le client Prisma
+        run: npx prisma generate
+
+      - name: Vérifier rolsuper / rolbypassrls / DML / DDL pour depenses_runtime
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_RUNTIME_PROD }}
+        run: |
+          cat > ./check-runtime-role.ts <<'EOF'
+          import { PrismaClient } from '@prisma/client';
+
+          async function main() {
+            const prisma = new PrismaClient();
+            let failed = false;
+
+            const rows = await prisma.$queryRaw<Array<{ rolname: string; rolsuper: boolean; rolbypassrls: boolean }>>`
+              SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user
+            `;
+            const row = rows[0];
+            if (!row) {
+              console.log('RESULT rôle: introuvable dans pg_roles (inattendu)');
+              process.exit(1);
+            }
+            console.log(`current_user = ${row.rolname}`);
+            console.log(`rolsuper = ${row.rolsuper}`);
+            console.log(`rolbypassrls = ${row.rolbypassrls}`);
+            if (row.rolname !== 'depenses_runtime') {
+              console.log(`RESULT rôle: ATTENDU depenses_runtime, OBTENU ${row.rolname} — DATABASE_URL_RUNTIME_PROD pointe-t-il vers le bon rôle ?`);
+              failed = true;
+            }
+            if (row.rolsuper || row.rolbypassrls) {
+              console.log('RESULT rôle: DANGEREUX — superuser ou BYPASSRLS, FORCE ROW LEVEL SECURITY sans effet.');
+              failed = true;
+            } else {
+              console.log('RESULT rôle: SÛR — non-superuser, sans BYPASSRLS.');
+            }
+
+            try {
+              const count = await prisma.$queryRaw<Array<{ count: bigint }>>`SELECT count(*)::int AS count FROM household`;
+              console.log(`RESULT DML: OK — SELECT sur "household" fonctionne (${count[0]?.count ?? 0} lignes visibles avec ce rôle hors contexte RLS applicatif).`);
+            } catch (e) {
+              console.log('RESULT DML: KO — SELECT sur "household" a échoué, le rôle n\'a probablement pas les GRANTs nécessaires.');
+              console.error(e);
+              failed = true;
+            }
+
+            try {
+              await prisma.$transaction(async (tx) => {
+                await tx.$executeRawUnsafe('CREATE TABLE _depenses_runtime_ddl_probe (id int)');
+                throw new Error('__ROLLBACK_PROBE__');
+              });
+              console.log('RESULT DDL: DANGEREUX — CREATE TABLE a réussi, ce rôle a des droits de migration qu\'il ne devrait pas avoir.');
+              failed = true;
+            } catch (e: any) {
+              if (e?.message === '__ROLLBACK_PROBE__') {
+                console.log('RESULT DDL: DANGEREUX — CREATE TABLE a réussi (annulé volontairement après coup), droits de migration en trop.');
+                failed = true;
+              } else {
+                console.log('RESULT DDL: OK — CREATE TABLE refusé (permission denied attendu), aucun droit de migration.');
+              }
+            }
+
+            await prisma.$disconnect();
+            if (failed) {
+              console.log('CONCLUSION: échec — ne pas basculer DATABASE_URL vers depenses_runtime avant correction.');
+              process.exit(1);
+            }
+            console.log('CONCLUSION: tous les contrôles isolés sont au vert — le rôle peut être utilisé pour la bascule.');
+          }
+
+          main().catch((e) => {
+            console.error(e);
+            process.exit(1);
+          });
+          EOF
+          npx ts-node -r tsconfig-paths/register ./check-runtime-role.ts
+          rm -f ./check-runtime-role.ts

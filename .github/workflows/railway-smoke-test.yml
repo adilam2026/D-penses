@@ -1,0 +1,263 @@
+name: Railway PROD — Smoke test bascule rôle (auth réelle + RLS + isolation)
+
+# S0 (bascule rôle runtime) : smoke test à exécuter APRÈS avoir basculé la
+# variable Railway DATABASE_URL du service backend vers depenses_runtime.
+#
+# Distingue explicitement 4 choses dans le rapport final :
+#  - le parcours d'authentification RÉEL (signup + OTP + login) pour au moins
+#    un des deux foyers, tel que vécu par un utilisateur ; l'autre foyer peut
+#    utiliser le bypass emailVerifiedAt en dernier recours (bootstrap
+#    technique, PAS un test du parcours OTP) si un deuxième email n'est pas
+#    disponible ;
+#  - le fonctionnement DML normal via l'API (création compte/catégorie/plan) ;
+#  - l'isolation RLS inter-foyers (tentatives de substitution d'ID) ;
+#  - (le rôle PostgreSQL lui-même est vérifié séparément par
+#    railway-check-role.yml, exécuté sur le service backend une fois relancé).
+#
+# 3 phases séparées à déclencher successivement à la main (workflow_dispatch) :
+#   1) signup          -> déclenche les 2 signups réels, envoie les OTP par email
+#   2) verify_and_test -> valide les OTP (réel ou bypass explicite), crée 2
+#                          foyers jetables, exécute les tests d'isolation
+#   3) cleanup         -> supprime les foyers/utilisateurs de test (connexion
+#                          admin séparée, après les tests, jamais pendant)
+#
+# Sécurité : aucun secret (DATABASE_URL_PROD) n'est échoué/loggé. Les emails
+# et OTP saisis en input ne sont pas des secrets au sens GitHub mais restent
+# visibles dans l'historique du run à quiconque a accès en lecture aux
+# Actions de ce dépôt — n'utiliser que des adresses de test dédiées.
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: "Phase à exécuter"
+        required: true
+        type: choice
+        options:
+          - signup
+          - verify_and_test
+          - cleanup
+      api_url:
+        description: "URL HTTPS publique du backend, ex. https://d-penses-production.up.railway.app (sans slash final)"
+        required: true
+      email_a:
+        description: "Email réel et contrôlé du foyer A (ex. votretest+a@gmail.com) — requis pour signup et verify_and_test"
+        required: false
+      email_b:
+        description: "Email réel et contrôlé du foyer B (ex. votretest+b@gmail.com) — requis pour signup et verify_and_test"
+        required: false
+      otp_a:
+        description: "Code OTP reçu par email pour le foyer A (verify_and_test) — laisser vide si bypass_a=true"
+        required: false
+      otp_b:
+        description: "Code OTP reçu par email pour le foyer B (verify_and_test) — laisser vide si bypass_b=true"
+        required: false
+      bypass_a:
+        description: "DERNIER RECOURS — foyer A : forcer emailVerifiedAt en base au lieu de valider l'OTP réel (ne teste PAS le parcours OTP)"
+        required: false
+        type: boolean
+        default: false
+      bypass_b:
+        description: "DERNIER RECOURS — foyer B : forcer emailVerifiedAt en base au lieu de valider l'OTP réel (ne teste PAS le parcours OTP)"
+        required: false
+        type: boolean
+        default: false
+      run_tag:
+        description: "Étiquette unique pour ce run (ex. date+heure) — sert à nommer les foyers SMOKE_TEST_<run_tag>_A/B et à cibler le nettoyage"
+        required: true
+
+jobs:
+  signup:
+    if: github.event.inputs.phase == 'signup'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Signup réel — foyer A
+        run: |
+          set -o pipefail
+          code=$(curl -sS -o a.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/auth/signup" \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"${{ github.event.inputs.email_a }}\",\"password\":\"SmokeTest_${{ github.event.inputs.run_tag }}!\",\"firstName\":\"Smoke\",\"lastName\":\"A\"}")
+          echo "HTTP $code"; cat a.json; echo
+          test "$code" = "201"
+          echo "OTP réel envoyé à ${{ github.event.inputs.email_a }} (si bypass_a=false, vérifiez la boîte mail)."
+
+      - name: Signup réel — foyer B
+        run: |
+          set -o pipefail
+          code=$(curl -sS -o b.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/auth/signup" \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"${{ github.event.inputs.email_b }}\",\"password\":\"SmokeTest_${{ github.event.inputs.run_tag }}!\",\"firstName\":\"Smoke\",\"lastName\":\"B\"}")
+          echo "HTTP $code"; cat b.json; echo
+          test "$code" = "201"
+          echo "OTP réel envoyé à ${{ github.event.inputs.email_b }} (si bypass_b=false, vérifiez la boîte mail)."
+
+      - name: Rappel étape suivante
+        run: |
+          echo "Relancez ce workflow avec phase=verify_and_test, en renseignant otp_a/otp_b (ou bypass_a/bypass_b) et le MÊME run_tag=${{ github.event.inputs.run_tag }}."
+
+  verify_and_test:
+    if: github.event.inputs.phase == 'verify_and_test'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Installer les dépendances (backend)
+        run: npm ci
+      - name: Générer le client Prisma
+        run: npx prisma generate
+
+      - name: Bypass emailVerifiedAt (DERNIER RECOURS uniquement, par foyer)
+        if: github.event.inputs.bypass_a == 'true' || github.event.inputs.bypass_b == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+        run: |
+          cat > ./bypass.ts <<'EOF'
+          import { PrismaClient } from '@prisma/client';
+          async function main() {
+            const prisma = new PrismaClient();
+            const emails: string[] = [];
+            if (process.env.BYPASS_A === 'true') emails.push(process.env.EMAIL_A as string);
+            if (process.env.BYPASS_B === 'true') emails.push(process.env.EMAIL_B as string);
+            for (const email of emails) {
+              await prisma.user.update({ where: { email }, data: { emailVerifiedAt: new Date() } });
+              console.log(`BYPASS applique pour ${email} — parcours OTP NON teste pour ce foyer.`);
+            }
+            await prisma.$disconnect();
+          }
+          main().catch((e) => { console.error(e); process.exit(1); });
+          EOF
+          BYPASS_A="${{ github.event.inputs.bypass_a }}" BYPASS_B="${{ github.event.inputs.bypass_b }}" \
+          EMAIL_A="${{ github.event.inputs.email_a }}" EMAIL_B="${{ github.event.inputs.email_b }}" \
+          npx ts-node -r tsconfig-paths/register ./bypass.ts
+          rm -f ./bypass.ts
+
+      - name: Vérifier OTP réel — foyer A (si bypass_a=false)
+        if: github.event.inputs.bypass_a != 'true'
+        run: |
+          set -o pipefail
+          code=$(curl -sS -o verify_a.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/auth/verify-email-otp" \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"${{ github.event.inputs.email_a }}\",\"code\":\"${{ github.event.inputs.otp_a }}\"}")
+          echo "HTTP $code"; cat verify_a.json; echo
+          test "$code" = "200" || test "$code" = "201"
+          echo "PARCOURS AUTH REEL foyer A : OK (OTP reel valide)."
+
+      - name: Vérifier OTP réel — foyer B (si bypass_b=false)
+        if: github.event.inputs.bypass_b != 'true'
+        run: |
+          set -o pipefail
+          code=$(curl -sS -o verify_b.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/auth/verify-email-otp" \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"${{ github.event.inputs.email_b }}\",\"code\":\"${{ github.event.inputs.otp_b }}\"}")
+          echo "HTTP $code"; cat verify_b.json; echo
+          test "$code" = "200" || test "$code" = "201"
+          echo "PARCOURS AUTH REEL foyer B : OK (OTP reel valide)."
+
+      - name: Login + création foyers + tests RLS/isolation via API PROD
+        run: |
+          set -o pipefail
+          API="${{ github.event.inputs.api_url }}"
+          PW="SmokeTest_${{ github.event.inputs.run_tag }}!"
+          TAG="${{ github.event.inputs.run_tag }}"
+
+          login() {
+            curl -sS -X POST "$API/auth/login" -H "Content-Type: application/json" \
+              -d "{\"email\":\"$1\",\"password\":\"$PW\"}" | jq -r '.accessToken'
+          }
+          TOKEN_A=$(login "${{ github.event.inputs.email_a }}")
+          TOKEN_B=$(login "${{ github.event.inputs.email_b }}")
+          test -n "$TOKEN_A" -a "$TOKEN_A" != "null"
+          test -n "$TOKEN_B" -a "$TOKEN_B" != "null"
+          echo "Login foyer A/B : OK"
+
+          HH_A=$(curl -sS -X POST "$API/households" -H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" \
+            -d "{\"name\":\"SMOKE_TEST_${TAG}_A\"}")
+          HH_B=$(curl -sS -X POST "$API/households" -H "Authorization: Bearer $TOKEN_B" -H "Content-Type: application/json" \
+            -d "{\"name\":\"SMOKE_TEST_${TAG}_B\"}")
+          HTOKEN_A=$(echo "$HH_A" | jq -r '.accessToken')
+          HTOKEN_B=$(echo "$HH_B" | jq -r '.accessToken')
+          test -n "$HTOKEN_A" -a "$HTOKEN_A" != "null"
+          test -n "$HTOKEN_B" -a "$HTOKEN_B" != "null"
+          echo "DML via API (creation foyer A/B) : OK"
+
+          ACC_A=$(curl -sS -X POST "$API/accounts" -H "Authorization: Bearer $HTOKEN_A" -H "Content-Type: application/json" \
+            -d '{"name":"Compte SMOKE A","type":"courant","initialBalance":1000}' | jq -r '.id')
+          CAT_A=$(curl -sS -X POST "$API/categories" -H "Authorization: Bearer $HTOKEN_A" -H "Content-Type: application/json" \
+            -d '{"name":"Cat SMOKE A","kind":"expense"}' | jq -r '.id')
+          test -n "$ACC_A" -a "$ACC_A" != "null"
+          test -n "$CAT_A" -a "$CAT_A" != "null"
+          echo "DML via API (creation compte/categorie foyer A) : OK"
+
+          echo "--- Isolation inter-foyers (substitution d'ID) ---"
+          CODE1=$(curl -sS -o /dev/null -w "%{http_code}" -X POST "$API/expenses" -H "Authorization: Bearer $HTOKEN_B" -H "Content-Type: application/json" \
+            -d "{\"amount\":50,\"accountId\":\"$ACC_A\"}")
+          echo "expense avec accountId etranger (B utilise le compte de A) : HTTP $CODE1 (attendu 400/404)"
+          if [ "$CODE1" != "400" ] && [ "$CODE1" != "404" ]; then echo "ISOLATION KO — accountId etranger accepte !"; exit 1; fi
+
+          CODE2=$(curl -sS -o /dev/null -w "%{http_code}" -X POST "$API/charge-plans" -H "Authorization: Bearer $HTOKEN_B" -H "Content-Type: application/json" \
+            -d "{\"label\":\"Test\",\"categoryId\":\"$CAT_A\",\"startDate\":\"2026-10-01\",\"generationMode\":\"calendrier_manuel\",\"obligationStatus\":\"obligatoire\"}")
+          echo "charge-plan avec categoryId etranger (B utilise la categorie de A) : HTTP $CODE2 (attendu 400/404)"
+          if [ "$CODE2" != "400" ] && [ "$CODE2" != "404" ]; then echo "ISOLATION KO — categoryId etranger accepte !"; exit 1; fi
+
+          CODE3=$(curl -sS -o /dev/null -w "%{http_code}" -X POST "$API/charge-plans" -H "Authorization: Bearer $HTOKEN_A" -H "Content-Type: application/json" \
+            -d "{\"label\":\"Charge normale SMOKE\",\"categoryId\":\"$CAT_A\",\"startDate\":\"2026-10-01\",\"generationMode\":\"calendrier_manuel\",\"obligationStatus\":\"obligatoire\"}")
+          echo "charge-plan normal foyer A avec sa propre categorie (non-regression) : HTTP $CODE3 (attendu 201)"
+          if [ "$CODE3" != "201" ]; then echo "NON-REGRESSION KO — usage normal casse par le correctif !"; exit 1; fi
+
+          echo "=================================================="
+          echo "RESULTAT SMOKE TEST : TOUS LES CONTROLES SONT VERTS"
+          echo "  - Parcours d'authentification reel : voir etapes precedentes (OTP reel ou bypass explicite)"
+          echo "  - DML via API (role runtime) : OK"
+          echo "  - Isolation RLS inter-foyers (substitution d'ID) : OK"
+          echo "  - Non-regression usage normal : OK"
+          echo "=================================================="
+
+  cleanup:
+    if: github.event.inputs.phase == 'cleanup'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Installer les dépendances (backend)
+        run: npm ci
+      - name: Générer le client Prisma
+        run: npx prisma generate
+
+      - name: Nettoyage — supprimer foyers et utilisateurs de smoke test (connexion admin)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+        run: |
+          cat > ./cleanup.ts <<'EOF'
+          import { PrismaClient } from '@prisma/client';
+          async function main() {
+            const prisma = new PrismaClient();
+            const tag = process.env.RUN_TAG as string;
+            const emailA = process.env.EMAIL_A as string;
+            const emailB = process.env.EMAIL_B as string;
+
+            const hh = await prisma.household.deleteMany({ where: { name: { startsWith: `SMOKE_TEST_${tag}_` } } });
+            console.log(`Foyers supprimes (cascade sur membres/comptes/categories/plans/...) : ${hh.count}`);
+
+            const users = await prisma.user.deleteMany({ where: { email: { in: [emailA, emailB] } } });
+            console.log(`Utilisateurs supprimes (cascade sur sessions/OTP) : ${users.count}`);
+
+            await prisma.$disconnect();
+          }
+          main().catch((e) => { console.error(e); process.exit(1); });
+          EOF
+          RUN_TAG="${{ github.event.inputs.run_tag }}" EMAIL_A="${{ github.event.inputs.email_a }}" EMAIL_B="${{ github.event.inputs.email_b }}" \
+          npx ts-node -r tsconfig-paths/register ./cleanup.ts
+          rm -f ./cleanup.ts
