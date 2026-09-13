@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { DateField } from '../../ui/DateField';
@@ -48,6 +48,9 @@ export function CreateBudgetScreen() {
   // 'semaine', jamais bloqué/masqué pour autant côté serveur — juste sans effet).
   const [monthMode, setMonthMode] = useState<api.MonthMode>('calendaire');
   const [customStartDay, setCustomStartDay] = useState('');
+  // Mini-lot includeInPrudentProjection — activé par défaut (même défaut que le
+  // backend), visible pour semaine ET mois, toujours envoyé explicitement.
+  const [includeInPrudentProjection, setIncludeInPrudentProjection] = useState(true);
   const [startDate, setStartDate] = useState(todayIso());
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -86,6 +89,7 @@ export function CreateBudgetScreen() {
         startDate,
         monthMode: period === 'mois' ? monthMode : undefined,
         customStartDay: period === 'mois' && monthMode === 'personnalise' ? numericCustomStartDay : undefined,
+        includeInPrudentProjection,
       });
       const categoryName = categories.find((c) => c.id === categoryId)?.name ?? '';
       setCreated((prev) => [...prev, { categoryName, amount: numericAmount, period }]);
@@ -93,6 +97,7 @@ export function CreateBudgetScreen() {
       setAmount('');
       setMonthMode('calendaire');
       setCustomStartDay('');
+      setIncludeInPrudentProjection(true);
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Création impossible');
     } finally {
@@ -179,6 +184,18 @@ export function CreateBudgetScreen() {
         </>
       )}
 
+      <View style={styles.prudentRow}>
+        <View style={{ flex: 1, marginRight: spacing.sm }}>
+          <Text style={styles.prudentLabel}>Inclure le restant du budget dans la projection prudente</Text>
+          <Text style={styles.prudentHelp}>Le montant non consommé sera réservé dans la vision prudente de votre trésorerie.</Text>
+        </View>
+        <Switch
+          testID="create-budget-include-prudent-switch"
+          value={includeInPrudentProjection}
+          onValueChange={setIncludeInPrudentProjection}
+        />
+      </View>
+
       <Text style={styles.sectionLabel}>Date de début</Text>
       <DateField value={startDate} onChange={setStartDate} />
 
@@ -208,6 +225,9 @@ const styles = StyleSheet.create({
   segmentActive: { backgroundColor: colors.surface },
   segmentText: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
   segmentTextActive: { color: colors.textPrimary },
+  prudentRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
+  prudentLabel: { fontSize: 12, fontWeight: '600', color: colors.textPrimary },
+  prudentHelp: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
   button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.sm },
   buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 15 },
   continueButton: { borderRadius: radius.md, paddingVertical: 12, alignItems: 'center', marginTop: spacing.md, marginBottom: spacing.xl },

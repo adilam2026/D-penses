@@ -42,6 +42,7 @@ function detailFixture(rythmeAlerte: boolean) {
     referenceAmount: 1000,
     referencePeriod: 'semaine' as const,
     weekStartDay: 1,
+    includeInPrudentProjection: true,
     status: {
       periodStart: '2026-09-07',
       periodEnd: '2026-09-13',
@@ -201,7 +202,7 @@ describe('BudgetDetailScreen — navigation de périodes et historique (Lot 4)',
  * incompatible avec customStartDay le remet immédiatement à vide (jamais de
  * valeur fantôme envoyée au PATCH).
  */
-function monthlyFixture(monthMode: api.MonthMode, customStartDay: number | null) {
+function monthlyFixture(monthMode: api.MonthMode, customStartDay: number | null, includeInPrudentProjection = true) {
   return {
     id: 'b1',
     categoryId: 'cat-1',
@@ -211,6 +212,7 @@ function monthlyFixture(monthMode: api.MonthMode, customStartDay: number | null)
     weekStartDay: 1,
     monthMode,
     customStartDay,
+    includeInPrudentProjection,
     status: {
       periodStart: '2026-09-01',
       periodEnd: '2026-09-30',
@@ -298,6 +300,7 @@ describe('BudgetDetailScreen — édition du mode du mois (Lot 6)', () => {
         referencePeriod: 'mois',
         monthMode: 'personnalise',
         customStartDay: 25,
+        includeInPrudentProjection: true,
       }),
     );
   });
@@ -321,6 +324,7 @@ describe('BudgetDetailScreen — édition du mode du mois (Lot 6)', () => {
         referencePeriod: 'mois',
         monthMode: 'financier',
         customStartDay: undefined,
+        includeInPrudentProjection: true,
       }),
     );
   });
@@ -359,6 +363,7 @@ describe('BudgetDetailScreen — édition du mode du mois (Lot 6)', () => {
       referencePeriod: 'mois',
       monthMode: 'personnalise',
       customStartDay: 10,
+      includeInPrudentProjection: true,
     });
   });
 
@@ -380,7 +385,85 @@ describe('BudgetDetailScreen — édition du mode du mois (Lot 6)', () => {
         referencePeriod: 'semaine',
         monthMode: 'calendaire',
         customStartDay: undefined,
+        includeInPrudentProjection: true,
       }),
+    );
+  });
+});
+
+/**
+ * Mini-lot includeInPrudentProjection — édition depuis BudgetDetailScreen :
+ * état initial fidèle à `detail.includeInPrudentProjection`, bascule dans les
+ * deux sens, valeur toujours renvoyée explicitement au PATCH (y compris quand
+ * le switch n'est pas touché — même convention que referencePeriod/monthMode).
+ */
+describe('BudgetDetailScreen — includeInPrudentProjection (mini-lot)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedApi.updateVariableBudget.mockResolvedValue({ id: 'b1' } as any);
+  });
+
+  it('état initial fidèle au backend : true', async () => {
+    mockedApi.getVariableBudget.mockResolvedValue(monthlyFixture('calendaire', null, true));
+    await render(<BudgetDetailScreen />);
+    await openEditModal();
+
+    expect(screen.getByTestId('budget-edit-include-prudent-switch').props.value).toBe(true);
+  });
+
+  it('état initial fidèle au backend : false', async () => {
+    mockedApi.getVariableBudget.mockResolvedValue(monthlyFixture('calendaire', null, false));
+    await render(<BudgetDetailScreen />);
+    await openEditModal();
+
+    expect(screen.getByTestId('budget-edit-include-prudent-switch').props.value).toBe(false);
+  });
+
+  it('bascule true→false : PATCH avec includeInPrudentProjection=false', async () => {
+    mockedApi.getVariableBudget.mockResolvedValue(monthlyFixture('calendaire', null, true));
+    await render(<BudgetDetailScreen />);
+    await openEditModal();
+
+    await fireEvent(screen.getByTestId('budget-edit-include-prudent-switch'), 'valueChange', false);
+    await flush();
+    await fireEvent.press(screen.getByTestId('budget-edit-save'));
+    await waitFor(() =>
+      expect(mockedApi.updateVariableBudget).toHaveBeenCalledWith(
+        'b1',
+        expect.objectContaining({ includeInPrudentProjection: false }),
+      ),
+    );
+  });
+
+  it('bascule false→true : PATCH avec includeInPrudentProjection=true', async () => {
+    mockedApi.getVariableBudget.mockResolvedValue(monthlyFixture('calendaire', null, false));
+    await render(<BudgetDetailScreen />);
+    await openEditModal();
+
+    await fireEvent(screen.getByTestId('budget-edit-include-prudent-switch'), 'valueChange', true);
+    await flush();
+    await fireEvent.press(screen.getByTestId('budget-edit-save'));
+    await waitFor(() =>
+      expect(mockedApi.updateVariableBudget).toHaveBeenCalledWith(
+        'b1',
+        expect.objectContaining({ includeInPrudentProjection: true }),
+      ),
+    );
+  });
+
+  it('switch non touché : la valeur actuelle (false) est conservée et renvoyée explicitement', async () => {
+    mockedApi.getVariableBudget.mockResolvedValue(monthlyFixture('calendaire', null, false));
+    await render(<BudgetDetailScreen />);
+    await openEditModal();
+
+    fireEvent.changeText(screen.getByTestId('budget-edit-amount'), '1200');
+    await flush();
+    await fireEvent.press(screen.getByTestId('budget-edit-save'));
+    await waitFor(() =>
+      expect(mockedApi.updateVariableBudget).toHaveBeenCalledWith(
+        'b1',
+        expect.objectContaining({ referenceAmount: 1200, includeInPrudentProjection: false }),
+      ),
     );
   });
 });

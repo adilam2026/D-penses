@@ -344,6 +344,8 @@ export const createVariableBudget = (data: {
   /** Requis si monthMode='personnalise' (1-31, clampé automatiquement au
    *  dernier jour réel du mois côté serveur si trop court). */
   customStartDay?: number;
+  /** Défaut true côté serveur — seuls les budgets à true participent au Solde prudent. */
+  includeInPrudentProjection?: boolean;
 }) => apiFetch('/variable-budgets', { method: 'POST', body: data });
 
 export const updateVariableBudget = (
@@ -356,6 +358,7 @@ export const updateVariableBudget = (
     categoryId?: string;
     monthMode?: MonthMode;
     customStartDay?: number;
+    includeInPrudentProjection?: boolean;
   },
 ) => apiFetch(`/variable-budgets/${id}`, { method: 'PATCH', body: data });
 
@@ -503,6 +506,10 @@ export const updateHouseholdSettings = (data: {
   seuilAPayerDays?: number;
   homeBannerDismissed?: boolean;
   closingDay?: number;
+  /** Mini-lot weekStartDay foyer — 1=lundi..7=dimanche (RG-098). Défaut à la
+   *  création d'un budget hebdomadaire sans jour explicite ; jamais rétroactif
+   *  sur les budgets existants. */
+  weekStartDay?: number;
 }) => apiFetch('/households/settings', { method: 'PATCH', body: data });
 
 // Vague 3 §25/§28 — étape d'onboarding marquée "non applicable"/"plus tard", partagée

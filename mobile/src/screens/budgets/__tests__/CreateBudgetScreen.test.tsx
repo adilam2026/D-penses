@@ -156,3 +156,51 @@ describe('CreateBudgetScreen — mode du mois (Lot 6)', () => {
     );
   });
 });
+
+/**
+ * Mini-lot includeInPrudentProjection — switch visible pour semaine ET mois
+ * (jamais masqué selon la périodicité), activé par défaut (même défaut que le
+ * backend), toujours envoyé explicitement (jamais omis du payload).
+ */
+describe('CreateBudgetScreen — includeInPrudentProjection (mini-lot)', () => {
+  beforeEach(() => {
+    mockedApi.listCategories.mockResolvedValue(categories);
+    mockedApi.createVariableBudget.mockResolvedValue({ id: 'b1' } as any);
+  });
+
+  it('le switch est visible et activé par défaut', async () => {
+    await render(<CreateBudgetScreen />);
+    await waitFor(() => screen.getByTestId('create-budget-category-select'));
+    const switchEl = screen.getByTestId('create-budget-include-prudent-switch');
+    expect(switchEl).toBeTruthy();
+    expect(switchEl.props.value).toBe(true);
+  });
+
+  it('non touché : includeInPrudentProjection=true envoyé au create', async () => {
+    await render(<CreateBudgetScreen />);
+    await waitFor(() => screen.getByTestId('create-budget-category-select'));
+    await selectCategory();
+    fireEvent.changeText(screen.getByTestId('create-budget-amount-input'), '1000');
+    await flush();
+
+    await fireEvent.press(screen.getByTestId('create-budget-submit'));
+    await waitFor(() =>
+      expect(mockedApi.createVariableBudget).toHaveBeenCalledWith(expect.objectContaining({ includeInPrudentProjection: true })),
+    );
+  });
+
+  it('désactivé : includeInPrudentProjection=false envoyé au create', async () => {
+    await render(<CreateBudgetScreen />);
+    await waitFor(() => screen.getByTestId('create-budget-category-select'));
+    await selectCategory();
+    fireEvent.changeText(screen.getByTestId('create-budget-amount-input'), '1000');
+    await flush();
+    await fireEvent(screen.getByTestId('create-budget-include-prudent-switch'), 'valueChange', false);
+    await flush();
+
+    await fireEvent.press(screen.getByTestId('create-budget-submit'));
+    await waitFor(() =>
+      expect(mockedApi.createVariableBudget).toHaveBeenCalledWith(expect.objectContaining({ includeInPrudentProjection: false })),
+    );
+  });
+});

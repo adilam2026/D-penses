@@ -4,6 +4,7 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleShe
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
+import { Select } from '../../ui/Select';
 
 function closingDayNextLabel(closingDay: string): string {
   const d = Math.min(31, Math.max(1, Number(closingDay) || 31));
@@ -16,6 +17,18 @@ const PROJECTION_MODE_LABEL: Record<string, string> = {
   prudent_max: 'Prudent (le plus élevé des deux)',
 };
 
+// Mini-lot weekStartDay foyer — 1=lundi..7=dimanche (RG-098), même convention
+// que le backend (HouseholdSettings.weekStartDay, VariableBudget.weekStartDay).
+const WEEKDAY_OPTIONS = [
+  { value: '1', label: 'Lundi' },
+  { value: '2', label: 'Mardi' },
+  { value: '3', label: 'Mercredi' },
+  { value: '4', label: 'Jeudi' },
+  { value: '5', label: 'Vendredi' },
+  { value: '6', label: 'Samedi' },
+  { value: '7', label: 'Dimanche' },
+];
+
 /** ☰ Paramètres → Préférences (coussin de sécurité, seuils, mode de projection des budgets). */
 export function PreferencesScreen() {
   const bottomInset = useBottomInset();
@@ -25,6 +38,7 @@ export function PreferencesScreen() {
   const [seuilAVenirDays, setSeuilAVenirDays] = useState('30');
   const [seuilAPayerDays, setSeuilAPayerDays] = useState('7');
   const [closingDay, setClosingDay] = useState('31');
+  const [weekStartDay, setWeekStartDay] = useState('1');
   const [mode, setMode] = useState('prudent_max');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -39,6 +53,7 @@ export function PreferencesScreen() {
         setSeuilAVenirDays(String(s.seuilAVenirDays));
         setSeuilAPayerDays(String(s.seuilAPayerDays));
         setClosingDay(String(s.closingDay ?? 31));
+        setWeekStartDay(String(s.weekStartDay ?? 1));
         setMode(s.variableBudgetProjectionMode);
       }
     } finally {
@@ -61,6 +76,7 @@ export function PreferencesScreen() {
         seuilAVenirDays: Number(seuilAVenirDays) || 0,
         seuilAPayerDays: Number(seuilAPayerDays) || 0,
         closingDay: Math.min(31, Math.max(1, Number(closingDay) || 31)),
+        weekStartDay: Number(weekStartDay) || 1,
       });
       setSaved(true);
     } finally {
@@ -97,6 +113,17 @@ export function PreferencesScreen() {
       <Text style={styles.help}>
         Votre mois financier se termine le {closingDay || '31'}.{'\n'}
         Les opérations à partir du {closingDayNextLabel(closingDay)} sont rattachées à la période financière suivante.
+      </Text>
+
+      <Text style={styles.sectionLabel}>Premier jour de la semaine par défaut</Text>
+      <Select
+        testID="preferences-week-start-day-select"
+        value={weekStartDay}
+        onChange={setWeekStartDay}
+        options={WEEKDAY_OPTIONS}
+      />
+      <Text style={styles.help}>
+        Utilisé pour les nouveaux budgets hebdomadaires. Les budgets existants ne sont pas modifiés.
       </Text>
 
       <Text style={styles.sectionLabel}>Mode de projection des budgets variables</Text>

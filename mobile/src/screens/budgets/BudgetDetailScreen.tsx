@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
-import { ActivityIndicator, Alert, FlatList, Modal, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Modal, RefreshControl, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { ChoiceSheet } from '../../ui/ChoiceSheet';
 import { FormField } from '../../ui/FormField';
@@ -56,6 +56,7 @@ interface BudgetDetail {
   // Lot 6 — mode du mois, inerte pour referencePeriod='semaine'.
   monthMode: api.MonthMode;
   customStartDay: number | null;
+  includeInPrudentProjection: boolean;
   status: {
     periodStart: string;
     periodEnd: string;
@@ -142,6 +143,10 @@ export function BudgetDetailScreen() {
   // précédente réutilisée silencieusement au retour sur 'mois'.
   const [editMonthMode, setEditMonthMode] = useState<api.MonthMode>('calendaire');
   const [editCustomStartDay, setEditCustomStartDay] = useState('');
+  // Mini-lot includeInPrudentProjection — initialisé depuis le budget à
+  // l'ouverture, toujours renvoyé explicitement au PATCH (même convention que
+  // referencePeriod/monthMode ci-dessus).
+  const [editIncludeInPrudentProjection, setEditIncludeInPrudentProjection] = useState(true);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -196,6 +201,7 @@ export function BudgetDetailScreen() {
         ? String(detail.customStartDay)
         : '',
     );
+    setEditIncludeInPrudentProjection(detail.includeInPrudentProjection);
     setEditError(null);
     setEditOpen(true);
   }
@@ -232,6 +238,7 @@ export function BudgetDetailScreen() {
         referencePeriod: editPeriod,
         monthMode: editMonthMode,
         customStartDay: editMonthMode === 'personnalise' ? numericCustomStartDay : undefined,
+        includeInPrudentProjection: editIncludeInPrudentProjection,
       });
       setEditOpen(false);
       setAmendments(null); // Lot 4 — l'historique vient de changer, invalidé pour être rechargé à la prochaine ouverture.
@@ -446,6 +453,17 @@ export function BudgetDetailScreen() {
                 )}
               </>
             )}
+            <View style={styles.prudentRow}>
+              <View style={{ flex: 1, marginRight: spacing.sm }}>
+                <Text style={styles.prudentLabel}>Inclure le restant du budget dans la projection prudente</Text>
+                <Text style={styles.prudentHelp}>Le montant non consommé sera réservé dans la vision prudente de votre trésorerie.</Text>
+              </View>
+              <Switch
+                testID="budget-edit-include-prudent-switch"
+                value={editIncludeInPrudentProjection}
+                onValueChange={setEditIncludeInPrudentProjection}
+              />
+            </View>
             {editError && <Text style={styles.error}>{editError}</Text>}
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.modalButtonSecondary} onPress={() => setEditOpen(false)}>
@@ -540,6 +558,9 @@ const styles = StyleSheet.create({
   segmentActive: { backgroundColor: colors.surface },
   segmentText: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
   segmentTextActive: { color: colors.textPrimary },
+  prudentRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm, marginBottom: spacing.md },
+  prudentLabel: { fontSize: 12, fontWeight: '600', color: colors.textPrimary },
+  prudentHelp: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: spacing.md },
   modalButton: { backgroundColor: colors.primary, borderRadius: radius.sm, paddingHorizontal: 18, paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
   modalButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 13 },
