@@ -363,11 +363,12 @@ model CategoryType {
   active      Boolean  @default(true)
   createdAt   DateTime @default(now()) @map("created_at")
 
-  category       Category          @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  household      Household?        @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  subtypes       CategorySubtype[]
-  budgetExpenses BudgetExpense[]
-  adHocExpenses  AdHocExpense[]
+  category        Category          @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  household       Household?        @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  subtypes        CategorySubtype[]
+  budgetExpenses  BudgetExpense[]
+  adHocExpenses   AdHocExpense[]
+  variableBudgets VariableBudget[]
 
   @@index([categoryId])
   @@index([householdId])
@@ -835,6 +836,12 @@ model VariableBudget {
   id              String          @id @default(uuid())
   householdId     String          @map("household_id")
   categoryId      String          @map("category_id")
+  // Lot 2 (module Budgets) : NULL = budget scopé à toute la catégorie (comportement
+  // historique) ; renseigné = budget scopé à ce seul CategoryType précis (doit
+  // appartenir à categoryId, vérifié en service). Jamais un nouveau regroupement
+  // au-dessus des catégories — réutilise la hiérarchie Category → CategoryType déjà
+  // en place (même convention que BudgetExpense/AdHocExpense).
+  categoryTypeId  String?         @map("category_type_id")
   referenceAmount Decimal         @map("reference_amount") @db.Decimal(14, 2)
   referencePeriod ReferencePeriod @map("reference_period")
   weekStartDay    Int             @default(1) @map("week_start_day")
@@ -852,11 +859,13 @@ model VariableBudget {
   createdAt       DateTime        @default(now()) @map("created_at")
   updatedAt       DateTime        @updatedAt @map("updated_at")
 
-  household Household       @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  category  Category        @relation(fields: [categoryId], references: [id])
-  expenses  BudgetExpense[]
+  household    Household     @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  category     Category      @relation(fields: [categoryId], references: [id])
+  categoryType CategoryType? @relation(fields: [categoryTypeId], references: [id])
+  expenses     BudgetExpense[]
 
   @@index([householdId])
+  @@index([categoryTypeId])
   @@map("variable_budget")
 }
 

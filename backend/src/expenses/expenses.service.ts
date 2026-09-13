@@ -47,10 +47,20 @@ export class ExpensesService {
           throw new BadRequestException('Ce budget ne correspond pas à la catégorie indiquée');
         }
       } else if (dto.categoryId) {
-        const candidates = await this.variableBudgets.findActiveBudgetsOnTx(tx, householdId, dto.categoryId, spentDate);
+        // Lot 2 — priorité explicite (ci-dessus) > type précis > catégorie parente > aucun.
+        // Le type précis n'est essayé que si la dépense porte elle-même un categoryTypeId —
+        // sans type sur la dépense, impossible de savoir lequel viser, on va directement
+        // à la catégorie parente (budgets scopés catégorie uniquement, categoryTypeId NULL).
+        let candidates: Awaited<ReturnType<VariableBudgetsService['findActiveBudgetsForScopeOnTx']>> = [];
+        if (dto.categoryTypeId) {
+          candidates = await this.variableBudgets.findActiveBudgetsForScopeOnTx(tx, householdId, dto.categoryId, dto.categoryTypeId, spentDate);
+        }
+        if (candidates.length === 0) {
+          candidates = await this.variableBudgets.findActiveBudgetsForScopeOnTx(tx, householdId, dto.categoryId, null, spentDate);
+        }
         if (candidates.length > 1) {
           throw new ConflictException({
-            message: 'Plusieurs budgets actifs correspondent à cette catégorie — précisez variableBudgetId',
+            message: 'Plusieurs budgets actifs correspondent à ce périmètre — précisez variableBudgetId',
             candidates: candidates.map((c) => ({ id: c.id, referenceAmount: c.referenceAmount, referencePeriod: c.referencePeriod })),
           });
         }

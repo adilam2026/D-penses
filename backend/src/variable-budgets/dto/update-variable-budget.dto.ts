@@ -35,6 +35,14 @@ export class UpdateVariableBudgetDto {
   @IsUUID()
   categoryId?: string;
 
+  /** Lot 2 — rescope vers ce CategoryType précis (doit appartenir à categoryId,
+   *  celui déjà en base si categoryId n'est pas fourni dans le même appel).
+   *  `null` explicite = repasse le budget au scope catégorie entière (symétrique
+   *  du passage catégorie→type) ; absent (undefined) = valeur actuelle conservée. */
+  @IsOptional()
+  @IsUUID()
+  categoryTypeId?: string | null;
+
   /** Lot 1 — bascule Oui/Non de la participation au Solde prudent. */
   @IsOptional()
   @IsBoolean()

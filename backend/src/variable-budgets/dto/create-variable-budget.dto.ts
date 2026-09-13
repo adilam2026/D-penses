@@ -4,6 +4,12 @@ export class CreateVariableBudgetDto {
   @IsUUID()
   categoryId!: string;
 
+  /** Lot 2 — budget scopé à ce CategoryType précis (doit appartenir à categoryId) ;
+   *  omis = budget scopé à toute la catégorie (comportement historique). */
+  @IsOptional()
+  @IsUUID()
+  categoryTypeId?: string;
+
   @IsNumber()
   @IsPositive()
   referenceAmount!: number;

@@ -63,6 +63,67 @@ export class VariableBudgetsService {
     return this.findActiveBudgetsRaw(tx, householdId, categoryId, at);
   }
 
+  /**
+   * Lot 2 — recherche par scope EXACT, utilisée par ExpensesService pour la
+   * priorité explicite > type précis > catégorie parente > aucun.
+   * categoryTypeId=null cible exclusivement les budgets scopés à toute la
+   * catégorie (jamais un budget scopé à un type précis) ; categoryTypeId=<id>
+   * cible exclusivement ce type précis (jamais la catégorie parente).
+   */
+  async findActiveBudgetsForScopeOnTx(
+    tx: TxClient,
+    householdId: string,
+    categoryId: string,
+    categoryTypeId: string | null,
+    at: Date = new Date(),
+  ) {
+    return tx.variableBudget.findMany({
+      where: {
+        householdId,
+        categoryId,
+        categoryTypeId,
+        status: 'actif',
+        startDate: { lte: at },
+        OR: [{ endDate: null }, { endDate: { gte: at } }],
+      },
+    });
+  }
+
+  /** Vérifie que categoryTypeId (si fourni) appartient bien à categoryId, dans ce foyer ou système. */
+  private async validateCategoryTypeScope(tx: TxClient, householdId: string, categoryId: string, categoryTypeId: string) {
+    const type = await tx.categoryType.findFirst({
+      where: { id: categoryTypeId, categoryId, OR: [{ householdId: null }, { householdId }] },
+    });
+    if (!type) throw new NotFoundException("Type introuvable pour cette catégorie");
+  }
+
+  /**
+   * Chevauchement de scope (§ "un budget principal actif par type") — avertissement
+   * NON BLOQUANT uniquement, jamais un refus de création/modification (RG-000).
+   * `excludeId` évite qu'un budget existant se signale lui-même lors d'un update.
+   */
+  private async findOverlappingBudgets(
+    tx: TxClient,
+    householdId: string,
+    categoryId: string,
+    categoryTypeId: string | null,
+    startDate: Date,
+    endDate: Date | null,
+    excludeId?: string,
+  ) {
+    return tx.variableBudget.findMany({
+      where: {
+        householdId,
+        categoryId,
+        categoryTypeId,
+        status: 'actif',
+        id: excludeId ? { not: excludeId } : undefined,
+        startDate: endDate ? { lte: endDate } : undefined,
+        OR: [{ endDate: null }, { endDate: { gte: startDate } }],
+      },
+    });
+  }
+
   private async statusFor(tx: TxClient, budgetRow: any, mode: ProjectionMode, today: Date) {
     const budget = this.toBudgetLike(budgetRow);
     const window = getCurrentPeriodWindow(budget, today);
@@ -84,19 +145,30 @@ export class VariableBudgetsService {
       const tx = this.rlsContext.getClient();
       const category = await tx.category.findFirst({ where: { id: dto.categoryId, OR: [{ householdId: null }, { householdId }] } });
       if (!category) throw new NotFoundException('Catégorie introuvable');
+      if (dto.categoryTypeId) {
+        await this.validateCategoryTypeScope(tx, householdId, dto.categoryId, dto.categoryTypeId);
+      }
 
-      return tx.variableBudget.create({
+      const startDate = new Date(dto.startDate);
+      const endDate = dto.endDate ? new Date(dto.endDate) : null;
+      const overlapping = await this.findOverlappingBudgets(tx, householdId, dto.categoryId, dto.categoryTypeId ?? null, startDate, endDate);
+
+      const budget = await tx.variableBudget.create({
         data: {
           householdId,
           categoryId: dto.categoryId,
+          categoryTypeId: dto.categoryTypeId,
           referenceAmount: dto.referenceAmount,
           referencePeriod: dto.referencePeriod,
           weekStartDay: dto.weekStartDay ?? 1,
-          startDate: new Date(dto.startDate),
-          endDate: dto.endDate ? new Date(dto.endDate) : undefined,
+          startDate,
+          endDate: endDate ?? undefined,
           includeInPrudentProjection: dto.includeInPrudentProjection ?? true,
         },
       });
+      // Avertissement NON bloquant (RG-000) : "en principe un budget principal actif
+      // par type" — jamais un refus, jamais une désambiguïsation forcée à la création.
+      return { ...budget, overlapWarning: overlapping.length > 0 ? overlapping.map((b) => b.id) : null };
     });
   }
 
@@ -145,10 +217,29 @@ export class VariableBudgetsService {
       const budget = await tx.variableBudget.findFirst({ where: { id, householdId } });
       if (!budget) throw new NotFoundException('Budget introuvable');
 
+      const effectiveCategoryId = dto.categoryId ?? budget.categoryId;
       if (dto.categoryId) {
         const category = await tx.category.findFirst({ where: { id: dto.categoryId, OR: [{ householdId: null }, { householdId }] } });
         if (!category) throw new NotFoundException('Catégorie introuvable');
       }
+      if (dto.categoryTypeId) {
+        await this.validateCategoryTypeScope(tx, householdId, effectiveCategoryId, dto.categoryTypeId);
+      }
+
+      // `null` explicite (≠ undefined) : repasse le budget au scope catégorie
+      // entière — ne jamais utiliser `??` ici, qui traiterait null comme absent.
+      const effectiveCategoryTypeId = dto.categoryTypeId !== undefined ? dto.categoryTypeId : budget.categoryTypeId;
+      const effectiveStartDate = budget.startDate; // startDate n'est jamais modifiable (§14, hors périmètre)
+      const effectiveEndDate = dto.endDate !== undefined ? new Date(dto.endDate) : budget.endDate;
+      const overlapping = await this.findOverlappingBudgets(
+        tx,
+        householdId,
+        effectiveCategoryId,
+        effectiveCategoryTypeId,
+        effectiveStartDate,
+        effectiveEndDate,
+        id,
+      );
 
       await tx.variableBudget.update({
         where: { id },
@@ -158,10 +249,12 @@ export class VariableBudgetsService {
           referencePeriod: dto.referencePeriod,
           weekStartDay: dto.weekStartDay,
           categoryId: dto.categoryId,
+          categoryTypeId: dto.categoryTypeId,
           includeInPrudentProjection: dto.includeInPrudentProjection,
         },
       });
-      return this.detailOnTx(tx, householdId, id);
+      const detail = await this.detailOnTx(tx, householdId, id);
+      return { ...detail, overlapWarning: overlapping.length > 0 ? overlapping.map((b) => b.id) : null };
     });
   }
 
