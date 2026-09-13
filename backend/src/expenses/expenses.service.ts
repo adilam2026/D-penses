@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
-import { getAccountBalance, toNumber } from '../common/ledger/ledger.util';
+import { budgetExpenseConsumptionAmount, getAccountBalance, toNumber } from '../common/ledger/ledger.util';
 import { VariableBudgetsService } from '../variable-budgets/variable-budgets.service';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseMetadataDto } from './dto/update-expense-metadata.dto';
@@ -215,6 +215,109 @@ export class ExpensesService {
       });
 
       return { adjustment, soldeCourant: await getAccountBalance(tx, original.accountId) };
+    });
+  }
+
+  /**
+   * T3B — « Corriger » une budget_expense (montant mal saisi UNIQUEMENT — un
+   * compte/catégorie/budget/date erroné se corrige par Annuler + nouvelle
+   * dépense, jamais un déplacement ici). Jamais une réécriture de la ligne
+   * originale : une nouvelle ligne (type=ajustement) porte le delta, datée
+   * EXACTEMENT comme l'originale (spentDate identique — jamais "maintenant",
+   * la consommation est agrégée par fenêtre de période : une contre-écriture
+   * datée d'aujourd'hui pourrait tomber dans une autre période que celle
+   * corrigée). sourceBudgetExpenseId trace le lien réel (jamais une simple
+   * note texte). Solde/consommation/projection recalculés par les mêmes
+   * lectures dérivées qu'ailleurs (ledger_entry, getBudgetExpenseConsumption) —
+   * aucun moteur dupliqué ici.
+   */
+  async correctBudget(userId: string, householdId: string, id: string, dto: CorrectExpenseDto) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const original = await tx.budgetExpense.findFirst({ where: { id, variableBudget: { householdId } } });
+      if (!original) throw new NotFoundException('Dépense introuvable');
+      if (original.type !== 'depense') {
+        throw new BadRequestException('Seule une dépense originale peut être corrigée (jamais une correction/annulation déjà appliquée)');
+      }
+      const alreadyReversed = await tx.budgetExpense.findFirst({ where: { sourceBudgetExpenseId: id, type: 'remboursement' } });
+      if (alreadyReversed) throw new ConflictException('Cette dépense a déjà été annulée — impossible de la corriger');
+
+      const originalAmount = toNumber(original.amount);
+      const delta = round2(dto.correctedAmount - originalAmount);
+      if (delta === 0) throw new BadRequestException('Le montant corrigé est identique au montant déjà enregistré');
+      const direction = delta > 0 ? 'augmente_depense' : 'diminue_depense';
+
+      const correction = await tx.budgetExpense.create({
+        data: {
+          variableBudgetId: original.variableBudgetId,
+          amount: Math.abs(delta),
+          spentDate: original.spentDate,
+          categoryId: original.categoryId,
+          categoryTypeId: original.categoryTypeId,
+          categorySubtypeId: original.categorySubtypeId,
+          accountId: original.accountId,
+          recordedById: userId,
+          notes: `Correction de la dépense du ${original.spentDate.toISOString().slice(0, 10)} (${originalAmount} DH → ${dto.correctedAmount} DH)`,
+          type: 'ajustement',
+          direction,
+          sourceBudgetExpenseId: original.id,
+        },
+      });
+
+      const budgetStatus = await this.variableBudgets.getBudgetStatusOnTx(tx, householdId, original.variableBudgetId, original.spentDate);
+      return { correction, budgetStatus, soldeCourant: await getAccountBalance(tx, original.accountId) };
+    });
+  }
+
+  /**
+   * T3B — « Annuler » une budget_expense entièrement erronée : une ligne
+   * type=remboursement compense le NET actuellement compté pour cette dépense
+   * (l'originale + ses éventuelles corrections déjà appliquées, jamais
+   * seulement l'originale — sinon une correction déjà appliquée resterait
+   * comptée après l'annulation). Jamais une suppression physique : l'originale
+   * et ses corrections restent visibles en historique. Une même dépense
+   * originale ne peut jamais être annulée deux fois (garde-fou explicite).
+   */
+  async reverseBudget(userId: string, householdId: string, id: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const original = await tx.budgetExpense.findFirst({ where: { id, variableBudget: { householdId } } });
+      if (!original) throw new NotFoundException('Dépense introuvable');
+      if (original.type !== 'depense') {
+        throw new BadRequestException('Seule une dépense originale peut être annulée');
+      }
+
+      const linked = await tx.budgetExpense.findMany({ where: { sourceBudgetExpenseId: id } });
+      if (linked.some((l) => l.type === 'remboursement')) {
+        throw new ConflictException('Cette dépense a déjà été annulée');
+      }
+
+      const net = round2(
+        linked.reduce(
+          (sum, l) => sum + budgetExpenseConsumptionAmount(l.type, l.direction, toNumber(l.amount)),
+          budgetExpenseConsumptionAmount(original.type, original.direction, toNumber(original.amount)),
+        ),
+      );
+      if (net <= 0) throw new BadRequestException('Rien à annuler pour cette dépense');
+
+      const reversal = await tx.budgetExpense.create({
+        data: {
+          variableBudgetId: original.variableBudgetId,
+          amount: net,
+          spentDate: original.spentDate,
+          categoryId: original.categoryId,
+          categoryTypeId: original.categoryTypeId,
+          categorySubtypeId: original.categorySubtypeId,
+          accountId: original.accountId,
+          recordedById: userId,
+          notes: `Annulation de la dépense du ${original.spentDate.toISOString().slice(0, 10)}`,
+          type: 'remboursement',
+          sourceBudgetExpenseId: original.id,
+        },
+      });
+
+      const budgetStatus = await this.variableBudgets.getBudgetStatusOnTx(tx, householdId, original.variableBudgetId, original.spentDate);
+      return { reversal, budgetStatus, soldeCourant: await getAccountBalance(tx, original.accountId) };
     });
   }
 }

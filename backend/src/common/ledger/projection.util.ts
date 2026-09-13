@@ -1,5 +1,5 @@
 import { Prisma, ObligationStatus } from '@prisma/client';
-import { getDeadlineBalances, round2, toNumber } from './ledger.util';
+import { getBudgetExpenseConsumption, getDeadlineBalances, round2, toNumber } from './ledger.util';
 import { computeTreasurySummary } from './treasury.util';
 import { computePocketCurrentAmount } from './provision.util';
 import {
@@ -170,12 +170,10 @@ function toBudgetLike(
   };
 }
 
+// T3B — délègue à getBudgetExpenseConsumption (ledger.util.ts), même formule
+// signée partagée avec consommeADate (variable-budgets.service.ts).
 async function consommeSurFenetre(tx: TxClient, variableBudgetId: string, start: Date, end: Date): Promise<number> {
-  const result = await tx.budgetExpense.aggregate({
-    where: { variableBudgetId, spentDate: { gte: start, lt: addDaysUTC(end, 1) } },
-    _sum: { amount: true },
-  });
-  return toNumber(result._sum.amount);
+  return getBudgetExpenseConsumption(tx, variableBudgetId, start, addDaysUTC(end, 1));
 }
 
 /**

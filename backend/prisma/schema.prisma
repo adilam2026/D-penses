@@ -158,6 +158,21 @@ enum PaymentDirection {
   diminue_paye
 }
 
+// T3B — même patron que PaymentType/PaymentDirection (reste_a_payer) : la
+// consommation d'un budget variable est un SUM(amount) signé, jamais une
+// réécriture de la ligne originale ni un Adjustment (scopé accountId, ne
+// touche jamais la consommation du budget).
+enum BudgetExpenseType {
+  depense
+  remboursement
+  ajustement
+}
+
+enum BudgetExpenseDirection {
+  augmente_depense
+  diminue_depense
+}
+
 enum FundingSource {
   compte
   provision
@@ -1003,17 +1018,32 @@ model BudgetExpense {
   notes             String?
   createdAt         DateTime @default(now()) @map("created_at")
 
-  variableBudget  VariableBudget   @relation(fields: [variableBudgetId], references: [id], onDelete: Cascade)
-  category        Category?        @relation(fields: [categoryId], references: [id])
-  categoryType    CategoryType?    @relation(fields: [categoryTypeId], references: [id])
-  categorySubtype CategorySubtype? @relation(fields: [categorySubtypeId], references: [id])
-  account         FinancialAccount @relation("BudgetExpenseAccount", fields: [accountId], references: [id])
-  recordedBy      User             @relation("BudgetExpenseRecordedBy", fields: [recordedById], references: [id])
+  // T3B — même patron que Payment (reste_a_payer) : `amount` reste toujours
+  // positif (CHECK budget_expense_amount_positive inchangé), le signe réel sur
+  // le solde/la consommation vient de `type`/`direction` (cf.
+  // budgetExpenseConsumptionAmount, ledger_entry, consommeADate,
+  // consommeSurFenetre — une seule sémantique, jamais dupliquée). Une ligne de
+  // correction/annulation est une NOUVELLE ligne, jamais une réécriture de la
+  // dépense originale (`sourceBudgetExpenseId` pointe vers elle — auditabilité,
+  // jamais une simple note texte).
+  type                  BudgetExpenseType       @default(depense)
+  direction             BudgetExpenseDirection? @map("direction")
+  sourceBudgetExpenseId String?                 @map("source_budget_expense_id")
+
+  variableBudget      VariableBudget   @relation(fields: [variableBudgetId], references: [id], onDelete: Cascade)
+  category            Category?        @relation(fields: [categoryId], references: [id])
+  categoryType        CategoryType?    @relation(fields: [categoryTypeId], references: [id])
+  categorySubtype     CategorySubtype? @relation(fields: [categorySubtypeId], references: [id])
+  account             FinancialAccount @relation("BudgetExpenseAccount", fields: [accountId], references: [id])
+  recordedBy          User             @relation("BudgetExpenseRecordedBy", fields: [recordedById], references: [id])
+  sourceBudgetExpense BudgetExpense?   @relation("BudgetExpenseReversal", fields: [sourceBudgetExpenseId], references: [id])
+  derivedEntries      BudgetExpense[]  @relation("BudgetExpenseReversal")
 
   // consommeSurFenetre (variable-budget.util/projection.util) : WHERE variableBudgetId AND
   // spentDate BETWEEN — appelé pour chaque période de chaque budget à chaque calcul.
   @@index([variableBudgetId, spentDate])
   @@index([accountId])
+  @@index([sourceBudgetExpenseId])
   @@map("budget_expense")
 }
 

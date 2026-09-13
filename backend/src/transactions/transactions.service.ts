@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { RlsContextService } from '../common/prisma/rls-context.service';
-import { toNumber } from '../common/ledger/ledger.util';
+import { budgetExpenseConsumptionAmount, toNumber } from '../common/ledger/ledger.util';
 
 const ORIGIN_LABEL: Record<string, string> = {
   income: 'Revenu confirmé',
@@ -221,7 +221,10 @@ export class TransactionsService {
           return {
             ...base,
             label: e.categoryType ? (e.categorySubtype ? `${e.categoryType.name} · ${e.categorySubtype.name}` : e.categoryType.name) : (e.category?.name ?? 'Dépense budget'),
-            amount: -toNumber(e.amount),
+            // T3B — signe compte inverse de la consommation (même CASE que
+            // ledger_entry) : jamais -amount brut, une correction/annulation
+            // (type≠depense) doit s'afficher avec le bon signe.
+            amount: -budgetExpenseConsumptionAmount(e.type, e.direction, toNumber(e.amount)),
             date: e.spentDate,
             accountId: e.accountId,
             accountName: e.account.name,

@@ -38,4 +38,16 @@ export class ExpensesController {
   reverseAdhoc(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.expenses.reverseAdhoc(user.sub, user.householdId!, id);
   }
+
+  // T3B — Corriger (contre-écriture signée, jamais un Adjustment), budget_expense uniquement.
+  @Post('budget_expense/:id/correct')
+  correctBudget(@Param('id') id: string, @Body() dto: CorrectExpenseDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.expenses.correctBudget(user.sub, user.householdId!, id, dto);
+  }
+
+  // T3B — Annuler (contre-écriture signée intégrale), budget_expense uniquement.
+  @Post('budget_expense/:id/reverse')
+  reverseBudget(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.expenses.reverseBudget(user.sub, user.householdId!, id);
+  }
 }

@@ -85,3 +85,44 @@ export async function getDeadlineBalances(tx: Prisma.TransactionClient, deadline
   }
   return map;
 }
+
+/**
+ * T3B — somme signée d'une ligne BudgetExpense pour la CONSOMMATION du budget
+ * (jamais une seconde formule ailleurs) : depense=+amount, remboursement=-amount,
+ * ajustement augmente_depense=+amount, diminue_depense=-amount. EXACTEMENT le
+ * même patron que paymentPayeNet (monthly-projection.util.ts) pour reste_a_payer.
+ * ledger_entry utilise le signe compte inverse (CASE SQL dédié dans la vue,
+ * même sémantique — cf. migration lot37).
+ */
+export function budgetExpenseConsumptionAmount(type: string, direction: string | null, amount: number): number {
+  if (type === 'remboursement') return -amount;
+  if (type === 'ajustement') return direction === 'augmente_depense' ? amount : -amount;
+  return amount; // 'depense'
+}
+
+/**
+ * Consommation signée d'un VariableBudget sur une fenêtre [start, endExclusive)
+ * — SEULE implémentation (jamais dupliquée), réutilisée par consommeADate
+ * (variable-budgets.service.ts) ET consommeSurFenetre (projection.util.ts) :
+ * même formule que budgetExpenseConsumptionAmount, en un seul aller-retour SQL
+ * (agrégat, jamais un fetch de toutes les lignes — cf. Lot 9 §26 perf).
+ */
+export async function getBudgetExpenseConsumption(
+  tx: Prisma.TransactionClient,
+  variableBudgetId: string,
+  start: Date,
+  endExclusive: Date,
+): Promise<number> {
+  const rows = await tx.$queryRaw<{ total: unknown }[]>`
+    SELECT COALESCE(SUM(
+      CASE "type"
+        WHEN 'remboursement' THEN -"amount"
+        WHEN 'ajustement' THEN CASE "direction" WHEN 'augmente_depense' THEN "amount" ELSE -"amount" END
+        ELSE "amount"
+      END
+    ), 0) AS total
+    FROM "budget_expense"
+    WHERE "variable_budget_id" = ${variableBudgetId} AND "spent_date" >= ${start} AND "spent_date" < ${endExclusive}
+  `;
+  return toNumber(rows[0]?.total);
+}

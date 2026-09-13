@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
-import { toNumber } from '../common/ledger/ledger.util';
+import { getBudgetExpenseConsumption, toNumber } from '../common/ledger/ledger.util';
 import {
   addDaysUTC,
   BudgetLike,
@@ -82,12 +82,12 @@ export class VariableBudgetsService {
     };
   }
 
+  // T3B — délègue à getBudgetExpenseConsumption (ledger.util.ts), SEULE
+  // implémentation de la somme signée BudgetExpense, partagée avec
+  // consommeSurFenetre (projection.util.ts) : jamais deux formules qui
+  // pourraient diverger.
   private async consommeADate(tx: TxClient, variableBudgetId: string, periodStart: Date, periodEnd: Date): Promise<number> {
-    const result = await tx.budgetExpense.aggregate({
-      where: { variableBudgetId, spentDate: { gte: periodStart, lt: periodEndExclusive(periodEnd) } },
-      _sum: { amount: true },
-    });
-    return toNumber(result._sum.amount);
+    return getBudgetExpenseConsumption(tx, variableBudgetId, periodStart, periodEndExclusive(periodEnd));
   }
 
   private toConfigFields(row: {

@@ -474,6 +474,113 @@ describe('R5 clôture — gaps corrigés (e2e)', () => {
   });
 
   // ============================================================
+  // T3B — BudgetExpense signée (correction/annulation, jamais un Adjustment)
+  // ============================================================
+  describe('T3B — Corriger/Annuler une budget_expense (contre-écriture signée)', () => {
+    async function createBudget(auth: () => [string, string], categoryId: string, referenceAmount = 1000) {
+      const res = await http
+        .post('/variable-budgets')
+        .set(...auth())
+        .send({ categoryId, referenceAmount, referencePeriod: 'mois', startDate: '2020-01-01' })
+        .expect(201);
+      return res.body.id as string;
+    }
+
+    it('CAS 1 — correction +20 : consommation et solde reflètent le delta, historique original intact', async () => {
+      const { auth } = await newHousehold();
+      const account = await createAccount(auth, 'Compte T3B correction+', 5000);
+      const cat = await createCategory(auth, 'Alimentation T3B+');
+      const budgetId = await createBudget(auth, cat);
+      const expense = await http.post('/expenses').set(...auth()).send({ amount: 200, accountId: account, categoryId: cat, variableBudgetId: budgetId }).expect(201);
+      const originalId = expense.body.expense.id as string;
+
+      const corrected = await http.post(`/expenses/budget_expense/${originalId}/correct`).set(...auth()).send({ correctedAmount: 220 }).expect(201);
+      expect(corrected.body.correction.type).toBe('ajustement');
+      expect(corrected.body.correction.direction).toBe('augmente_depense');
+      expect(corrected.body.correction.sourceBudgetExpenseId).toBe(originalId);
+      expect(corrected.body.budgetStatus.consommeADate).toBe(220);
+      expect(corrected.body.soldeCourant).toBe(4780); // 5000 - 220
+
+      const original = await http.get(`/transactions/budget_expense/${originalId}`).set(...auth()).expect(200);
+      expect(original.body.amount).toBe(-200); // jamais réécrite
+    });
+
+    it('CAS 2 — correction -20 : consommation et solde reflètent le delta inverse', async () => {
+      const { auth } = await newHousehold();
+      const account = await createAccount(auth, 'Compte T3B correction-', 5000);
+      const cat = await createCategory(auth, 'Alimentation T3B-');
+      const budgetId = await createBudget(auth, cat);
+      const expense = await http.post('/expenses').set(...auth()).send({ amount: 200, accountId: account, categoryId: cat, variableBudgetId: budgetId }).expect(201);
+
+      const corrected = await http.post(`/expenses/budget_expense/${expense.body.expense.id}/correct`).set(...auth()).send({ correctedAmount: 180 }).expect(201);
+      expect(corrected.body.correction.direction).toBe('diminue_depense');
+      expect(corrected.body.budgetStatus.consommeADate).toBe(180);
+      expect(corrected.body.soldeCourant).toBe(4820); // 5000 - 180
+    });
+
+    it('CAS 3 — annulation totale : consommation et solde reviennent exactement à l\'état initial, historique visible', async () => {
+      const { auth } = await newHousehold();
+      const account = await createAccount(auth, 'Compte T3B annulation', 5000);
+      const cat = await createCategory(auth, 'Alimentation T3B annulation');
+      const budgetId = await createBudget(auth, cat);
+      const expense = await http.post('/expenses').set(...auth()).send({ amount: 300, accountId: account, categoryId: cat, variableBudgetId: budgetId }).expect(201);
+      const originalId = expense.body.expense.id as string;
+
+      const reversed = await http.post(`/expenses/budget_expense/${originalId}/reverse`).set(...auth()).expect(201);
+      expect(reversed.body.reversal.type).toBe('remboursement');
+      expect(reversed.body.reversal.sourceBudgetExpenseId).toBe(originalId);
+      expect(reversed.body.budgetStatus.consommeADate).toBe(0);
+      expect(reversed.body.soldeCourant).toBe(5000); // solde intégralement restauré
+
+      const original = await http.get(`/transactions/budget_expense/${originalId}`).set(...auth()).expect(200);
+      expect(original.body.amount).toBe(-300); // toujours dans l'historique, jamais supprimée
+
+      const all = await http.get('/transactions').set(...auth()).expect(200);
+      expect(all.body.filter((t: { accountId: string }) => t.accountId === account).length).toBe(2); // dépense + contre-écriture
+    });
+
+    it('CAS 4 — impossible d\'annuler deux fois la même dépense originale', async () => {
+      const { auth } = await newHousehold();
+      const account = await createAccount(auth, 'Compte T3B double annulation', 5000);
+      const cat = await createCategory(auth, 'Alimentation T3B double annulation');
+      const budgetId = await createBudget(auth, cat);
+      const expense = await http.post('/expenses').set(...auth()).send({ amount: 150, accountId: account, categoryId: cat, variableBudgetId: budgetId }).expect(201);
+      const originalId = expense.body.expense.id as string;
+
+      await http.post(`/expenses/budget_expense/${originalId}/reverse`).set(...auth()).expect(201);
+      await http.post(`/expenses/budget_expense/${originalId}/reverse`).set(...auth()).expect(409);
+    });
+
+    it('CAS 5 — corriger une dépense déjà annulée est refusé', async () => {
+      const { auth } = await newHousehold();
+      const account = await createAccount(auth, 'Compte T3B correct après annulation', 5000);
+      const cat = await createCategory(auth, 'Alimentation T3B correct après annulation');
+      const budgetId = await createBudget(auth, cat);
+      const expense = await http.post('/expenses').set(...auth()).send({ amount: 150, accountId: account, categoryId: cat, variableBudgetId: budgetId }).expect(201);
+      const originalId = expense.body.expense.id as string;
+
+      await http.post(`/expenses/budget_expense/${originalId}/reverse`).set(...auth()).expect(201);
+      await http.post(`/expenses/budget_expense/${originalId}/correct`).set(...auth()).send({ correctedAmount: 100 }).expect(409);
+    });
+
+    it('CAS 6 — annuler une dépense déjà corrigée compense le NET (originale + correction), jamais seulement l\'originale', async () => {
+      const { auth } = await newHousehold();
+      const account = await createAccount(auth, 'Compte T3B correction puis annulation', 5000);
+      const cat = await createCategory(auth, 'Alimentation T3B correction puis annulation');
+      const budgetId = await createBudget(auth, cat);
+      const expense = await http.post('/expenses').set(...auth()).send({ amount: 200, accountId: account, categoryId: cat, variableBudgetId: budgetId }).expect(201);
+      const originalId = expense.body.expense.id as string;
+
+      await http.post(`/expenses/budget_expense/${originalId}/correct`).set(...auth()).send({ correctedAmount: 250 }).expect(201);
+      const reversed = await http.post(`/expenses/budget_expense/${originalId}/reverse`).set(...auth()).expect(201);
+
+      expect(reversed.body.reversal.amount).toBe(250); // net = 200 (originale) + 50 (correction)
+      expect(reversed.body.budgetStatus.consommeADate).toBe(0); // aucun résidu de la correction
+      expect(reversed.body.soldeCourant).toBe(5000); // solde intégralement restauré
+    });
+  });
+
+  // ============================================================
   // Transfert : cancel (prevu) + reverse atomique (confirme)
   // ============================================================
   describe('§1 — Transfert : Annuler (prevu) / Annuler par miroir atomique (confirmé)', () => {
