@@ -8,10 +8,35 @@ import { HouseholdRequiredGuard } from '../common/guards/household-required.guar
 export class TransactionsController {
   constructor(private readonly transactions: TransactionsService) {}
 
+  // Lot T1 — filtres serveur additifs sur le registre (§ analyse module
+  // Transactions) : tous optionnels, combinés en AND côté service. `from`/`to`
+  // en ISO 8601 datetime, convention [from, to) — jamais une date locale
+  // implicite. `kind` = liste séparée par virgules (ex. "income,payment").
   @Get()
-  findAll(@CurrentUser() user: AuthenticatedUser, @Query('limit') limit?: string) {
-    const parsed = limit ? Number(limit) : undefined;
-    return this.transactions.list(user.sub, user.householdId!, parsed && parsed > 0 ? parsed : undefined);
+  findAll(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('limit') limit?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('kind') kind?: string,
+    @Query('accountId') accountId?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('budgetId') budgetId?: string,
+    @Query('financialPlanId') financialPlanId?: string,
+    @Query('createdByUserId') createdByUserId?: string,
+  ) {
+    const parsedLimit = limit ? Number(limit) : undefined;
+    return this.transactions.list(user.sub, user.householdId!, {
+      limit: parsedLimit && parsedLimit > 0 ? parsedLimit : undefined,
+      from,
+      to,
+      kind,
+      accountId,
+      categoryId,
+      budgetId,
+      financialPlanId,
+      createdByUserId,
+    });
   }
 
   // §5 (recette téléphone réel) : détail d'une ligne de transaction — jamais un

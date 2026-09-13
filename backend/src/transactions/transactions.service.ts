@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { toNumber } from '../common/ledger/ledger.util';
 
@@ -26,6 +27,28 @@ interface LedgerRow {
   category_type_name: string | null;
   category_subtype_id: string | null;
   category_subtype_name: string | null;
+  // Lot T1 — initiateur unifié + rattachements budget/plan (colonnes 14-17 de
+  // ledger_entry, cf. migration 20260913180000) : NULL explicite quand la
+  // branche source n'a structurellement pas la donnée, jamais déduit.
+  created_by_user_id: string | null;
+  created_by_name: string | null;
+  budget_id: string | null;
+  financial_plan_id: string | null;
+}
+
+export interface TransactionListFilters {
+  limit?: number;
+  /** ISO 8601 datetime — borne incluse (occurred_at >= from). */
+  from?: string;
+  /** ISO 8601 datetime — borne exclue (occurred_at < to), convention [from, to). */
+  to?: string;
+  /** Liste de kinds séparés par virgule (ex. "income,payment"), valeurs = celles de ledger_entry.kind. */
+  kind?: string;
+  accountId?: string;
+  categoryId?: string;
+  budgetId?: string;
+  financialPlanId?: string;
+  createdByUserId?: string;
 }
 
 // Regroupement d'affichage pour l'écran Transactions (§13) : +revenu / -paiement / transfert —
@@ -45,21 +68,47 @@ const DISPLAY_KIND: Record<string, string> = {
 export class TransactionsService {
   constructor(private readonly rlsContext: RlsContextService) {}
 
-  /** Écran Transactions (§13) — LedgerEntry, purement dérivée, jamais une table source de vérité. */
-  async list(userId: string, householdId: string, limit = 200) {
+  /**
+   * Écran Transactions (§13) — LedgerEntry, purement dérivée, jamais une table
+   * source de vérité.
+   *
+   * Lot T1 — filtres serveur additifs (période, kind, compte, catégorie,
+   * budget, plan financier, initiateur), tous combinés en AND. Construits via
+   * Prisma.sql/Prisma.join (paramétré, jamais de concaténation de chaîne) —
+   * seuls les noms de colonnes sont statiques, toute valeur utilisateur passe
+   * par un placeholder. Aucun changement des règles de trésorerie : ce filtre
+   * ne fait que restreindre les lignes déjà retournées par la vue.
+   */
+  async list(userId: string, householdId: string, filters: TransactionListFilters = {}) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
-      const rows = await tx.$queryRaw<LedgerRow[]>`
+      const limit = filters.limit && filters.limit > 0 ? filters.limit : 200;
+
+      const conditions: Prisma.Sql[] = [Prisma.sql`le.household_id = ${householdId}`];
+      if (filters.from) conditions.push(Prisma.sql`le.occurred_at >= ${new Date(filters.from)}`);
+      if (filters.to) conditions.push(Prisma.sql`le.occurred_at < ${new Date(filters.to)}`);
+      if (filters.kind) {
+        const kinds = filters.kind.split(',').map((k) => k.trim()).filter(Boolean);
+        if (kinds.length) conditions.push(Prisma.sql`le.kind IN (${Prisma.join(kinds)})`);
+      }
+      if (filters.accountId) conditions.push(Prisma.sql`le.account_id = ${filters.accountId}`);
+      if (filters.categoryId) conditions.push(Prisma.sql`le.category_id = ${filters.categoryId}`);
+      if (filters.budgetId) conditions.push(Prisma.sql`le.budget_id = ${filters.budgetId}`);
+      if (filters.financialPlanId) conditions.push(Prisma.sql`le.financial_plan_id = ${filters.financialPlanId}`);
+      if (filters.createdByUserId) conditions.push(Prisma.sql`le.created_by_user_id = ${filters.createdByUserId}`);
+
+      const rows = await tx.$queryRaw<LedgerRow[]>(Prisma.sql`
         SELECT le.kind, le.id, le.occurred_at, le.amount, le.account_id,
                fa.name AS account_name, le.label, le.category_id, c.name AS category_name,
-               le.category_type_id, le.category_type_name, le.category_subtype_id, le.category_subtype_name
+               le.category_type_id, le.category_type_name, le.category_subtype_id, le.category_subtype_name,
+               le.created_by_user_id, le.created_by_name, le.budget_id, le.financial_plan_id
         FROM ledger_entry le
         JOIN financial_account fa ON fa.id = le.account_id
         LEFT JOIN category c ON c.id = le.category_id
-        WHERE le.household_id = ${householdId}
+        WHERE ${Prisma.join(conditions, ' AND ')}
         ORDER BY le.occurred_at DESC, le.id DESC
         LIMIT ${limit}
-      `;
+      `);
 
       return rows.map((r) => ({
         kind: r.kind,
@@ -83,6 +132,10 @@ export class TransactionsService {
         categoryTypeName: r.category_type_name,
         categorySubtypeId: r.category_subtype_id,
         categorySubtypeName: r.category_subtype_name,
+        createdByUserId: r.created_by_user_id,
+        createdByName: r.created_by_name,
+        budgetId: r.budget_id,
+        financialPlanId: r.financial_plan_id,
       }));
     });
   }
