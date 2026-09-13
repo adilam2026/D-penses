@@ -126,7 +126,7 @@ it('le bouton CONFIRMER LE PAIEMENT est désactivé tant qu\'aucun montant n\'es
 
 /**
  * Mini-lot Paiements/Échéances — badge temporel (statut partagé, cf.
- * deadlineTemporalStatus) + accès direct Corriger/Annuler depuis un paiement.
+ * temporalStatus) + accès direct Corriger/Annuler depuis un paiement.
  */
 describe('Mini-lot Paiements/Échéances — badge temporel + accès direct aux paiements', () => {
   it('une échéance soldée n\'affiche jamais de badge "En retard", même avec une date largement dépassée', async () => {

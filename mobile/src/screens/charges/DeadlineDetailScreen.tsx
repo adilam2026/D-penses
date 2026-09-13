@@ -8,7 +8,7 @@ import { FormField } from '../../ui/FormField';
 import { Select } from '../../ui/Select';
 import { DateField } from '../../ui/DateField';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
-import { DEADLINE_TEMPORAL_LABEL, deadlineTemporalColor, deadlineTemporalStatus } from '../../ui/deadlineTemporalStatus';
+import { TEMPORAL_STATUS_LABEL, temporalStatus, temporalStatusColor } from '../../ui/temporalStatus';
 
 const AMOUNT_STATUS_OPTIONS = [
   { value: 'confirme', label: 'Confirmé' },
@@ -280,7 +280,8 @@ export function DeadlineDetailScreen() {
 
   const resteAPayer = n(deadline.resteAPayer);
   const isOpen = deadline.financialStatus === 'ouverte' || deadline.financialStatus === 'partiellement_payee';
-  const temporal = deadlineTemporalStatus(deadline.dueDate, seuilAPayerDays, deadline.financialStatus);
+  const isClosed = deadline.financialStatus === 'soldee' || deadline.financialStatus === 'annulee';
+  const temporal = temporalStatus(deadline.dueDate, seuilAPayerDays, isClosed);
 
   const payValue = Number(payAmount.replace(',', '.'));
   const payAccount = accounts.find((a) => a.id === payAccountId) ?? null;
@@ -304,8 +305,8 @@ export function DeadlineDetailScreen() {
           <View style={styles.heroStatusRow}>
             <Text style={styles.heroStatus}>{STATUS_LABEL[deadline.financialStatus]}</Text>
             {temporal && (
-              <Text testID="deadline-temporal-badge" style={[styles.heroTemporalBadge, { color: deadlineTemporalColor(temporal) }]}>
-                {DEADLINE_TEMPORAL_LABEL[temporal]}
+              <Text testID="deadline-temporal-badge" style={[styles.heroTemporalBadge, { color: temporalStatusColor(temporal) }]}>
+                {TEMPORAL_STATUS_LABEL[temporal]}
               </Text>
             )}
           </View>

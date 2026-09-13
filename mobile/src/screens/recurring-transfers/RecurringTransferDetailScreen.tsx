@@ -9,6 +9,7 @@ import { DateField } from '../../ui/DateField';
 import { frequencyOptions } from '../../ui/frequency';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { colors, radius, spacing } from '../../ui/theme';
+import { TEMPORAL_STATUS_LABEL, temporalStatus, temporalStatusColor } from '../../ui/temporalStatus';
 
 interface RecurringTransfer {
   id: string;
@@ -66,6 +67,10 @@ export function RecurringTransferDetailScreen() {
   const [occurrences, setOccurrences] = useState<AccountTransfer[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
+  // Aligne visuellement les occurrences avec les échéances (mini-lot Charges
+  // récurrentes) — même seuil que ChargesScreen/DeadlineDetailScreen
+  // (seuil_a_payer_days du foyer), jamais une valeur dupliquée en dur.
+  const [seuilAPayerDays, setSeuilAPayerDays] = useState(7);
 
   const [label, setLabel] = useState('');
   const [fromAccountId, setFromAccountId] = useState<string | null>(null);
@@ -82,11 +87,17 @@ export function RecurringTransferDetailScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [t, tr, acc] = await Promise.all([api.getRecurringTransfer(id), api.listTransfers(), api.listAccounts()]);
+      const [t, tr, acc, household] = await Promise.all([
+        api.getRecurringTransfer(id),
+        api.listTransfers(),
+        api.listAccounts(),
+        api.getMyHousehold(),
+      ]);
       const rt = t as RecurringTransfer;
       setTransfer(rt);
       setOccurrences((tr as AccountTransfer[]).filter((o) => o.recurringTransferId === id));
       setAccounts(acc as Account[]);
+      setSeuilAPayerDays((household as any)?.settings?.seuilAPayerDays ?? 7);
       setLabel(rt.label);
       setFromAccountId(rt.fromAccountId);
       setToAccountId(rt.toAccountId);
@@ -188,6 +199,9 @@ export function RecurringTransferDetailScreen() {
   const accountName = (accId: string | null) => accounts.find((a) => a.id === accId)?.name ?? '—';
   const upcoming = occurrences.filter((o) => o.status === 'prevu').sort((a, b) => a.plannedDate.localeCompare(b.plannedDate));
   const history = occurrences.filter((o) => o.status !== 'prevu').sort((a, b) => b.plannedDate.localeCompare(a.plannedDate));
+  // Une occurrence confirmée/annulée n'est jamais overdue (isClosed=true → null,
+  // aucun badge) — seule une occurrence encore 'prevu' peut être en retard.
+  const occurrenceTemporal = (o: AccountTransfer) => temporalStatus(o.plannedDate, seuilAPayerDays, o.status !== 'prevu');
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -260,11 +274,18 @@ export function RecurringTransferDetailScreen() {
         {upcoming.length === 0 ? (
           <Text style={styles.empty}>Aucune occurrence prévue pour l'instant.</Text>
         ) : (
-          upcoming.map((o) => (
+          upcoming.map((o) => {
+            const temporal = occurrenceTemporal(o);
+            return (
             <View key={o.id} testID={`occurrence-row-${o.id}`} style={styles.occurrenceRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.occurrenceDate}>{formatDate(o.plannedDate)}</Text>
                 <Text style={styles.occurrenceAmount}>{n(o.amount).toLocaleString('fr-FR')} DH</Text>
+                {temporal && (
+                  <Text testID={`occurrence-temporal-${o.id}`} style={[styles.occurrenceTemporalBadge, { color: temporalStatusColor(temporal) }]}>
+                    {TEMPORAL_STATUS_LABEL[temporal]}
+                  </Text>
+                )}
               </View>
               <TouchableOpacity
                 testID={`confirm-occurrence-${o.id}`}
@@ -275,20 +296,31 @@ export function RecurringTransferDetailScreen() {
                 {confirmingId === o.id ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.confirmButtonText}>Confirmer</Text>}
               </TouchableOpacity>
             </View>
-          ))
+            );
+          })
         )}
 
         <Text style={styles.sectionTitle}>Historique</Text>
         {history.length === 0 ? (
           <Text style={styles.empty}>Aucun transfert confirmé pour l'instant.</Text>
         ) : (
-          history.map((o) => (
+          history.map((o) => {
+            // Toujours null ici (status !== 'prevu' → isClosed=true) — jamais de
+            // badge overdue sur une occurrence déjà confirmée/annulée.
+            const temporal = occurrenceTemporal(o);
+            return (
             <View key={o.id} testID={`history-row-${o.id}`} style={styles.historyRow}>
               <Text style={styles.occurrenceDate}>{formatDate(o.actualDate ?? o.plannedDate)}</Text>
               <Text style={styles.occurrenceAmount}>{n(o.amount).toLocaleString('fr-FR')} DH</Text>
               <Text style={styles.historyStatus}>{o.status === 'confirme' ? 'Confirmé' : 'Annulé'}</Text>
+              {temporal && (
+                <Text testID={`occurrence-temporal-${o.id}`} style={[styles.occurrenceTemporalBadge, { color: temporalStatusColor(temporal) }]}>
+                  {TEMPORAL_STATUS_LABEL[temporal]}
+                </Text>
+              )}
             </View>
-          ))
+            );
+          })
         )}
 
         <Text style={styles.footerMeta}>
@@ -324,6 +356,7 @@ const styles = StyleSheet.create({
   },
   occurrenceDate: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
   occurrenceAmount: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  occurrenceTemporalBadge: { fontSize: 11, fontWeight: '700', marginTop: 2 },
   confirmButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 10 },
   confirmButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 12 },
   historyRow: {

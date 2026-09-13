@@ -36,6 +36,7 @@ jest.mock('../../../api/client', () => {
     listTransfers: jest.fn(),
     listAccounts: jest.fn(),
     confirmTransfer: jest.fn(),
+    getMyHousehold: jest.fn(),
   };
 });
 
@@ -63,6 +64,7 @@ beforeEach(() => {
   mockedApi.getRecurringTransfer.mockResolvedValue(TRANSFER as any);
   mockedApi.listAccounts.mockResolvedValue(ACCOUNTS as any);
   mockedApi.listTransfers.mockResolvedValue([]);
+  mockedApi.getMyHousehold.mockResolvedValue({ settings: { seuilAPayerDays: 7 } } as any);
 });
 
 it('modifie le libellé et enregistre — sans jamais toucher un transfert déjà confirmé', async () => {
@@ -119,4 +121,67 @@ it('affiche l\'historique des occurrences confirmées séparément des occurrenc
   await waitFor(() => screen.getByTestId('occurrence-row-at1'));
 
   expect(screen.getByTestId('history-row-at2')).toBeTruthy();
+});
+
+/**
+ * Mini-lot Virements récurrents — aligne visuellement les occurrences avec
+ * les échéances : même helper temporel partagé (temporalStatus), même
+ * convention jour-calendaire, jamais overdue pour une occurrence close.
+ */
+describe('Mini-lot Virements récurrents — badge temporel sur les occurrences', () => {
+  function mockNow(iso: string) {
+    jest.spyOn(Date, 'now').mockReturnValue(new Date(iso).getTime());
+  }
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('occurrence prévue future — badge "À venir"', async () => {
+    mockNow('2026-09-15T12:00:00.000Z');
+    mockedApi.listTransfers.mockResolvedValue([
+      { id: 'at1', recurringTransferId: 'rt1', status: 'prevu', plannedDate: '2026-10-15', actualDate: null, amount: 1000 },
+    ] as any);
+
+    await render(<RecurringTransferDetailScreen />);
+    await waitFor(() => expect(screen.getByTestId('occurrence-temporal-at1')).toBeTruthy());
+    expect(screen.getByText('À venir')).toBeTruthy();
+  });
+
+  it('occurrence prévue due aujourd\'hui — badge "Aujourd\'hui", quelle que soit l\'heure', async () => {
+    mockNow('2026-09-15T23:00:00.000Z');
+    mockedApi.listTransfers.mockResolvedValue([
+      { id: 'at1', recurringTransferId: 'rt1', status: 'prevu', plannedDate: '2026-09-15', actualDate: null, amount: 1000 },
+    ] as any);
+
+    await render(<RecurringTransferDetailScreen />);
+    await waitFor(() => expect(screen.getByTestId('occurrence-temporal-at1')).toBeTruthy());
+    expect(screen.getByText("Aujourd'hui")).toBeTruthy();
+  });
+
+  it('occurrence prévue non confirmée dont la date est passée — badge "En retard"', async () => {
+    mockNow('2026-09-15T12:00:00.000Z');
+    mockedApi.listTransfers.mockResolvedValue([
+      { id: 'at1', recurringTransferId: 'rt1', status: 'prevu', plannedDate: '2026-09-01', actualDate: null, amount: 1000 },
+    ] as any);
+
+    await render(<RecurringTransferDetailScreen />);
+    await waitFor(() => expect(screen.getByTestId('occurrence-temporal-at1')).toBeTruthy());
+    expect(screen.getByText('En retard')).toBeTruthy();
+  });
+
+  it('occurrence confirmée ou annulée — jamais de badge "En retard", même avec une date passée', async () => {
+    mockNow('2026-09-15T12:00:00.000Z');
+    mockedApi.listTransfers.mockResolvedValue([
+      { id: 'at1', recurringTransferId: 'rt1', status: 'confirme', plannedDate: '2026-09-01', actualDate: '2026-09-01', amount: 1000 },
+      { id: 'at2', recurringTransferId: 'rt1', status: 'annule', plannedDate: '2026-09-02', actualDate: null, amount: 1000 },
+    ] as any);
+
+    await render(<RecurringTransferDetailScreen />);
+    await waitFor(() => expect(screen.getByTestId('history-row-at1')).toBeTruthy());
+
+    expect(screen.queryByTestId('occurrence-temporal-at1')).toBeNull();
+    expect(screen.queryByTestId('occurrence-temporal-at2')).toBeNull();
+    expect(screen.queryByText('En retard')).toBeNull();
+  });
 });

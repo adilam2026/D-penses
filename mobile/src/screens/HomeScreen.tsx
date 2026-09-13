@@ -6,7 +6,7 @@ import * as api from '../api/client';
 import { useBottomInset } from '../ui/useBottomInset';
 import { ChoiceSheet } from '../ui/ChoiceSheet';
 import { colors, elevation, radius, spacing } from '../ui/theme';
-import { deadlineTemporalColor, deadlineTemporalStatus } from '../ui/deadlineTemporalStatus';
+import { temporalStatus, temporalStatusColor } from '../ui/temporalStatus';
 
 interface Account {
   id: string;
@@ -154,11 +154,12 @@ function formatLongDate(iso: string) {
 // très proche (orange, seuil du foyer — seuil_a_payer_days, déjà chargé avec le
 // dashboard : jamais un second appel réseau, jamais une valeur dupliquée en dur ici),
 // à venir (neutre). Mini-lot Paiements/Échéances : délègue au statut temporel
-// partagé (deadlineTemporalStatus) — seule règle de seuil dans l'app, jamais
-// une seconde. deadlineItems du Dashboard sont déjà des échéances ouvertes,
-// financialStatus n'a donc jamais besoin d'être passé ici.
+// partagé (temporalStatus, généralisé — aussi réutilisé par les occurrences
+// de virement récurrent) — seule règle de seuil dans l'app, jamais une
+// seconde. deadlineItems du Dashboard sont déjà des échéances ouvertes,
+// isClosed n'a donc jamais besoin d'être passé ici.
 function urgencyColor(dueDate: string, seuilAPayerDays: number): string {
-  return deadlineTemporalColor(deadlineTemporalStatus(dueDate, seuilAPayerDays));
+  return temporalStatusColor(temporalStatus(dueDate, seuilAPayerDays));
 }
 
 // Correctif post-Vague 3 — règle déterministe et documentée à 5 niveaux, réutilisant

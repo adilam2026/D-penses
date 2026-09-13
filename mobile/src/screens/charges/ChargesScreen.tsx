@@ -5,7 +5,7 @@ import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { FREQUENCY_LABEL } from '../../ui/frequency';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
-import { DEADLINE_TEMPORAL_LABEL, DeadlineFinancialStatus, deadlineTemporalColor, deadlineTemporalStatus } from '../../ui/deadlineTemporalStatus';
+import { TEMPORAL_STATUS_LABEL, temporalStatus, temporalStatusColor } from '../../ui/temporalStatus';
 
 interface NextDeadline {
   id: string;
@@ -14,7 +14,7 @@ interface NextDeadline {
   resteAPayer: number | string | null | undefined;
   // Toujours ouverte/partiellement_payee ici (findAll filtre déjà côté backend) —
   // typé pour rester défensif si ce filtre venait à changer un jour.
-  financialStatus?: DeadlineFinancialStatus;
+  financialStatus?: 'ouverte' | 'partiellement_payee' | 'soldee' | 'annulee';
 }
 
 interface ChargePlan {
@@ -83,7 +83,8 @@ export function ChargesScreen() {
 
   function renderRow(p: ChargePlan) {
     const next = p.deadlines[0];
-    const temporal = next ? deadlineTemporalStatus(next.dueDate, seuilAPayerDays, next.financialStatus) : null;
+    const isClosed = next?.financialStatus === 'soldee' || next?.financialStatus === 'annulee';
+    const temporal = next ? temporalStatus(next.dueDate, seuilAPayerDays, isClosed) : null;
     return (
       <TouchableOpacity
         key={p.id}
@@ -100,7 +101,7 @@ export function ChargesScreen() {
             {next ? ` · ${formatShortDate(next.dueDate)} · ${STATUS_LABEL[next.amountStatus]}` : ' · Aucune échéance ouverte'}
           </Text>
           {temporal && (
-            <Text style={[styles.rowTemporalBadge, { color: deadlineTemporalColor(temporal) }]}>{DEADLINE_TEMPORAL_LABEL[temporal]}</Text>
+            <Text style={[styles.rowTemporalBadge, { color: temporalStatusColor(temporal) }]}>{TEMPORAL_STATUS_LABEL[temporal]}</Text>
           )}
         </View>
         {next && (() => {
