@@ -172,4 +172,75 @@ describe('Vague 3 — accueil-cockpit : champs dashboard enrichis (e2e)', () => 
     const after = await http.get('/dashboard/summary').set(...auth()).expect(200);
     expect(after.body.seuil_a_payer_days).toBe(14);
   });
+
+  /**
+   * R5 clôture Home §1 — bloc "Échéances importantes" : fenêtre 30 jours FIXE
+   * (jamais H* ou prochain revenu), top 3 par reste à payer décroissant (jamais
+   * chronologique), reste à payer RÉEL (jamais le montant initial).
+   */
+  describe('topDeadlines — sélection dédiée pour le bloc Home "Échéances importantes"', () => {
+    function iso(daysFromNow: number): string {
+      return new Date(Date.now() + daysFromNow * 86400000).toISOString().slice(0, 10);
+    }
+
+    async function makeOpenDeadline(auth: () => [string, string], categoryId: string, dueDate: string, amount: number) {
+      const cp = await http
+        .post('/charge-plans')
+        .set(...auth())
+        .send({ label: `Charge ${dueDate}-${amount}`, categoryId, generationMode: 'calendrier_manuel', startDate: dueDate })
+        .expect(201);
+      const d = await http
+        .post(`/charge-plans/${cp.body.id}/deadlines`)
+        .set(...auth())
+        .send({ dueDate, amountCurrent: amount, amountStatus: 'confirme' })
+        .expect(201);
+      return d.body.id as string;
+    }
+
+    it('une échéance hors de la fenêtre de 30 jours est exclue de topDeadlines', async () => {
+      const { auth } = await newHousehold();
+      const category = await http.post('/categories').set(...auth()).send({ name: 'Cat hors fenêtre', kind: 'expense' }).expect(201);
+
+      const dansFenetre = await makeOpenDeadline(auth, category.body.id, iso(10), 500);
+      await makeOpenDeadline(auth, category.body.id, iso(45), 5000); // hors fenêtre, montant bien plus élevé
+
+      const dashboard = await http.get('/dashboard/summary').set(...auth()).expect(200);
+      const ids = dashboard.body.topDeadlines.map((d: { id: string }) => d.id);
+      expect(ids).toEqual([dansFenetre]);
+    });
+
+    it('topDeadlines retient les 3 plus gros montants restants (décroissant), jamais un tri chronologique', async () => {
+      const { auth } = await newHousehold();
+      const category = await http.post('/categories').set(...auth()).send({ name: 'Cat top3', kind: 'expense' }).expect(201);
+
+      // Volontairement dans l'ordre chronologique inverse de leur montant, pour
+      // prouver que le tri est bien sur le montant, pas sur la date.
+      const petit = await makeOpenDeadline(auth, category.body.id, iso(2), 100);
+      const moyen = await makeOpenDeadline(auth, category.body.id, iso(5), 800);
+      const grand = await makeOpenDeadline(auth, category.body.id, iso(10), 5000);
+      const treGrand = await makeOpenDeadline(auth, category.body.id, iso(20), 9000);
+
+      const dashboard = await http.get('/dashboard/summary').set(...auth()).expect(200);
+      const ids = dashboard.body.topDeadlines.map((d: { id: string }) => d.id);
+      expect(ids).toEqual([treGrand, grand, moyen]); // top 3, "petit" exclu
+    });
+
+    it('un paiement partiel fait trier topDeadlines sur le reste à payer réel, jamais le montant initial', async () => {
+      const { auth } = await newHousehold();
+      const account = await http.post('/accounts').set(...auth()).send({ name: 'Compte partiel', type: 'courant', initialBalance: 50000 }).expect(201);
+      const category = await http.post('/categories').set(...auth()).send({ name: 'Cat partiel', kind: 'expense' }).expect(201);
+
+      // "grosse" (1000 DH initial) est payée à 950 DH => reste à payer 50 DH, doit
+      // passer APRÈS "petite" (200 DH initial, jamais payée) une fois le paiement fait.
+      const grosse = await makeOpenDeadline(auth, category.body.id, iso(5), 1000);
+      const petite = await makeOpenDeadline(auth, category.body.id, iso(8), 200);
+      await http.post(`/deadlines/${grosse}/payments`).set(...auth()).send({ amount: 950, accountId: account.body.id }).expect(201);
+
+      const dashboard = await http.get('/dashboard/summary').set(...auth()).expect(200);
+      const ids = dashboard.body.topDeadlines.map((d: { id: string }) => d.id);
+      expect(ids).toEqual([petite, grosse]);
+      const grosseItem = dashboard.body.topDeadlines.find((d: { id: string }) => d.id === grosse);
+      expect(grosseItem.resteAPayer).toBe(50);
+    });
+  });
 });

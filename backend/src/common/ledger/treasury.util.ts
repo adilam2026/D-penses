@@ -419,6 +419,82 @@ export async function computeNextDeadline(tx: TxClient, householdId: string, ref
   return best;
 }
 
+// ---------- Home « Échéances importantes » (R5 clôture Home §1) ----------
+
+export interface TopDeadlineItem {
+  id: string;
+  chargePlanId: string;
+  chargePlanLabel: string;
+  dueDate: Date;
+  amountStatus: 'estime' | 'confirme';
+  resteAPayer: number;
+  coverageStatus: CommittedItemCoverageStatus;
+  engagementNonCouvert: number;
+}
+
+/**
+ * Sélection DÉDIÉE pour le bloc Home « Échéances importantes » — distincte de
+ * computeDeadlineCommitments (borné à l'horizon H*, sert Disponible_libre) :
+ * fenêtre TOUJOURS 30 jours calendaires fixes depuis referenceDate, jamais H*
+ * ou prochain revenu. Portée certaine (RG-106), échéances ouverte/partiellement_payee
+ * uniquement (jamais soldée/annulée), reste_a_payer RÉEL (jamais le montant
+ * initial), triées par reste à payer décroissant — jamais par date (règle Home
+ * validée). Une seule règle, ici, réutilisée telle quelle par le mobile (jamais
+ * un second tri/filtre côté écran). Un montant inconnu n'a rien à classer
+ * (RG-103) : exclu de cette sélection par montant, mais jamais compté 0 ailleurs
+ * (deadlineItems/committed_amount restent inchangés, cf. computeDeadlineCommitments).
+ */
+export async function computeTopDeadlines(tx: TxClient, householdId: string, referenceDate: Date, limit = 3): Promise<TopDeadlineItem[]> {
+  const ref = toUtcMidnight(referenceDate);
+  const windowEnd = new Date(ref.getTime() + 30 * 86400000);
+
+  const certainPlans = await tx.chargePlan.findMany({
+    where: { householdId, obligationStatus: { in: ['obligatoire', 'optionnelle_souscrite'] } },
+    include: { deadlines: true },
+  });
+
+  const coverageCache = new Map<string, CoverageItem[]>();
+  const engagementFor = async (deadlineId: string, provisionId: string | null, resteAPayer: number): Promise<number> => {
+    if (!provisionId) return resteAPayer;
+    let coverage = coverageCache.get(provisionId);
+    if (!coverage) {
+      coverage = (await computeProvisionCoverage(tx, provisionId)).items;
+      coverageCache.set(provisionId, coverage);
+    }
+    const item = coverage.find((i) => i.deadlineId === deadlineId);
+    return item ? item.engagementNonCouvert : resteAPayer;
+  };
+
+  const items: TopDeadlineItem[] = [];
+  for (const cp of certainPlans) {
+    for (const d of cp.deadlines) {
+      if (d.financialStatus !== 'ouverte' && d.financialStatus !== 'partiellement_payee') continue;
+      if (d.dueDate < ref || d.dueDate > windowEnd) continue;
+      if (d.amountStatus === 'inconnu') continue;
+
+      const balance = await getDeadlineBalance(tx, d.id);
+      const resteAPayer = round2(balance?.resteAPayer ?? 0);
+      if (resteAPayer <= 0) continue;
+
+      const engagement = await engagementFor(d.id, d.provisionId, resteAPayer);
+      const coverageStatus: CommittedItemCoverageStatus = engagement >= resteAPayer ? 'non_couverte' : engagement <= 0 ? 'couverte' : 'partielle';
+
+      items.push({
+        id: d.id,
+        chargePlanId: cp.id,
+        chargePlanLabel: cp.label,
+        dueDate: d.dueDate,
+        amountStatus: d.amountStatus,
+        resteAPayer,
+        coverageStatus,
+        engagementNonCouvert: round2(engagement),
+      });
+    }
+  }
+
+  return items.sort((a, b) => b.resteAPayer - a.resteAPayer || a.id.localeCompare(b.id)).slice(0, limit);
+}
+
 // ---------- G.5 — Disponible libre ----------
 
 export interface DisponibleLibreResult {

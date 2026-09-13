@@ -78,6 +78,10 @@ interface DashboardSummary {
   horizon_source: 'income' | 'fallback';
   horizon_is_fallback: boolean;
   deadlineItems: DeadlineItem[];
+  // Home « Échéances importantes » (R5 clôture Home §1) — sélection déjà triée/filtrée
+  // côté backend (fenêtre 30 jours fixe, reste à payer décroissant, top 3) : jamais
+  // retriée/refiltrée ici, distincte de deadlineItems (borné à H*, sert EngagedDetail).
+  topDeadlines: DeadlineItem[];
   variableBudgetItems: VariableBudgetItem[];
   optionsEnvisagees: { total: number; hasUnknown: boolean };
   budgetsResume: BudgetResume[];
@@ -156,7 +160,7 @@ function formatLongDate(iso: string) {
 // à venir (neutre). Mini-lot Paiements/Échéances : délègue au statut temporel
 // partagé (temporalStatus, généralisé — aussi réutilisé par les occurrences
 // de virement récurrent) — seule règle de seuil dans l'app, jamais une
-// seconde. deadlineItems du Dashboard sont déjà des échéances ouvertes,
+// seconde. topDeadlines du Dashboard sont déjà des échéances ouvertes,
 // isClosed n'a donc jamais besoin d'être passé ici.
 function urgencyColor(dueDate: string, seuilAPayerDays: number): string {
   return temporalStatusColor(temporalStatus(dueDate, seuilAPayerDays));
@@ -287,7 +291,7 @@ export function HomeScreen() {
   // §13 — le bandeau ne s'affiche plus automatiquement dès que les prérequis
   // essentiels sont satisfaits, et jamais après un "Ne plus afficher" explicite.
   const showConfigBanner = partiallyConfigured && !essentialPrerequisitesMet(accounts, incomeSourcesCount) && !bannerDismissed;
-  const upcomingDeadlines = [...summary.deadlineItems].sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3);
+  const upcomingDeadlines = summary.topDeadlines;
   const topPlans = prioritizePlans(summary.financialPlansResume).slice(0, 3);
   const topBudgets = prioritizeBudgets(summary.budgetsResume).slice(0, 3);
 
@@ -336,47 +340,13 @@ export function HomeScreen() {
             ]}
           />
 
-          {/* Bloc 1 — Ma situation */}
-          {accounts.length > 0 && (
-            <View style={styles.block}>
-              <Text style={styles.blockTitle}>MA SITUATION</Text>
-              {accounts.slice(0, 4).map((a) => (
-                <TouchableOpacity key={a.id} style={styles.accountRow} onPress={() => navigation.getParent()?.navigate('AccountDetail', { id: a.id })}>
-                  <View style={{ flexShrink: 1 }}>
-                    <Text style={styles.accountName}>{a.name}</Text>
-                    {/* R6.1 §10 — badge discret : compte visible, seulement exclu des calculs. */}
-                    {!a.includeInOperationalTreasury && <Text style={styles.offPilotBadge}>Hors pilotage</Text>}
-                  </View>
-                  <Text style={styles.accountAmount}>{a.soldeCourant.toLocaleString('fr-FR')} DH</Text>
-                </TouchableOpacity>
-              ))}
-              {/* R6.3 (point D) — le montant PRINCIPAL de "Ma situation" ne compte
-                  que les comptes pilotés (includeInOperationalTreasury=true),
-                  jamais le patrimoine global : c'est operational_treasury, pas
-                  patrimoine_liquide_total, qui alimente déjà tous les calculs
-                  (Disponible libre, Engagé...) — cette hiérarchie visuelle rend
-                  simplement explicite ce qui était déjà vrai côté moteur. Le
-                  patrimoine global reste affiché, en second, jamais recalculé
-                  ailleurs. */}
-              <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Trésorerie pilotée</Text>
-                <Text style={styles.totalValue} testID="home-piloted-total">{summary.operational_treasury.toLocaleString('fr-FR')} DH</Text>
-              </View>
-              <View style={styles.totalRowSecondary}>
-                <Text style={styles.totalLabelSecondary}>Patrimoine total (avec hors pilotage)</Text>
-                <Text style={styles.totalValueSecondary} testID="home-global-total">{summary.patrimoine_liquide_total.toLocaleString('fr-FR')} DH</Text>
-              </View>
-              <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Accounts')}>
-                <Text style={styles.linkText}>Voir mes comptes →</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* Bloc 2 — Mon disponible réel. §14 (recette téléphone réel) : le
+          {/* Bloc 1 — Situation pilotée aujourd'hui (ordre Home validé : ce bloc
+              vient AVANT les comptes). §14 (recette téléphone réel) : le
               disponible libre est l'élément PRINCIPAL (en tête, gros chiffre) —
               Trésorerie/Réservé/Engagé/Coussin ne sont que des informations
               secondaires compactes en dessous, jamais au même poids visuel. */}
           <View style={styles.block}>
+            <Text style={styles.blockTitle}>SITUATION PILOTÉE AUJOURD'HUI</Text>
             <View style={styles.freeAvailableHero}>
               <View style={styles.freeAvailableHeroRow}>
                 <Text style={styles.freeAvailableLabel}>DISPONIBLE LIBRE</Text>
@@ -429,14 +399,46 @@ export function HomeScreen() {
             </View>
           </View>
 
-          {/* Bloc 2bis — Mes budgets (Lot 3). "Ma situation" et "Mon disponible
-              réel" forment un même ensemble de pilotage financier (comptes +
-              disponible dérivé) — jamais scindé par ce bloc, qui vient après les
-              deux. Ordre Home validé : Comptes/Disponible → Budgets → Plans →
-              Échéances → Projection — toujours avant "Mes plans" (Bloc 3),
-              jamais après. Réutilise EXCLUSIVEMENT les champs déjà calculés
-              côté backend (dashboard.service.ts.budgetsResume) — aucun
-              recalcul mobile. */}
+          {/* Bloc 2 — Mes comptes */}
+          {accounts.length > 0 && (
+            <View style={styles.block}>
+              <Text style={styles.blockTitle}>MES COMPTES</Text>
+              {accounts.slice(0, 4).map((a) => (
+                <TouchableOpacity key={a.id} style={styles.accountRow} onPress={() => navigation.getParent()?.navigate('AccountDetail', { id: a.id })}>
+                  <View style={{ flexShrink: 1 }}>
+                    <Text style={styles.accountName}>{a.name}</Text>
+                    {/* R6.1 §10 — badge discret : compte visible, seulement exclu des calculs. */}
+                    {!a.includeInOperationalTreasury && <Text style={styles.offPilotBadge}>Hors pilotage</Text>}
+                  </View>
+                  <Text style={styles.accountAmount}>{a.soldeCourant.toLocaleString('fr-FR')} DH</Text>
+                </TouchableOpacity>
+              ))}
+              {/* R6.3 (point D) — le montant PRINCIPAL de ce bloc ne compte que
+                  les comptes pilotés (includeInOperationalTreasury=true),
+                  jamais le patrimoine global : c'est operational_treasury, pas
+                  patrimoine_liquide_total, qui alimente déjà tous les calculs
+                  (Disponible libre, Engagé...) — cette hiérarchie visuelle rend
+                  simplement explicite ce qui était déjà vrai côté moteur. Le
+                  patrimoine global reste affiché, en second, jamais recalculé
+                  ailleurs. */}
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Trésorerie pilotée</Text>
+                <Text style={styles.totalValue} testID="home-piloted-total">{summary.operational_treasury.toLocaleString('fr-FR')} DH</Text>
+              </View>
+              <View style={styles.totalRowSecondary}>
+                <Text style={styles.totalLabelSecondary}>Patrimoine total (avec hors pilotage)</Text>
+                <Text style={styles.totalValueSecondary} testID="home-global-total">{summary.patrimoine_liquide_total.toLocaleString('fr-FR')} DH</Text>
+              </View>
+              <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Accounts')}>
+                <Text style={styles.linkText}>Voir mes comptes →</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Bloc 3 — Mes budgets (Lot 3). Ordre Home validé : Situation pilotée
+              → Comptes → Budgets → Plans → Échéances → Projection. Réutilise
+              EXCLUSIVEMENT les champs déjà calculés côté backend
+              (dashboard.service.ts.budgetsResume) — aucun recalcul mobile. */}
           {topBudgets.length > 0 && (
             <View style={styles.block}>
               <Text style={styles.blockTitle}>MES BUDGETS</Text>
@@ -476,7 +478,7 @@ export function HomeScreen() {
             </View>
           )}
 
-          {/* Bloc 3 — Mes plans (repositionné avant Échéances, ordre Home validé) */}
+          {/* Bloc 4 — Mes plans financiers */}
           {topPlans.length > 0 && (
             <View style={styles.block}>
               <Text style={styles.blockTitle}>MES PLANS</Text>
@@ -508,7 +510,9 @@ export function HomeScreen() {
             </View>
           )}
 
-          {/* Bloc 4 — Prochaines échéances (repositionné après Mes plans, ordre Home validé) */}
+          {/* Bloc 5 — Échéances importantes (R5 clôture Home §1) : sélection déjà
+              triée par reste à payer décroissant + fenêtre 30 jours fixe, côté
+              backend (summary.topDeadlines) — jamais retriée ici. */}
           {upcomingDeadlines.length > 0 && (
             <View style={styles.block}>
               <Text style={styles.blockTitle}>PROCHAINEMENT</Text>
@@ -535,7 +539,7 @@ export function HomeScreen() {
             </View>
           )}
 
-          {/* Bloc 5 — Projection */}
+          {/* Bloc 6 — Projection */}
           <TouchableOpacity style={styles.block} onPress={() => navigation.getParent()?.navigate('Projection')}>
             <Text style={styles.blockTitle}>DANS 30 JOURS</Text>
             <View style={styles.breakdownRow}>

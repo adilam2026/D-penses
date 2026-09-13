@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { round2, toNumber } from '../common/ledger/ledger.util';
-import { computeDisponibleLibre, computeNextDeadline, DASHBOARD_FALLBACK_HORIZON_DAYS } from '../common/ledger/treasury.util';
+import { computeDisponibleLibre, computeNextDeadline, computeTopDeadlines, DASHBOARD_FALLBACK_HORIZON_DAYS } from '../common/ledger/treasury.util';
 import { computeProvisionCoverage } from '../common/ledger/provision.util';
 import { ensureChargeDeadlinesUntil, ensureIncomeOccurrencesUntil, ensureRecurringTransfersUntil } from '../common/ledger/occurrence-generation.util';
 import { ActionsService } from '../actions/actions.service';
@@ -45,6 +45,10 @@ export class DashboardService {
 
       const disponible = await computeDisponibleLibre(tx, householdId, referenceDate);
       const nextDeadline = await computeNextDeadline(tx, householdId, referenceDate);
+      // Home « Échéances importantes » (R5 clôture Home §1) : sélection dédiée,
+      // fenêtre 30 jours fixe + tri par reste à payer décroissant — jamais recalculée
+      // côté mobile (une seule règle, ici).
+      const topDeadlines = await computeTopDeadlines(tx, householdId, referenceDate);
       const actionsATraiter = await this.actions.listOnTx(tx, householdId, referenceDate);
 
       // Correctif post-Vague 3 : seuil_a_payer_days est déjà chargé ici (foyer) — jamais un
@@ -125,6 +129,7 @@ export class DashboardService {
         is_complete: !disponible.incomplet,
 
         deadlineItems: disponible.deadlineItems,
+        topDeadlines,
         // R6.3 (point B) — même moteur/même appel que deadlineItems (computeDisponibleLibre) :
         // Σ deadlineItems.engagementNonCouvert + Σ variableBudgetItems.amount = committed_amount,
         // par construction (jamais un second calcul de détail côté mobile). categoryName

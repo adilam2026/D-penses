@@ -53,6 +53,7 @@ const EMPTY_SUMMARY = {
   horizon_source: 'income' as const,
   horizon_is_fallback: false,
   deadlineItems: [],
+  topDeadlines: [],
   variableBudgetItems: [],
   optionsEnvisagees: { total: 0, hasUnknown: false },
   budgetsResume: [],
@@ -100,6 +101,18 @@ describe('Accueil — état configuré (§7-17/§31)', () => {
     free_available: 15000,
     patrimoine_liquide_total: 45000,
     deadlineItems: [
+      {
+        id: 'd1',
+        chargePlanId: 'cp1',
+        chargePlanLabel: 'Scolarité Dina',
+        dueDate: '2026-09-30',
+        amountStatus: 'confirme' as const,
+        resteAPayer: 21800,
+        coverageStatus: 'non_couverte' as const,
+        engagementNonCouvert: 21800,
+      },
+    ],
+    topDeadlines: [
       {
         id: 'd1',
         chargePlanId: 'cp1',
@@ -431,6 +444,7 @@ describe('Accueil — seuil "très proche" suit seuil_a_payer_days du foyer (cor
       ...EMPTY_SUMMARY,
       seuil_a_payer_days: 14,
       deadlineItems: [deadlineDueIn10Days],
+      topDeadlines: [deadlineDueIn10Days],
     });
     mockedApi.listAccounts.mockResolvedValue([]);
     await render(<HomeScreen />);
@@ -448,6 +462,7 @@ describe('Accueil — seuil "très proche" suit seuil_a_payer_days du foyer (cor
       ...EMPTY_SUMMARY,
       seuil_a_payer_days: 7,
       deadlineItems: [deadlineDueIn10Days],
+      topDeadlines: [deadlineDueIn10Days],
     });
     mockedApi.listAccounts.mockResolvedValue([]);
     await render(<HomeScreen />);
@@ -541,5 +556,69 @@ describe('Accueil — bandeau de configuration intelligent (§13)', () => {
 
     expect(screen.getByTestId('config-banner')).toBeTruthy();
     expect(mockedApi.updateHouseholdSettings).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * R5 clôture Home §2 — ordre des blocs validé : Situation pilotée aujourd'hui →
+ * Mes comptes → Mes budgets → Mes plans financiers → Échéances importantes →
+ * Projection. "Situation pilotée aujourd'hui" (disponible libre) doit précéder
+ * "Mes comptes", jamais l'inverse.
+ */
+describe('Accueil — ordre des blocs (R5 clôture Home §2)', () => {
+  it("les 6 blocs apparaissent dans l'arbre rendu dans l'ordre validé : Situation pilotée → Comptes → Budgets → Plans → Échéances → Projection", async () => {
+    mockedApi.getDashboardSummary.mockResolvedValue({
+      ...EMPTY_SUMMARY,
+      budgetsResume: [budgetFixture({ id: 'b1' })],
+      financialPlansResume: [
+        {
+          id: 'p1',
+          label: 'École 2026/2027',
+          knownPlanCost: 1000,
+          remainingDue: 500,
+          provisionCoverage: 500,
+          tauxCouverture: 50,
+          nextDeadlineDate: null,
+          hasOverdue: false,
+          completude: 'complet',
+        },
+      ],
+      topDeadlines: [
+        {
+          id: 'd1',
+          chargePlanId: 'cp1',
+          chargePlanLabel: 'Scolarité Dina',
+          dueDate: '2026-09-30',
+          amountStatus: 'confirme' as const,
+          resteAPayer: 21800,
+          coverageStatus: 'non_couverte' as const,
+          engagementNonCouvert: 21800,
+        },
+      ],
+    });
+    mockedApi.listAccounts.mockResolvedValue([{ id: 'acc-1', name: 'Compte SG', soldeCourant: 1000 }]);
+    const { toJSON } = await render(<HomeScreen />);
+    await waitFor(() => screen.getByText('DANS 30 JOURS'));
+
+    // react-test-renderer JSON contient des références circulaires (_owner/return) :
+    // un JSON.stringify direct échoue, donc on les élague explicitement ici (jamais
+    // de librairie tierce pour un simple test d'ordre de rendu).
+    const seen = new WeakSet();
+    const text = JSON.stringify(toJSON(), (_key, value) => {
+      if (typeof value === 'object' && value !== null) {
+        if (seen.has(value)) return undefined;
+        seen.add(value);
+      }
+      return value;
+    });
+    const order = ["SITUATION PILOTÉE AUJOURD'HUI", 'MES COMPTES', 'MES BUDGETS', 'MES PLANS', 'PROCHAINEMENT', 'DANS 30 JOURS'];
+    const positions = order.map((title) => {
+      const index = text.indexOf(title);
+      expect(index).toBeGreaterThan(-1);
+      return index;
+    });
+    for (let i = 1; i < positions.length; i += 1) {
+      expect(positions[i]).toBeGreaterThan(positions[i - 1]);
+    }
   });
 });
