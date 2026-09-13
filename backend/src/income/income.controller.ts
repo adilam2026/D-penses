@@ -69,4 +69,11 @@ export class IncomeOccurrencesController {
   unconfirm(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.income.unconfirmOccurrence(user.sub, user.householdId!, id);
   }
+
+  // T3A — historique des annulations (consultation seule, jamais affiché dans
+  // le registre Transactions, cf. IncomeOccurrenceReversal).
+  @Get(':id/reversals')
+  listReversals(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.income.listReversals(user.sub, user.householdId!, id);
+  }
 }

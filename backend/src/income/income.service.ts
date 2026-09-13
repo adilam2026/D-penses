@@ -107,6 +107,20 @@ export class IncomeService {
           'Impossible de supprimer : des occurrences déjà reçues existent. Désactivez la source (arrêter la récurrence) à la place.',
         );
       }
+      // T3A — une occurrence redevenue 'prevu' après une annulation (unconfirm)
+      // ne serait pas détectée par le garde-fou ci-dessus (son statut courant
+      // n'est plus 'recu') ; sans cette vérification, la suppression cascaderait
+      // silencieusement sur son historique de réversion. Le FK par défaut
+      // (NO ACTION) bloquerait déjà l'opération en base, mais ce garde-fou
+      // évite une erreur brute et donne le même message clair que ci-dessus.
+      const occurrenceWithReversal = await tx.incomeOccurrence.findFirst({
+        where: { incomeSourceId: id, reversals: { some: {} } },
+      });
+      if (occurrenceWithReversal) {
+        throw new ConflictException(
+          'Impossible de supprimer : un historique de réversion existe sur une occurrence de cette source. Désactivez la source (arrêter la récurrence) à la place.',
+        );
+      }
 
       await tx.incomeSource.delete({ where: { id } });
       return { deleted: true };
@@ -194,6 +208,14 @@ export class IncomeService {
    * effaçant les champs actual_* est donc une réversion sûre et complète,
    * jamais une réécriture silencieuse : l'utilisateur reconfirme ensuite avec
    * les bonnes valeurs via l'endpoint de confirmation existant, inchangé.
+   *
+   * T3A — avant ce nettoyage, capture les valeurs sur le point d'être perdues
+   * dans IncomeOccurrenceReversal (une NOUVELLE ligne à chaque appel, jamais
+   * une mise à jour : plusieurs cycles confirm/unconfirm sur la même occurrence
+   * restent tous consultables). N'impacte ni ledger_entry, ni le solde, ni la
+   * projection : IncomeOccurrence garde EXACTEMENT le comportement financier
+   * ci-dessus, la ligne d'historique n'est qu'une trace consultée à part
+   * (GET /income-occurrences/:id/reversals).
    */
   async unconfirmOccurrence(userId: string, householdId: string, occurrenceId: string) {
     return this.rlsContext.run(userId, householdId, async () => {
@@ -206,6 +228,16 @@ export class IncomeService {
         throw new BadRequestException('Seule une occurrence confirmée reçue peut être annulée');
       }
 
+      await tx.incomeOccurrenceReversal.create({
+        data: {
+          incomeOccurrenceId: occurrenceId,
+          actualAmount: occurrence.actualAmount!,
+          actualDate: occurrence.actualDate!,
+          confirmedByUserId: occurrence.confirmedByUserId,
+          reversedByUserId: userId,
+        },
+      });
+
       return tx.incomeOccurrence.update({
         where: { id: occurrenceId },
         data: {
@@ -215,6 +247,22 @@ export class IncomeService {
           confirmedByUserId: null,
           confirmedAt: null,
         },
+      });
+    });
+  }
+
+  /** T3A — historique des annulations d'une occurrence, plus récente en premier. */
+  async listReversals(userId: string, householdId: string, occurrenceId: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const occurrence = await tx.incomeOccurrence.findFirst({
+        where: { id: occurrenceId, incomeSource: { householdId } },
+      });
+      if (!occurrence) throw new NotFoundException('Occurrence de revenu introuvable');
+
+      return tx.incomeOccurrenceReversal.findMany({
+        where: { incomeOccurrenceId: occurrenceId },
+        orderBy: { reversedAt: 'desc' },
       });
     });
   }

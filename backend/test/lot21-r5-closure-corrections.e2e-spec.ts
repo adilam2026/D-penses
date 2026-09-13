@@ -315,6 +315,107 @@ describe('R5 clôture — gaps corrigés (e2e)', () => {
   });
 
   // ============================================================
+  // T3A — historique des réversions (income_occurrence_reversal)
+  // ============================================================
+  describe('T3A — historique des réversions d\'un revenu confirmé', () => {
+    function userIdFromToken(accessToken: string): string {
+      const payload = JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64').toString('utf8'));
+      return payload.sub as string;
+    }
+
+    it('CAS 1 — unconfirm crée une ligne d\'historique avec les valeurs exactes capturées avant nettoyage', async () => {
+      const { auth, accessToken } = await newHousehold();
+      const userId = userIdFromToken(accessToken);
+      const account = await createAccount(auth, 'Compte T3A cas1', 0);
+      const source = await http.post('/income-sources').set(...auth()).send({ label: 'Salaire T3A-1', usualAmount: 5000, defaultAccountId: account }).expect(201);
+      const occ = await http.post(`/income-sources/${source.body.id}/occurrences`).set(...auth()).send({ usualDate: '2026-09-30' }).expect(201);
+      const confirmed = await http.post(`/income-occurrences/${occ.body.id}/confirm`).set(...auth()).send({ actualAmount: 5250, actualDate: '2026-09-28', accountId: account }).expect(201);
+      expect(confirmed.body.confirmedByUserId).toBe(userId);
+
+      await http.post(`/income-occurrences/${occ.body.id}/unconfirm`).set(...auth()).expect(201);
+
+      const reversals = await http.get(`/income-occurrences/${occ.body.id}/reversals`).set(...auth()).expect(200);
+      expect(reversals.body).toHaveLength(1);
+      expect(reversals.body[0].actualAmount).toBe(5250);
+      expect(new Date(reversals.body[0].actualDate).toISOString().slice(0, 10)).toBe('2026-09-28');
+      expect(reversals.body[0].confirmedByUserId).toBe(userId);
+      expect(reversals.body[0].reversedByUserId).toBe(userId);
+      expect(reversals.body[0].reversedAt).toBeTruthy();
+    });
+
+    it('CAS 2 — deux cycles confirm/unconfirm produisent 2 lignes distinctes, aucune écrasée', async () => {
+      const { auth } = await newHousehold();
+      const account = await createAccount(auth, 'Compte T3A cas2', 0);
+      const source = await http.post('/income-sources').set(...auth()).send({ label: 'Salaire T3A-2', usualAmount: 3000, defaultAccountId: account }).expect(201);
+      const occ = await http.post(`/income-sources/${source.body.id}/occurrences`).set(...auth()).send({ usualDate: '2026-09-30' }).expect(201);
+
+      await http.post(`/income-occurrences/${occ.body.id}/confirm`).set(...auth()).send({ actualAmount: 2900, accountId: account }).expect(201);
+      await http.post(`/income-occurrences/${occ.body.id}/unconfirm`).set(...auth()).expect(201);
+      await http.post(`/income-occurrences/${occ.body.id}/confirm`).set(...auth()).send({ actualAmount: 3100, accountId: account }).expect(201);
+      await http.post(`/income-occurrences/${occ.body.id}/unconfirm`).set(...auth()).expect(201);
+
+      const reversals = await http.get(`/income-occurrences/${occ.body.id}/reversals`).set(...auth()).expect(200);
+      expect(reversals.body).toHaveLength(2);
+      const amounts = reversals.body.map((r: any) => r.actualAmount).sort();
+      expect(amounts).toEqual([2900, 3100]);
+    });
+
+    it('CAS 3 — le solde ne bouge qu\'une seule fois par unconfirm (aucun double comptage lié à la ligne d\'historique)', async () => {
+      const { auth } = await newHousehold();
+      const account = await createAccount(auth, 'Compte T3A cas3', 1000);
+      const source = await http.post('/income-sources').set(...auth()).send({ label: 'Salaire T3A-3', usualAmount: 4000, defaultAccountId: account }).expect(201);
+      const occ = await http.post(`/income-sources/${source.body.id}/occurrences`).set(...auth()).send({ usualDate: '2026-09-30' }).expect(201);
+      await http.post(`/income-occurrences/${occ.body.id}/confirm`).set(...auth()).send({ actualAmount: 4000, accountId: account }).expect(201);
+
+      const before = await http.get(`/accounts/${account}`).set(...auth()).expect(200);
+      expect(before.body.soldeCourant).toBe(5000);
+
+      await http.post(`/income-occurrences/${occ.body.id}/unconfirm`).set(...auth()).expect(201);
+
+      const after = await http.get(`/accounts/${account}`).set(...auth()).expect(200);
+      expect(after.body.soldeCourant).toBe(1000); // exactement -4000, une seule fois
+    });
+
+    it("CAS 4 — GET .../reversals renvoie l'historique ordonné (plus récent en premier) et est isolé par RLS", async () => {
+      const hA = await newHousehold();
+      const hB = await newHousehold();
+      const account = await createAccount(hA.auth, 'Compte T3A cas4', 0);
+      const source = await http.post('/income-sources').set(...hA.auth()).send({ label: 'Salaire T3A-4', usualAmount: 1000, defaultAccountId: account }).expect(201);
+      const occ = await http.post(`/income-sources/${source.body.id}/occurrences`).set(...hA.auth()).send({ usualDate: '2026-09-30' }).expect(201);
+      await http.post(`/income-occurrences/${occ.body.id}/confirm`).set(...hA.auth()).send({ actualAmount: 1000, accountId: account }).expect(201);
+      await http.post(`/income-occurrences/${occ.body.id}/unconfirm`).set(...hA.auth()).expect(201);
+      await http.post(`/income-occurrences/${occ.body.id}/confirm`).set(...hA.auth()).send({ actualAmount: 1100, accountId: account }).expect(201);
+      await http.post(`/income-occurrences/${occ.body.id}/unconfirm`).set(...hA.auth()).expect(201);
+
+      const reversals = await http.get(`/income-occurrences/${occ.body.id}/reversals`).set(...hA.auth()).expect(200);
+      expect(reversals.body).toHaveLength(2);
+      expect(reversals.body[0].actualAmount).toBe(1100); // le plus récent en premier
+      expect(reversals.body[1].actualAmount).toBe(1000);
+
+      // Isolation foyer : B n'a jamais accès à l'occurrence de A (404, jamais une liste vide silencieuse trompeuse).
+      await http.get(`/income-occurrences/${occ.body.id}/reversals`).set(...hB.auth()).expect(404);
+    });
+
+    it('CAS 5 — le registre Transactions reste inchangé après un unconfirm : aucune ligne de réversion n\'y apparaît', async () => {
+      const { auth } = await newHousehold();
+      const account = await createAccount(auth, 'Compte T3A cas5', 0);
+      const source = await http.post('/income-sources').set(...auth()).send({ label: 'Salaire T3A-5', usualAmount: 2000, defaultAccountId: account }).expect(201);
+      const occ = await http.post(`/income-sources/${source.body.id}/occurrences`).set(...auth()).send({ usualDate: '2026-09-30' }).expect(201);
+      await http.post(`/income-occurrences/${occ.body.id}/confirm`).set(...auth()).send({ actualAmount: 2000, accountId: account }).expect(201);
+
+      const beforeUnconfirm = await http.get('/transactions').set(...auth()).expect(200);
+      expect(beforeUnconfirm.body).toHaveLength(1);
+      expect(beforeUnconfirm.body[0].kind).toBe('income');
+
+      await http.post(`/income-occurrences/${occ.body.id}/unconfirm`).set(...auth()).expect(201);
+
+      const afterUnconfirm = await http.get('/transactions').set(...auth()).expect(200);
+      expect(afterUnconfirm.body).toHaveLength(0); // le revenu redevient prevu, disparaît du registre — comme avant T3A
+      expect(afterUnconfirm.body.every((t: any) => t.kind !== 'income_reversal')).toBe(true);
+    });
+  });
+
+  // ============================================================
   // Correction/annulation d'une dépense ponctuelle (Adjustment)
   // ============================================================
   describe('§1 — Corriger/Annuler une dépense ponctuelle (Adjustment, jamais l\'AdHocExpense réécrit)', () => {

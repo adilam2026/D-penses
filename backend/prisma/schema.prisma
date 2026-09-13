@@ -259,6 +259,8 @@ model User {
   ownedAccounts              FinancialAccount[]
   incomeSourcesAsBeneficiary IncomeSource[]
   confirmedIncomeOccurrences IncomeOccurrence[]
+  incomeReversalsConfirmed   IncomeOccurrenceReversal[] @relation("IncomeOccurrenceReversalConfirmedBy")
+  incomeReversalsPerformed   IncomeOccurrenceReversal[] @relation("IncomeOccurrenceReversalReversedBy")
   recordedPayments           Payment[]
   recordedBudgetExpenses     BudgetExpense[]            @relation("BudgetExpenseRecordedBy")
   recordedAdHocExpenses      AdHocExpense[]             @relation("AdHocExpenseRecordedBy")
@@ -704,9 +706,10 @@ model IncomeOccurrence {
   createdAt         DateTime               @default(now()) @map("created_at")
   updatedAt         DateTime               @updatedAt @map("updated_at")
 
-  incomeSource IncomeSource      @relation(fields: [incomeSourceId], references: [id], onDelete: Cascade)
-  account      FinancialAccount? @relation("IncomeOccurrenceAccount", fields: [accountId], references: [id])
-  confirmedBy  User?             @relation(fields: [confirmedByUserId], references: [id])
+  incomeSource IncomeSource               @relation(fields: [incomeSourceId], references: [id], onDelete: Cascade)
+  account      FinancialAccount?          @relation("IncomeOccurrenceAccount", fields: [accountId], references: [id])
+  confirmedBy  User?                      @relation(fields: [confirmedByUserId], references: [id])
+  reversals    IncomeOccurrenceReversal[]
 
   // Lot 11 (§1) : anti-doublon pour ensureIncomeOccurrencesUntil (createMany skipDuplicates) —
   // une même source ne peut jamais avoir deux occurrences à la même usualDate.
@@ -716,6 +719,38 @@ model IncomeOccurrence {
   @@index([incomeSourceId])
   @@index([status, usualDate])
   @@map("income_occurrence")
+}
+
+// T3A — un unconfirmOccurrence() produit une NOUVELLE ligne ici (jamais une
+// mise à jour), pour un audit complet même après plusieurs cycles confirm/
+// unconfirm sur la même occurrence. N'a aucun impact sur ledger_entry, le
+// solde ou la projection : IncomeOccurrence garde exactement son comportement
+// actuel (status→prevu, actual_*→null), cette table n'est qu'une trace
+// consultée à part (GET /income-occurrences/:id/reversals), jamais mêlée au
+// registre des mouvements financiers réels.
+model IncomeOccurrenceReversal {
+  id                 String   @id @default(uuid())
+  incomeOccurrenceId String   @map("income_occurrence_id")
+  // Valeurs de la ligne juste avant remise à `prevu` — capturées AVANT le
+  // nettoyage, jamais recalculées.
+  actualAmount       Decimal  @map("actual_amount") @db.Decimal(14, 2)
+  actualDate         DateTime @map("actual_date")
+  confirmedByUserId  String?  @map("confirmed_by_user_id")
+  reversedByUserId   String   @map("reversed_by_user_id")
+  reversedAt         DateTime @default(now()) @map("reversed_at")
+
+  // Pas de onDelete: Cascade ici (volontaire) — IncomeOccurrence peut être
+  // supprimée physiquement (cascade depuis IncomeSource.delete, cf.
+  // IncomeService.removeSource), mais removeSource() bloque déjà toute
+  // suppression dès qu'une occurrence a un historique de réversion ; la
+  // contrainte FK par défaut (NO ACTION) reste un filet de sécurité pour
+  // qu'un futur appel ne puisse jamais effacer silencieusement cet audit.
+  incomeOccurrence IncomeOccurrence @relation(fields: [incomeOccurrenceId], references: [id])
+  confirmedBy      User?            @relation("IncomeOccurrenceReversalConfirmedBy", fields: [confirmedByUserId], references: [id])
+  reversedBy       User             @relation("IncomeOccurrenceReversalReversedBy", fields: [reversedByUserId], references: [id])
+
+  @@index([incomeOccurrenceId, reversedAt])
+  @@map("income_occurrence_reversal")
 }
 
 // generation_mode = auto_frequence pour le Lot 2 (le calendrier_manuel du Lot 4
@@ -796,16 +831,16 @@ model Deadline {
 // RG-015 : amount toujours > 0, le signe comptable est déduit du type par le moteur,
 // jamais saisi directement (contrainte CHECK ajoutée en SQL brut dans la migration).
 model Payment {
-  id            String            @id @default(uuid())
-  deadlineId    String            @map("deadline_id")
-  amount        Decimal           @map("amount") @db.Decimal(14, 2)
-  paidDate      DateTime          @map("paid_date")
+  id                 String            @id @default(uuid())
+  deadlineId         String            @map("deadline_id")
+  amount             Decimal           @map("amount") @db.Decimal(14, 2)
+  paidDate           DateTime          @map("paid_date")
   // R6.2 (§5 CAS B) : NULL soit pour un paiement HISTORIQUE reconstitué sans compte
   // connu, soit (RG implicite) jamais pour un paiement normal (payments.service.ts
   // continue d'exiger un compte réel). accountId N'EST PLUS le proxy de "reprise
   // historique" (corrections finales R6.2 §1) : un CAS A (compte historique connu)
   // garde accountId renseigné mais reste exclu du solde via isHistoricalImport.
-  accountId     String?           @map("account_id")
+  accountId          String?           @map("account_id")
   // R6.2 corrections finales §1 — sémantique explicite de reprise historique,
   // orthogonale à accountId. true = paiement reconstitué AVANT la reprise de
   // données (montant/date/compte conservés à titre d'information, historique
@@ -814,15 +849,15 @@ model Payment {
   // du cycle courant, impacte réellement le solde comme avant. reste_a_payer
   // (deadline_with_balance, lecture directe de payment) est inchangé dans les
   // deux cas : un paiement historique solde bien l'échéance.
-  isHistoricalImport Boolean      @default(false) @map("is_historical_import")
-  type          PaymentType       @default(paiement)
-  direction     PaymentDirection? @map("direction")
-  fundingSource FundingSource     @default(compte) @map("funding_source")
+  isHistoricalImport Boolean           @default(false) @map("is_historical_import")
+  type               PaymentType       @default(paiement)
+  direction          PaymentDirection? @map("direction")
+  fundingSource      FundingSource     @default(compte) @map("funding_source")
   // Lot 6 (RG-095) — requis si funding_source = provision.
-  provisionId   String?           @map("provision_id")
-  recordedById  String            @map("recorded_by_id")
-  notes         String?
-  createdAt     DateTime          @default(now()) @map("created_at")
+  provisionId        String?           @map("provision_id")
+  recordedById       String            @map("recorded_by_id")
+  notes              String?
+  createdAt          DateTime          @default(now()) @map("created_at")
 
   deadline   Deadline          @relation(fields: [deadlineId], references: [id], onDelete: Cascade)
   account    FinancialAccount? @relation("PaymentAccount", fields: [accountId], references: [id])
@@ -843,45 +878,45 @@ model Payment {
 // jamais un raccourci arbitraire (1 mois ≠ 30 jours, 1 semaine ≠ 4 jours fixes).
 // week_start_day : 1=lundi..7=dimanche, même convention que HouseholdSettings.
 model VariableBudget {
-  id              String          @id @default(uuid())
-  householdId     String          @map("household_id")
-  categoryId      String          @map("category_id")
+  id                         String               @id @default(uuid())
+  householdId                String               @map("household_id")
+  categoryId                 String               @map("category_id")
   // Lot 2 (module Budgets) : NULL = budget scopé à toute la catégorie (comportement
   // historique) ; renseigné = budget scopé à ce seul CategoryType précis (doit
   // appartenir à categoryId, vérifié en service). Jamais un nouveau regroupement
   // au-dessus des catégories — réutilise la hiérarchie Category → CategoryType déjà
   // en place (même convention que BudgetExpense/AdHocExpense).
-  categoryTypeId  String?         @map("category_type_id")
-  referenceAmount Decimal         @map("reference_amount") @db.Decimal(14, 2)
-  referencePeriod ReferencePeriod @map("reference_period")
-  weekStartDay    Int             @default(1) @map("week_start_day")
+  categoryTypeId             String?              @map("category_type_id")
+  referenceAmount            Decimal              @map("reference_amount") @db.Decimal(14, 2)
+  referencePeriod            ReferencePeriod      @map("reference_period")
+  weekStartDay               Int                  @default(1) @map("week_start_day")
   // Lot 6 — mode du mois pour referencePeriod=mois (inerte pour semaine). calendaire
   // = comportement historique inchangé. financier = aligné sur HouseholdSettings.closingDay
   // (moteur R6.3, jamais redéfini ici). personnalise = jour de départ propre au budget,
   // ci-dessous — jamais de closingDay dupliqué sur cette ligne live (source de vérité
   // unique HouseholdSettings, cf. variable-budget.util.ts).
-  monthMode       MonthMode       @default(calendaire) @map("month_mode")
+  monthMode                  MonthMode            @default(calendaire) @map("month_mode")
   // 1-31, requis uniquement si monthMode=personnalise (validé en service, pas de
   // contrainte DB — même style que weekStartDay). Clampé au dernier jour réel du
   // mois si celui-ci est plus court (29/30/31, cf. variable-budget.util.ts).
-  customStartDay  Int?            @map("custom_start_day")
-  startDate       DateTime        @map("start_date") @db.Date
-  endDate         DateTime?       @map("end_date") @db.Date
+  customStartDay             Int?                 @map("custom_start_day")
+  startDate                  DateTime             @map("start_date") @db.Date
+  endDate                    DateTime?            @map("end_date") @db.Date
   // R6.4 (§1) : suppression physique bloquée dès qu'une BudgetExpense existe déjà
   // (historique réel, même RG implicite que ChargePlansService.remove) — archivage
   // via ce champ à la place, jamais un second "supprimé" implicite via endDate.
-  status          VariableBudgetStatus @default(actif)
+  status                     VariableBudgetStatus @default(actif)
   // Module Budgets (Lot 1, corrige RG-024bis) : seuls les budgets à true participent
   // au Solde prudent (treasury.util.computeVariableBudgetCommitments) — le restant
   // au rythme actuel reste un indicateur de pilotage affiché sur la fiche budget,
   // jamais une majoration de la réservation budgétaire dans le disponible.
-  includeInPrudentProjection Boolean @default(true) @map("include_in_prudent_projection")
-  createdAt       DateTime        @default(now()) @map("created_at")
-  updatedAt       DateTime        @updatedAt @map("updated_at")
+  includeInPrudentProjection Boolean              @default(true) @map("include_in_prudent_projection")
+  createdAt                  DateTime             @default(now()) @map("created_at")
+  updatedAt                  DateTime             @updatedAt @map("updated_at")
 
-  household    Household     @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  category     Category      @relation(fields: [categoryId], references: [id])
-  categoryType CategoryType? @relation(fields: [categoryTypeId], references: [id])
+  household    Household               @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  category     Category                @relation(fields: [categoryId], references: [id])
+  categoryType CategoryType?           @relation(fields: [categoryTypeId], references: [id])
   expenses     BudgetExpense[]
   versions     VariableBudgetVersion[]
 
@@ -914,18 +949,18 @@ enum VariableBudgetStatus {
 // changedAt = effectiveFrom dans ce lot (= validTo) : aucune saisie d'une
 // date d'effet différente de l'instant d'enregistrement n'est proposée ici.
 model VariableBudgetVersion {
-  id                         String          @id @default(uuid())
-  variableBudgetId           String          @map("variable_budget_id")
-  referenceAmount            Decimal         @map("reference_amount") @db.Decimal(14, 2)
-  referencePeriod            ReferencePeriod @map("reference_period")
-  categoryId                 String          @map("category_id")
-  categoryTypeId             String?         @map("category_type_id")
-  weekStartDay               Int             @map("week_start_day")
+  id                          String          @id @default(uuid())
+  variableBudgetId            String          @map("variable_budget_id")
+  referenceAmount             Decimal         @map("reference_amount") @db.Decimal(14, 2)
+  referencePeriod             ReferencePeriod @map("reference_period")
+  categoryId                  String          @map("category_id")
+  categoryTypeId              String?         @map("category_type_id")
+  weekStartDay                Int             @map("week_start_day")
   // Lot 6 — suivis au même titre que les 7 champs déjà versionnés ci-dessus.
-  monthMode                  MonthMode       @map("month_mode")
-  customStartDay             Int?            @map("custom_start_day")
-  includeInPrudentProjection Boolean         @map("include_in_prudent_projection")
-  endDate                    DateTime?       @map("end_date") @db.Date
+  monthMode                   MonthMode       @map("month_mode")
+  customStartDay              Int?            @map("custom_start_day")
+  includeInPrudentProjection  Boolean         @map("include_in_prudent_projection")
+  endDate                     DateTime?       @map("end_date") @db.Date
   // Lot 6 — HORS champs suivis ci-dessus : jamais éditable directement, jamais
   // affiché comme une "modification" dans getHistory()/le bandeau initial-ajusté
   // (exclu de TRACKED_FIELDS). Ancre technique uniquement : le closingDay du
@@ -937,10 +972,10 @@ model VariableBudgetVersion {
   // null est une donnée incohérente : resolveFinancialClosingDay lève une
   // erreur explicite plutôt que de retomber silencieusement sur le closingDay
   // live (ce qui réintroduirait de la rétroactivité, cf. variable-budget.util.ts).
-  financialClosingDaySnapshot Int?           @map("financial_closing_day_snapshot")
-  validFrom                  DateTime        @map("valid_from")
-  validTo                    DateTime        @map("valid_to")
-  createdAt                  DateTime        @default(now()) @map("created_at")
+  financialClosingDaySnapshot Int?            @map("financial_closing_day_snapshot")
+  validFrom                   DateTime        @map("valid_from")
+  validTo                     DateTime        @map("valid_to")
+  createdAt                   DateTime        @default(now()) @map("created_at")
 
   variableBudget VariableBudget @relation(fields: [variableBudgetId], references: [id], onDelete: Cascade)
 
