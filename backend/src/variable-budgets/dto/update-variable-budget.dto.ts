@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsISO8601, IsNumber, IsOptional, IsPositive, IsUUID, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsISO8601, IsNumber, IsOptional, IsPositive, IsUUID, Max, Min } from 'class-validator';
 
 const REFERENCE_PERIOD_VALUES = ['semaine', 'mois'] as const;
 
@@ -34,4 +34,9 @@ export class UpdateVariableBudgetDto {
   @IsOptional()
   @IsUUID()
   categoryId?: string;
+
+  /** Lot 1 — bascule Oui/Non de la participation au Solde prudent. */
+  @IsOptional()
+  @IsBoolean()
+  includeInPrudentProjection?: boolean;
 }

@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsISO8601, IsNumber, IsOptional, IsPositive, IsUUID, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsISO8601, IsNumber, IsOptional, IsPositive, IsUUID, Max, Min } from 'class-validator';
 
 export class CreateVariableBudgetDto {
   @IsUUID()
@@ -24,4 +24,9 @@ export class CreateVariableBudgetDto {
   @IsOptional()
   @IsISO8601()
   endDate?: string;
+
+  /** Défaut true (Lot 1) — seuls les budgets à true participent au Solde prudent. */
+  @IsOptional()
+  @IsBoolean()
+  includeInPrudentProjection?: boolean;
 }

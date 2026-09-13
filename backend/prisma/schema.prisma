@@ -844,6 +844,11 @@ model VariableBudget {
   // (historique réel, même RG implicite que ChargePlansService.remove) — archivage
   // via ce champ à la place, jamais un second "supprimé" implicite via endDate.
   status          VariableBudgetStatus @default(actif)
+  // Module Budgets (Lot 1, corrige RG-024bis) : seuls les budgets à true participent
+  // au Solde prudent (treasury.util.computeVariableBudgetCommitments) — le restant
+  // au rythme actuel reste un indicateur de pilotage affiché sur la fiche budget,
+  // jamais une majoration de la réservation budgétaire dans le disponible.
+  includeInPrudentProjection Boolean @default(true) @map("include_in_prudent_projection")
   createdAt       DateTime        @default(now()) @map("created_at")
   updatedAt       DateTime        @updatedAt @map("updated_at")
 

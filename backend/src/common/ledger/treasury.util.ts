@@ -302,18 +302,26 @@ export interface VariableBudgetCommitments {
 }
 
 /**
- * Part budgets variables de G.4 — « Σ Projection_prudente_restante(variable_budget)
- * pour les périodes se terminant ≤ H » (doc02 G.4). Réutilise EXCLUSIVEMENT le
- * moteur Lot 3 (budgetAmountForWindow/computeBudgetPeriodStatus — semaines/mois
- * calendaires réels, prorata uniquement aux bords, RG-098) — aucune formule
- * recopiée ici.
+ * Part budgets variables de G.4 — « Σ restant contractuel non consommé(variable_budget)
+ * pour les périodes se terminant ≤ H » (doc02 G.4, corrigé Lot 1). Réutilise
+ * EXCLUSIVEMENT le moteur Lot 3 (budgetAmountForWindow/computeBudgetPeriodStatus —
+ * semaines/mois calendaires réels, prorata uniquement aux bords, RG-098) — aucune
+ * formule recopiée ici.
+ *
+ * Lot 1 (correction) : le Solde prudent retranche exclusivement le restant
+ * CONTRACTUEL (budgetPeriode − consommé), jamais la prévision au rythme actuel —
+ * cette dernière reste un indicateur de pilotage/alerte affiché sur la fiche
+ * budget (computeBudgetPeriodStatus/rythmeProjete), mais ne doit jamais majorer
+ * la réservation budgétaire ici. Seuls les budgets à includeInPrudentProjection
+ * (défaut true) participent à ce calcul.
  *
  * Anti-double-comptage (IF-13, corrections Lot 5) : le réalisé (BudgetExpense déjà
  * enregistrées) a déjà réduit le solde réel du compte via LedgerEntry — il ne doit
  * donc JAMAIS être une seconde fois déduit ici. Seule la part FUTURE (restante) est
  * ajoutée :
- *  - période courante (contient referenceDate) → projectionPrudenteRestante du
- *    moteur Lot 3, qui soustrait déjà le consommé réel de cette période (G.8) ;
+ *  - période courante (contient referenceDate) → restant contractuel de la
+ *    période, qui soustrait déjà le consommé réel de cette période (G.8), borné
+ *    à 0 (un dépassement ne crée jamais un engagement futur négatif) ;
  *  - toute portion de fenêtre au-delà de la période courante jusqu'à l'horizon →
  *    entièrement future (aucune BudgetExpense n'existe encore là), donc
  *    budgetAmountForWindow proratisé (RG-098) est déjà exactement le restant, sans
@@ -328,7 +336,12 @@ export async function computeVariableBudgetCommitments(
 ): Promise<VariableBudgetCommitments> {
   const ref = toUtcMidnight(referenceDate);
   const budgets = await tx.variableBudget.findMany({
-    where: { householdId, startDate: { lte: horizon }, OR: [{ endDate: null }, { endDate: { gte: ref } }] },
+    where: {
+      householdId,
+      includeInPrudentProjection: true,
+      startDate: { lte: horizon },
+      OR: [{ endDate: null }, { endDate: { gte: ref } }],
+    },
   });
 
   let total = 0;
@@ -340,7 +353,10 @@ export async function computeVariableBudgetCommitments(
     const consommeCourant = await consommeSurFenetre(tx, row.id, currentWindow.start, currentWindow.end);
     const currentStatus = computeBudgetPeriodStatus(budget, ref, consommeCourant, mode);
 
-    let amount = currentStatus.projectionPrudenteRestante; // période courante entière — déjà nette du réalisé (G.8)
+    // Restant contractuel de la période courante uniquement — jamais le rythme
+    // (previsionRythmeRestant/projectionPrudenteRestante), qui reste un indicateur
+    // de pilotage affiché ailleurs (cf. commentaire ci-dessus).
+    let amount = Math.max(currentStatus.budgetContractuelRestant, 0);
 
     if (horizon.getTime() > currentWindow.end.getTime()) {
       const nextStart = addDaysUTC(currentWindow.end, 1);

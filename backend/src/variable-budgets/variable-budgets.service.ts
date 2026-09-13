@@ -94,6 +94,7 @@ export class VariableBudgetsService {
           weekStartDay: dto.weekStartDay ?? 1,
           startDate: new Date(dto.startDate),
           endDate: dto.endDate ? new Date(dto.endDate) : undefined,
+          includeInPrudentProjection: dto.includeInPrudentProjection ?? true,
         },
       });
     });
@@ -157,6 +158,7 @@ export class VariableBudgetsService {
           referencePeriod: dto.referencePeriod,
           weekStartDay: dto.weekStartDay,
           categoryId: dto.categoryId,
+          includeInPrudentProjection: dto.includeInPrudentProjection,
         },
       });
       return this.detailOnTx(tx, householdId, id);
