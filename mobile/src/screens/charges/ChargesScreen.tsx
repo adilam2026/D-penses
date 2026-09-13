@@ -5,12 +5,16 @@ import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { FREQUENCY_LABEL } from '../../ui/frequency';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
+import { DEADLINE_TEMPORAL_LABEL, DeadlineFinancialStatus, deadlineTemporalColor, deadlineTemporalStatus } from '../../ui/deadlineTemporalStatus';
 
 interface NextDeadline {
   id: string;
   dueDate: string;
   amountStatus: 'inconnu' | 'estime' | 'confirme';
   resteAPayer: number | string | null | undefined;
+  // Toujours ouverte/partiellement_payee ici (findAll filtre déjà côté backend) —
+  // typé pour rester défensif si ce filtre venait à changer un jour.
+  financialStatus?: DeadlineFinancialStatus;
 }
 
 interface ChargePlan {
@@ -51,11 +55,18 @@ export function ChargesScreen() {
   const [plans, setPlans] = useState<ChargePlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [showInactive, setShowInactive] = useState(false);
+  // Mini-lot Paiements/Échéances — seuil déjà utilisé par le Dashboard
+  // (seuil_a_payer_days), jamais une valeur dupliquée en dur : 7 est le même
+  // défaut que HouseholdSettings côté backend, appliqué seulement avant que le
+  // foyer ait chargé (jamais affiché comme "vrai" avant la réponse réseau).
+  const [seuilAPayerDays, setSeuilAPayerDays] = useState(7);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setPlans(await api.listChargePlans());
+      const [plansResult, household] = await Promise.all([api.listChargePlans(), api.getMyHousehold()]);
+      setPlans(plansResult);
+      setSeuilAPayerDays(household?.settings?.seuilAPayerDays ?? 7);
     } finally {
       setLoading(false);
     }
@@ -72,6 +83,7 @@ export function ChargesScreen() {
 
   function renderRow(p: ChargePlan) {
     const next = p.deadlines[0];
+    const temporal = next ? deadlineTemporalStatus(next.dueDate, seuilAPayerDays, next.financialStatus) : null;
     return (
       <TouchableOpacity
         key={p.id}
@@ -87,6 +99,9 @@ export function ChargesScreen() {
             {p.recurrenceRule ? FREQUENCY_LABEL[p.recurrenceRule] : 'Ponctuel'}
             {next ? ` · ${formatShortDate(next.dueDate)} · ${STATUS_LABEL[next.amountStatus]}` : ' · Aucune échéance ouverte'}
           </Text>
+          {temporal && (
+            <Text style={[styles.rowTemporalBadge, { color: deadlineTemporalColor(temporal) }]}>{DEADLINE_TEMPORAL_LABEL[temporal]}</Text>
+          )}
         </View>
         {next && (() => {
           const amount = n(next.resteAPayer);
@@ -165,6 +180,7 @@ const styles = StyleSheet.create({
   },
   rowLabel: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
   rowMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  rowTemporalBadge: { fontSize: 11, fontWeight: '700', marginTop: 2 },
   rowAmount: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginLeft: spacing.sm },
   rowAmountUnknown: { fontSize: 12, fontStyle: 'italic', color: colors.textSecondary, marginLeft: spacing.sm },
   inactiveToggle: { marginTop: 8, marginBottom: 4 },

@@ -8,6 +8,7 @@ import { FormField } from '../../ui/FormField';
 import { Select } from '../../ui/Select';
 import { DateField } from '../../ui/DateField';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
+import { DEADLINE_TEMPORAL_LABEL, deadlineTemporalColor, deadlineTemporalStatus } from '../../ui/deadlineTemporalStatus';
 
 const AMOUNT_STATUS_OPTIONS = [
   { value: 'confirme', label: 'Confirmé' },
@@ -89,6 +90,9 @@ export function DeadlineDetailScreen() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [provision, setProvision] = useState<Provision | null>(null);
   const [loading, setLoading] = useState(true);
+  // Mini-lot Paiements/Échéances — même seuil que ChargesScreen/HomeScreen
+  // (seuil_a_payer_days du foyer), jamais une valeur dupliquée en dur.
+  const [seuilAPayerDays, setSeuilAPayerDays] = useState(7);
 
   const [confirmAmount, setConfirmAmount] = useState('');
   const [confirming, setConfirming] = useState(false);
@@ -117,10 +121,16 @@ export function DeadlineDetailScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [d, p, accountList] = await Promise.all([api.getDeadline(id), api.listPayments(id), api.listAccounts()]);
+      const [d, p, accountList, household] = await Promise.all([
+        api.getDeadline(id),
+        api.listPayments(id),
+        api.listAccounts(),
+        api.getMyHousehold(),
+      ]);
       setDeadline(d);
       setPayments(p);
       setAccounts(accountList);
+      setSeuilAPayerDays(household?.settings?.seuilAPayerDays ?? 7);
       if (d.amountCurrent !== null) setConfirmAmount(String(n(d.amountCurrent)));
 
       if (d.provisionId) {
@@ -270,6 +280,7 @@ export function DeadlineDetailScreen() {
 
   const resteAPayer = n(deadline.resteAPayer);
   const isOpen = deadline.financialStatus === 'ouverte' || deadline.financialStatus === 'partiellement_payee';
+  const temporal = deadlineTemporalStatus(deadline.dueDate, seuilAPayerDays, deadline.financialStatus);
 
   const payValue = Number(payAmount.replace(',', '.'));
   const payAccount = accounts.find((a) => a.id === payAccountId) ?? null;
@@ -290,7 +301,14 @@ export function DeadlineDetailScreen() {
             )}
           </View>
           <Text style={styles.heroMeta}>Échéance du {formatDate(deadline.dueDate)}</Text>
-          <Text style={styles.heroStatus}>{STATUS_LABEL[deadline.financialStatus]}</Text>
+          <View style={styles.heroStatusRow}>
+            <Text style={styles.heroStatus}>{STATUS_LABEL[deadline.financialStatus]}</Text>
+            {temporal && (
+              <Text testID="deadline-temporal-badge" style={[styles.heroTemporalBadge, { color: deadlineTemporalColor(temporal) }]}>
+                {DEADLINE_TEMPORAL_LABEL[temporal]}
+              </Text>
+            )}
+          </View>
           <Text style={styles.heroAmountLabel}>Montant restant</Text>
           <Text style={styles.heroAmount}>{resteAPayer !== null ? `${resteAPayer.toLocaleString('fr-FR')} DH` : 'À confirmer'}</Text>
           <TouchableOpacity testID="deadline-edit-chargeplan-link" onPress={() => navigation.navigate('ChargePlanDetail', { id: deadline.chargePlanId })}>
@@ -426,7 +444,12 @@ export function DeadlineDetailScreen() {
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Paiements enregistrés</Text>
             {payments.map((p) => (
-              <View key={p.id} style={styles.paymentRow}>
+              <TouchableOpacity
+                key={p.id}
+                testID={`deadline-payment-row-${p.id}`}
+                style={styles.paymentRow}
+                onPress={() => navigation.navigate('TransactionDetail', { kind: 'payment', id: p.id })}
+              >
                 <View style={{ flex: 1 }}>
                   <Text style={styles.paymentText}>{formatDate(p.paidDate)}</Text>
                   <Text style={styles.paymentMeta}>
@@ -435,7 +458,7 @@ export function DeadlineDetailScreen() {
                   </Text>
                 </View>
                 <Text style={styles.paymentAmount}>{n(p.amount)?.toLocaleString('fr-FR')} DH</Text>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
         )}
@@ -496,6 +519,8 @@ const styles = StyleSheet.create({
   heroLabel: { fontSize: 16, fontWeight: '700', color: colors.textOnPrimary },
   heroMeta: { fontSize: 12, color: '#C9D2E0', marginTop: 4 },
   heroStatus: { fontSize: 11, fontWeight: '700', color: '#C9D2E0', marginTop: spacing.sm, textTransform: 'uppercase', letterSpacing: 0.5 },
+  heroStatusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  heroTemporalBadge: { fontSize: 11, fontWeight: '700', marginTop: spacing.sm },
   heroAmountLabel: { fontSize: 11, color: '#C9D2E0', marginTop: spacing.sm },
   heroAmount: { fontSize: 26, fontWeight: '800', color: colors.textOnPrimary, marginTop: 2 },
   card: {

@@ -9,8 +9,9 @@ import * as api from '../../../api/client';
  * confirmation (montant payé / compte / solde actuel / solde après / reste à
  * payer après opération), paiement partiel explicite.
  */
+const mockNavigate = jest.fn();
 jest.mock('@react-navigation/native', () => ({
-  useNavigation: () => ({ navigate: jest.fn(), goBack: jest.fn() }),
+  useNavigation: () => ({ navigate: mockNavigate, goBack: jest.fn() }),
   useRoute: () => ({ params: { id: 'dl1' } }),
   useFocusEffect: (cb: () => void) => {
     const React = require('react');
@@ -36,6 +37,7 @@ jest.mock('../../../api/client', () => {
     updateDeadline: jest.fn(),
     closeDeadline: jest.fn(),
     cancelDeadline: jest.fn(),
+    getMyHousehold: jest.fn(),
   };
 });
 
@@ -61,6 +63,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockedApi.listPayments.mockResolvedValue([]);
   mockedApi.listAccounts.mockResolvedValue(ACCOUNTS);
+  mockedApi.getMyHousehold.mockResolvedValue({ settings: { seuilAPayerDays: 7 } } as any);
 });
 
 it('affiche un sélecteur compact pour le compte à débiter (jamais un mur de chips)', async () => {
@@ -119,4 +122,40 @@ it('le bouton CONFIRMER LE PAIEMENT est désactivé tant qu\'aucun montant n\'es
   expect(screen.queryByTestId('payment-recap')).toBeNull();
   const button = screen.getByText('CONFIRMER LE PAIEMENT').parent;
   expect(button?.props.accessibilityState?.disabled ?? true).toBeTruthy();
+});
+
+/**
+ * Mini-lot Paiements/Échéances — badge temporel (statut partagé, cf.
+ * deadlineTemporalStatus) + accès direct Corriger/Annuler depuis un paiement.
+ */
+describe('Mini-lot Paiements/Échéances — badge temporel + accès direct aux paiements', () => {
+  it('une échéance soldée n\'affiche jamais de badge "En retard", même avec une date largement dépassée', async () => {
+    mockedApi.getDeadline.mockResolvedValue({ ...DEADLINE, dueDate: '2020-01-01', financialStatus: 'soldee', resteAPayer: 0 });
+    await render(<DeadlineDetailScreen />);
+
+    await waitFor(() => expect(screen.getByText('Soldée')).toBeTruthy());
+    expect(screen.queryByTestId('deadline-temporal-badge')).toBeNull();
+    expect(screen.queryByText('En retard')).toBeNull();
+  });
+
+  it('une échéance ouverte en retard affiche le badge "En retard"', async () => {
+    mockedApi.getDeadline.mockResolvedValue({ ...DEADLINE, dueDate: '2020-01-01' });
+    await render(<DeadlineDetailScreen />);
+
+    await waitFor(() => expect(screen.getByTestId('deadline-temporal-badge')).toBeTruthy());
+    expect(screen.getByText('En retard')).toBeTruthy();
+  });
+
+  it('tap sur une ligne "Paiement enregistré" → navigation directe vers TransactionDetailScreen (Corriger/Annuler existants réutilisés)', async () => {
+    mockedApi.getDeadline.mockResolvedValue(DEADLINE);
+    mockedApi.listPayments.mockResolvedValue([
+      { id: 'pay1', amount: 400, paidDate: '2026-10-01', type: 'paiement', accountId: 'acc1', provisionId: null },
+    ]);
+    await render(<DeadlineDetailScreen />);
+
+    await waitFor(() => expect(screen.getByTestId('deadline-payment-row-pay1')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('deadline-payment-row-pay1'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('TransactionDetail', { kind: 'payment', id: 'pay1' });
+  });
 });

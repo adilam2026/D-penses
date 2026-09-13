@@ -20,13 +20,14 @@ jest.mock('@react-navigation/native', () => ({
 
 jest.mock('../../../api/client', () => {
   const actual = jest.requireActual('../../../api/client');
-  return { ...actual, listChargePlans: jest.fn() };
+  return { ...actual, listChargePlans: jest.fn(), getMyHousehold: jest.fn() };
 });
 
 const mockedApi = api as jest.Mocked<typeof api>;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockedApi.getMyHousehold.mockResolvedValue({ settings: { seuilAPayerDays: 7 } } as any);
 });
 
 it('"+ Ajouter une charge" navigue vers l\'écran de création dédié (jamais un formulaire permanent)', async () => {

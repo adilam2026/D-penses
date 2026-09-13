@@ -6,6 +6,7 @@ import * as api from '../api/client';
 import { useBottomInset } from '../ui/useBottomInset';
 import { ChoiceSheet } from '../ui/ChoiceSheet';
 import { colors, elevation, radius, spacing } from '../ui/theme';
+import { deadlineTemporalColor, deadlineTemporalStatus } from '../ui/deadlineTemporalStatus';
 
 interface Account {
   id: string;
@@ -152,12 +153,12 @@ function formatLongDate(iso: string) {
 // §12 — hiérarchie simple, jamais un tableau multicolore : en retard (rouge),
 // très proche (orange, seuil du foyer — seuil_a_payer_days, déjà chargé avec le
 // dashboard : jamais un second appel réseau, jamais une valeur dupliquée en dur ici),
-// à venir (neutre).
+// à venir (neutre). Mini-lot Paiements/Échéances : délègue au statut temporel
+// partagé (deadlineTemporalStatus) — seule règle de seuil dans l'app, jamais
+// une seconde. deadlineItems du Dashboard sont déjà des échéances ouvertes,
+// financialStatus n'a donc jamais besoin d'être passé ici.
 function urgencyColor(dueDate: string, seuilAPayerDays: number): string {
-  const days = Math.floor((new Date(dueDate).getTime() - Date.now()) / 86400000);
-  if (days < 0) return colors.danger;
-  if (days <= seuilAPayerDays) return colors.warning;
-  return colors.textPrimary;
+  return deadlineTemporalColor(deadlineTemporalStatus(dueDate, seuilAPayerDays));
 }
 
 // Correctif post-Vague 3 — règle déterministe et documentée à 5 niveaux, réutilisant
