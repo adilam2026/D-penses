@@ -654,6 +654,65 @@ describe('R5 clôture — gaps corrigés (e2e)', () => {
   });
 
   // ============================================================
+  // T3C — AccountTransfer : anti-double-reverse + pas de chaîne de reverse
+  // ============================================================
+  describe('T3C — Annuler un transfert confirmé : lien vers l\'original, anti-double-reverse', () => {
+    it('le miroir porte sourceTransferId vers l\'original', async () => {
+      const { auth } = await newHousehold();
+      const source = await createAccount(auth, 'Source T3C lien', 2000);
+      const dest = await createAccount(auth, 'Dest T3C lien', 500);
+      const transfer = await http.post('/accounts/transfers').set(...auth()).send({ fromAccountId: source, toAccountId: dest, amount: 300 }).expect(201);
+
+      const reversal = await http.post(`/accounts/transfers/${transfer.body.id}/reverse`).set(...auth()).expect(201);
+      expect(reversal.body.reversal.sourceTransferId).toBe(transfer.body.id);
+      expect(reversal.body.original.id).toBe(transfer.body.id);
+    });
+
+    it('double reverse séquentiel refusé', async () => {
+      const { auth } = await newHousehold();
+      const source = await createAccount(auth, 'Source T3C double', 2000);
+      const dest = await createAccount(auth, 'Dest T3C double', 500);
+      const transfer = await http.post('/accounts/transfers').set(...auth()).send({ fromAccountId: source, toAccountId: dest, amount: 300 }).expect(201);
+
+      await http.post(`/accounts/transfers/${transfer.body.id}/reverse`).set(...auth()).expect(201);
+      await http.post(`/accounts/transfers/${transfer.body.id}/reverse`).set(...auth()).expect(409);
+
+      // Un seul miroir a été créé — les soldes ne sont pas sur-corrigés.
+      const sourceAfter = await http.get(`/accounts/${source}`).set(...auth()).expect(200);
+      const destAfter = await http.get(`/accounts/${dest}`).set(...auth()).expect(200);
+      expect(sourceAfter.body.soldeCourant).toBe(2000);
+      expect(destAfter.body.soldeCourant).toBe(500);
+    });
+
+    it('reverse d\'un miroir refusé (pas de chaîne de reverse)', async () => {
+      const { auth } = await newHousehold();
+      const source = await createAccount(auth, 'Source T3C chaîne', 2000);
+      const dest = await createAccount(auth, 'Dest T3C chaîne', 500);
+      const transfer = await http.post('/accounts/transfers').set(...auth()).send({ fromAccountId: source, toAccountId: dest, amount: 300 }).expect(201);
+      const reversal = await http.post(`/accounts/transfers/${transfer.body.id}/reverse`).set(...auth()).expect(201);
+
+      await http.post(`/accounts/transfers/${reversal.body.reversal.id}/reverse`).set(...auth()).expect(400);
+    });
+
+    it('contrainte DB anti-double miroir : deux reverse concurrents sur le même original, un seul miroir créé', async () => {
+      const { auth } = await newHousehold();
+      const source = await createAccount(auth, 'Source T3C concurrent', 2000);
+      const dest = await createAccount(auth, 'Dest T3C concurrent', 500);
+      const transfer = await http.post('/accounts/transfers').set(...auth()).send({ fromAccountId: source, toAccountId: dest, amount: 300 }).expect(201);
+
+      const results = await Promise.all([
+        http.post(`/accounts/transfers/${transfer.body.id}/reverse`).set(...auth()),
+        http.post(`/accounts/transfers/${transfer.body.id}/reverse`).set(...auth()),
+      ]);
+      const statuses = results.map((r) => r.status).sort();
+      expect(statuses).toEqual([201, 409]);
+
+      const list = await http.get('/accounts/transfers').set(...auth()).expect(200);
+      expect(list.body.filter((t: { sourceTransferId: string | null }) => t.sourceTransferId === transfer.body.id).length).toBe(1);
+    });
+  });
+
+  // ============================================================
   // I — Projection cohérente après correction
   // ============================================================
   describe('§1 — Projection cohérente après une correction (moteur jamais modifié)', () => {

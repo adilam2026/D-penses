@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { getAccountBalance } from '../common/ledger/ledger.util';
 import { computeAccountEnvelopeCoverage, computeTreasurySummary } from '../common/ledger/treasury.util';
@@ -224,12 +224,19 @@ export class AccountsService {
   }
 
   /**
-   * R5 clôture §1 — Annuler un transfert déjà confirmé : jamais une correction
-   * d'une seule moitié (§ explicite de la demande) — un NOUVEAU transfert
-   * miroir (comptes inversés, même montant), confirmé dans la MÊME transaction
-   * Prisma que sa création, inverse atomiquement les DEUX lignes ledger_entry
-   * (transfer_in/transfer_out) en une seule écriture indivisible. Le transfert
-   * original reste intact et visible (historique jamais réécrit).
+   * R5 clôture §1 / T3C — Annuler un transfert déjà confirmé : jamais une
+   * correction d'une seule moitié (§ explicite de la demande) — un NOUVEAU
+   * transfert miroir (comptes inversés, même montant), confirmé dans la MÊME
+   * transaction Prisma que sa création, inverse atomiquement les DEUX lignes
+   * ledger_entry (transfer_in/transfer_out) en une seule écriture indivisible.
+   * Le transfert original reste intact et visible (historique jamais réécrit).
+   *
+   * T3C — deux garde-fous : (1) un original ne peut jamais avoir deux miroirs
+   * (contrôle métier ici + contrainte UNIQUE en base sur sourceTransferId, qui
+   * protège aussi contre un reverse concurrent) ; (2) un miroir n'est jamais
+   * lui-même reversable (sourceTransferId déjà renseigné) — pas de chaîne de
+   * reverse dans ce lot, sémantique simple : original confirmé → au maximum
+   * un miroir d'annulation.
    */
   async reverseTransfer(userId: string, householdId: string, id: string) {
     return this.rlsContext.run(userId, householdId, async () => {
@@ -239,23 +246,35 @@ export class AccountsService {
       if (transfer.status !== 'confirme') {
         throw new BadRequestException('Seul un transfert confirmé peut être annulé par un transfert miroir (utilisez Annuler pour un transfert "prevu")');
       }
+      if (transfer.sourceTransferId) {
+        throw new BadRequestException('Un transfert miroir (déjà une annulation) ne peut pas être annulé à son tour');
+      }
+      const existingMirror = await tx.accountTransfer.findFirst({ where: { sourceTransferId: id } });
+      if (existingMirror) throw new ConflictException('Ce transfert a déjà été annulé par un transfert miroir');
 
       const now = new Date();
-      const reversal = await tx.accountTransfer.create({
-        data: {
-          householdId,
-          fromAccountId: transfer.toAccountId,
-          toAccountId: transfer.fromAccountId,
-          amount: transfer.amount,
-          plannedDate: now,
-          actualDate: now,
-          status: 'confirme',
-          type: transfer.type,
-          confirmedById: userId,
-        },
-      });
-
-      return { reversal, original: transfer };
+      try {
+        const reversal = await tx.accountTransfer.create({
+          data: {
+            householdId,
+            fromAccountId: transfer.toAccountId,
+            toAccountId: transfer.fromAccountId,
+            amount: transfer.amount,
+            plannedDate: now,
+            actualDate: now,
+            status: 'confirme',
+            type: transfer.type,
+            confirmedById: userId,
+            sourceTransferId: transfer.id,
+          },
+        });
+        return { reversal, original: transfer };
+      } catch (err: any) {
+        // Filet de sécurité DB (contrainte UNIQUE sur source_transfer_id) contre
+        // un reverse concurrent qui aurait franchi le contrôle métier ci-dessus.
+        if (err?.code === 'P2002') throw new ConflictException('Ce transfert a déjà été annulé par un transfert miroir');
+        throw err;
+      }
     });
   }
 

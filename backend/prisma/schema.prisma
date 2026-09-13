@@ -623,11 +623,22 @@ model AccountTransfer {
   // d'un RecurringTransfer, même patron que Deadline.chargePlanId/IncomeOccurrence.
   // incomeSourceId — jamais un second type de transfert, uniquement sa provenance.
   recurringTransferId String?        @map("recurring_transfer_id")
+  // T3C — jamais une réécriture de l'original : reverseTransfer() crée un NOUVEAU
+  // transfert miroir (comptes inversés, même montant) et renseigne ce champ pour
+  // pointer vers l'original (jamais une simple note texte). @unique (nullable,
+  // Postgres autorise plusieurs NULL) garantit EN BASE qu'un original ne peut
+  // jamais avoir deux miroirs, même en cas de reverse concurrent — le service
+  // garde aussi son propre contrôle (ConflictException), la contrainte DB est le
+  // filet de sécurité final. Un transfert dont sourceTransferId est renseigné est
+  // lui-même un miroir — jamais reversable à son tour dans ce lot (pas de chaîne).
+  sourceTransferId    String?        @unique @map("source_transfer_id")
 
   household         Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
   fromAccount       FinancialAccount?  @relation("TransferFrom", fields: [fromAccountId], references: [id])
   toAccount         FinancialAccount?  @relation("TransferTo", fields: [toAccountId], references: [id])
   recurringTransfer RecurringTransfer? @relation(fields: [recurringTransferId], references: [id])
+  sourceTransfer    AccountTransfer?   @relation("AccountTransferReversal", fields: [sourceTransferId], references: [id])
+  reversal          AccountTransfer?   @relation("AccountTransferReversal")
 
   // Anti-doublon pour ensureRecurringTransfersUntil (createMany skipDuplicates) — une même
   // RecurringTransfer ne peut jamais avoir deux occurrences à la même plannedDate (même
