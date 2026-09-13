@@ -143,4 +143,55 @@ describe('variable-budget.util — moteur de calcul (Lot 3)', () => {
     expect(budgetHealthStatus(1300, 1500)).toBe('proche_limite');
     expect(budgetHealthStatus(1600, 1500)).toBe('depasse');
   });
+
+  // ---------- Lot 3 — alerte de rythme (% consommé vs % période écoulée) ----------
+
+  it('TEST 11 — rythmeAlerte=true : % consommé (66,7%) dépasse % période écoulée (42,9%)', () => {
+    // Mercredi = 3 jours écoulés sur 7 ; consommé=1000 sur budget_période=1500.
+    // consumptionRatio/elapsedRatio sont arrondis à 2 décimales (round2, cohérent
+    // avec le reste des champs de BudgetPeriodStatus) — précision de comparaison ajustée en conséquence.
+    const status = computeBudgetPeriodStatus(weeklyBudget, wednesday, 1000, 'prudent_max');
+    expect(status.consumptionRatio).toBeCloseTo(1000 / 1500, 2);
+    expect(status.elapsedRatio).toBeCloseTo(3 / 7, 2);
+    expect(status.rythmeAlerte).toBe(true);
+  });
+
+  it("TEST 12 — rythmeAlerte=false : % consommé (13,3%) reste sous % période écoulée (42,9%)", () => {
+    const status = computeBudgetPeriodStatus(weeklyBudget, wednesday, 200, 'prudent_max');
+    expect(status.consumptionRatio).toBeCloseTo(200 / 1500, 2);
+    expect(status.elapsedRatio).toBeCloseTo(3 / 7, 2);
+    expect(status.rythmeAlerte).toBe(false);
+  });
+
+  it('TEST 13 — égalité stricte (consumptionRatio === elapsedRatio) : rythmeAlerte reste false (comparaison strictement >)', () => {
+    // Mardi = 2 jours écoulés sur 7 ; budget_période=1400, consommé=400 ⇒ 400/1400 = 2/7 exactement.
+    const equalPaceBudget: BudgetLike = { ...weeklyBudget, referenceAmount: 1400 };
+    const tuesday = new Date(Date.UTC(2026, 8, 1));
+    const status = computeBudgetPeriodStatus(equalPaceBudget, tuesday, 400, 'prudent_max');
+    expect(status.consumptionRatio).toBe(status.elapsedRatio);
+    expect(status.rythmeAlerte).toBe(false);
+  });
+
+  it("TEST 14 — protection division par zéro : budget_période=0 (start_date futur) → ratios finis, jamais NaN/Infinity, rythmeAlerte=false", () => {
+    const futureBudget: BudgetLike = { ...weeklyBudget, startDate: new Date(Date.UTC(2026, 8, 20)) };
+    const status = computeBudgetPeriodStatus(futureBudget, monday, 0, 'prudent_max');
+    expect(status.budgetPeriode).toBe(0);
+    expect(Number.isFinite(status.consumptionRatio)).toBe(true);
+    expect(Number.isFinite(status.elapsedRatio)).toBe(true);
+    expect(status.consumptionRatio).toBe(0);
+    expect(status.rythmeAlerte).toBe(false);
+  });
+
+  it('TEST 15 — elapsedRatio toujours dans [0,1] (joursEcoules déjà borné à [1, nominalTotalDays])', () => {
+    const status = computeBudgetPeriodStatus(weeklyBudget, sunday, 500, 'prudent_max'); // dernier jour de la période
+    expect(status.elapsedRatio).toBeGreaterThan(0);
+    expect(status.elapsedRatio).toBeLessThanOrEqual(1);
+  });
+
+  it("TEST 16 — dépassement réel du budget_période : consumptionRatio n'est jamais plafonné à 1 (jamais masqué), rythmeAlerte=true", () => {
+    const status = computeBudgetPeriodStatus(weeklyBudget, sunday, 2250, 'prudent_max'); // 150% du budget, dernier jour (elapsedRatio=1)
+    expect(status.consumptionRatio).toBeCloseTo(1.5, 4);
+    expect(status.elapsedRatio).toBe(1);
+    expect(status.rythmeAlerte).toBe(true); // 1.5 > 1, jamais caché par un plafonnage artificiel à 1
+  });
 });

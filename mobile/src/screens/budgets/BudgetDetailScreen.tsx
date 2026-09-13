@@ -30,6 +30,11 @@ interface BudgetDetail {
     rythmeProjete: number;
     previsionRythmeRestant: number;
     projectionPrudenteRestante: number;
+    // Lot 3 — alerte de rythme (% consommé vs % période écoulée), additive et
+    // distincte de healthStatus (ratio consommé/plafond seul) — jamais fusionnées.
+    consumptionRatio: number;
+    elapsedRatio: number;
+    rythmeAlerte: boolean;
   };
   history: HistoryEntry[];
 }
@@ -160,6 +165,16 @@ export function BudgetDetailScreen() {
         <Figure label="Prévision prudente restante" value={status.projectionPrudenteRestante} highlight />
       </View>
 
+      {/* Lot 3 — alerte de rythme : additive, jamais fusionnée avec le badge
+          healthStatus (ratio consommé/plafond seul, affiché sur BudgetsScreen). */}
+      {status.rythmeAlerte && (
+        <View style={styles.rythmeAlertBanner} testID="budget-rythme-alerte">
+          <Text style={styles.rythmeAlertText}>
+            ⚠ Rythme de dépense élevé — {Math.round(status.consumptionRatio * 100)}% consommé pour {Math.round(status.elapsedRatio * 100)}% de la période écoulée
+          </Text>
+        </View>
+      )}
+
       <Text style={styles.historyTitle}>Dépenses de la période</Text>
       <FlatList
         data={detail.history}
@@ -233,6 +248,15 @@ const styles = StyleSheet.create({
   figureLabel: { fontSize: 11, color: colors.textSecondary },
   figureValue: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginTop: 4 },
   figureValueHighlight: { color: colors.success },
+  rythmeAlertBanner: {
+    backgroundColor: colors.surfaceActive,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.warning,
+  },
+  rythmeAlertText: { fontSize: 12, fontWeight: '700', color: colors.warning },
   historyTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.sm },
   empty: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.md },
   historyRow: {

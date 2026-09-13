@@ -121,6 +121,15 @@ export interface BudgetPeriodStatus {
   rythmeProjete: number; // G.8 — « Projection au rythme actuel » (§13), total projeté sur la période
   previsionRythmeRestant: number; // G.8
   projectionPrudenteRestante: number; // RG-024bis, dépend du mode foyer
+  // Lot 3 — alerte de rythme : % consommé vs % de période écoulée (jamais
+  // previsionRythmeRestant/rythmeProjete, qui restent des indicateurs informatifs
+  // distincts). Protégés division par zéro ; consumptionRatio n'est PAS borné à 1
+  // (un dépassement réel doit rester visible, jamais masqué par un plafonnage
+  // artificiel) ; elapsedRatio reste toujours dans [0,1] (joursEcoules déjà
+  // borné à [1, nominalTotalDays] ci-dessous, §11).
+  consumptionRatio: number;
+  elapsedRatio: number;
+  rythmeAlerte: boolean; // consumptionRatio > elapsedRatio
 }
 
 /**
@@ -161,6 +170,15 @@ export function computeBudgetPeriodStatus(
     projectionPrudenteRestante = Math.max(budgetContractuelRestant, previsionRythmeRestant, 0); // RG-024bis
   }
 
+  // Lot 3 — alerte de rythme (distincte de budgetHealthStatus, basé ratio consommé/plafond
+  // seul) : consommé-vs-plafond comparé à écoulé-vs-période, jamais rythmeProjete/
+  // previsionRythmeRestant (indicateurs informatifs, ne définissent pas l'alerte métier).
+  // Réutilise budgetPeriode/consommeADate/joursEcoules/nominalTotalDays déjà calculés
+  // ci-dessus — aucun nouveau moteur, aucune modification du calcul de fenêtre de période.
+  const consumptionRatio = budgetPeriode > 0 ? consommeADate / budgetPeriode : consommeADate > 0 ? 1 : 0;
+  const elapsedRatio = nominalTotalDays > 0 ? joursEcoules / nominalTotalDays : 0;
+  const rythmeAlerte = consumptionRatio > elapsedRatio;
+
   return {
     periodStart,
     periodEnd,
@@ -170,6 +188,9 @@ export function computeBudgetPeriodStatus(
     rythmeProjete: round2(rythmeProjete), // « Projection au rythme actuel » (§13) — total projeté, distinct du restant
     previsionRythmeRestant,
     projectionPrudenteRestante: round2(projectionPrudenteRestante),
+    consumptionRatio: round2(consumptionRatio),
+    elapsedRatio: round2(elapsedRatio),
+    rythmeAlerte,
   };
 }
 

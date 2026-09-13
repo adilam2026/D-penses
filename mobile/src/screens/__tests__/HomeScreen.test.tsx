@@ -222,6 +222,114 @@ describe('Accueil — état configuré (§7-17/§31)', () => {
   });
 });
 
+function budgetFixture(overrides: Partial<{
+  id: string;
+  categoryName: string;
+  healthStatus: 'sous_budget' | 'proche_limite' | 'depasse';
+  rythmeAlerte: boolean;
+  consommeADate: number;
+  budgetPeriode: number;
+}>) {
+  const consommeADate = overrides.consommeADate ?? 500;
+  const budgetPeriode = overrides.budgetPeriode ?? 1000;
+  return {
+    id: overrides.id ?? 'b1',
+    categoryName: overrides.categoryName ?? 'Courses',
+    referenceAmount: budgetPeriode,
+    referencePeriod: 'semaine' as const,
+    status: {
+      budgetPeriode,
+      consommeADate,
+      budgetContractuelRestant: budgetPeriode - consommeADate,
+      healthStatus: overrides.healthStatus ?? 'sous_budget',
+      consumptionRatio: consommeADate / budgetPeriode,
+      elapsedRatio: 0.3,
+      rythmeAlerte: overrides.rythmeAlerte ?? false,
+    },
+  };
+}
+
+/**
+ * Lot 3 — bloc "MES BUDGETS" de l'accueil (§4 de la demande) : réutilise
+ * EXCLUSIVEMENT summary.budgetsResume déjà calculé côté backend, jamais un
+ * recalcul mobile. Positionné avant "Mes plans" (contrainte explicite), cap à 3.
+ */
+describe('Accueil — bloc "Mes budgets" (Lot 3)', () => {
+  it('affiche les budgets avec consommé/plafond/restant, et navigue vers BudgetDetail au clic', async () => {
+    mockedApi.getDashboardSummary.mockResolvedValue({
+      ...EMPTY_SUMMARY,
+      budgetsResume: [budgetFixture({ id: 'b1', categoryName: 'Courses', consommeADate: 300, budgetPeriode: 1000 })],
+    });
+    mockedApi.listAccounts.mockResolvedValue([]);
+    await render(<HomeScreen />);
+
+    await waitFor(() => screen.getByTestId('home-budget-b1'));
+    expect(screen.getByText('Courses')).toBeTruthy();
+    expect(screen.getByText('300 / 1 000 DH')).toBeTruthy();
+    expect(screen.getByText('Restant : 700 DH')).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId('home-budget-b1'));
+    expect(mockNavigate).toHaveBeenCalledWith('BudgetDetail', { id: 'b1' });
+  });
+
+  it("affiche l'alerte de rythme uniquement pour les budgets concernés, jamais fusionnée avec un autre badge", async () => {
+    mockedApi.getDashboardSummary.mockResolvedValue({
+      ...EMPTY_SUMMARY,
+      budgetsResume: [
+        budgetFixture({ id: 'b-alerte', rythmeAlerte: true }),
+        budgetFixture({ id: 'b-calme', rythmeAlerte: false }),
+      ],
+    });
+    mockedApi.listAccounts.mockResolvedValue([]);
+    await render(<HomeScreen />);
+
+    await waitFor(() => screen.getByTestId('home-budget-rythme-alerte-b-alerte'));
+    expect(screen.queryByTestId('home-budget-rythme-alerte-b-calme')).toBeNull();
+  });
+
+  it('priorise dépassé > alerte de rythme > proche limite > ratio décroissant, et plafonne à 3', async () => {
+    mockedApi.getDashboardSummary.mockResolvedValue({
+      ...EMPTY_SUMMARY,
+      budgetsResume: [
+        budgetFixture({ id: 'b-sous-budget', healthStatus: 'sous_budget', consommeADate: 100, budgetPeriode: 1000 }),
+        budgetFixture({ id: 'b-proche', healthStatus: 'proche_limite', consommeADate: 850, budgetPeriode: 1000 }),
+        budgetFixture({ id: 'b-rythme', healthStatus: 'sous_budget', rythmeAlerte: true, consommeADate: 400, budgetPeriode: 1000 }),
+        budgetFixture({ id: 'b-depasse', healthStatus: 'depasse', consommeADate: 1200, budgetPeriode: 1000 }),
+      ],
+    });
+    mockedApi.listAccounts.mockResolvedValue([]);
+    await render(<HomeScreen />);
+
+    await waitFor(() => screen.getByTestId('home-budget-b-depasse'));
+    const cards = screen.getAllByTestId(/^home-budget-(?!rythme-alerte)/);
+    // Cap à 3 : "b-sous-budget" (ratio le plus faible, priorité la plus basse) est exclu.
+    expect(cards.map((c) => c.props.testID)).toEqual(['home-budget-b-depasse', 'home-budget-b-rythme', 'home-budget-b-proche']);
+  });
+
+  it('"Voir tous →" navigue vers Budgets', async () => {
+    mockedApi.getDashboardSummary.mockResolvedValue({
+      ...EMPTY_SUMMARY,
+      budgetsResume: [budgetFixture({ id: 'b1' })],
+    });
+    mockedApi.listAccounts.mockResolvedValue([]);
+    await render(<HomeScreen />);
+
+    await waitFor(() => screen.getByTestId('home-budget-b1'));
+    await fireEvent.press(screen.getByText('Voir tous →'));
+    expect(mockNavigate).toHaveBeenCalledWith('Budgets');
+  });
+
+  it('aucun budget → le bloc "MES BUDGETS" est absent (jamais un bloc vide affiché)', async () => {
+    mockedApi.getDashboardSummary.mockResolvedValue({ ...EMPTY_SUMMARY, budgetsResume: [] });
+    mockedApi.listAccounts.mockResolvedValue([{ id: 'acc-1', name: 'Compte SG', soldeCourant: 0 }]);
+    mockedApi.listIncomeSources.mockResolvedValue([{ id: 'inc-1', label: 'Salaire' }]);
+    await render(<HomeScreen />);
+
+    await waitFor(() => screen.getByText('DISPONIBLE LIBRE'));
+    expect(screen.queryByText('MES BUDGETS')).toBeNull();
+  });
+});
+
 /** Correctif post-Vague 3 (point 1) — la priorité de "Mes plans" doit intégrer
  * l'urgence d'échéance (nextDeadlineDate/hasOverdue), jamais seulement le montant :
  * un plan avec une échéance très proche ne doit jamais être masqué par un plan

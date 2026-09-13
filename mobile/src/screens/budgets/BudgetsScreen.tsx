@@ -10,6 +10,11 @@ interface BudgetStatus {
   budgetContractuelRestant: number;
   rythmeProjete: number;
   healthStatus: 'sous_budget' | 'proche_limite' | 'depasse';
+  // Lot 3 — alerte de rythme (% consommé vs % période écoulée), additive et
+  // distincte de healthStatus (ratio consommé/plafond seul) — jamais fusionnées.
+  consumptionRatio: number;
+  elapsedRatio: number;
+  rythmeAlerte: boolean;
 }
 
 interface Budget {
@@ -98,6 +103,12 @@ export function BudgetsScreen() {
                   <Text style={styles.figureValue}>{item.status.rythmeProjete.toLocaleString('fr-FR')} DH</Text>
                 </View>
               </View>
+
+              {item.status.rythmeAlerte && (
+                <Text style={styles.rythmeAlertBadge} testID={`budget-rythme-alerte-${item.id}`}>
+                  ⚠ Rythme élevé — {Math.round(item.status.consumptionRatio * 100)}% consommé / {Math.round(item.status.elapsedRatio * 100)}% de période écoulée
+                </Text>
+              )}
             </TouchableOpacity>
           );
         }}
@@ -130,4 +141,5 @@ const styles = StyleSheet.create({
   figuresRow: { flexDirection: 'row', justifyContent: 'space-between' },
   figureLabel: { fontSize: 11, color: colors.textSecondary },
   figureValue: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginTop: 2 },
+  rythmeAlertBadge: { fontSize: 11, fontWeight: '700', color: colors.warning, marginTop: spacing.sm },
 });

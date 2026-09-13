@@ -31,6 +31,25 @@ interface VariableBudgetItem {
   categoryName: string;
 }
 
+interface BudgetResumeStatus {
+  budgetPeriode: number;
+  consommeADate: number;
+  budgetContractuelRestant: number;
+  healthStatus: 'sous_budget' | 'proche_limite' | 'depasse';
+  // Lot 3 — % consommé vs % période écoulée, additif et distinct de healthStatus (jamais fusionnés).
+  consumptionRatio: number;
+  elapsedRatio: number;
+  rythmeAlerte: boolean;
+}
+
+interface BudgetResume {
+  id: string;
+  categoryName: string;
+  referenceAmount: number;
+  referencePeriod: 'semaine' | 'mois';
+  status: BudgetResumeStatus;
+}
+
 interface FinancialPlanResume {
   id: string;
   label: string;
@@ -60,7 +79,7 @@ interface DashboardSummary {
   deadlineItems: DeadlineItem[];
   variableBudgetItems: VariableBudgetItem[];
   optionsEnvisagees: { total: number; hasUnknown: boolean };
-  budgetsResume: Array<{ id: string; categoryName: string }>;
+  budgetsResume: BudgetResume[];
   financialPlansResume: FinancialPlanResume[];
   provisionsResume: Array<{ id: string; name: string; currentAmount: number; totalResteAPayer: number; totalUncovered: number }>;
   next_30_days: {
@@ -152,6 +171,37 @@ function urgencyColor(dueDate: string, seuilAPayerDays: number): string {
 //  3) puis reste à financer décroissant ;
 //  4) puis taux de couverture croissant (le moins couvert = le plus urgent) ;
 //  5) tie-breaker stable par id (jamais l'ordre de création/réponse API).
+/**
+ * Lot 3 — priorité des "budgets clés" affichés en accueil, réutilisant
+ * EXCLUSIVEMENT des champs déjà calculés côté backend (variable-budget.util.ts) :
+ * jamais de logique métier parallèle recalculée ici. Ordre validé :
+ *  1) healthStatus='depasse' d'abord (plafond déjà dépassé) ;
+ *  2) puis rythmeAlerte=true (vitesse de consommation en avance sur le temps
+ *     écoulé, distinct du plafond — cf. §1 de la demande) ;
+ *  3) puis healthStatus='proche_limite' ;
+ *  4) puis ratio consommé/plafond décroissant ;
+ *  5) tie-breaker stable par id (jamais l'ordre de réponse API).
+ */
+function prioritizeBudgets(budgets: BudgetResume[]): BudgetResume[] {
+  return [...budgets].sort((a, b) => {
+    const aDepasse = a.status.healthStatus === 'depasse';
+    const bDepasse = b.status.healthStatus === 'depasse';
+    if (aDepasse !== bDepasse) return aDepasse ? -1 : 1;
+
+    if (a.status.rythmeAlerte !== b.status.rythmeAlerte) return a.status.rythmeAlerte ? -1 : 1;
+
+    const aProche = a.status.healthStatus === 'proche_limite';
+    const bProche = b.status.healthStatus === 'proche_limite';
+    if (aProche !== bProche) return aProche ? -1 : 1;
+
+    const aRatio = a.status.budgetPeriode > 0 ? a.status.consommeADate / a.status.budgetPeriode : 0;
+    const bRatio = b.status.budgetPeriode > 0 ? b.status.consommeADate / b.status.budgetPeriode : 0;
+    if (aRatio !== bRatio) return bRatio - aRatio;
+
+    return a.id.localeCompare(b.id);
+  });
+}
+
 function prioritizePlans(plans: FinancialPlanResume[]): FinancialPlanResume[] {
   return [...plans].sort((a, b) => {
     if (a.hasOverdue !== b.hasOverdue) return a.hasOverdue ? -1 : 1;
@@ -237,6 +287,7 @@ export function HomeScreen() {
   const showConfigBanner = partiallyConfigured && !essentialPrerequisitesMet(accounts, incomeSourcesCount) && !bannerDismissed;
   const upcomingDeadlines = [...summary.deadlineItems].sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3);
   const topPlans = prioritizePlans(summary.financialPlansResume).slice(0, 3);
+  const topBudgets = prioritizeBudgets(summary.budgetsResume).slice(0, 3);
 
   return (
     <ScrollView
@@ -375,6 +426,52 @@ export function HomeScreen() {
               <Text style={styles.breakdownValue}>{summary.safety_buffer.toLocaleString('fr-FR')} DH</Text>
             </View>
           </View>
+
+          {/* Bloc 2bis — Mes budgets (Lot 3). "Ma situation" et "Mon disponible
+              réel" forment un même ensemble de pilotage financier (comptes +
+              disponible dérivé) — jamais scindé par ce bloc, qui vient après les
+              deux. Ordre validé : Comptes → Budgets → ... → Plans, toujours avant
+              "Mes plans" (Bloc 4), jamais après. Réutilise EXCLUSIVEMENT les
+              champs déjà calculés côté backend (dashboard.service.ts.budgetsResume)
+              — aucun recalcul mobile. */}
+          {topBudgets.length > 0 && (
+            <View style={styles.block}>
+              <Text style={styles.blockTitle}>MES BUDGETS</Text>
+              {topBudgets.map((b) => {
+                const ratio = b.status.budgetPeriode > 0 ? Math.min(b.status.consommeADate / b.status.budgetPeriode, 1) : 0;
+                return (
+                  <TouchableOpacity
+                    key={b.id}
+                    testID={`home-budget-${b.id}`}
+                    style={styles.budgetCard}
+                    onPress={() => navigation.getParent()?.navigate('BudgetDetail', { id: b.id })}
+                  >
+                    <View style={styles.budgetHeaderRow}>
+                      <Text style={styles.budgetLabel}>{b.categoryName}</Text>
+                      <Text style={styles.budgetAmounts}>
+                        {b.status.consommeADate.toLocaleString('fr-FR')} / {b.status.budgetPeriode.toLocaleString('fr-FR')} DH
+                      </Text>
+                    </View>
+                    {/* Backlog UI module Budgets : remplacer/compléter cette barre par
+                        le rendu donut validé, lors de la passe visuelle finale Home/Budgets. */}
+                    <View style={styles.progressTrack}>
+                      <View style={[styles.progressFill, { width: `${ratio * 100}%` }]} />
+                    </View>
+                    <Text style={styles.budgetRemaining}>Restant : {b.status.budgetContractuelRestant.toLocaleString('fr-FR')} DH</Text>
+                    {b.status.rythmeAlerte && (
+                      <Text style={styles.rythmeAlertBadge} testID={`home-budget-rythme-alerte-${b.id}`}>
+                        ⚠ Rythme élevé — {Math.round(b.status.consumptionRatio * 100)}% consommé pour{' '}
+                        {Math.round(b.status.elapsedRatio * 100)}% de période écoulée
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+              <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Budgets')}>
+                <Text style={styles.linkText}>Voir tous →</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Bloc 3 — Prochaines échéances */}
           {upcomingDeadlines.length > 0 && (
@@ -521,6 +618,13 @@ const styles = StyleSheet.create({
   totalLabelSecondary: { fontSize: 11, color: colors.textSecondary },
   totalValueSecondary: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
   linkText: { color: colors.success, fontSize: 12, fontWeight: '700', marginTop: 10 },
+
+  budgetCard: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  budgetHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  budgetLabel: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  budgetAmounts: { fontSize: 12, color: colors.textSecondary },
+  budgetRemaining: { fontSize: 11, color: colors.textSecondary, marginTop: spacing.xs },
+  rythmeAlertBadge: { fontSize: 11, fontWeight: '700', color: colors.warning, marginTop: spacing.xs },
 
   breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.xs },
   breakdownLabel: { fontSize: 12, color: colors.textSecondary },
