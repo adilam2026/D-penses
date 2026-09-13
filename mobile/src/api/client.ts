@@ -102,7 +102,10 @@ export const createInvite = () => apiFetch('/households/invites', { method: 'POS
 export const joinHousehold = (code: string) => apiFetch('/households/join', { method: 'POST', body: { code } });
 
 // ---------- Comptes (Lot 1) ----------
-export const listAccounts = () => apiFetch('/accounts');
+// Mini-lot T2 Transactions — includeArchived pour le filtre "Compte" du registre
+// (une transaction historique doit rester filtrable même si son compte est
+// archivé) ; défaut false = comportement inchangé pour tous les appelants existants.
+export const listAccounts = (includeArchived = false) => apiFetch(`/accounts${includeArchived ? '?includeArchived=true' : ''}`);
 
 export const getAccountsSummary = () => apiFetch('/accounts/summary');
 
@@ -146,7 +149,33 @@ export const adjustReconciliation = (accountId: string, reconciliationId: string
   apiFetch(`/accounts/${accountId}/reconciliations/${reconciliationId}/adjust`, { method: 'POST', body: data });
 
 // ---------- Transactions (Lot 2) ----------
-export const listTransactions = () => apiFetch('/transactions');
+/** Mini-lot T2 — filtres serveur additifs du registre (Lot T1 backend). Toutes les
+ *  bornes de date sont des ISO 8601 datetime complets ([from, to) — voir
+ *  TransactionsScreen pour la conversion depuis les DateField locales). */
+export interface TransactionFilters {
+  from?: string;
+  to?: string;
+  /** Liste de kinds bruts séparés par virgule (ex. "income,payment"). */
+  kind?: string;
+  accountId?: string;
+  categoryId?: string;
+  budgetId?: string;
+  financialPlanId?: string;
+  createdByUserId?: string;
+}
+
+export const listTransactions = (filters: TransactionFilters = {}) => {
+  const params: string[] = [];
+  if (filters.from) params.push(`from=${encodeURIComponent(filters.from)}`);
+  if (filters.to) params.push(`to=${encodeURIComponent(filters.to)}`);
+  if (filters.kind) params.push(`kind=${encodeURIComponent(filters.kind)}`);
+  if (filters.accountId) params.push(`accountId=${encodeURIComponent(filters.accountId)}`);
+  if (filters.categoryId) params.push(`categoryId=${encodeURIComponent(filters.categoryId)}`);
+  if (filters.budgetId) params.push(`budgetId=${encodeURIComponent(filters.budgetId)}`);
+  if (filters.financialPlanId) params.push(`financialPlanId=${encodeURIComponent(filters.financialPlanId)}`);
+  if (filters.createdByUserId) params.push(`createdByUserId=${encodeURIComponent(filters.createdByUserId)}`);
+  return apiFetch(`/transactions${params.length ? `?${params.join('&')}` : ''}`);
+};
 
 // §5 (recette téléphone réel) : détail enrichi d'une ligne (kind+id l'identifient sans ambiguïté).
 export const getTransactionDetail = (kind: string, id: string) => apiFetch(`/transactions/${kind}/${id}`);
