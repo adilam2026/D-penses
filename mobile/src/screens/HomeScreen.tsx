@@ -430,10 +430,11 @@ export function HomeScreen() {
           {/* Bloc 2bis — Mes budgets (Lot 3). "Ma situation" et "Mon disponible
               réel" forment un même ensemble de pilotage financier (comptes +
               disponible dérivé) — jamais scindé par ce bloc, qui vient après les
-              deux. Ordre validé : Comptes → Budgets → ... → Plans, toujours avant
-              "Mes plans" (Bloc 4), jamais après. Réutilise EXCLUSIVEMENT les
-              champs déjà calculés côté backend (dashboard.service.ts.budgetsResume)
-              — aucun recalcul mobile. */}
+              deux. Ordre Home validé : Comptes/Disponible → Budgets → Plans →
+              Échéances → Projection — toujours avant "Mes plans" (Bloc 3),
+              jamais après. Réutilise EXCLUSIVEMENT les champs déjà calculés
+              côté backend (dashboard.service.ts.budgetsResume) — aucun
+              recalcul mobile. */}
           {topBudgets.length > 0 && (
             <View style={styles.block}>
               <Text style={styles.blockTitle}>MES BUDGETS</Text>
@@ -473,34 +474,7 @@ export function HomeScreen() {
             </View>
           )}
 
-          {/* Bloc 3 — Prochaines échéances */}
-          {upcomingDeadlines.length > 0 && (
-            <View style={styles.block}>
-              <Text style={styles.blockTitle}>PROCHAINEMENT</Text>
-              {upcomingDeadlines.map((d) => (
-                <TouchableOpacity key={d.id} style={styles.deadlineRow} onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: d.id })}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.deadlineDate, { color: urgencyColor(d.dueDate, summary.seuil_a_payer_days) }]}>{formatShortDate(d.dueDate)}</Text>
-                    <Text style={styles.deadlineLabel}>{d.chargePlanLabel}</Text>
-                    {d.coverageStatus === 'couverte' && <Text style={styles.coveredBadge}>✓ Couvert</Text>}
-                  </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={styles.deadlineAmount}>
-                      {d.resteAPayer !== null ? `${d.resteAPayer.toLocaleString('fr-FR')} DH` : 'À confirmer'}
-                    </Text>
-                    <TouchableOpacity style={styles.payPill} onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: d.id })}>
-                      <Text style={styles.payPillText}>Payer</Text>
-                    </TouchableOpacity>
-                  </View>
-                </TouchableOpacity>
-              ))}
-              <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Charges')}>
-                <Text style={styles.linkText}>Voir toutes →</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* Bloc 4 — Mes plans */}
+          {/* Bloc 3 — Mes plans (repositionné avant Échéances, ordre Home validé) */}
           {topPlans.length > 0 && (
             <View style={styles.block}>
               <Text style={styles.blockTitle}>MES PLANS</Text>
@@ -528,6 +502,33 @@ export function HomeScreen() {
               ))}
               <TouchableOpacity onPress={() => navigation.getParent()?.navigate('FinancialPlans')}>
                 <Text style={styles.linkText}>Voir tous →</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Bloc 4 — Prochaines échéances (repositionné après Mes plans, ordre Home validé) */}
+          {upcomingDeadlines.length > 0 && (
+            <View style={styles.block}>
+              <Text style={styles.blockTitle}>PROCHAINEMENT</Text>
+              {upcomingDeadlines.map((d) => (
+                <TouchableOpacity key={d.id} style={styles.deadlineRow} onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: d.id })}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.deadlineDate, { color: urgencyColor(d.dueDate, summary.seuil_a_payer_days) }]}>{formatShortDate(d.dueDate)}</Text>
+                    <Text style={styles.deadlineLabel}>{d.chargePlanLabel}</Text>
+                    {d.coverageStatus === 'couverte' && <Text style={styles.coveredBadge}>✓ Couvert</Text>}
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.deadlineAmount}>
+                      {d.resteAPayer !== null ? `${d.resteAPayer.toLocaleString('fr-FR')} DH` : 'À confirmer'}
+                    </Text>
+                    <TouchableOpacity style={styles.payPill} onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: d.id })}>
+                      <Text style={styles.payPillText}>Payer</Text>
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Charges')}>
+                <Text style={styles.linkText}>Voir toutes →</Text>
               </TouchableOpacity>
             </View>
           )}
