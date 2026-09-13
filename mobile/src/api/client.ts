@@ -333,6 +333,11 @@ export const listCategories = () => apiFetch('/categories');
 export const createCategory = (data: { name: string; kind: 'income' | 'expense' | 'both'; icon?: string }) =>
   apiFetch('/categories', { method: 'POST', body: data });
 
+// R5 clôture §3 — le backend refuse déjà la suppression d'une catégorie système
+// ou encore utilisée (revenus/charges/budgets/dépenses réelles) : jamais de
+// contrôle dupliqué ici, le message d'erreur backend est affiché tel quel.
+export const deleteCategory = (id: string) => apiFetch(`/categories/${id}`, { method: 'DELETE' });
+
 // Vague 2 §1/§3 — Type (rattaché à une Catégorie) et Sous-type (rattaché à un Type),
 // facultatifs, jamais requis pour saisir une transaction.
 export const listCategoryTypes = (categoryId: string) => apiFetch(`/categories/${categoryId}/types`);

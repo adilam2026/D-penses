@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
@@ -26,6 +26,7 @@ export function CategoriesScreen() {
   const [kind, setKind] = useState<Category['kind']>('expense');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -35,6 +36,34 @@ export function CategoriesScreen() {
       setLoading(false);
     }
   }, []);
+
+  // R5 clôture §3 — une catégorie système n'est jamais proposée à la suppression
+  // (déjà refusée côté backend de toute façon, mais l'action n'apparaît même pas
+  // ici). Confirmation explicite avant tout appel DELETE (§12 — jamais silencieux
+  // pour une action destructive). Le backend porte seul la règle d'intégrité
+  // (catégorie utilisée ou non) : son message d'erreur est affiché tel quel,
+  // jamais un second contrôle dupliqué ici.
+  function onRequestDelete(category: Category) {
+    setError(null);
+    Alert.alert('Supprimer cette catégorie ?', `« ${category.name} » sera définitivement supprimée.`, [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Supprimer',
+        style: 'destructive',
+        onPress: async () => {
+          setDeletingId(category.id);
+          try {
+            await api.deleteCategory(category.id);
+            await load();
+          } catch (err) {
+            setError(err instanceof api.ApiError ? err.message : 'Suppression impossible');
+          } finally {
+            setDeletingId(null);
+          }
+        },
+      },
+    ]);
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -70,8 +99,19 @@ export function CategoriesScreen() {
         ) : (
           categories.map((c) => (
             <View key={c.id} style={styles.row}>
-              <Text style={styles.rowLabel}>{c.name}</Text>
-              <Text style={styles.rowMeta}>{c.isSystem ? 'Système' : KIND_LABEL[c.kind]}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowLabel}>{c.name}</Text>
+                <Text style={styles.rowMeta}>{c.isSystem ? 'Système' : KIND_LABEL[c.kind]}</Text>
+              </View>
+              {!c.isSystem && (
+                <TouchableOpacity
+                  testID={`category-delete-${c.id}`}
+                  onPress={() => onRequestDelete(c)}
+                  disabled={deletingId === c.id}
+                >
+                  {deletingId === c.id ? <ActivityIndicator size="small" /> : <Text style={styles.deleteLink}>Supprimer</Text>}
+                </TouchableOpacity>
+              )}
             </View>
           ))
         )}
@@ -101,6 +141,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm },
   rowLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
   rowMeta: { fontSize: 11, color: colors.textSecondary },
+  deleteLink: { fontSize: 12, fontWeight: '600', color: colors.danger, marginLeft: spacing.sm },
   sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.xl, marginBottom: spacing.sm },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: spacing.md },
   chip: {
