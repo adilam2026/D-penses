@@ -127,6 +127,7 @@ export class HouseholdsService {
           variableBudgetProjectionMode: dto.variableBudgetProjectionMode,
           homeBannerDismissed: dto.homeBannerDismissed,
           closingDay: dto.closingDay,
+          weekStartDay: dto.weekStartDay,
         },
       }),
     );

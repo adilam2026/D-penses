@@ -35,4 +35,13 @@ export class UpdateHouseholdSettingsDto {
   @Min(1)
   @Max(31)
   closingDay?: number;
+
+  // Mini-lot weekStartDay foyer — jour de début de semaine par défaut du foyer
+  // (1=lundi..7=dimanche), utilisé comme défaut à la création d'un budget
+  // hebdomadaire quand non fourni explicitement (VariableBudgetsService.create).
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(7)
+  weekStartDay?: number;
 }

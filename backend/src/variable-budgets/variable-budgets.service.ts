@@ -140,6 +140,17 @@ export class VariableBudgetsService {
     return (settings?.variableBudgetProjectionMode ?? 'prudent_max') as ProjectionMode;
   }
 
+  /**
+   * Mini-lot weekStartDay foyer — défaut du jour de début de semaine pour un
+   * budget hebdomadaire quand non fourni explicitement à la création
+   * (HouseholdSettings.weekStartDay) ; jamais rétroactif (n'affecte que la
+   * création — update() reste 100% explicite) ; fallback ultime lundi (1).
+   */
+  private async householdWeekStartDayOnTx(tx: TxClient, householdId: string): Promise<number> {
+    const settings = await tx.householdSettings.findUnique({ where: { householdId } });
+    return settings?.weekStartDay ?? 1;
+  }
+
   async create(userId: string, householdId: string, dto: CreateVariableBudgetDto) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
@@ -153,6 +164,12 @@ export class VariableBudgetsService {
       const endDate = dto.endDate ? new Date(dto.endDate) : null;
       const overlapping = await this.findOverlappingBudgets(tx, householdId, dto.categoryId, dto.categoryTypeId ?? null, startDate, endDate);
 
+      // Mini-lot weekStartDay foyer : valeur explicite > réglage foyer (pertinent
+      // uniquement pour un budget hebdomadaire — inerte pour un budget mensuel,
+      // cf. nominalPeriod qui ignore weekStartDay quand referencePeriod='mois') > lundi (1).
+      const weekStartDay =
+        dto.weekStartDay ?? (dto.referencePeriod === 'semaine' ? await this.householdWeekStartDayOnTx(tx, householdId) : 1);
+
       const budget = await tx.variableBudget.create({
         data: {
           householdId,
@@ -160,7 +177,7 @@ export class VariableBudgetsService {
           categoryTypeId: dto.categoryTypeId,
           referenceAmount: dto.referenceAmount,
           referencePeriod: dto.referencePeriod,
-          weekStartDay: dto.weekStartDay ?? 1,
+          weekStartDay,
           startDate,
           endDate: endDate ?? undefined,
           includeInPrudentProjection: dto.includeInPrudentProjection ?? true,
