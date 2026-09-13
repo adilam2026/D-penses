@@ -6,12 +6,14 @@ import { getAccountBalances, getDeadlineBalance, round2, toNumber } from './ledg
 // contenir le risque de régression (cf. rapport final §11 sur la dette restante).
 import {
   BudgetLike,
+  MonthMode,
   ProjectionMode,
   addDaysUTC,
   budgetAmountForWindow,
   computeBudgetPeriodStatus,
   getCurrentPeriodWindow,
 } from './variable-budget.util';
+import { DEFAULT_CLOSING_DAY } from './financial-period.util';
 import { CoverageItem, computePocketCurrentAmount, computeProvisionCoverage } from './provision.util';
 
 type TxClient = Prisma.TransactionClient;
@@ -267,17 +269,27 @@ export async function computeDeadlineCommitments(tx: TxClient, householdId: stri
 
 // ---------- G.4 — Montants engagés : part VariableBudget (réutilise le moteur Lot 3) ----------
 
-function toBudgetLike(budget: {
-  referenceAmount: unknown;
-  referencePeriod: 'semaine' | 'mois';
-  weekStartDay: number;
-  startDate: Date;
-  endDate: Date | null;
-}): BudgetLike {
+function toBudgetLike(
+  budget: {
+    referenceAmount: unknown;
+    referencePeriod: 'semaine' | 'mois';
+    weekStartDay: number;
+    monthMode: MonthMode;
+    customStartDay: number | null;
+    startDate: Date;
+    endDate: Date | null;
+  },
+  liveClosingDay: number,
+): BudgetLike {
   return {
     referenceAmount: toNumber(budget.referenceAmount),
     referencePeriod: budget.referencePeriod,
     weekStartDay: budget.weekStartDay,
+    monthMode: budget.monthMode,
+    // Lot 6 — Solde prudent = toujours "maintenant", jamais une période close
+    // via versionnement : le closingDay live est systématiquement correct ici.
+    financialClosingDay: budget.monthMode === 'financier' ? liveClosingDay : null,
+    customStartDay: budget.monthMode === 'personnalise' ? budget.customStartDay : null,
     startDate: budget.startDate,
     endDate: budget.endDate,
   };
@@ -333,6 +345,7 @@ export async function computeVariableBudgetCommitments(
   referenceDate: Date,
   horizon: Date,
   mode: ProjectionMode,
+  closingDay: number,
 ): Promise<VariableBudgetCommitments> {
   const ref = toUtcMidnight(referenceDate);
   const budgets = await tx.variableBudget.findMany({
@@ -348,7 +361,7 @@ export async function computeVariableBudgetCommitments(
   const items: VariableBudgetCommitmentItem[] = [];
 
   for (const row of budgets) {
-    const budget = toBudgetLike(row);
+    const budget = toBudgetLike(row, closingDay);
     const currentWindow = getCurrentPeriodWindow(budget, ref);
     const consommeCourant = await consommeSurFenetre(tx, row.id, currentWindow.start, currentWindow.end);
     const currentStatus = computeBudgetPeriodStatus(budget, ref, consommeCourant, mode);
@@ -446,7 +459,8 @@ export async function computeDisponibleLibre(tx: TxClient, householdId: string, 
 
   const settings = await tx.householdSettings.findUnique({ where: { householdId } });
   const mode = (settings?.variableBudgetProjectionMode ?? 'prudent_max') as ProjectionMode;
-  const variableBudgetCommitments = await computeVariableBudgetCommitments(tx, householdId, referenceDate, horizon.date, mode);
+  const closingDay = settings?.closingDay ?? DEFAULT_CLOSING_DAY;
+  const variableBudgetCommitments = await computeVariableBudgetCommitments(tx, householdId, referenceDate, horizon.date, mode, closingDay);
 
   const coussinSecurite = settings ? toNumber(settings.securityMarginAmount) : 0;
   const montantsEngages = round2(deadlineCommitments.knownAmount + variableBudgetCommitments.total);

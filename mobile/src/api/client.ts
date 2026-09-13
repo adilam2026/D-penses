@@ -330,17 +330,33 @@ export const getVariableBudget = (id: string, at?: string) => apiFetch(`/variabl
 /** Lot 4 — journal des modifications dérivé (budgetId/champ/ancienne/nouvelle valeur/changedAt=effectiveFrom). */
 export const getVariableBudgetHistory = (id: string) => apiFetch(`/variable-budgets/${id}/history`);
 
+/** Lot 6 — mode du mois pour referencePeriod='mois' (inerte pour 'semaine').
+ *  'calendaire' = comportement civil historique (défaut si omis). */
+export type MonthMode = 'calendaire' | 'financier' | 'personnalise';
+
 export const createVariableBudget = (data: {
   categoryId: string;
   referenceAmount: number;
   referencePeriod: 'semaine' | 'mois';
   startDate: string;
   weekStartDay?: number;
+  monthMode?: MonthMode;
+  /** Requis si monthMode='personnalise' (1-31, clampé automatiquement au
+   *  dernier jour réel du mois côté serveur si trop court). */
+  customStartDay?: number;
 }) => apiFetch('/variable-budgets', { method: 'POST', body: data });
 
 export const updateVariableBudget = (
   id: string,
-  data: { referenceAmount?: number; endDate?: string; referencePeriod?: 'semaine' | 'mois'; weekStartDay?: number; categoryId?: string },
+  data: {
+    referenceAmount?: number;
+    endDate?: string;
+    referencePeriod?: 'semaine' | 'mois';
+    weekStartDay?: number;
+    categoryId?: string;
+    monthMode?: MonthMode;
+    customStartDay?: number;
+  },
 ) => apiFetch(`/variable-budgets/${id}`, { method: 'PATCH', body: data });
 
 /** R6.4 (§1) — suppression réelle si aucune dépense historique n'existe encore ;

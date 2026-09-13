@@ -21,6 +21,12 @@ interface CreatedBudget {
   period: 'semaine' | 'mois';
 }
 
+const MONTH_MODE_LABELS: Record<api.MonthMode, string> = {
+  calendaire: 'Calendaire',
+  financier: 'Financier',
+  personnalise: 'Personnalisé',
+};
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -38,6 +44,10 @@ export function CreateBudgetScreen() {
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
   const [period, setPeriod] = useState<'semaine' | 'mois'>('semaine');
+  // Lot 6 — mode du mois, pertinent uniquement pour period='mois' (inerte pour
+  // 'semaine', jamais bloqué/masqué pour autant côté serveur — juste sans effet).
+  const [monthMode, setMonthMode] = useState<api.MonthMode>('calendaire');
+  const [customStartDay, setCustomStartDay] = useState('');
   const [startDate, setStartDate] = useState(todayIso());
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -62,13 +72,27 @@ export function CreateBudgetScreen() {
       setError('Montant invalide');
       return;
     }
+    const numericCustomStartDay = customStartDay ? Number(customStartDay) : undefined;
+    if (period === 'mois' && monthMode === 'personnalise' && !numericCustomStartDay) {
+      setError('Indiquez le jour de départ personnalisé');
+      return;
+    }
     setSubmitting(true);
     try {
-      await api.createVariableBudget({ categoryId, referenceAmount: numericAmount, referencePeriod: period, startDate });
+      await api.createVariableBudget({
+        categoryId,
+        referenceAmount: numericAmount,
+        referencePeriod: period,
+        startDate,
+        monthMode: period === 'mois' ? monthMode : undefined,
+        customStartDay: period === 'mois' && monthMode === 'personnalise' ? numericCustomStartDay : undefined,
+      });
       const categoryName = categories.find((c) => c.id === categoryId)?.name ?? '';
       setCreated((prev) => [...prev, { categoryName, amount: numericAmount, period }]);
       setCategoryId(null);
       setAmount('');
+      setMonthMode('calendaire');
+      setCustomStartDay('');
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Création impossible');
     } finally {
@@ -125,6 +149,35 @@ export function CreateBudgetScreen() {
           <Text style={[styles.segmentText, period === 'mois' && styles.segmentTextActive]}>Mois</Text>
         </TouchableOpacity>
       </View>
+
+      {period === 'mois' && (
+        <>
+          <Text style={styles.sectionLabel}>Mode du mois</Text>
+          <View style={styles.segment}>
+            {(Object.keys(MONTH_MODE_LABELS) as api.MonthMode[]).map((mode) => (
+              <TouchableOpacity
+                key={mode}
+                testID={`create-budget-month-mode-${mode}`}
+                style={[styles.segmentItem, monthMode === mode && styles.segmentActive]}
+                onPress={() => setMonthMode(mode)}
+              >
+                <Text style={[styles.segmentText, monthMode === mode && styles.segmentTextActive]}>{MONTH_MODE_LABELS[mode]}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {monthMode === 'personnalise' && (
+            <FormField
+              testID="create-budget-custom-start-day-input"
+              label="Jour de départ (1-31)"
+              placeholder="Ex. 25"
+              keyboardType="number-pad"
+              value={customStartDay}
+              onChangeText={setCustomStartDay}
+              onFocus={handleFocus}
+            />
+          )}
+        </>
+      )}
 
       <Text style={styles.sectionLabel}>Date de début</Text>
       <DateField value={startDate} onChange={setStartDate} />

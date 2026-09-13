@@ -29,7 +29,7 @@ jest.mock('@expo/vector-icons', () => {
 
 jest.mock('../../../api/client', () => {
   const actual = jest.requireActual('../../../api/client');
-  return { ...actual, getVariableBudget: jest.fn(), getVariableBudgetHistory: jest.fn() };
+  return { ...actual, getVariableBudget: jest.fn(), getVariableBudgetHistory: jest.fn(), updateVariableBudget: jest.fn() };
 });
 
 const mockedApi = api as jest.Mocked<typeof api>;
@@ -190,5 +190,197 @@ describe('BudgetDetailScreen — navigation de périodes et historique (Lot 4)',
     await waitFor(() => screen.getByTestId('budget-history-list'));
     expect(screen.getByText('Montant de référence')).toBeTruthy();
     expect(screen.getByText(/1 000 DH → 2 000 DH/)).toBeTruthy();
+  });
+});
+
+/**
+ * Lot 6 — édition du mode du mois (CALENDAR/FINANCIAL/CUSTOM) depuis la fiche
+ * budget (menu "..." → Modifier), symétrique de CreateBudgetScreen : le
+ * sélecteur n'apparaît que pour referencePeriod='mois', le jour personnalisé
+ * uniquement pour monthMode='personnalise', et tout changement de mode
+ * incompatible avec customStartDay le remet immédiatement à vide (jamais de
+ * valeur fantôme envoyée au PATCH).
+ */
+function monthlyFixture(monthMode: api.MonthMode, customStartDay: number | null) {
+  return {
+    id: 'b1',
+    categoryId: 'cat-1',
+    category: { name: 'Courses' },
+    referenceAmount: 1000,
+    referencePeriod: 'mois' as const,
+    weekStartDay: 1,
+    monthMode,
+    customStartDay,
+    status: {
+      periodStart: '2026-09-01',
+      periodEnd: '2026-09-30',
+      budgetPeriode: 1000,
+      consommeADate: 300,
+      budgetContractuelRestant: 700,
+      rythmeProjete: 700,
+      previsionRythmeRestant: 400,
+      projectionPrudenteRestante: 700,
+      consumptionRatio: 0.3,
+      elapsedRatio: 0.4,
+      rythmeAlerte: false,
+    },
+    history: [],
+    periodNavigation: {
+      at: '2026-09-10',
+      periodStart: '2026-09-01',
+      periodEnd: '2026-09-30',
+      isCurrentPeriod: true,
+      previousPeriodAt: '2026-08-31',
+      nextPeriodAt: null,
+    },
+    initialValues: null,
+    adjustedValues: null,
+  };
+}
+
+// Barrière de synchronisation générique (même constat empirique que
+// CreateBudgetScreen.test.tsx) : force le tick nécessaire entre deux
+// interactions rapprochées dans la modale d'édition.
+async function flush() {
+  await waitFor(() => screen.getByTestId('budget-edit-save'));
+}
+
+async function openEditModal() {
+  await waitFor(() => screen.getByTestId('budget-menu-button'));
+  await fireEvent.press(screen.getByTestId('budget-menu-button'));
+  await waitFor(() => screen.getByTestId('budget-menu-option-modifier'));
+  await fireEvent.press(screen.getByTestId('budget-menu-option-modifier'));
+  await waitFor(() => screen.getByTestId('budget-edit-form'));
+}
+
+describe('BudgetDetailScreen — édition du mode du mois (Lot 6)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedApi.updateVariableBudget.mockResolvedValue({ id: 'b1' } as any);
+  });
+
+  it('affiche le sélecteur de mode pour un budget mensuel', async () => {
+    mockedApi.getVariableBudget.mockResolvedValue(monthlyFixture('calendaire', null));
+    await render(<BudgetDetailScreen />);
+    await openEditModal();
+
+    expect(screen.getByText('Mode du mois')).toBeTruthy();
+    expect(screen.getByTestId('budget-edit-month-mode-calendaire')).toBeTruthy();
+    expect(screen.getByTestId('budget-edit-month-mode-financier')).toBeTruthy();
+    expect(screen.getByTestId('budget-edit-month-mode-personnalise')).toBeTruthy();
+  });
+
+  it('aucun sélecteur de mode pour un budget hebdomadaire', async () => {
+    mockedApi.getVariableBudget.mockResolvedValue(detailFixture(false)); // referencePeriod='semaine'
+    await render(<BudgetDetailScreen />);
+    await openEditModal();
+
+    expect(screen.queryByText('Mode du mois')).toBeNull();
+    expect(screen.queryByTestId('budget-edit-month-mode-calendaire')).toBeNull();
+  });
+
+  it('édition calendaire → personnalise + jour : PATCH avec monthMode/customStartDay cohérents', async () => {
+    mockedApi.getVariableBudget.mockResolvedValue(monthlyFixture('calendaire', null));
+    await render(<BudgetDetailScreen />);
+    await openEditModal();
+
+    await fireEvent.press(screen.getByTestId('budget-edit-month-mode-personnalise'));
+    await flush();
+    expect(screen.getByTestId('budget-edit-custom-start-day-input')).toBeTruthy();
+
+    fireEvent.changeText(screen.getByTestId('budget-edit-custom-start-day-input'), '25');
+    await flush();
+
+    await fireEvent.press(screen.getByTestId('budget-edit-save'));
+    await waitFor(() =>
+      expect(mockedApi.updateVariableBudget).toHaveBeenCalledWith('b1', {
+        referenceAmount: 1000,
+        referencePeriod: 'mois',
+        monthMode: 'personnalise',
+        customStartDay: 25,
+      }),
+    );
+  });
+
+  it('édition personnalise → financier : customStartDay remis à null (omis du PATCH), champ masqué', async () => {
+    mockedApi.getVariableBudget.mockResolvedValue(monthlyFixture('personnalise', 25));
+    await render(<BudgetDetailScreen />);
+    await openEditModal();
+
+    // Confirme que le formulaire démarre bien avec la valeur en base avant le changement de mode.
+    expect(screen.getByTestId('budget-edit-custom-start-day-input').props.value).toBe('25');
+
+    await fireEvent.press(screen.getByTestId('budget-edit-month-mode-financier'));
+    await flush();
+    expect(screen.queryByTestId('budget-edit-custom-start-day-input')).toBeNull();
+
+    await fireEvent.press(screen.getByTestId('budget-edit-save'));
+    await waitFor(() =>
+      expect(mockedApi.updateVariableBudget).toHaveBeenCalledWith('b1', {
+        referenceAmount: 1000,
+        referencePeriod: 'mois',
+        monthMode: 'financier',
+        customStartDay: undefined,
+      }),
+    );
+  });
+
+  it('validation du jour personnalisé : 99 est refusé (hors 1..31), aucun appel API', async () => {
+    mockedApi.getVariableBudget.mockResolvedValue(monthlyFixture('calendaire', null));
+    await render(<BudgetDetailScreen />);
+    await openEditModal();
+
+    await fireEvent.press(screen.getByTestId('budget-edit-month-mode-personnalise'));
+    await flush();
+    fireEvent.changeText(screen.getByTestId('budget-edit-custom-start-day-input'), '99');
+    await flush();
+
+    await fireEvent.press(screen.getByTestId('budget-edit-save'));
+    await waitFor(() => screen.getByText('Le jour de départ doit être un nombre entier entre 1 et 31'));
+    expect(mockedApi.updateVariableBudget).not.toHaveBeenCalled();
+  });
+
+  it('payload PATCH exact pour une édition combinée (montant + mode + jour)', async () => {
+    mockedApi.getVariableBudget.mockResolvedValue(monthlyFixture('financier', null));
+    await render(<BudgetDetailScreen />);
+    await openEditModal();
+
+    fireEvent.changeText(screen.getByTestId('budget-edit-amount'), '1500');
+    await flush();
+    await fireEvent.press(screen.getByTestId('budget-edit-month-mode-personnalise'));
+    await flush();
+    fireEvent.changeText(screen.getByTestId('budget-edit-custom-start-day-input'), '10');
+    await flush();
+
+    await fireEvent.press(screen.getByTestId('budget-edit-save'));
+    await waitFor(() => expect(mockedApi.updateVariableBudget).toHaveBeenCalledTimes(1));
+    expect(mockedApi.updateVariableBudget).toHaveBeenCalledWith('b1', {
+      referenceAmount: 1500,
+      referencePeriod: 'mois',
+      monthMode: 'personnalise',
+      customStartDay: 10,
+    });
+  });
+
+  it("passage vers 'semaine' : mode remis à calendaire, customStartDay omis (jamais de configuration mensuelle incohérente)", async () => {
+    mockedApi.getVariableBudget.mockResolvedValue(monthlyFixture('personnalise', 25));
+    await render(<BudgetDetailScreen />);
+    await openEditModal();
+
+    await fireEvent.press(screen.getByTestId('budget-edit-period'));
+    await flush();
+    await fireEvent.press(await screen.findByTestId('budget-edit-period-option-semaine'));
+    await flush();
+    expect(screen.queryByText('Mode du mois')).toBeNull();
+
+    await fireEvent.press(screen.getByTestId('budget-edit-save'));
+    await waitFor(() =>
+      expect(mockedApi.updateVariableBudget).toHaveBeenCalledWith('b1', {
+        referenceAmount: 1000,
+        referencePeriod: 'semaine',
+        monthMode: 'calendaire',
+        customStartDay: undefined,
+      }),
+    );
   });
 });

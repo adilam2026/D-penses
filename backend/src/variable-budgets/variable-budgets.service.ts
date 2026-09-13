@@ -7,10 +7,12 @@ import {
   budgetHealthStatus,
   computeBudgetPeriodStatus,
   getCurrentPeriodWindow,
+  MonthMode,
   periodEndExclusive,
   ProjectionMode,
   ReferencePeriod,
   resolveEffectiveConfig,
+  resolveFinancialClosingDay,
   VersionedSnapshot,
 } from '../common/ledger/variable-budget.util';
 import { CreateVariableBudgetDto } from './dto/create-variable-budget.dto';
@@ -18,9 +20,11 @@ import { UpdateVariableBudgetDto } from './dto/update-variable-budget.dto';
 
 type TxClient = ReturnType<RlsContextService['getClient']>;
 
-/** Les 7 champs suivis par l'historique Lot 4 — sans validFrom/validTo (qui
- *  n'existent que pour un segment CLOS, jamais pour la ligne vivante). */
-type BudgetConfigFields = Omit<VersionedSnapshot, 'validFrom' | 'validTo'>;
+/** Les 9 champs suivis par l'historique Lot 4/6 — sans validFrom/validTo/
+ *  financialClosingDaySnapshot (qui n'existent que pour un segment CLOS,
+ *  jamais pour la ligne vivante ; financialClosingDaySnapshot n'est en plus
+ *  jamais éditable directement ni diffé — ancre technique, cf. Lot 6). */
+type BudgetConfigFields = Omit<VersionedSnapshot, 'validFrom' | 'validTo' | 'financialClosingDaySnapshot'>;
 
 const TRACKED_FIELDS = [
   'referenceAmount',
@@ -28,6 +32,8 @@ const TRACKED_FIELDS = [
   'categoryId',
   'categoryTypeId',
   'weekStartDay',
+  'monthMode',
+  'customStartDay',
   'includeInPrudentProjection',
   'endDate',
 ] as const satisfies readonly (keyof BudgetConfigFields)[];
@@ -50,11 +56,27 @@ export interface BudgetAmendmentEntry {
 export class VariableBudgetsService {
   constructor(private readonly rlsContext: RlsContextService) {}
 
-  private toBudgetLike(budget: { referenceAmount: unknown; referencePeriod: 'semaine' | 'mois'; weekStartDay: number; startDate: Date; endDate: Date | null }): BudgetLike {
+  /** Toujours la ligne live (statut "maintenant") — closingDay live, jamais un
+   *  segment historique. Pour la résolution à un instant `at`, cf. detailOnTx. */
+  private toBudgetLike(
+    budget: {
+      referenceAmount: unknown;
+      referencePeriod: 'semaine' | 'mois';
+      weekStartDay: number;
+      monthMode: MonthMode;
+      customStartDay: number | null;
+      startDate: Date;
+      endDate: Date | null;
+    },
+    closingDay: number,
+  ): BudgetLike {
     return {
       referenceAmount: toNumber(budget.referenceAmount),
       referencePeriod: budget.referencePeriod,
       weekStartDay: budget.weekStartDay,
+      monthMode: budget.monthMode,
+      financialClosingDay: budget.monthMode === 'financier' ? closingDay : null,
+      customStartDay: budget.monthMode === 'personnalise' ? budget.customStartDay : null,
       startDate: budget.startDate,
       endDate: budget.endDate,
     };
@@ -74,6 +96,8 @@ export class VariableBudgetsService {
     categoryId: string;
     categoryTypeId: string | null;
     weekStartDay: number;
+    monthMode: MonthMode;
+    customStartDay: number | null;
     includeInPrudentProjection: boolean;
     endDate: Date | null;
   }): BudgetConfigFields {
@@ -83,6 +107,8 @@ export class VariableBudgetsService {
       categoryId: row.categoryId,
       categoryTypeId: row.categoryTypeId,
       weekStartDay: row.weekStartDay,
+      monthMode: row.monthMode,
+      customStartDay: row.customStartDay,
       includeInPrudentProjection: row.includeInPrudentProjection,
       endDate: row.endDate,
     };
@@ -96,7 +122,12 @@ export class VariableBudgetsService {
    */
   private async fetchVersionsOnTx(tx: TxClient, budgetId: string): Promise<VersionedSnapshot[]> {
     const rows = await tx.variableBudgetVersion.findMany({ where: { variableBudgetId: budgetId }, orderBy: { validFrom: 'asc' } });
-    return rows.map((row) => ({ ...this.toConfigFields(row), validFrom: row.validFrom, validTo: row.validTo }));
+    return rows.map((row) => ({
+      ...this.toConfigFields(row),
+      validFrom: row.validFrom,
+      validTo: row.validTo,
+      financialClosingDaySnapshot: row.financialClosingDaySnapshot,
+    }));
   }
 
   /**
@@ -109,7 +140,8 @@ export class VariableBudgetsService {
     const budget = await tx.variableBudget.findFirst({ where: { id: budgetId, householdId } });
     if (!budget) return null;
     const mode = await this.projectionMode(tx, householdId);
-    return this.statusFor(tx, budget, mode, today);
+    const closingDay = await this.householdClosingDayOnTx(tx, householdId);
+    return this.statusFor(tx, budget, mode, today, closingDay);
   }
 
   async findActiveBudgetsOnTx(tx: TxClient, householdId: string, categoryId: string, at: Date = new Date()) {
@@ -177,8 +209,8 @@ export class VariableBudgetsService {
     });
   }
 
-  private async statusFor(tx: TxClient, budgetRow: any, mode: ProjectionMode, today: Date) {
-    const budget = this.toBudgetLike(budgetRow);
+  private async statusFor(tx: TxClient, budgetRow: any, mode: ProjectionMode, today: Date, closingDay: number) {
+    const budget = this.toBudgetLike(budgetRow, closingDay);
     const window = getCurrentPeriodWindow(budget, today);
     const consomme = await this.consommeADate(tx, budgetRow.id, window.start, window.end);
     const status = computeBudgetPeriodStatus(budget, today, consomme, mode);
@@ -204,6 +236,16 @@ export class VariableBudgetsService {
     return settings?.weekStartDay ?? 1;
   }
 
+  /**
+   * Lot 6 — closingDay LIVE du foyer, source de vérité pour tout budget
+   * monthMode='financier' (jamais dupliqué sur VariableBudget, cf.
+   * financial-period.util.ts DEFAULT_CLOSING_DAY=31).
+   */
+  private async householdClosingDayOnTx(tx: TxClient, householdId: string): Promise<number> {
+    const settings = await tx.householdSettings.findUnique({ where: { householdId } });
+    return settings?.closingDay ?? 31;
+  }
+
   async create(userId: string, householdId: string, dto: CreateVariableBudgetDto) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
@@ -223,6 +265,18 @@ export class VariableBudgetsService {
       const weekStartDay =
         dto.weekStartDay ?? (dto.referencePeriod === 'semaine' ? await this.householdWeekStartDayOnTx(tx, householdId) : 1);
 
+      // Lot 6 — monthMode par défaut = 'calendaire' (colonne Prisma @default, rien
+      // à calculer ici) ; customStartDay requis UNIQUEMENT en mode 'personnalise',
+      // sinon toujours forcé à null (jamais une valeur orpheline conservée pour un
+      // budget calendaire/financier). Inerte pour referencePeriod='semaine' (même
+      // convention que weekStartDay inerte pour 'mois' — non bloquée à la création,
+      // seulement jamais consultée par le moteur).
+      const effectiveMonthMode: MonthMode = dto.monthMode ?? 'calendaire';
+      if (effectiveMonthMode === 'personnalise' && dto.customStartDay == null) {
+        throw new BadRequestException('customStartDay est requis pour monthMode=personnalise');
+      }
+      const customStartDay = effectiveMonthMode === 'personnalise' ? dto.customStartDay! : null;
+
       const budget = await tx.variableBudget.create({
         data: {
           householdId,
@@ -231,6 +285,8 @@ export class VariableBudgetsService {
           referenceAmount: dto.referenceAmount,
           referencePeriod: dto.referencePeriod,
           weekStartDay,
+          monthMode: effectiveMonthMode,
+          customStartDay,
           startDate,
           endDate: endDate ?? undefined,
           includeInPrudentProjection: dto.includeInPrudentProjection ?? true,
@@ -246,9 +302,10 @@ export class VariableBudgetsService {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
       const mode = await this.projectionMode(tx, householdId);
+      const closingDay = await this.householdClosingDayOnTx(tx, householdId);
       const budgets = await tx.variableBudget.findMany({ where: { householdId }, orderBy: { createdAt: 'desc' }, include: { category: true } });
       const today = new Date();
-      return Promise.all(budgets.map(async (b) => ({ ...b, status: await this.statusFor(tx, b, mode, today) })));
+      return Promise.all(budgets.map(async (b) => ({ ...b, status: await this.statusFor(tx, b, mode, today, closingDay) })));
     });
   }
 
@@ -282,19 +339,38 @@ export class VariableBudgetsService {
     const budget = await tx.variableBudget.findFirst({ where: { id, householdId }, include: { category: true } });
     if (!budget) throw new NotFoundException('Budget introuvable');
     const mode = await this.projectionMode(tx, householdId);
+    const liveClosingDay = await this.householdClosingDayOnTx(tx, householdId);
 
     const liveConfig = this.toConfigFields(budget);
     const versions = await this.fetchVersionsOnTx(tx, id);
     const resolveAt = (instant: Date) => resolveEffectiveConfig(versions, liveConfig, instant);
 
     const configAt = resolveAt(at);
-    const budgetLikeAt: BudgetLike = { referenceAmount: configAt.referenceAmount, referencePeriod: configAt.referencePeriod, weekStartDay: configAt.weekStartDay, startDate: budget.startDate, endDate: configAt.endDate };
+    const budgetLikeAt: BudgetLike = {
+      referenceAmount: configAt.referenceAmount,
+      referencePeriod: configAt.referencePeriod,
+      weekStartDay: configAt.weekStartDay,
+      monthMode: configAt.monthMode,
+      financialClosingDay: resolveFinancialClosingDay(configAt, liveClosingDay, `budget ${id} à ${at.toISOString()}`),
+      customStartDay: configAt.customStartDay,
+      startDate: budget.startDate,
+      endDate: configAt.endDate,
+    };
     const { start: periodStart, end: periodEnd } = getCurrentPeriodWindow(budgetLikeAt, at);
     const periodEndExcl = periodEndExclusive(periodEnd);
 
     const configInitial = resolveAt(periodStart);
     const configFinal = resolveAt(new Date(periodEndExcl.getTime() - 1));
-    const budgetLikeFinal: BudgetLike = { referenceAmount: configFinal.referenceAmount, referencePeriod: configFinal.referencePeriod, weekStartDay: configFinal.weekStartDay, startDate: budget.startDate, endDate: configFinal.endDate };
+    const budgetLikeFinal: BudgetLike = {
+      referenceAmount: configFinal.referenceAmount,
+      referencePeriod: configFinal.referencePeriod,
+      weekStartDay: configFinal.weekStartDay,
+      monthMode: configFinal.monthMode,
+      financialClosingDay: resolveFinancialClosingDay(configFinal, liveClosingDay, `budget ${id} fin de période ${periodEnd.toISOString()}`),
+      customStartDay: configFinal.customStartDay,
+      startDate: budget.startDate,
+      endDate: configFinal.endDate,
+    };
 
     const now = new Date();
     // Période déjà close (periodEnd < maintenant) : figée à sa clôture (jours_écoulés
@@ -420,22 +496,44 @@ export class VariableBudgetsService {
       // (rlsContext.run englobe déjà tout dans prisma.$transaction).
       const oldEndTime = budget.endDate?.getTime() ?? null;
       const newEndTime = effectiveEndDate?.getTime() ?? null;
-      const tracked7FieldsChanged =
+
+      // Lot 6 — même règle que la création : customStartDay n'existe QUE pour
+      // monthMode='personnalise' (jamais une valeur orpheline conservée pour un
+      // budget qui repasse en calendaire/financier) ; requis si le mode effectif
+      // final est 'personnalise'.
+      const effectiveMonthMode: MonthMode = dto.monthMode ?? budget.monthMode;
+      const requestedCustomStartDay = dto.customStartDay !== undefined ? dto.customStartDay : budget.customStartDay;
+      if (effectiveMonthMode === 'personnalise' && requestedCustomStartDay == null) {
+        throw new BadRequestException('customStartDay est requis pour monthMode=personnalise');
+      }
+      const effectiveCustomStartDay = effectiveMonthMode === 'personnalise' ? requestedCustomStartDay : null;
+
+      const tracked9FieldsChanged =
         (dto.referenceAmount !== undefined && toNumber(dto.referenceAmount) !== toNumber(budget.referenceAmount)) ||
         (dto.referencePeriod !== undefined && dto.referencePeriod !== budget.referencePeriod) ||
         (dto.categoryId !== undefined && dto.categoryId !== budget.categoryId) ||
         (dto.categoryTypeId !== undefined && dto.categoryTypeId !== budget.categoryTypeId) ||
         (dto.weekStartDay !== undefined && dto.weekStartDay !== budget.weekStartDay) ||
+        effectiveMonthMode !== budget.monthMode ||
+        effectiveCustomStartDay !== budget.customStartDay ||
         (dto.includeInPrudentProjection !== undefined && dto.includeInPrudentProjection !== budget.includeInPrudentProjection) ||
         (dto.endDate !== undefined && oldEndTime !== newEndTime);
 
-      if (tracked7FieldsChanged) {
+      if (tracked9FieldsChanged) {
         // validFrom du tout premier segment = createdAt (origine TECHNIQUE du
         // versionnement, jamais startDate qui reste la date d'application
         // FINANCIÈRE — évite un intervalle invalide si le budget est modifié
         // avant sa startDate). Segments suivants : chaînés sur le validTo précédent.
         const lastVersion = await tx.variableBudgetVersion.findFirst({ where: { variableBudgetId: id }, orderBy: { validTo: 'desc' } });
         const validFrom = lastVersion?.validTo ?? budget.createdAt;
+        // Lot 6 — le segment qui se ferme représente l'état AVANT ce PATCH (budget.*,
+        // pas les valeurs effectives) : s'il était monthMode='financier', son
+        // financialClosingDaySnapshot DOIT capturer le closingDay live à CET instant,
+        // quelle que soit la cause du changement (même un simple referenceAmount) —
+        // sinon un futur changement de closingDay romprait la non-rétroactivité pour
+        // ce segment (cf. resolveFinancialClosingDay, aucun repli implicite accepté).
+        const financialClosingDaySnapshot =
+          budget.monthMode === 'financier' ? await this.householdClosingDayOnTx(tx, householdId) : null;
         await tx.variableBudgetVersion.create({
           data: {
             variableBudgetId: id,
@@ -444,6 +542,9 @@ export class VariableBudgetsService {
             categoryId: budget.categoryId,
             categoryTypeId: budget.categoryTypeId,
             weekStartDay: budget.weekStartDay,
+            monthMode: budget.monthMode,
+            customStartDay: budget.customStartDay,
+            financialClosingDaySnapshot,
             includeInPrudentProjection: budget.includeInPrudentProjection,
             endDate: budget.endDate,
             validFrom,
@@ -461,6 +562,8 @@ export class VariableBudgetsService {
           weekStartDay: dto.weekStartDay,
           categoryId: dto.categoryId,
           categoryTypeId: dto.categoryTypeId,
+          monthMode: effectiveMonthMode,
+          customStartDay: effectiveCustomStartDay,
           includeInPrudentProjection: dto.includeInPrudentProjection,
         },
       });
@@ -503,8 +606,9 @@ export class VariableBudgetsService {
       const tx = this.rlsContext.getClient();
       const at = atIso ? new Date(atIso) : new Date();
       const mode = await this.projectionMode(tx, householdId);
+      const closingDay = await this.householdClosingDayOnTx(tx, householdId);
       const budgets = await this.findActiveBudgetsRaw(tx, householdId, categoryId, at);
-      return Promise.all(budgets.map(async (b) => ({ ...b, status: await this.statusFor(tx, b, mode, at) })));
+      return Promise.all(budgets.map(async (b) => ({ ...b, status: await this.statusFor(tx, b, mode, at, closingDay) })));
     });
   }
 

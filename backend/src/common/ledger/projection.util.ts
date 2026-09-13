@@ -4,6 +4,7 @@ import { computeTreasurySummary } from './treasury.util';
 import { computePocketCurrentAmount } from './provision.util';
 import {
   BudgetLike,
+  MonthMode,
   ProjectionMode,
   addDaysUTC,
   budgetAmountForWindow,
@@ -11,6 +12,7 @@ import {
   getCurrentPeriodWindow,
   nominalPeriod,
 } from './variable-budget.util';
+import { DEFAULT_CLOSING_DAY } from './financial-period.util';
 
 type TxClient = Prisma.TransactionClient;
 
@@ -142,17 +144,27 @@ export interface ProjectionResult {
   timeline: TimelinePoint[];
 }
 
-function toBudgetLike(budget: {
-  referenceAmount: unknown;
-  referencePeriod: 'semaine' | 'mois';
-  weekStartDay: number;
-  startDate: Date;
-  endDate: Date | null;
-}): BudgetLike {
+function toBudgetLike(
+  budget: {
+    referenceAmount: unknown;
+    referencePeriod: 'semaine' | 'mois';
+    weekStartDay: number;
+    monthMode: MonthMode;
+    customStartDay: number | null;
+    startDate: Date;
+    endDate: Date | null;
+  },
+  liveClosingDay: number,
+): BudgetLike {
   return {
     referenceAmount: toNumber(budget.referenceAmount),
     referencePeriod: budget.referencePeriod,
     weekStartDay: budget.weekStartDay,
+    monthMode: budget.monthMode,
+    // Lot 6 — projection = toujours "maintenant → futur", jamais une période déjà
+    // close via versionnement : le closingDay live est systématiquement correct ici.
+    financialClosingDay: budget.monthMode === 'financier' ? liveClosingDay : null,
+    customStartDay: budget.monthMode === 'personnalise' ? budget.customStartDay : null,
     startDate: budget.startDate,
     endDate: budget.endDate,
   };
@@ -180,6 +192,7 @@ async function variableBudgetEvents(
   referenceDate: Date,
   horizonEnd: Date,
   mode: ProjectionMode,
+  closingDay: number,
 ): Promise<RawEvent[]> {
   const ref = toUtcMidnight(referenceDate);
   const budgets = await tx.variableBudget.findMany({
@@ -189,7 +202,7 @@ async function variableBudgetEvents(
 
   const events: RawEvent[] = [];
   for (const row of budgets) {
-    const budget = toBudgetLike(row);
+    const budget = toBudgetLike(row, closingDay);
     const currentWindow = getCurrentPeriodWindow(budget, ref);
     const consommeCourant = await consommeSurFenetre(tx, row.id, currentWindow.start, currentWindow.end);
     const status = computeBudgetPeriodStatus(budget, ref, consommeCourant, mode);
@@ -218,7 +231,7 @@ async function variableBudgetEvents(
     // frontière de période réelle (jamais une seule ligne moyennée sur toute la fenêtre).
     let cursor = addDaysUTC(currentWindow.end, 1);
     while (cursor.getTime() <= horizonEnd.getTime()) {
-      const period = nominalPeriod(budget.referencePeriod, budget.weekStartDay, cursor);
+      const period = nominalPeriod(budget, cursor);
       const periodEventDate = period.end.getTime() > horizonEnd.getTime() ? horizonEnd : period.end;
       const amount = budgetAmountForWindow(budget, cursor, periodEventDate);
       if (amount > 0) {
@@ -572,7 +585,8 @@ export async function computeProjection(
   }
 
   // ---------- §13 : budgets variables — moteur Lot 3 exact, un événement par frontière de période ----------
-  const budgetEvents = await variableBudgetEvents(tx, householdId, ref, end, mode);
+  const closingDay = settings?.closingDay ?? DEFAULT_CLOSING_DAY;
+  const budgetEvents = await variableBudgetEvents(tx, householdId, ref, end, mode, closingDay);
   events.push(...budgetEvents);
   if (budgetEvents.length > 0) containsEstimates = true;
 

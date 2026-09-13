@@ -170,6 +170,16 @@ enum ReferencePeriod {
   mois
 }
 
+// Lot 6 — mode mensuel du budget. Inerte quand referencePeriod = semaine (même
+// convention que weekStartDay inerte quand referencePeriod = mois). "calendaire"
+// = comportement historique (mois civil, 1er → dernier jour), défaut pour tout
+// budget existant : aucune migration de données au-delà du DEFAULT.
+enum MonthMode {
+  calendaire
+  financier
+  personnalise
+}
+
 // ---------- Lot 4 — Charges planifiées, FinancialPlan, module scolaire ----------
 
 // doc04 §P.1bis (RG-114) : type explicite + vraies FK, jamais un identifiant
@@ -845,6 +855,16 @@ model VariableBudget {
   referenceAmount Decimal         @map("reference_amount") @db.Decimal(14, 2)
   referencePeriod ReferencePeriod @map("reference_period")
   weekStartDay    Int             @default(1) @map("week_start_day")
+  // Lot 6 — mode du mois pour referencePeriod=mois (inerte pour semaine). calendaire
+  // = comportement historique inchangé. financier = aligné sur HouseholdSettings.closingDay
+  // (moteur R6.3, jamais redéfini ici). personnalise = jour de départ propre au budget,
+  // ci-dessous — jamais de closingDay dupliqué sur cette ligne live (source de vérité
+  // unique HouseholdSettings, cf. variable-budget.util.ts).
+  monthMode       MonthMode       @default(calendaire) @map("month_mode")
+  // 1-31, requis uniquement si monthMode=personnalise (validé en service, pas de
+  // contrainte DB — même style que weekStartDay). Clampé au dernier jour réel du
+  // mois si celui-ci est plus court (29/30/31, cf. variable-budget.util.ts).
+  customStartDay  Int?            @map("custom_start_day")
   startDate       DateTime        @map("start_date") @db.Date
   endDate         DateTime?       @map("end_date") @db.Date
   // R6.4 (§1) : suppression physique bloquée dès qu'une BudgetExpense existe déjà
@@ -901,8 +921,23 @@ model VariableBudgetVersion {
   categoryId                 String          @map("category_id")
   categoryTypeId             String?         @map("category_type_id")
   weekStartDay               Int             @map("week_start_day")
+  // Lot 6 — suivis au même titre que les 7 champs déjà versionnés ci-dessus.
+  monthMode                  MonthMode       @map("month_mode")
+  customStartDay             Int?            @map("custom_start_day")
   includeInPrudentProjection Boolean         @map("include_in_prudent_projection")
   endDate                    DateTime?       @map("end_date") @db.Date
+  // Lot 6 — HORS champs suivis ci-dessus : jamais éditable directement, jamais
+  // affiché comme une "modification" dans getHistory()/le bandeau initial-ajusté
+  // (exclu de TRACKED_FIELDS). Ancre technique uniquement : le closingDay du
+  // foyer en vigueur pendant TOUTE la durée [validFrom, validTo) de CE segment.
+  // Non-null OBLIGATOIRE pour tout segment monthMode=financier (posé à CHAQUE
+  // création de segment pour un tel budget, quelle qu'en soit la cause — édition
+  // du budget ou changement de HouseholdSettings.closingDay) ; null pour tout
+  // segment calendaire/personnalise. Un segment financier avec cette valeur à
+  // null est une donnée incohérente : resolveFinancialClosingDay lève une
+  // erreur explicite plutôt que de retomber silencieusement sur le closingDay
+  // live (ce qui réintroduirait de la rétroactivité, cf. variable-budget.util.ts).
+  financialClosingDaySnapshot Int?           @map("financial_closing_day_snapshot")
   validFrom                  DateTime        @map("valid_from")
   validTo                    DateTime        @map("valid_to")
   createdAt                  DateTime        @default(now()) @map("created_at")

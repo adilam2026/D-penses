@@ -14,6 +14,12 @@ interface HistoryEntry {
   notes: string | null;
 }
 
+const MONTH_MODE_LABELS: Record<api.MonthMode, string> = {
+  calendaire: 'Calendaire',
+  financier: 'Financier',
+  personnalise: 'Personnalisé',
+};
+
 // Lot 4 — sous-ensemble des 7 champs suivis, tel qu'exposé par
 // initialValues/adjustedValues (seul referenceAmount est affiché pour l'instant,
 // les autres restent disponibles pour un affichage plus riche ultérieur).
@@ -47,6 +53,9 @@ interface BudgetDetail {
   referenceAmount: number;
   referencePeriod: 'semaine' | 'mois';
   weekStartDay: number;
+  // Lot 6 — mode du mois, inerte pour referencePeriod='semaine'.
+  monthMode: api.MonthMode;
+  customStartDay: number | null;
   status: {
     periodStart: string;
     periodEnd: string;
@@ -91,6 +100,8 @@ const FIELD_LABELS: Record<string, string> = {
   weekStartDay: 'Jour de début de semaine',
   includeInPrudentProjection: 'Inclus dans la projection prudente',
   endDate: 'Date de fin',
+  monthMode: 'Mode du mois',
+  customStartDay: 'Jour de départ personnalisé',
 };
 
 function formatFieldValue(field: string, value: unknown): string {
@@ -98,6 +109,7 @@ function formatFieldValue(field: string, value: unknown): string {
   if (field === 'referenceAmount') return `${Number(value).toLocaleString('fr-FR')} DH`;
   if (field === 'includeInPrudentProjection') return value ? 'Oui' : 'Non';
   if (field === 'endDate') return formatDate(value as string);
+  if (field === 'monthMode') return MONTH_MODE_LABELS[value as api.MonthMode] ?? String(value);
   return String(value);
 }
 
@@ -124,6 +136,12 @@ export function BudgetDetailScreen() {
   const [editOpen, setEditOpen] = useState(false);
   const [editAmount, setEditAmount] = useState('');
   const [editPeriod, setEditPeriod] = useState<'semaine' | 'mois'>('mois');
+  // Lot 6 — mode du mois, pertinent uniquement pour editPeriod='mois'. Tout
+  // changement de editPeriod (dans les deux sens) les réinitialise à leur
+  // défaut ('calendaire' / vide) : jamais de valeur fantôme d'une période
+  // précédente réutilisée silencieusement au retour sur 'mois'.
+  const [editMonthMode, setEditMonthMode] = useState<api.MonthMode>('calendaire');
+  const [editCustomStartDay, setEditCustomStartDay] = useState('');
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -168,8 +186,29 @@ export function BudgetDetailScreen() {
     setMenuOpen(false);
     setEditAmount(String(detail.referenceAmount));
     setEditPeriod(detail.referencePeriod);
+    // Lot 6 — le mode du mois n'a de sens que pour un budget déjà 'mois' ; pour
+    // un budget 'semaine' (mode potentiellement inerte/obsolète en base), le
+    // formulaire démarre toujours sur le défaut explicite plutôt que d'exposer
+    // une valeur sans rapport avec ce que l'utilisateur voit.
+    setEditMonthMode(detail.referencePeriod === 'mois' ? detail.monthMode : 'calendaire');
+    setEditCustomStartDay(
+      detail.referencePeriod === 'mois' && detail.monthMode === 'personnalise' && detail.customStartDay != null
+        ? String(detail.customStartDay)
+        : '',
+    );
     setEditError(null);
     setEditOpen(true);
+  }
+
+  function onChangeEditPeriod(value: string) {
+    setEditPeriod(value as 'semaine' | 'mois');
+    setEditMonthMode('calendaire');
+    setEditCustomStartDay('');
+  }
+
+  function onChangeEditMonthMode(mode: api.MonthMode) {
+    setEditMonthMode(mode);
+    if (mode !== 'personnalise') setEditCustomStartDay('');
   }
 
   async function onSaveEdit() {
@@ -178,10 +217,22 @@ export function BudgetDetailScreen() {
       setEditError('Montant invalide');
       return;
     }
+    const numericCustomStartDay = editCustomStartDay ? Number(editCustomStartDay) : undefined;
+    if (editPeriod === 'mois' && editMonthMode === 'personnalise') {
+      if (!numericCustomStartDay || !Number.isInteger(numericCustomStartDay) || numericCustomStartDay < 1 || numericCustomStartDay > 31) {
+        setEditError('Le jour de départ doit être un nombre entier entre 1 et 31');
+        return;
+      }
+    }
     setEditSaving(true);
     setEditError(null);
     try {
-      await api.updateVariableBudget(id, { referenceAmount: value, referencePeriod: editPeriod });
+      await api.updateVariableBudget(id, {
+        referenceAmount: value,
+        referencePeriod: editPeriod,
+        monthMode: editMonthMode,
+        customStartDay: editMonthMode === 'personnalise' ? numericCustomStartDay : undefined,
+      });
       setEditOpen(false);
       setAmendments(null); // Lot 4 — l'historique vient de changer, invalidé pour être rechargé à la prochaine ouverture.
       setAt(undefined); // revient à la période courante, celle qui vient d'être modifiée.
@@ -367,7 +418,34 @@ export function BudgetDetailScreen() {
               Le libellé de ce budget provient de la catégorie « {detail.category.name} » — pour le changer, choisissez une autre catégorie ailleurs.
             </Text>
             <FormField testID="budget-edit-amount" label="Montant de référence (DH)" keyboardType="decimal-pad" value={editAmount} onChangeText={setEditAmount} />
-            <Select testID="budget-edit-period" label="Périodicité" value={editPeriod} onChange={(v) => setEditPeriod(v as 'semaine' | 'mois')} options={PERIOD_OPTIONS} />
+            <Select testID="budget-edit-period" label="Périodicité" value={editPeriod} onChange={onChangeEditPeriod} options={PERIOD_OPTIONS} />
+            {editPeriod === 'mois' && (
+              <>
+                <Text style={styles.modalSectionLabel}>Mode du mois</Text>
+                <View style={styles.segment}>
+                  {(Object.keys(MONTH_MODE_LABELS) as api.MonthMode[]).map((mode) => (
+                    <TouchableOpacity
+                      key={mode}
+                      testID={`budget-edit-month-mode-${mode}`}
+                      style={[styles.segmentItem, editMonthMode === mode && styles.segmentActive]}
+                      onPress={() => onChangeEditMonthMode(mode)}
+                    >
+                      <Text style={[styles.segmentText, editMonthMode === mode && styles.segmentTextActive]}>{MONTH_MODE_LABELS[mode]}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {editMonthMode === 'personnalise' && (
+                  <FormField
+                    testID="budget-edit-custom-start-day-input"
+                    label="Jour de départ (1-31)"
+                    placeholder="Ex. 25"
+                    keyboardType="number-pad"
+                    value={editCustomStartDay}
+                    onChangeText={setEditCustomStartDay}
+                  />
+                )}
+              </>
+            )}
             {editError && <Text style={styles.error}>{editError}</Text>}
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.modalButtonSecondary} onPress={() => setEditOpen(false)}>
@@ -456,6 +534,12 @@ const styles = StyleSheet.create({
   modalCard: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.xl, width: '100%' },
   modalTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.sm },
   modalNote: { fontSize: 11, color: colors.textSecondary, fontStyle: 'italic', marginBottom: spacing.md },
+  modalSectionLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm, marginTop: 4 },
+  segment: { flexDirection: 'row', backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: 4, marginBottom: spacing.md },
+  segmentItem: { flex: 1, paddingVertical: 10, borderRadius: radius.sm, alignItems: 'center' },
+  segmentActive: { backgroundColor: colors.surface },
+  segmentText: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
+  segmentTextActive: { color: colors.textPrimary },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: spacing.md },
   modalButton: { backgroundColor: colors.primary, borderRadius: radius.sm, paddingHorizontal: 18, paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
   modalButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 13 },

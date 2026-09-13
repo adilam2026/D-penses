@@ -9,8 +9,22 @@
  * ailleurs (§9/§12 de la demande Lot 3).
  */
 
+import { clampClosingDay, daysInMonth, getFinancialPeriodBounds, getFinancialPeriodOf } from './financial-period.util';
+
 export type ReferencePeriod = 'semaine' | 'mois';
 export type ProjectionMode = 'contractuel' | 'rythme_reel' | 'prudent_max';
+
+/**
+ * Lot 6 — mode du mois pour referencePeriod='mois' (inerte pour 'semaine', même
+ * convention que weekStartDay inerte pour 'mois'). "financier" réutilise
+ * EXCLUSIVEMENT le moteur R6.3 (financial-period.util.ts) — jamais une seconde
+ * définition du "mois financier" dans l'application (closingDay=25 => 26 août →
+ * 25 septembre, identique à Home/Projection). "personnalise" a sa propre
+ * convention, basée sur un jour de DÉPART (customStartDay=25 => 25 août →
+ * 24 septembre) — volontairement différente de "financier" (jour de clôture),
+ * jamais confondues.
+ */
+export type MonthMode = 'calendaire' | 'financier' | 'personnalise';
 
 export interface PeriodWindow {
   start: Date; // minuit UTC, inclus
@@ -21,6 +35,13 @@ export interface BudgetLike {
   referenceAmount: number;
   referencePeriod: ReferencePeriod;
   weekStartDay: number; // 1=lundi..7=dimanche
+  monthMode: MonthMode;
+  // Résolus par l'appelant AVANT construction de ce BudgetLike — ce moteur pur
+  // ne lit jamais HouseholdSettings/DB lui-même (cf. resolveEffectiveConfig,
+  // même principe). financialClosingDay n'a de sens que si monthMode='financier'
+  // (sinon toujours null) ; customStartDay que si monthMode='personnalise'.
+  financialClosingDay: number | null;
+  customStartDay: number | null;
   startDate: Date;
   endDate: Date | null;
 }
@@ -33,10 +54,6 @@ export function addDaysUTC(date: Date, days: number): Date {
   const d = new Date(date);
   d.setUTCDate(d.getUTCDate() + days);
   return d;
-}
-
-function daysInMonthUTC(year: number, monthIndex0: number): number {
-  return new Date(Date.UTC(year, monthIndex0 + 1, 0)).getUTCDate();
 }
 
 /** Nombre de jours de a à b inclus (a et b minuit UTC, a ≤ b). */
@@ -64,15 +81,60 @@ function startOfWeekUTC(date: Date, weekStartDay: number): Date {
   return addDaysUTC(date, -diff);
 }
 
+/**
+ * Lot 6 — période "personnalise" : démarre au customStartDay clampé du mois
+ * (dernier jour réel si le mois est plus court, ex. 31 → 28/29 en février),
+ * se termine la veille du prochain départ clampé. Construction "prochain départ
+ * moins un jour" : pavage contigu par construction, quel que soit le clamp,
+ * jamais de dérive cumulative (cf. variable-budget.util.spec.ts, test de
+ * contiguïté via periodEndExclusive). Convention DIFFÉRENTE de "financier"
+ * (jour de départ, pas de clôture) — volontairement, jamais unifiées.
+ */
+function customMonthPeriod(anchor: Date, customStartDay: number): PeriodWindow {
+  const y = anchor.getUTCFullYear();
+  const m = anchor.getUTCMonth();
+  const day = anchor.getUTCDate();
+  const clampedThisMonth = clampClosingDay(customStartDay, y, m);
+
+  // Le mois où démarre la période contenant `anchor` : ce mois-ci si on est déjà
+  // au jour de départ (clampé) ou après, sinon le mois précédent. Date.UTC(y, m-1, 1)
+  // normalise nativement un débordement d'année (m=0 → décembre de y-1).
+  const startsInThisMonth = day >= clampedThisMonth;
+  const startMonthAnchor = startsInThisMonth ? new Date(Date.UTC(y, m, 1)) : new Date(Date.UTC(y, m - 1, 1));
+  const sy = startMonthAnchor.getUTCFullYear();
+  const sm = startMonthAnchor.getUTCMonth();
+  const start = new Date(Date.UTC(sy, sm, clampClosingDay(customStartDay, sy, sm)));
+
+  const nextMonthAnchor = new Date(Date.UTC(sy, sm + 1, 1));
+  const ny = nextMonthAnchor.getUTCFullYear();
+  const nm = nextMonthAnchor.getUTCMonth();
+  const nextStart = new Date(Date.UTC(ny, nm, clampClosingDay(customStartDay, ny, nm)));
+
+  return { start, end: addDaysUTC(nextStart, -1) };
+}
+
 /** Période calendaire (semaine ou mois réel) contenant `anchor` — jamais un raccourci arbitraire. */
-export function nominalPeriod(referencePeriod: ReferencePeriod, weekStartDay: number, anchor: Date): PeriodWindow {
+export function nominalPeriod(
+  budget: Pick<BudgetLike, 'referencePeriod' | 'weekStartDay' | 'monthMode' | 'financialClosingDay' | 'customStartDay'>,
+  anchor: Date,
+): PeriodWindow {
   const a = toUtcMidnight(anchor);
-  if (referencePeriod === 'semaine') {
-    const start = startOfWeekUTC(a, weekStartDay);
+  if (budget.referencePeriod === 'semaine') {
+    const start = startOfWeekUTC(a, budget.weekStartDay);
     return { start, end: addDaysUTC(start, 6) };
   }
+  if (budget.monthMode === 'financier' && budget.financialClosingDay != null) {
+    // Lot 6 — AUCUNE nouvelle définition : réutilise tel quel le moteur R6.3
+    // déjà utilisé par Home/Projection pour le "mois financier" du foyer.
+    const key = getFinancialPeriodOf(a, budget.financialClosingDay);
+    return getFinancialPeriodBounds(key.year, key.monthIndex0, budget.financialClosingDay);
+  }
+  if (budget.monthMode === 'personnalise' && budget.customStartDay != null) {
+    return customMonthPeriod(a, budget.customStartDay);
+  }
+  // calendaire (défaut) — comportement civil historique, strictement inchangé.
   const start = new Date(Date.UTC(a.getUTCFullYear(), a.getUTCMonth(), 1));
-  const end = new Date(Date.UTC(a.getUTCFullYear(), a.getUTCMonth(), daysInMonthUTC(a.getUTCFullYear(), a.getUTCMonth())));
+  const end = new Date(Date.UTC(a.getUTCFullYear(), a.getUTCMonth(), daysInMonth(a.getUTCFullYear(), a.getUTCMonth())));
   return { start, end };
 }
 
@@ -91,7 +153,7 @@ export function budgetAmountForWindow(budget: BudgetLike, windowStart: Date, win
   let total = 0;
   let cursor = effStart;
   while (cursor.getTime() <= effEnd.getTime()) {
-    const period = nominalPeriod(budget.referencePeriod, budget.weekStartDay, cursor);
+    const period = nominalPeriod(budget, cursor);
     const overlapStart = maxDate(period.start, effStart);
     const overlapEnd = minDate(period.end, effEnd);
     const overlapDays = diffDaysInclusive(overlapStart, overlapEnd);
@@ -106,7 +168,7 @@ export function budgetAmountForWindow(budget: BudgetLike, windowStart: Date, win
 /** Fenêtre de la période courante (contenant `today`), clippée par start_date/end_date du budget. */
 export function getCurrentPeriodWindow(budget: BudgetLike, today: Date): PeriodWindow {
   const t = toUtcMidnight(today);
-  const nominal = nominalPeriod(budget.referencePeriod, budget.weekStartDay, t);
+  const nominal = nominalPeriod(budget, t);
   const start = maxDate(nominal.start, toUtcMidnight(budget.startDate));
   const end = budget.endDate ? minDate(nominal.end, toUtcMidnight(budget.endDate)) : nominal.end;
   return { start, end };
@@ -144,7 +206,7 @@ export function computeBudgetPeriodStatus(
   mode: ProjectionMode = 'prudent_max',
 ): BudgetPeriodStatus {
   const t = toUtcMidnight(today);
-  const nominal = nominalPeriod(budget.referencePeriod, budget.weekStartDay, t);
+  const nominal = nominalPeriod(budget, t);
   const periodStart = maxDate(nominal.start, toUtcMidnight(budget.startDate));
   const periodEnd = budget.endDate ? minDate(nominal.end, toUtcMidnight(budget.endDate)) : nominal.end;
 
@@ -241,10 +303,19 @@ export interface VersionedSnapshot {
   categoryId: string;
   categoryTypeId: string | null;
   weekStartDay: number;
+  // Lot 6 — suivis au même titre que les champs ci-dessus (édités par
+  // l'utilisateur via PATCH, diffés dans getHistory()).
+  monthMode: MonthMode;
+  customStartDay: number | null;
   includeInPrudentProjection: boolean;
   endDate: Date | null;
   validFrom: Date;
   validTo: Date;
+  // Lot 6 — HORS des champs suivis ci-dessus : jamais éditable directement,
+  // jamais diffé/affiché comme une "modification". Ancre technique uniquement,
+  // cf. resolveFinancialClosingDay ci-dessous et le commentaire sur le modèle
+  // Prisma VariableBudgetVersion.financialClosingDaySnapshot.
+  financialClosingDaySnapshot: number | null;
 }
 
 /**
@@ -287,4 +358,43 @@ export function resolveEffectiveConfig<TVersion extends VersionedSnapshot, TLive
   if (t < sorted[0].validFrom.getTime()) return sorted[0];
   const match = sorted.find((v) => v.validFrom.getTime() <= t && t < v.validTo.getTime());
   return match ?? liveConfig;
+}
+
+/**
+ * Lot 6 — erreur d'invariant : un segment VariableBudgetVersion figé en
+ * monthMode='financier' DOIT porter un financialClosingDaySnapshot non null
+ * (posé à CHAQUE création de segment pour un tel budget, cf. VariableBudgetsService).
+ * Un segment financier sans snapshot est une donnée incohérente — jamais
+ * silencieusement comblée par le closingDay live, ce qui réintroduirait de la
+ * rétroactivité (exactement ce que ce lot interdit).
+ */
+export class FinancialClosingDaySnapshotMissingError extends Error {
+  constructor(context: string) {
+    super(`Segment de budget monthMode=financier sans financialClosingDaySnapshot (donnée incohérente) — ${context}`);
+    this.name = 'FinancialClosingDaySnapshotMissingError';
+  }
+}
+
+/**
+ * Résout le closingDay effectif à utiliser pour un `BudgetLike` déjà résolu
+ * (`resolveEffectiveConfig`), SANS aucun repli implicite vers le closingDay live
+ * pour un segment historique figé — voir FinancialClosingDaySnapshotMissingError.
+ *
+ *  - monthMode ≠ 'financier' → null (inerte).
+ *  - `resolved` est la ligne vivante (pas de financialClosingDaySnapshot dans
+ *    son type — jamais un segment figé) → closingDay live (source de vérité
+ *    courante, cf. HouseholdSettings).
+ *  - `resolved` est un segment figé (VersionedSnapshot) → OBLIGATOIREMENT
+ *    resolved.financialClosingDaySnapshot ; lève FinancialClosingDaySnapshotMissingError
+ *    si null (jamais de repli vers liveClosingDay).
+ */
+export function resolveFinancialClosingDay(
+  resolved: { monthMode: MonthMode } & Partial<Pick<VersionedSnapshot, 'financialClosingDaySnapshot'>>,
+  liveClosingDay: number,
+  context: string,
+): number | null {
+  if (resolved.monthMode !== 'financier') return null;
+  if (!('financialClosingDaySnapshot' in resolved)) return liveClosingDay; // ligne vivante
+  if (resolved.financialClosingDaySnapshot == null) throw new FinancialClosingDaySnapshotMissingError(context);
+  return resolved.financialClosingDaySnapshot;
 }

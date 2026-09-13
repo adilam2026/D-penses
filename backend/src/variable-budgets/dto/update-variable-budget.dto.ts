@@ -1,6 +1,7 @@
 import { IsBoolean, IsIn, IsInt, IsISO8601, IsNumber, IsOptional, IsPositive, IsUUID, Max, Min } from 'class-validator';
 
 const REFERENCE_PERIOD_VALUES = ['semaine', 'mois'] as const;
+const MONTH_MODE_VALUES = ['calendaire', 'financier', 'personnalise'] as const;
 
 /**
  * §14 : modification en cours de période — les BudgetExpense déjà enregistrées
@@ -34,6 +35,19 @@ export class UpdateVariableBudgetDto {
   @IsOptional()
   @IsUUID()
   categoryId?: string;
+
+  /** Lot 6 — mode du mois pour referencePeriod='mois' (inerte pour 'semaine'). */
+  @IsOptional()
+  @IsIn(MONTH_MODE_VALUES)
+  monthMode?: (typeof MONTH_MODE_VALUES)[number];
+
+  /** Requis si le mode effectif final est 'personnalise' (celui fourni ici ou,
+   *  à défaut, celui déjà en base) — toujours forcé à null en service sinon. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(31)
+  customStartDay?: number;
 
   /** Lot 2 — rescope vers ce CategoryType précis (doit appartenir à categoryId,
    *  celui déjà en base si categoryId n'est pas fourni dans le même appel).

@@ -1,12 +1,16 @@
 import {
+  addDaysUTC,
   BudgetLike,
   budgetAmountForWindow,
   budgetHealthStatus,
   computeBudgetPeriodStatus,
+  FinancialClosingDaySnapshotMissingError,
   getCurrentPeriodWindow,
+  MonthMode,
   nominalPeriod,
   periodEndExclusive,
   resolveEffectiveConfig,
+  resolveFinancialClosingDay,
   VersionedSnapshot,
 } from './variable-budget.util';
 
@@ -24,6 +28,9 @@ describe('variable-budget.util — moteur de calcul (Lot 3)', () => {
     referenceAmount: 1500,
     referencePeriod: 'semaine',
     weekStartDay: 1, // lundi
+    monthMode: 'calendaire',
+    financialClosingDay: null,
+    customStartDay: null,
     startDate: new Date(Date.UTC(2020, 0, 1)),
     endDate: null,
   };
@@ -137,7 +144,7 @@ describe('variable-budget.util — moteur de calcul (Lot 3)', () => {
   });
 
   it('nominalPeriod — la semaine du 31 août au 6 septembre 2026 est bien identifiée (doc02 §13)', () => {
-    const period = nominalPeriod('semaine', 1, wednesday);
+    const period = nominalPeriod({ referencePeriod: 'semaine', weekStartDay: 1, monthMode: 'calendaire', financialClosingDay: null, customStartDay: null }, wednesday);
     expect(period.start.toISOString().slice(0, 10)).toBe('2026-08-31');
     expect(period.end.toISOString().slice(0, 10)).toBe('2026-09-06');
   });
@@ -217,6 +224,9 @@ describe('variable-budget.util — resolveEffectiveConfig / periodEndExclusive (
     referenceAmount: 1500,
     referencePeriod: 'semaine',
     weekStartDay: 1,
+    monthMode: 'calendaire',
+    financialClosingDay: null,
+    customStartDay: null,
     startDate: new Date(Date.UTC(2020, 0, 1)),
     endDate: null,
   };
@@ -228,10 +238,13 @@ describe('variable-budget.util — resolveEffectiveConfig / periodEndExclusive (
       categoryId: 'cat-1',
       categoryTypeId: null,
       weekStartDay: 1,
+      monthMode: 'calendaire',
+      customStartDay: null,
       includeInPrudentProjection: true,
       endDate: null,
       validFrom,
       validTo,
+      financialClosingDaySnapshot: null,
     };
   }
 
@@ -242,6 +255,8 @@ describe('variable-budget.util — resolveEffectiveConfig / periodEndExclusive (
       categoryId: 'cat-1',
       categoryTypeId: null as string | null,
       weekStartDay: 1,
+      monthMode: 'calendaire' as const,
+      customStartDay: null as number | null,
       includeInPrudentProjection: true,
       endDate: null as Date | null,
     };
@@ -305,5 +320,145 @@ describe('variable-budget.util — resolveEffectiveConfig / periodEndExclusive (
     expect(week2Window.start.getTime()).toBe(boundaryInstant.getTime());
     const resolvedAtWeek2Start = resolveEffectiveConfig([closedWeek1], live, week2Window.start);
     expect(resolvedAtWeek2Start).toBe(live);
+  });
+});
+
+/**
+ * Lot 6 — modes mensuels CALENDAR/FINANCIAL/CUSTOM. Convention SEMI-OUVERTE
+ * identique au reste du moteur : periodEnd reste inclusif (contrat historique
+ * de PeriodWindow) et periodEndExclusive() est la seule vraie borne de sortie —
+ * les tests de contiguïté ci-dessous vérifient explicitement
+ * periodEndExclusive(période N) === periodStart(période N+1), jamais une
+ * arithmétique de jours en clair (correction demandée avant implémentation).
+ */
+describe('variable-budget.util — modes mensuels CALENDAR/FINANCIAL/CUSTOM (Lot 6)', () => {
+  function monthBudget(
+    overrides: Partial<Pick<BudgetLike, 'monthMode' | 'financialClosingDay' | 'customStartDay'>>,
+  ): Pick<BudgetLike, 'referencePeriod' | 'weekStartDay' | 'monthMode' | 'financialClosingDay' | 'customStartDay'> {
+    return {
+      referencePeriod: 'mois',
+      weekStartDay: 1,
+      monthMode: 'calendaire',
+      financialClosingDay: null,
+      customStartDay: null,
+      ...overrides,
+    };
+  }
+
+  it('CALENDAR — comportement civil historique strictement inchangé (1er → dernier jour du mois)', () => {
+    const anchor = new Date(Date.UTC(2026, 8, 15)); // 15 septembre 2026
+    const period = nominalPeriod(monthBudget({ monthMode: 'calendaire' }), anchor);
+    expect(period.start.toISOString().slice(0, 10)).toBe('2026-09-01');
+    expect(period.end.toISOString().slice(0, 10)).toBe('2026-09-30');
+  });
+
+  it('FINANCIAL — closingDay=25 : réutilise EXACTEMENT le moteur R6.3 (26 août → 25 septembre), aucune redéfinition dans ce lot', () => {
+    const anchor = new Date(Date.UTC(2026, 8, 10)); // 10 septembre, à l'intérieur de la période
+    const period = nominalPeriod(monthBudget({ monthMode: 'financier', financialClosingDay: 25 }), anchor);
+    expect(period.start.toISOString().slice(0, 10)).toBe('2026-08-26');
+    expect(period.end.toISOString().slice(0, 10)).toBe('2026-09-25');
+  });
+
+  it('CUSTOM — customStartDay=25 : jour de DÉPART, convention volontairement différente de FINANCIAL (25 août → 24 septembre, jamais 26 août)', () => {
+    const anchor = new Date(Date.UTC(2026, 8, 10));
+    const period = nominalPeriod(monthBudget({ monthMode: 'personnalise', customStartDay: 25 }), anchor);
+    expect(period.start.toISOString().slice(0, 10)).toBe('2026-08-25');
+    expect(period.end.toISOString().slice(0, 10)).toBe('2026-09-24');
+  });
+
+  it("CUSTOM — customStartDay=31, ancre en février (clampé à 28, année non bissextile) : [28 fév, 30 mars] inclus == [28 fév, 31 mars) semi-ouvert (pas d'incohérence, cf. correction avant implémentation)", () => {
+    const anchor = new Date(Date.UTC(2027, 1, 28)); // 28 février 2027
+    const period = nominalPeriod(monthBudget({ monthMode: 'personnalise', customStartDay: 31 }), anchor);
+    expect(period.start.toISOString().slice(0, 10)).toBe('2027-02-28');
+    expect(period.end.toISOString().slice(0, 10)).toBe('2027-03-30'); // inclusif — contrat PeriodWindow historique
+    expect(periodEndExclusive(period.end).toISOString().slice(0, 10)).toBe('2027-03-31'); // borne de sortie réelle
+  });
+
+  it("CUSTOM — jour de février bissextile (29) respecté, contiguïté avec janvier/mars sans dérive", () => {
+    // 2028 est bissextile : clampedDay(customStartDay=29, février 2028) = 29 directement (pas de clamp).
+    const janAnchor = new Date(Date.UTC(2028, 0, 29));
+    const febAnchor = new Date(Date.UTC(2028, 1, 29));
+    const janPeriod = nominalPeriod(monthBudget({ monthMode: 'personnalise', customStartDay: 29 }), janAnchor);
+    const febPeriod = nominalPeriod(monthBudget({ monthMode: 'personnalise', customStartDay: 29 }), febAnchor);
+    expect(janPeriod.start.toISOString().slice(0, 10)).toBe('2028-01-29');
+    expect(febPeriod.start.toISOString().slice(0, 10)).toBe('2028-02-29');
+    expect(periodEndExclusive(janPeriod.end).getTime()).toBe(febPeriod.start.getTime());
+  });
+
+  it('CUSTOM — test de contiguïté sur 2 années complètes (incl. février bissextile 2028), jours 25/29/30/31 : periodEndExclusive(N) === periodStart(N+1), jamais un trou ni un chevauchement', () => {
+    for (const day of [25, 29, 30, 31]) {
+      let cursor = new Date(Date.UTC(2027, 0, 1));
+      let previousEnd: Date | null = null;
+      for (let i = 0; i < 24; i++) {
+        const period = nominalPeriod(monthBudget({ monthMode: 'personnalise', customStartDay: day }), cursor);
+        if (previousEnd) {
+          expect(periodEndExclusive(previousEnd).getTime()).toBe(period.start.getTime());
+        }
+        previousEnd = period.end;
+        cursor = addDaysUTC(period.end, 1);
+      }
+    }
+  });
+
+  it('FINANCIAL — test de contiguïté sur 2 années complètes (incl. février bissextile 2028), jours 25/29/30/31 : même garantie que CUSTOM, via le moteur R6.3 réutilisé', () => {
+    for (const closingDay of [25, 29, 30, 31]) {
+      let cursor = new Date(Date.UTC(2027, 0, 1));
+      let previousEnd: Date | null = null;
+      for (let i = 0; i < 24; i++) {
+        const period = nominalPeriod(monthBudget({ monthMode: 'financier', financialClosingDay: closingDay }), cursor);
+        if (previousEnd) {
+          expect(periodEndExclusive(previousEnd).getTime()).toBe(period.start.getTime());
+        }
+        previousEnd = period.end;
+        cursor = addDaysUTC(period.end, 1);
+      }
+    }
+  });
+
+  it('budgetAmountForWindow — prorata correct sur une fenêtre à cheval sur deux périodes CUSTOM', () => {
+    const budget: BudgetLike = {
+      referenceAmount: 3100,
+      referencePeriod: 'mois',
+      weekStartDay: 1,
+      monthMode: 'personnalise',
+      financialClosingDay: null,
+      customStartDay: 25,
+      startDate: new Date(Date.UTC(2020, 0, 1)),
+      endDate: null,
+    };
+    // Fenêtre = du 25 août (début exact de période) au 3 septembre inclus (10 jours
+    // sur les 31 jours de la période [25 août, 24 septembre]).
+    const windowStart = new Date(Date.UTC(2026, 7, 25));
+    const windowEnd = new Date(Date.UTC(2026, 8, 3));
+    const amount = budgetAmountForWindow(budget, windowStart, windowEnd);
+    expect(amount).toBeCloseTo((3100 / 31) * 10, 2);
+  });
+});
+
+/**
+ * Lot 6 — invariant resolveFinancialClosingDay : jamais de repli implicite vers
+ * le closingDay live pour un segment historique FINANCIAL incomplet (correction
+ * obligatoire avant implémentation).
+ */
+describe('resolveFinancialClosingDay (Lot 6)', () => {
+  it("monthMode ≠ 'financier' → toujours null, quel que soit le snapshot ou le live", () => {
+    expect(resolveFinancialClosingDay({ monthMode: 'calendaire' as MonthMode }, 25, 'ctx')).toBeNull();
+    expect(resolveFinancialClosingDay({ monthMode: 'personnalise' as MonthMode, financialClosingDaySnapshot: 12 }, 25, 'ctx')).toBeNull();
+  });
+
+  it("ligne vivante (aucune clé financialClosingDaySnapshot dans l'objet résolu) → closingDay LIVE du foyer", () => {
+    const live: { monthMode: MonthMode } = { monthMode: 'financier' };
+    expect(resolveFinancialClosingDay(live, 12, 'ctx')).toBe(12);
+  });
+
+  it('segment figé AVEC financialClosingDaySnapshot renseigné → utilise le snapshot, JAMAIS le live (même si différent)', () => {
+    const segment = { monthMode: 'financier' as MonthMode, financialClosingDaySnapshot: 25 };
+    expect(resolveFinancialClosingDay(segment, 5, 'ctx')).toBe(25);
+  });
+
+  it('segment figé FINANCIAL avec financialClosingDaySnapshot=null → FinancialClosingDaySnapshotMissingError explicite, JAMAIS un repli silencieux vers le live', () => {
+    const segment = { monthMode: 'financier' as MonthMode, financialClosingDaySnapshot: null };
+    expect(() => resolveFinancialClosingDay(segment, 25, 'budget-test contexte')).toThrow(FinancialClosingDaySnapshotMissingError);
+    expect(() => resolveFinancialClosingDay(segment, 25, 'budget-test contexte')).toThrow(/budget-test contexte/);
   });
 });

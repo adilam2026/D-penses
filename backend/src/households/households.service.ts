@@ -117,8 +117,50 @@ export class HouseholdsService {
 
   /** §8 — coussin de sécurité et autres paramètres foyer (HouseholdSettings, doc04 §P). */
   async updateSettings(userId: string, householdId: string, dto: UpdateHouseholdSettingsDto) {
-    return this.rlsContext.run(userId, householdId, () =>
-      this.rlsContext.getClient().householdSettings.update({
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const current = await tx.householdSettings.findUniqueOrThrow({ where: { householdId } });
+
+      // Lot 6 — changement RÉEL de closingDay (jamais un simple envoi de la même
+      // valeur) : avant de l'appliquer, fige l'ancien closingDay dans un nouveau
+      // segment pour chaque budget mensuel FINANCIAL du foyer, afin que la
+      // garantie de non-rétroactivité Lot 4 tienne aussi pour ce champ externe
+      // (cf. resolveFinancialClosingDay — jamais de repli implicite vers le live).
+      if (dto.closingDay !== undefined && dto.closingDay !== current.closingDay) {
+        // Un seul timestamp `now`, réutilisé pour TOUS les segments créés dans
+        // cette transaction — même frontière temporelle pour tous les budgets
+        // impactés (jamais un `new Date()` distinct par itération de la boucle).
+        const now = new Date();
+        const budgets = await tx.variableBudget.findMany({
+          where: { householdId, referencePeriod: 'mois', monthMode: 'financier' },
+        });
+        for (const budget of budgets) {
+          const lastVersion = await tx.variableBudgetVersion.findFirst({
+            where: { variableBudgetId: budget.id },
+            orderBy: { validTo: 'desc' },
+          });
+          const validFrom = lastVersion?.validTo ?? budget.createdAt;
+          await tx.variableBudgetVersion.create({
+            data: {
+              variableBudgetId: budget.id,
+              referenceAmount: budget.referenceAmount,
+              referencePeriod: budget.referencePeriod,
+              categoryId: budget.categoryId,
+              categoryTypeId: budget.categoryTypeId,
+              weekStartDay: budget.weekStartDay,
+              monthMode: budget.monthMode,
+              customStartDay: budget.customStartDay,
+              financialClosingDaySnapshot: current.closingDay, // l'ancien, sur le point d'être remplacé
+              includeInPrudentProjection: budget.includeInPrudentProjection,
+              endDate: budget.endDate,
+              validFrom,
+              validTo: now,
+            },
+          });
+        }
+      }
+
+      return tx.householdSettings.update({
         where: { householdId },
         data: {
           securityMarginAmount: dto.securityMarginAmount,
@@ -129,8 +171,8 @@ export class HouseholdsService {
           closingDay: dto.closingDay,
           weekStartDay: dto.weekStartDay,
         },
-      }),
-    );
+      });
+    });
   }
 
   /**
