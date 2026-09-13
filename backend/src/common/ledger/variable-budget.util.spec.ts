@@ -3,7 +3,11 @@ import {
   budgetAmountForWindow,
   budgetHealthStatus,
   computeBudgetPeriodStatus,
+  getCurrentPeriodWindow,
   nominalPeriod,
+  periodEndExclusive,
+  resolveEffectiveConfig,
+  VersionedSnapshot,
 } from './variable-budget.util';
 
 /**
@@ -193,5 +197,113 @@ describe('variable-budget.util — moteur de calcul (Lot 3)', () => {
     expect(status.consumptionRatio).toBeCloseTo(1.5, 4);
     expect(status.elapsedRatio).toBe(1);
     expect(status.rythmeAlerte).toBe(true); // 1.5 > 1, jamais caché par un plafonnage artificiel à 1
+  });
+});
+
+/**
+ * Lot 4 — résolution pure de la configuration effective à une date (versionnement
+ * par instantané complet). Convention temporelle SEMI-OUVERTE partout : périodes
+ * [periodStart, periodEndExclusive) et segments [validFrom, validTo) — une
+ * modification effective EXACTEMENT à la borne de sortie d'une période appartient
+ * à la période SUIVANTE, jamais à celle qui se termine (cf. doc en tête de
+ * resolveEffectiveConfig dans variable-budget.util.ts).
+ */
+describe('variable-budget.util — resolveEffectiveConfig / periodEndExclusive (Lot 4)', () => {
+  const monday = new Date(Date.UTC(2026, 7, 31)); // 2026-08-31, lundi — semaine 1
+  const sunday = new Date(Date.UTC(2026, 8, 6)); // 2026-09-06, dimanche — fin semaine 1
+  const nextMonday = new Date(Date.UTC(2026, 8, 7)); // 2026-09-07, lundi — début semaine 2
+
+  const weeklyBudget: BudgetLike = {
+    referenceAmount: 1500,
+    referencePeriod: 'semaine',
+    weekStartDay: 1,
+    startDate: new Date(Date.UTC(2020, 0, 1)),
+    endDate: null,
+  };
+
+  function snapshot(referenceAmount: number, validFrom: Date, validTo: Date): VersionedSnapshot {
+    return {
+      referenceAmount,
+      referencePeriod: 'semaine',
+      categoryId: 'cat-1',
+      categoryTypeId: null,
+      weekStartDay: 1,
+      includeInPrudentProjection: true,
+      endDate: null,
+      validFrom,
+      validTo,
+    };
+  }
+
+  function liveConfigFrom(referenceAmount: number) {
+    return {
+      referenceAmount,
+      referencePeriod: 'semaine' as const,
+      categoryId: 'cat-1',
+      categoryTypeId: null as string | null,
+      weekStartDay: 1,
+      includeInPrudentProjection: true,
+      endDate: null as Date | null,
+    };
+  }
+
+  it('periodEndExclusive — minuit UTC du jour suivant periodEnd (borne de sortie réelle)', () => {
+    expect(periodEndExclusive(sunday).getTime()).toBe(nextMonday.getTime());
+  });
+
+  it('resolveEffectiveConfig — aucune version connue : retombe systématiquement sur la ligne vivante', () => {
+    const live = liveConfigFrom(1500);
+    expect(resolveEffectiveConfig([], live, monday)).toBe(live);
+    expect(resolveEffectiveConfig([], live, new Date())).toBe(live);
+  });
+
+  it('resolveEffectiveConfig — un segment clos couvrant `at` est retenu plutôt que la ligne vivante', () => {
+    const live = liveConfigFrom(1800);
+    const closed = snapshot(1000, new Date(Date.UTC(2020, 0, 1)), sunday);
+    const result = resolveEffectiveConfig([closed], live, monday);
+    expect(result).toBe(closed);
+    expect((result as VersionedSnapshot).referenceAmount).toBe(1000);
+  });
+
+  it("resolveEffectiveConfig — `at` antérieur au premier segment connu : extrapole la plus ANCIENNE valeur connue, jamais la ligne vivante (cas standard d'un startDate très antérieur à la création du budget — sinon une modification du jour changerait rétroactivement une période ancienne)", () => {
+    const live = liveConfigFrom(1800); // valeur après une modification ultérieure
+    const closed = snapshot(1000, monday, sunday); // plus ancien segment connu
+    const beforeEverything = new Date(Date.UTC(2000, 0, 1));
+    const result = resolveEffectiveConfig([closed], live, beforeEverything);
+    expect(result).toBe(closed);
+    expect((result as VersionedSnapshot).referenceAmount).toBe(1000);
+  });
+
+  // ---------- TEST DE FRONTIÈRE (obligatoire) ----------
+  // Budget A actif jusqu'à exactement periodEndExclusive(semaine 1) = début
+  // exact de la semaine 2. Une modification devient effective à CET instant
+  // précis. Vérifie : consultation de la période précédente → ancienne valeur ;
+  // consultation de la période suivante → nouvelle valeur.
+  it('TEST DE FRONTIÈRE — une modification effective exactement à la borne de sortie de période appartient à la période SUIVANTE, jamais à celle qui se termine', () => {
+    const boundaryInstant = periodEndExclusive(sunday); // = nextMonday, exactement
+    const live = liveConfigFrom(1800); // valeur en vigueur depuis boundaryInstant (semaine 2)
+    const closedWeek1 = snapshot(1000, new Date(Date.UTC(2020, 0, 1)), boundaryInstant); // valeur de la semaine 1
+
+    // Dernier instant réellement inclus dans la semaine 1 (periodEndExclusive - 1ms) → ancienne valeur.
+    const lastInstantOfWeek1 = new Date(boundaryInstant.getTime() - 1);
+    const resolvedForWeek1 = resolveEffectiveConfig([closedWeek1], live, lastInstantOfWeek1);
+    expect((resolvedForWeek1 as VersionedSnapshot).referenceAmount).toBe(1000);
+
+    // Exactement à la borne (= premier instant de la semaine 2) → nouvelle valeur,
+    // jamais l'ancienne : la modification appartient à la période SUIVANTE.
+    const resolvedAtBoundary = resolveEffectiveConfig([closedWeek1], live, boundaryInstant);
+    expect(resolvedAtBoundary).toBe(live);
+    expect((resolvedAtBoundary as ReturnType<typeof liveConfigFrom>).referenceAmount).toBe(1800);
+
+    // Reproduit avec le moteur de période complet (getCurrentPeriodWindow) : la
+    // semaine 1 vue depuis un jour quelconque en son sein résout bien l'ancienne
+    // valeur au dernier instant inclus ; la semaine 2 (dont periodStart == boundaryInstant
+    // exactement) résout bien la nouvelle valeur dès son tout premier instant.
+    const week1Window = getCurrentPeriodWindow(weeklyBudget, monday);
+    expect(periodEndExclusive(week1Window.end).getTime()).toBe(boundaryInstant.getTime());
+    const week2Window = getCurrentPeriodWindow(weeklyBudget, nextMonday);
+    expect(week2Window.start.getTime()).toBe(boundaryInstant.getTime());
+    const resolvedAtWeek2Start = resolveEffectiveConfig([closedWeek1], live, week2Window.start);
+    expect(resolvedAtWeek2Start).toBe(live);
   });
 });

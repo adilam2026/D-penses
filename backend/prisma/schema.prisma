@@ -863,6 +863,7 @@ model VariableBudget {
   category     Category      @relation(fields: [categoryId], references: [id])
   categoryType CategoryType? @relation(fields: [categoryTypeId], references: [id])
   expenses     BudgetExpense[]
+  versions     VariableBudgetVersion[]
 
   @@index([householdId])
   @@index([categoryTypeId])
@@ -872,6 +873,44 @@ model VariableBudget {
 enum VariableBudgetStatus {
   actif
   inactif
+}
+
+// Lot 4 (module Budgets) — historique des modifications, versionnement par
+// instantané complet (jamais un journal champ-par-champ : un instantané reste
+// toujours un jeu de 7 champs cohérent, seul ce qui permet de reconstruire
+// correctement le BudgetLike applicable à une période passée). Une ligne =
+// un segment déjà CLOS (remplacé) ; l'état courant reste exclusivement porté
+// par les colonnes vivantes de VariableBudget, jamais dupliqué ici.
+//
+// Convention temporelle : intervalle semi-ouvert [validFrom, validTo), comme
+// les périodes budgétaires [periodStart, periodEndExclusive) — un changement
+// effectif EXACTEMENT à la borne de sortie d'une période appartient à la
+// période SUIVANTE, jamais à celle qui se termine (cf. common/ledger/
+// variable-budget.util.ts, resolveEffectiveConfig). validFrom du tout premier
+// segment jamais créé pour un budget = VariableBudget.createdAt (origine
+// technique du versionnement), jamais startDate (qui reste exclusivement la
+// date d'application financière utilisée par le moteur de période) — cela
+// évite un intervalle invalide si le budget est modifié avant sa startDate.
+// changedAt = effectiveFrom dans ce lot (= validTo) : aucune saisie d'une
+// date d'effet différente de l'instant d'enregistrement n'est proposée ici.
+model VariableBudgetVersion {
+  id                         String          @id @default(uuid())
+  variableBudgetId           String          @map("variable_budget_id")
+  referenceAmount            Decimal         @map("reference_amount") @db.Decimal(14, 2)
+  referencePeriod            ReferencePeriod @map("reference_period")
+  categoryId                 String          @map("category_id")
+  categoryTypeId             String?         @map("category_type_id")
+  weekStartDay               Int             @map("week_start_day")
+  includeInPrudentProjection Boolean         @map("include_in_prudent_projection")
+  endDate                    DateTime?       @map("end_date") @db.Date
+  validFrom                  DateTime        @map("valid_from")
+  validTo                    DateTime        @map("valid_to")
+  createdAt                  DateTime        @default(now()) @map("created_at")
+
+  variableBudget VariableBudget @relation(fields: [variableBudgetId], references: [id], onDelete: Cascade)
+
+  @@index([variableBudgetId, validFrom])
+  @@map("variable_budget_version")
 }
 
 // Une dépense réelle rattachée à un VariableBudget actif (§6/§8). Ne double

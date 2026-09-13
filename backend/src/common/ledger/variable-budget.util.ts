@@ -204,3 +204,87 @@ export function budgetHealthStatus(consommeADate: number, budgetPeriode: number)
   if (ratio >= 0.8) return 'proche_limite';
   return 'sous_budget';
 }
+
+/**
+ * Lot 4 — historique des modifications d'un budget (§1/§2/§3 de la demande).
+ *
+ * CONVENTION TEMPORELLE UNIQUE, appliquée partout dans ce lot : tout intervalle
+ * est SEMI-OUVERT [début, fin) — la borne de fin n'appartient JAMAIS à
+ * l'intervalle qu'elle clôt, elle appartient au suivant.
+ *   - une période budgétaire est [periodStart, periodEndExclusive) — jamais
+ *     [periodStart, periodEnd] (periodEnd, tel que renvoyé par nominalPeriod/
+ *     getCurrentPeriodWindow, est minuit UTC du DERNIER jour de la période —
+ *     donc un instant DANS cette période, pas sa borne de sortie) ;
+ *   - un segment de versionnement (VariableBudgetVersion) est [validFrom, validTo) ;
+ *   - les dépenses (BudgetExpense.spentDate) sont filtrées avec la même borne
+ *     exclusive (déjà le cas historiquement via exclusiveEnd, cf. plus bas).
+ *
+ * Conséquence directe : une modification dont l'instant tombe EXACTEMENT sur
+ * periodEndExclusive appartient à la période SUIVANTE, jamais à celle qui se
+ * termine — c'est cette règle que resolveEffectiveConfig doit respecter pour
+ * la valeur "finale/ajustée" d'une période (jamais interrogée à periodEnd lui-même,
+ * qui n'est pas la vraie borne de sortie, mais au dernier instant strictement
+ * avant periodEndExclusive).
+ */
+
+/** Borne de sortie EXCLUSIVE d'une période — le premier instant qui n'en fait
+ *  plus partie (minuit UTC du jour suivant periodEnd). Même fonction que
+ *  l'ancien VariableBudgetsService.exclusiveEnd, centralisée ici pour que le
+ *  service et la résolution de version partagent une seule définition. */
+export function periodEndExclusive(periodEnd: Date): Date {
+  return new Date(periodEnd.getTime() + 86400000);
+}
+
+export interface VersionedSnapshot {
+  referenceAmount: number;
+  referencePeriod: ReferencePeriod;
+  categoryId: string;
+  categoryTypeId: string | null;
+  weekStartDay: number;
+  includeInPrudentProjection: boolean;
+  endDate: Date | null;
+  validFrom: Date;
+  validTo: Date;
+}
+
+/**
+ * Résolution pure, sans dépendance DB, de la configuration effective d'un
+ * budget à un instant précis `at`. `versions` = tous les segments CLOS déjà
+ * connus pour ce budget (peu importe l'ordre) ; `liveConfig` = l'état vivant
+ * actuel de VariableBudget.
+ *
+ * `at` doit être l'instant exact demandé — JAMAIS periodEnd directement pour
+ * une résolution "de fin de période" : voir periodEndExclusive ci-dessus.
+ * Pour resoudre la valeur finale/ajustée d'une période, appeler avec
+ * `new Date(periodEndExclusive(periodEnd).getTime() - 1)` (dernier instant
+ * réellement inclus dans la période, cf. VariableBudgetsService).
+ *
+ * Trois cas, du plus récent au plus ancien :
+ *  1. `at` postérieur ou égal au dernier changement connu (ou aucun changement
+ *     jamais enregistré) → la ligne vivante fait foi (période courante, ou
+ *     budget jamais modifié).
+ *  2. `at` couvert par un segment clos → ce segment fait foi (période passée
+ *     déjà figée par une modification ultérieure).
+ *  3. `at` ANTÉRIEUR au premier segment clos connu (ex. startDate très
+ *     antérieure à la création du budget, cas standard — un budget "actif
+ *     depuis 2020" créé aujourd'hui) → extrapole la plus ANCIENNE valeur
+ *     CONNUE (le premier segment) plutôt que la ligne vivante : aucune trace
+ *     antérieure à la création du budget n'existe, donc la meilleure
+ *     information disponible reste la configuration en vigueur dès la
+ *     création, jamais une valeur issue d'une modification qui n'existait pas
+ *     encore à cet instant (sinon une modification faite aujourd'hui
+ *     changerait rétroactivement l'interprétation d'une période ancienne
+ *     couverte par un startDate passé — exactement ce que ce lot interdit).
+ */
+export function resolveEffectiveConfig<TVersion extends VersionedSnapshot, TLive>(
+  versions: TVersion[],
+  liveConfig: TLive,
+  at: Date,
+): TVersion | TLive {
+  if (versions.length === 0) return liveConfig;
+  const sorted = [...versions].sort((a, b) => a.validFrom.getTime() - b.validFrom.getTime());
+  const t = at.getTime();
+  if (t < sorted[0].validFrom.getTime()) return sorted[0];
+  const match = sorted.find((v) => v.validFrom.getTime() <= t && t < v.validTo.getTime());
+  return match ?? liveConfig;
+}

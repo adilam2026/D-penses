@@ -323,7 +323,12 @@ export const updateCategorySubtype = (id: string, data: { name?: string; active?
 // ---------- Budgets variables & dépenses (Lot 3) ----------
 export const listVariableBudgets = () => apiFetch('/variable-budgets');
 
-export const getVariableBudget = (id: string) => apiFetch(`/variable-budgets/${id}`);
+/** Lot 4 — `at` optionnel : omis, période courante (comportement historique
+ *  inchangé) ; fourni (ISO), détail de la période contenant cette date (navigation). */
+export const getVariableBudget = (id: string, at?: string) => apiFetch(`/variable-budgets/${id}${at ? `?at=${encodeURIComponent(at)}` : ''}`);
+
+/** Lot 4 — journal des modifications dérivé (budgetId/champ/ancienne/nouvelle valeur/changedAt=effectiveFrom). */
+export const getVariableBudgetHistory = (id: string) => apiFetch(`/variable-budgets/${id}/history`);
 
 export const createVariableBudget = (data: {
   categoryId: string;

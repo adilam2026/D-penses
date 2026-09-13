@@ -14,6 +14,32 @@ interface HistoryEntry {
   notes: string | null;
 }
 
+// Lot 4 — sous-ensemble des 7 champs suivis, tel qu'exposé par
+// initialValues/adjustedValues (seul referenceAmount est affiché pour l'instant,
+// les autres restent disponibles pour un affichage plus riche ultérieur).
+interface BudgetConfigValues {
+  referenceAmount: number;
+  referencePeriod: 'semaine' | 'mois';
+}
+
+interface PeriodNavigation {
+  at: string;
+  periodStart: string;
+  periodEnd: string;
+  isCurrentPeriod: boolean;
+  previousPeriodAt: string;
+  nextPeriodAt: string | null; // null = période courante, jamais de navigation vers le futur
+}
+
+interface BudgetAmendmentEntry {
+  budgetId: string;
+  field: string;
+  oldValue: unknown;
+  newValue: unknown;
+  changedAt: string;
+  effectiveFrom: string;
+}
+
 interface BudgetDetail {
   id: string;
   categoryId: string;
@@ -37,6 +63,11 @@ interface BudgetDetail {
     rythmeAlerte: boolean;
   };
   history: HistoryEntry[];
+  // Lot 4 — navigation de périodes + valeur initiale/ajustée si le budget a été
+  // modifié pendant la période affichée (null si rien n'a changé).
+  periodNavigation: PeriodNavigation;
+  initialValues: BudgetConfigValues | null;
+  adjustedValues: BudgetConfigValues | null;
 }
 
 const PERIOD_OPTIONS = [
@@ -48,6 +79,35 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long' });
 }
 
+function formatDateTime(iso: string) {
+  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  referenceAmount: 'Montant de référence',
+  referencePeriod: 'Périodicité',
+  categoryId: 'Catégorie',
+  categoryTypeId: 'Type de catégorie',
+  weekStartDay: 'Jour de début de semaine',
+  includeInPrudentProjection: 'Inclus dans la projection prudente',
+  endDate: 'Date de fin',
+};
+
+function formatFieldValue(field: string, value: unknown): string {
+  if (value === null || value === undefined) return '—';
+  if (field === 'referenceAmount') return `${Number(value).toLocaleString('fr-FR')} DH`;
+  if (field === 'includeInPrudentProjection') return value ? 'Oui' : 'Non';
+  if (field === 'endDate') return formatDate(value as string);
+  return String(value);
+}
+
+// Lot 4 — même convention semi-ouverte que le backend (periodEndExclusive) : le
+// dernier jour de période (periodEnd) n'est que le début de son dernier jour, la
+// vraie borne de sortie est minuit UTC du lendemain.
+function periodEndExclusive(periodEndIso: string): number {
+  return new Date(periodEndIso).getTime() + 86400000;
+}
+
 /** Fiche budget (§18, R6.4 §1 — Modifier/Supprimer) — dépenses de la période courante, sans graphique. */
 export function BudgetDetailScreen() {
   const route = useRoute<any>();
@@ -55,6 +115,9 @@ export function BudgetDetailScreen() {
   const id = route.params?.id as string;
   const [detail, setDetail] = useState<BudgetDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  // Lot 4 — navigation de périodes : `at` undefined = période courante (comportement
+  // historique inchangé) ; défini (ISO), la fiche affiche la période le contenant.
+  const [at, setAt] = useState<string | undefined>(undefined);
 
   // R6.4 (§1) — menu "..." (Modifier/Supprimer), même pattern que AccountDetailScreen (§19).
   const [menuOpen, setMenuOpen] = useState(false);
@@ -66,20 +129,39 @@ export function BudgetDetailScreen() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Lot 4 — historique des modifications, replié par défaut, chargé à la demande
+  // (une seule fois, réutilisé pour toutes les périodes consultées ensuite).
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [amendments, setAmendments] = useState<BudgetAmendmentEntry[] | null>(null);
+  const [amendmentsLoading, setAmendmentsLoading] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setDetail(await api.getVariableBudget(id));
+      setDetail(await api.getVariableBudget(id, at));
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, at]);
 
   useFocusEffect(
     useCallback(() => {
       load();
     }, [load]),
   );
+
+  async function toggleHistory() {
+    const opening = !historyOpen;
+    setHistoryOpen(opening);
+    if (opening && amendments === null) {
+      setAmendmentsLoading(true);
+      try {
+        setAmendments(await api.getVariableBudgetHistory(id));
+      } finally {
+        setAmendmentsLoading(false);
+      }
+    }
+  }
 
   function openEdit() {
     if (!detail) return;
@@ -101,6 +183,8 @@ export function BudgetDetailScreen() {
     try {
       await api.updateVariableBudget(id, { referenceAmount: value, referencePeriod: editPeriod });
       setEditOpen(false);
+      setAmendments(null); // Lot 4 — l'historique vient de changer, invalidé pour être rechargé à la prochaine ouverture.
+      setAt(undefined); // revient à la période courante, celle qui vient d'être modifiée.
       await load();
     } catch (err) {
       setEditError(err instanceof api.ApiError ? err.message : 'Modification impossible');
@@ -142,6 +226,16 @@ export function BudgetDetailScreen() {
 
   const { status } = detail;
 
+  // Lot 4 — historique filtré côté mobile sur la période affichée (même liste que
+  // /history, jamais un second calcul serveur) : convention semi-ouverte identique
+  // au backend, changedAt dans [periodStart, periodEndExclusive).
+  const periodStartMs = new Date(status.periodStart).getTime();
+  const periodEndExclusiveMs = periodEndExclusive(status.periodEnd);
+  const periodAmendments = (amendments ?? []).filter((entry) => {
+    const t = new Date(entry.changedAt).getTime();
+    return t >= periodStartMs && t < periodEndExclusiveMs;
+  });
+
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
@@ -156,6 +250,44 @@ export function BudgetDetailScreen() {
         </TouchableOpacity>
       </View>
       {deleteError && <Text style={styles.error}>{deleteError}</Text>}
+
+      {/* Lot 4 — navigation < précédente | période | suivante >. "Suivante" masquée
+          sur la période courante (jamais de navigation vers le futur). */}
+      <View style={styles.periodNavRow}>
+        <TouchableOpacity
+          testID="budget-nav-previous"
+          style={styles.periodNavButton}
+          onPress={() => setAt(detail.periodNavigation.previousPeriodAt)}
+        >
+          <Text style={styles.periodNavArrow}>‹</Text>
+        </TouchableOpacity>
+        <Text style={styles.periodNavLabel} testID="budget-period-label">
+          {formatDate(status.periodStart)} — {formatDate(status.periodEnd)}
+          {detail.periodNavigation.isCurrentPeriod ? ' (en cours)' : ''}
+        </Text>
+        {detail.periodNavigation.nextPeriodAt ? (
+          <TouchableOpacity
+            testID="budget-nav-next"
+            style={styles.periodNavButton}
+            onPress={() => setAt(detail.periodNavigation.nextPeriodAt!)}
+          >
+            <Text style={styles.periodNavArrow}>›</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.periodNavButton} />
+        )}
+      </View>
+
+      {/* Lot 4 — valeur initiale/ajustée, uniquement si le budget a été modifié
+          pendant la période actuellement affichée (jamais montré sinon). */}
+      {detail.initialValues && detail.adjustedValues && (
+        <View style={styles.adjustedBanner} testID="budget-initial-adjusted">
+          <Text style={styles.adjustedText}>
+            Montant initial : {detail.initialValues.referenceAmount.toLocaleString('fr-FR')} DH → ajusté à{' '}
+            {detail.adjustedValues.referenceAmount.toLocaleString('fr-FR')} DH pendant cette période
+          </Text>
+        </View>
+      )}
 
       <View style={styles.figuresGrid}>
         <Figure label="Budget" value={status.budgetPeriode} />
@@ -187,6 +319,33 @@ export function BudgetDetailScreen() {
             <Text style={styles.historyAmount}>{item.amount.toLocaleString('fr-FR')} DH</Text>
           </View>
         )}
+        ListFooterComponent={
+          <View style={styles.amendmentsSection}>
+            <TouchableOpacity testID="budget-history-toggle" style={styles.amendmentsToggle} onPress={toggleHistory}>
+              <Text style={styles.amendmentsToggleText}>Historique des modifications</Text>
+              <Text style={styles.amendmentsToggleIcon}>{historyOpen ? '▲' : '▼'}</Text>
+            </TouchableOpacity>
+            {historyOpen && (
+              <View testID="budget-history-list">
+                {amendmentsLoading ? (
+                  <ActivityIndicator style={{ marginTop: spacing.md }} />
+                ) : periodAmendments.length === 0 ? (
+                  <Text style={styles.empty}>Aucune modification enregistrée pour cette période.</Text>
+                ) : (
+                  periodAmendments.map((entry, index) => (
+                    <View key={`${entry.field}-${entry.changedAt}-${index}`} style={styles.amendmentRow}>
+                      <Text style={styles.amendmentField}>{FIELD_LABELS[entry.field] ?? entry.field}</Text>
+                      <Text style={styles.amendmentChange}>
+                        {formatFieldValue(entry.field, entry.oldValue)} → {formatFieldValue(entry.field, entry.newValue)}
+                      </Text>
+                      <Text style={styles.amendmentDate}>{formatDateTime(entry.changedAt)}</Text>
+                    </View>
+                  ))
+                )}
+              </View>
+            )}
+          </View>
+        }
       />
 
       <ChoiceSheet
@@ -257,6 +416,30 @@ const styles = StyleSheet.create({
     borderColor: colors.warning,
   },
   rythmeAlertText: { fontSize: 12, fontWeight: '700', color: colors.warning },
+  periodNavRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
+  periodNavButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  periodNavArrow: { fontSize: 22, fontWeight: '700', color: colors.textPrimary },
+  periodNavLabel: { flex: 1, textAlign: 'center', fontSize: 13, fontWeight: '600', color: colors.textPrimary },
+  adjustedBanner: {
+    backgroundColor: colors.surfaceActive,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  adjustedText: { fontSize: 12, color: colors.textSecondary },
+  amendmentsSection: { marginTop: spacing.lg },
+  amendmentsToggle: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.sm },
+  amendmentsToggleText: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  amendmentsToggleIcon: { fontSize: 12, color: colors.textSecondary },
+  amendmentRow: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  amendmentField: { fontSize: 12, fontWeight: '700', color: colors.textPrimary },
+  amendmentChange: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  amendmentDate: { fontSize: 10, color: colors.textSecondary, marginTop: 2 },
   historyTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.sm },
   empty: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.md },
   historyRow: {

@@ -2,16 +2,44 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { toNumber } from '../common/ledger/ledger.util';
 import {
+  addDaysUTC,
   BudgetLike,
   budgetHealthStatus,
   computeBudgetPeriodStatus,
   getCurrentPeriodWindow,
+  periodEndExclusive,
   ProjectionMode,
+  ReferencePeriod,
+  resolveEffectiveConfig,
+  VersionedSnapshot,
 } from '../common/ledger/variable-budget.util';
 import { CreateVariableBudgetDto } from './dto/create-variable-budget.dto';
 import { UpdateVariableBudgetDto } from './dto/update-variable-budget.dto';
 
 type TxClient = ReturnType<RlsContextService['getClient']>;
+
+/** Les 7 champs suivis par l'historique Lot 4 — sans validFrom/validTo (qui
+ *  n'existent que pour un segment CLOS, jamais pour la ligne vivante). */
+type BudgetConfigFields = Omit<VersionedSnapshot, 'validFrom' | 'validTo'>;
+
+const TRACKED_FIELDS = [
+  'referenceAmount',
+  'referencePeriod',
+  'categoryId',
+  'categoryTypeId',
+  'weekStartDay',
+  'includeInPrudentProjection',
+  'endDate',
+] as const satisfies readonly (keyof BudgetConfigFields)[];
+
+export interface BudgetAmendmentEntry {
+  budgetId: string;
+  field: (typeof TRACKED_FIELDS)[number];
+  oldValue: unknown;
+  newValue: unknown;
+  changedAt: Date;
+  effectiveFrom: Date;
+}
 
 /**
  * VariableBudget (docs/02-modele-metier.md §E.4, G.7/G.8). Le "consommé_à_date"
@@ -32,18 +60,43 @@ export class VariableBudgetsService {
     };
   }
 
-  /** `periodEnd` est minuit UTC du dernier jour — borne exclusive au jour suivant pour
-   *  inclure toute dépense de ce dernier jour, quelle que soit son heure d'enregistrement. */
-  private exclusiveEnd(periodEnd: Date): Date {
-    return new Date(periodEnd.getTime() + 86400000);
-  }
-
   private async consommeADate(tx: TxClient, variableBudgetId: string, periodStart: Date, periodEnd: Date): Promise<number> {
     const result = await tx.budgetExpense.aggregate({
-      where: { variableBudgetId, spentDate: { gte: periodStart, lt: this.exclusiveEnd(periodEnd) } },
+      where: { variableBudgetId, spentDate: { gte: periodStart, lt: periodEndExclusive(periodEnd) } },
       _sum: { amount: true },
     });
     return toNumber(result._sum.amount);
+  }
+
+  private toConfigFields(row: {
+    referenceAmount: unknown;
+    referencePeriod: ReferencePeriod;
+    categoryId: string;
+    categoryTypeId: string | null;
+    weekStartDay: number;
+    includeInPrudentProjection: boolean;
+    endDate: Date | null;
+  }): BudgetConfigFields {
+    return {
+      referenceAmount: toNumber(row.referenceAmount),
+      referencePeriod: row.referencePeriod,
+      categoryId: row.categoryId,
+      categoryTypeId: row.categoryTypeId,
+      weekStartDay: row.weekStartDay,
+      includeInPrudentProjection: row.includeInPrudentProjection,
+      endDate: row.endDate,
+    };
+  }
+
+  /**
+   * Lot 4 — tous les segments CLOS déjà connus pour ce budget, ordre chronologique.
+   * Peu de lignes par budget (une par modification réelle) : un fetch unique
+   * suffit à toutes les résolutions ponctuelles d'une même requête (at/periodStart/
+   * dernier instant de période), plutôt que 3 requêtes WHERE indexées séparées.
+   */
+  private async fetchVersionsOnTx(tx: TxClient, budgetId: string): Promise<VersionedSnapshot[]> {
+    const rows = await tx.variableBudgetVersion.findMany({ where: { variableBudgetId: budgetId }, orderBy: { validFrom: 'asc' } });
+    return rows.map((row) => ({ ...this.toConfigFields(row), validFrom: row.validFrom, validTo: row.validTo }));
   }
 
   /**
@@ -200,25 +253,127 @@ export class VariableBudgetsService {
   }
 
   /**
-   * Détail complet (statut + historique de la période courante) sur une
+   * Détail complet (statut + historique + navigation de période) sur une
    * transaction déjà ouverte — jamais imbriquer un second rlsContext.run()
    * dans une transaction en cours (cf. getBudgetStatusOnTx).
+   *
+   * Lot 4 — algorithme de résolution à une date `at` (voir aussi la convention
+   * temporelle documentée dans variable-budget.util.ts) :
+   *  A/B. configAt = configuration effective à `at` (segment clos qui le couvre,
+   *       sinon la ligne vivante).
+   *  C.   periodStart/periodEnd = fenêtre calculée par le moteur EXISTANT
+   *       (getCurrentPeriodWindow), avec CETTE configuration — jamais l'inverse
+   *       (éviterait la circularité : on ne connaît periodEnd qu'après avoir
+   *       choisi la bonne configuration, pas avant).
+   *  D.   une fois periodStart/periodEnd connus : configInitial = configuration
+   *       effective à periodStart (borne d'entrée, incluse) ; configFinal =
+   *       configuration effective au DERNIER instant réellement inclus dans la
+   *       période (periodEndExclusive - 1ms, jamais periodEnd/periodEndExclusive
+   *       eux-mêmes — un changement pile à la borne de sortie appartient à la
+   *       période SUIVANTE). configFinal sert au plafond/restant affichés ;
+   *       configInitial sert uniquement à l'affichage "valeur initiale" si elle
+   *       diffère de configFinal.
+   *  Pour la période encore ouverte (celle contenant "maintenant"), configFinal
+   *  se résout systématiquement sur la ligne vivante (aucun segment clos ne peut
+   *  couvrir un instant futur) — comportement strictement identique à avant ce
+   *  lot quand `at` est omis.
    */
-  private async detailOnTx(tx: TxClient, householdId: string, id: string) {
+  private async detailOnTx(tx: TxClient, householdId: string, id: string, at: Date = new Date()) {
     const budget = await tx.variableBudget.findFirst({ where: { id, householdId }, include: { category: true } });
     if (!budget) throw new NotFoundException('Budget introuvable');
     const mode = await this.projectionMode(tx, householdId);
-    const today = new Date();
-    const status = await this.statusFor(tx, budget, mode, today);
+
+    const liveConfig = this.toConfigFields(budget);
+    const versions = await this.fetchVersionsOnTx(tx, id);
+    const resolveAt = (instant: Date) => resolveEffectiveConfig(versions, liveConfig, instant);
+
+    const configAt = resolveAt(at);
+    const budgetLikeAt: BudgetLike = { referenceAmount: configAt.referenceAmount, referencePeriod: configAt.referencePeriod, weekStartDay: configAt.weekStartDay, startDate: budget.startDate, endDate: configAt.endDate };
+    const { start: periodStart, end: periodEnd } = getCurrentPeriodWindow(budgetLikeAt, at);
+    const periodEndExcl = periodEndExclusive(periodEnd);
+
+    const configInitial = resolveAt(periodStart);
+    const configFinal = resolveAt(new Date(periodEndExcl.getTime() - 1));
+    const budgetLikeFinal: BudgetLike = { referenceAmount: configFinal.referenceAmount, referencePeriod: configFinal.referencePeriod, weekStartDay: configFinal.weekStartDay, startDate: budget.startDate, endDate: configFinal.endDate };
+
+    const now = new Date();
+    // Période déjà close (periodEnd < maintenant) : figée à sa clôture (jours_écoulés
+    // = totalité) — période encore ouverte : progression en temps réel comme avant ce lot.
+    const todayForStatus = periodEnd.getTime() < now.getTime() ? periodEnd : now;
+
+    const consomme = await this.consommeADate(tx, id, periodStart, periodEnd);
+    const periodStatus = computeBudgetPeriodStatus(budgetLikeFinal, todayForStatus, consomme, mode);
+    const status = { ...periodStatus, healthStatus: budgetHealthStatus(periodStatus.consommeADate, periodStatus.budgetPeriode) };
+
     const history = await tx.budgetExpense.findMany({
-      where: { variableBudgetId: id, spentDate: { gte: status.periodStart, lt: this.exclusiveEnd(status.periodEnd) } },
+      where: { variableBudgetId: id, spentDate: { gte: periodStart, lt: periodEndExcl } },
       orderBy: { spentDate: 'desc' },
     });
-    return { ...budget, status, history };
+
+    const changedDuringPeriod = TRACKED_FIELDS.some((field) => {
+      if (field === 'endDate') return (configInitial.endDate?.getTime() ?? null) !== (configFinal.endDate?.getTime() ?? null);
+      return configInitial[field] !== configFinal[field];
+    });
+
+    const isCurrentPeriod = periodStart.getTime() <= now.getTime() && now.getTime() < periodEndExcl.getTime();
+
+    return {
+      ...budget,
+      status,
+      history,
+      periodNavigation: {
+        at,
+        periodStart,
+        periodEnd,
+        isCurrentPeriod,
+        previousPeriodAt: addDaysUTC(periodStart, -1),
+        nextPeriodAt: isCurrentPeriod ? null : periodEndExcl,
+      },
+      // Informatif uniquement — null si rien n'a changé pendant cette période
+      // (jamais affiché dans ce cas, cf. §4 de la demande).
+      initialValues: changedDuringPeriod ? configInitial : null,
+      adjustedValues: changedDuringPeriod ? configFinal : null,
+    };
   }
 
-  async findOne(userId: string, householdId: string, id: string) {
-    return this.rlsContext.run(userId, householdId, () => this.detailOnTx(this.rlsContext.getClient(), householdId, id));
+  async findOne(userId: string, householdId: string, id: string, atIso?: string) {
+    return this.rlsContext.run(userId, householdId, () =>
+      this.detailOnTx(this.rlsContext.getClient(), householdId, id, atIso ? new Date(atIso) : new Date()),
+    );
+  }
+
+  /**
+   * Lot 4 — journal des modifications dérivé par diff de segments consécutifs
+   * (jamais stocké séparément — un instantané complet suffit, cf. schéma).
+   * changedAt = effectiveFrom dans ce lot (aucune date d'effet distincte
+   * saisissable) : les deux valent le validTo du segment qui vient de se clore.
+   */
+  async getHistory(userId: string, householdId: string, id: string): Promise<BudgetAmendmentEntry[]> {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const budget = await tx.variableBudget.findFirst({ where: { id, householdId } });
+      if (!budget) throw new NotFoundException('Budget introuvable');
+
+      const versions = await this.fetchVersionsOnTx(tx, id); // déjà triés par validFrom croissant
+      const liveConfig = this.toConfigFields(budget);
+      const timeline: BudgetConfigFields[] = [...versions, liveConfig];
+
+      const entries: BudgetAmendmentEntry[] = [];
+      for (let i = 0; i < versions.length; i++) {
+        const before = versions[i];
+        const after = timeline[i + 1];
+        const changedAt = before.validTo;
+        for (const field of TRACKED_FIELDS) {
+          const oldValue = before[field];
+          const newValue = after[field];
+          const differ = field === 'endDate'
+            ? ((oldValue as Date | null)?.getTime() ?? null) !== ((newValue as Date | null)?.getTime() ?? null)
+            : oldValue !== newValue;
+          if (differ) entries.push({ budgetId: id, field, oldValue, newValue, changedAt, effectiveFrom: changedAt });
+        }
+      }
+      return entries;
+    });
   }
 
   /**
@@ -257,6 +412,45 @@ export class VariableBudgetsService {
         effectiveEndDate,
         id,
       );
+
+      // Lot 4 — capture l'état AVANT modification comme segment d'historique clos,
+      // uniquement si au moins un des 7 champs suivis change réellement (jamais de
+      // segment vide pour un update no-op ni pour une propriété hors périmètre,
+      // ex. status). Toujours dans la même transaction que l'écriture ci-dessous
+      // (rlsContext.run englobe déjà tout dans prisma.$transaction).
+      const oldEndTime = budget.endDate?.getTime() ?? null;
+      const newEndTime = effectiveEndDate?.getTime() ?? null;
+      const tracked7FieldsChanged =
+        (dto.referenceAmount !== undefined && toNumber(dto.referenceAmount) !== toNumber(budget.referenceAmount)) ||
+        (dto.referencePeriod !== undefined && dto.referencePeriod !== budget.referencePeriod) ||
+        (dto.categoryId !== undefined && dto.categoryId !== budget.categoryId) ||
+        (dto.categoryTypeId !== undefined && dto.categoryTypeId !== budget.categoryTypeId) ||
+        (dto.weekStartDay !== undefined && dto.weekStartDay !== budget.weekStartDay) ||
+        (dto.includeInPrudentProjection !== undefined && dto.includeInPrudentProjection !== budget.includeInPrudentProjection) ||
+        (dto.endDate !== undefined && oldEndTime !== newEndTime);
+
+      if (tracked7FieldsChanged) {
+        // validFrom du tout premier segment = createdAt (origine TECHNIQUE du
+        // versionnement, jamais startDate qui reste la date d'application
+        // FINANCIÈRE — évite un intervalle invalide si le budget est modifié
+        // avant sa startDate). Segments suivants : chaînés sur le validTo précédent.
+        const lastVersion = await tx.variableBudgetVersion.findFirst({ where: { variableBudgetId: id }, orderBy: { validTo: 'desc' } });
+        const validFrom = lastVersion?.validTo ?? budget.createdAt;
+        await tx.variableBudgetVersion.create({
+          data: {
+            variableBudgetId: id,
+            referenceAmount: budget.referenceAmount,
+            referencePeriod: budget.referencePeriod,
+            categoryId: budget.categoryId,
+            categoryTypeId: budget.categoryTypeId,
+            weekStartDay: budget.weekStartDay,
+            includeInPrudentProjection: budget.includeInPrudentProjection,
+            endDate: budget.endDate,
+            validFrom,
+            validTo: new Date(), // = changedAt = effectiveFrom du nouvel état (ce lot n'a pas de date d'effet distincte saisissable)
+          },
+        });
+      }
 
       await tx.variableBudget.update({
         where: { id },

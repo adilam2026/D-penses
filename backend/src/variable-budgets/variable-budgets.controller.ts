@@ -30,9 +30,18 @@ export class VariableBudgetsController {
     return this.variableBudgets.findAll(user.sub, user.householdId!);
   }
 
+  // Lot 4 — route statique déclarée avant ':id', même précaution que ci-dessus.
+  @Get(':id/history')
+  history(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.variableBudgets.getHistory(user.sub, user.householdId!, id);
+  }
+
+  // Lot 4 — `at` optionnel : omis, comportement strictement identique à avant ce
+  // lot (période courante) ; fourni, renvoie le détail de la période contenant `at`
+  // (navigation historique, cf. periodNavigation.previousPeriodAt/nextPeriodAt).
   @Get(':id')
-  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.variableBudgets.findOne(user.sub, user.householdId!, id);
+  findOne(@Param('id') id: string, @Query('at') at: string | undefined, @CurrentUser() user: AuthenticatedUser) {
+    return this.variableBudgets.findOne(user.sub, user.householdId!, id, at);
   }
 
   @Patch(':id')
