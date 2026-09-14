@@ -76,6 +76,8 @@ export function AccountsScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {/* Passe visuelle V1 (Maquette 3) — en-tête cohérent avec la charte Home. */}
+      <Text style={styles.pageTitle}>Comptes</Text>
       <FlatList
         data={accounts}
         keyExtractor={(a) => a.id}
@@ -102,9 +104,11 @@ export function AccountsScreen() {
                 {TYPE_LABEL[item.type as AccountType] ?? item.type}
                 {item.status === 'archive' ? ' · Archivé' : ''}
               </Text>
-              {/* R6.1 §10 — badge discret, jamais un masquage : un compte hors pilotage
-                  reste visible avec son solde, seulement exclu des calculs. */}
-              {!item.includeInOperationalTreasury && <Text style={styles.offPilotBadge}>Hors pilotage</Text>}
+              {/* R6.1 §10 / passe visuelle V1 — statut Piloté/Hors pilotage toujours
+                  affiché explicitement (symétrie avec Home), jamais un masquage : un
+                  compte hors pilotage reste visible avec son solde réel, seulement
+                  exclu des calculs. */}
+              <Text style={styles.pilotageBadge}>{item.includeInOperationalTreasury ? 'Piloté' : 'Hors pilotage'}</Text>
             </View>
             <Text style={styles.rowBalance}>{item.soldeCourant.toLocaleString('fr-FR')} DH</Text>
           </TouchableOpacity>
@@ -152,13 +156,14 @@ export function AccountsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background, paddingTop: spacing.lg, paddingHorizontal: spacing.xl },
+  pageTitle: { fontSize: 20, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.lg },
   empty: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.xxl, fontSize: 13, lineHeight: 20 },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
+    borderRadius: radius.xl,
     padding: 14,
     marginBottom: spacing.sm,
     borderWidth: 1,
@@ -168,7 +173,7 @@ const styles = StyleSheet.create({
   rowArchived: { opacity: 0.55 },
   rowName: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
   rowType: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  offPilotBadge: {
+  pilotageBadge: {
     fontSize: 10,
     fontWeight: '700',
     color: colors.textSecondary,
