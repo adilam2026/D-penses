@@ -59,7 +59,7 @@ describe('FinancialPlansScreen', () => {
 
   it('taper un plan navigue réellement vers FinancialPlanDetail', async () => {
     mockedApi.listFinancialPlans.mockResolvedValue([
-      { id: 'p1', label: 'École', planType: 'school', destination: null, knownPlanCost: 1000, remainingDue: 500, completude: 'complet' },
+      { id: 'p1', label: 'École', planType: 'school', destination: null, knownPlanCost: 1000, paidAmount: 200, provisionCoverage: 300, remainingDue: 500, completude: 'complet' },
     ]);
     await render(<FinancialPlansScreen />);
     await waitFor(() => screen.getByText(/École/));

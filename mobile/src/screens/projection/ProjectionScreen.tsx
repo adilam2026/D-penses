@@ -431,7 +431,7 @@ const styles = StyleSheet.create({
   warningText: { fontSize: 12, color: colors.warning, fontWeight: '600', marginBottom: spacing.sm },
   monthCard: {
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     padding: 14,
     marginBottom: 10,
     borderWidth: 1,
