@@ -5,62 +5,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../auth/AuthContext';
 import { useBottomInset } from '../ui/useBottomInset';
 import { colors, radius, spacing } from '../ui/theme';
-
-interface MenuItem {
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  route: string;
-}
+import { HAMBURGER_SECTIONS as SECTIONS } from '../navigation/menuSections';
 
 // Vague 3 §5 — menu structurel (☰), organisé par logique utilisateur. Les actions
 // quotidiennes (dépense, revenu, paiement...) n'y figurent jamais : elles vivent
 // dans la bottom sheet du bouton "+" central (§3).
-const SECTIONS: { title: string; items: MenuItem[] }[] = [
-  {
-    title: 'Mon foyer',
-    items: [
-      { label: 'Comptes', icon: 'card-outline', route: 'Accounts' },
-      { label: 'Membres du foyer', icon: 'people-circle-outline', route: 'HouseholdMembers' },
-      { label: 'Enfants', icon: 'people-outline', route: 'Children' },
-    ],
-  },
-  {
-    title: 'Mes finances',
-    items: [
-      { label: 'Revenus réguliers', icon: 'trending-up-outline', route: 'Income' },
-      { label: 'Charges récurrentes', icon: 'receipt-outline', route: 'Charges' },
-      { label: 'Budgets', icon: 'pie-chart-outline', route: 'Budgets' },
-      { label: 'Enveloppes', icon: 'wallet-outline', route: 'Enveloppes' },
-      { label: 'Objectifs', icon: 'flag-outline', route: 'Goals' },
-      { label: 'Transferts récurrents', icon: 'swap-horizontal-outline', route: 'RecurringTransfers' },
-    ],
-  },
-  {
-    title: 'Mes plans',
-    items: [
-      { label: 'Plans financiers', icon: 'folder-outline', route: 'FinancialPlans' },
-      { label: 'Frais scolaires', icon: 'school-outline', route: 'SchoolWizard' },
-      { label: 'Voyages', icon: 'airplane-outline', route: 'TravelWizard' },
-    ],
-  },
-  {
-    title: 'Anticiper',
-    items: [
-      { label: 'Projection', icon: 'analytics-outline', route: 'Projection' },
-      { label: 'Simulateur', icon: 'help-buoy-outline', route: 'Simulator' },
-    ],
-  },
-  {
-    title: 'Paramètres',
-    items: [
-      { label: 'Catégories', icon: 'pricetags-outline', route: 'Categories' },
-      { label: 'Types de dépenses', icon: 'list-outline', route: 'CategoryTypes' },
-      { label: 'Préférences', icon: 'options-outline', route: 'Preferences' },
-      { label: 'Configuration du foyer', icon: 'home-outline', route: 'HouseholdConfig' },
-      { label: 'Réinitialiser mes données financières', icon: 'trash-outline', route: 'ResetFinancialData' },
-    ],
-  },
-];
+// Architecture Web v3 §3/§11 — SECTIONS déplacé vers menuSections.ts (source
+// partagée avec la Sidebar Web) : contenu identique, extraction mécanique.
 
 /** Menu ☰ (Vague 3 §1/§5) — remplace l'onglet "Plus" devenu fourre-tout. */
 export function HamburgerMenuScreen() {

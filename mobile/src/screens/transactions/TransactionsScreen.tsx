@@ -6,130 +6,23 @@ import { DateField } from '../../ui/DateField';
 import { MultiSelect } from '../../ui/MultiSelect';
 import { Select } from '../../ui/Select';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
-
-interface LedgerEntry {
-  kind: string;
-  displayKind: string;
-  id: string;
-  occurredAt: string;
-  amount: number;
-  accountName: string;
-  // Vague 2 §20 : quand un Type est renseigné (Courses, Carburant...), le backend
-  // construit déjà `label` en "Type · Sous-type" (ex. "Courses · Viande") — jamais
-  // recalculé côté mobile, la catégorie parente reste affichée séparément ci-dessous.
-  label: string | null;
-  categoryName: string | null;
-  categoryTypeName: string | null;
-  categorySubtypeName: string | null;
-  // Mini-lot T2 — colonnes exposées par le Lot T1 backend.
-  createdByUserId: string | null;
-  createdByName: string | null;
-  budgetId: string | null;
-  financialPlanId: string | null;
-}
-
-const KIND_LABEL: Record<string, string> = {
-  revenu: 'Revenu',
-  paiement: 'Paiement',
-  depense: 'Dépense',
-  transfert: 'Transfert',
-  ajustement: 'Ajustement',
-};
-
-// Mini-lot T2 — mapping affichage → kinds bruts (pure couche mobile, jamais un
-// nouveau paramètre serveur : le backend accepte déjà kind=a,b,c en CSV, T1).
-// L'utilisateur choisit un "Type" au sens de l'écran (les 5 catégories déjà
-// affichées), jamais les 7 valeurs brutes de la vue ledger_entry.
-const KIND_GROUPS: Record<string, string[]> = {
-  revenu: ['income'],
-  paiement: ['payment'],
-  depense: ['budget_expense', 'adhoc_expense'],
-  transfert: ['transfer_in', 'transfer_out'],
-  ajustement: ['adjustment'],
-};
-
-// Limite par défaut du backend (transactions.service.ts) — T2 n'introduit aucune
-// pagination ; on se contente de signaler quand le résultat semble tronqué.
-const DEFAULT_LIST_LIMIT = 200;
-
-interface Filters {
-  from: string; // DateField ISO (YYYY-MM-DD) ou ''
-  to: string;
-  kinds: string[]; // clés de KIND_GROUPS
-  accountId: string | null;
-  categoryId: string | null;
-  budgetId: string | null;
-  financialPlanId: string | null;
-  createdByUserId: string | null;
-}
-
-const EMPTY_FILTERS: Filters = {
-  from: '',
-  to: '',
-  kinds: [],
-  accountId: null,
-  categoryId: null,
-  budgetId: null,
-  financialPlanId: null,
-  createdByUserId: null,
-};
-
-function hasActiveFilters(f: Filters): boolean {
-  return (
-    !!f.from ||
-    !!f.to ||
-    f.kinds.length > 0 ||
-    !!f.accountId ||
-    !!f.categoryId ||
-    !!f.budgetId ||
-    !!f.financialPlanId ||
-    !!f.createdByUserId
-  );
-}
-
-function kindsToCsv(kinds: string[]): string | undefined {
-  if (kinds.length === 0) return undefined;
-  const raw = kinds.flatMap((k) => KIND_GROUPS[k] ?? []);
-  return raw.length ? raw.join(',') : undefined;
-}
-
-/**
- * Conversion des filtres de période vers l'API — réutilise EXACTEMENT la
- * convention déjà en place dans l'app (BudgetDetailScreen.periodEndExclusive,
- * elle-même alignée sur le backend) : une date de fin choisie par l'utilisateur
- * via DateField (YYYY-MM-DD, jour inclus) doit couvrir la journée entière, donc
- * `to` = lendemain minuit UTC. `from` est déjà un jour-seul ISO, interprété par
- * `new Date()` comme minuit UTC (mécanisme natif, aucune conversion à écrire) —
- * jamais un nouveau moteur de dates.
- */
-function toApiFilters(f: Filters): api.TransactionFilters {
-  return {
-    from: f.from ? new Date(f.from).toISOString() : undefined,
-    to: f.to ? new Date(new Date(f.to).getTime() + 86400000).toISOString() : undefined,
-    kind: kindsToCsv(f.kinds),
-    accountId: f.accountId ?? undefined,
-    categoryId: f.categoryId ?? undefined,
-    budgetId: f.budgetId ?? undefined,
-    financialPlanId: f.financialPlanId ?? undefined,
-    createdByUserId: f.createdByUserId ?? undefined,
-  };
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-}
-
-/** Clé de regroupement mensuel — dérivée directement de la chaîne ISO renvoyée
- *  par l'API (déjà en UTC côté backend), jamais Date.getMonth() (fuseau local) :
- *  même logique "pas de conversion implicite" que le reste de l'app. */
-function monthKey(occurredAtIso: string): string {
-  return occurredAtIso.slice(0, 7); // YYYY-MM
-}
-
-function monthSectionTitle(key: string): string {
-  const [y, m] = key.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-}
+// Portail Web v4 §1 — types/constantes/fonctions pures extraits tels quels vers
+// transactionsLogic.ts (aucun changement de comportement), partagés avec
+// TransactionsScreen.web.tsx : mêmes filtres, même regroupement, jamais une
+// seconde règle parallèle.
+import {
+  DEFAULT_LIST_LIMIT,
+  EMPTY_FILTERS,
+  Filters,
+  KIND_GROUPS,
+  KIND_LABEL,
+  LedgerEntry,
+  formatDate,
+  hasActiveFilters,
+  monthKey,
+  monthSectionTitle,
+  toApiFilters,
+} from './transactionsLogic';
 
 /**
  * Écran Transactions (§13) — affiche LedgerEntry (docs/04 §P.2), purement dérivée
