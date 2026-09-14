@@ -71,10 +71,16 @@ export class DashboardService {
       // Correctif post-Vague 3 : nextDeadlineDate/hasOverdue (même moteur, même tx-scoped
       // referenceDate) exposés pour que le tri de priorité de "Mes plans" (HomeScreen)
       // intègre l'urgence d'échéance sans jamais la recalculer côté mobile.
+      // Passe visuelle Home (Maquette 3) — paidAmount/planType : simple passthrough de
+      // champs déjà calculés/stockés dans detailOnTx (paidAmount) et sur le modèle
+      // FinancialPlan lui-même (planType, déjà spreadé via `...plan`) — jamais un
+      // second calcul ici.
       const financialPlansResume = (await this.financialPlans.listOnTx(tx, householdId, referenceDate)).map((p) => ({
         id: p.id,
         label: p.label,
+        planType: p.planType,
         knownPlanCost: p.knownPlanCost,
+        paidAmount: p.paidAmount,
         remainingDue: p.remainingDue,
         provisionCoverage: p.provisionCoverage,
         tauxCouverture: p.tauxCouverture,

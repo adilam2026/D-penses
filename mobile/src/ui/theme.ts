@@ -46,7 +46,24 @@ export const colors = {
   border: '#E3E1DC',
   borderStrong: '#D3CEC3',
   divider: '#EDEBE6',
+
+  // Passe visuelle Home (Maquette 3) — pas de librairie de dégradé disponible
+  // (installation réseau bloquée dans cet environnement) : approximation par
+  // une couleur pleine la plus proche du dégradé navy→teal de la maquette,
+  // jamais une couleur choisie arbitrairement.
+  heroBackground: '#14344A',
+  heroTextMuted: '#B9C6D0',
+  donutTrack: '#E9EEEC',
+  donutTrackWarn: '#F2E9DC',
 } as const;
+
+/**
+ * Palette "cartes comptes" (Maquette 3, §2) — rotation par index, purement
+ * visuelle (jamais liée à une règle métier : aucun compte n'a de couleur
+ * assignée en base). Approximation en couleur pleine du dégradé de la
+ * maquette (mêmes teintes dominantes), même contrainte que ci-dessus.
+ */
+export const accountCardPalette = ['#33A57C', '#5D79CD', '#C66F95'] as const;
 
 /**
  * Relief (R6.1 §15) — la refonte R6 n'avait fait que centraliser les couleurs

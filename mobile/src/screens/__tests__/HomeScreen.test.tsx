@@ -4,8 +4,9 @@ import { HomeScreen } from '../HomeScreen';
 import * as api from '../../api/client';
 
 /**
- * Tests de l'accueil-cockpit (Vague 3 §7-19/§31) : état vide, état configuré,
- * blocs cliquables (comptes/échéances/plans/projection/actions), menu ☰.
+ * Tests de l'accueil-cockpit (Vague 3 §7-19/§31, passe visuelle Maquette 3) : état
+ * vide, état configuré, blocs cliquables (comptes/échéances/plans/projection),
+ * menu ☰, conformité de l'ordre/du contenu des 6 blocs validés.
  */
 jest.mock('../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
 
@@ -91,7 +92,7 @@ describe('Accueil — état vide (§19)', () => {
   });
 });
 
-describe('Accueil — état configuré (§7-17/§31)', () => {
+describe('Accueil — état configuré (§7-17/§31, Maquette 3)', () => {
   const CONFIGURED_SUMMARY = {
     ...EMPTY_SUMMARY,
     operational_treasury: 45000,
@@ -128,7 +129,9 @@ describe('Accueil — état configuré (§7-17/§31)', () => {
       {
         id: 'p1',
         label: 'École 2026/2027',
+        planType: 'school' as const,
         knownPlanCost: 67450,
+        paidAmount: 8000,
         remainingDue: 37450,
         provisionCoverage: 30000,
         tauxCouverture: 44,
@@ -147,19 +150,17 @@ describe('Accueil — état configuré (§7-17/§31)', () => {
     ]);
   });
 
-  it('affiche le disponible libre mis en avant (bloc 2)', async () => {
+  it('Maquette 3 §1 : le héro affiche la trésorerie pilotée en montant principal et les 2 mini-métriques validées', async () => {
     await render(<HomeScreen />);
-    await waitFor(() => expect(screen.getByText('DISPONIBLE LIBRE')).toBeTruthy());
-    expect(screen.getAllByText('15 000 DH').length).toBeGreaterThan(0);
-  });
-
-  it('§14 : le disponible libre est le PREMIER élément du bloc 2 (hiérarchie visuelle), les autres montants en dessous', async () => {
-    await render(<HomeScreen />);
-    await waitFor(() => screen.getByText('DISPONIBLE LIBRE'));
-
-    expect(screen.queryByText("Comment est calculé mon disponible")).toBeNull(); // aide repliée par défaut
-    await fireEvent.press(screen.getByTestId('free-available-info'));
-    expect(screen.getByText(/tient compte de l'argent réservé/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("SITUATION PILOTÉE AUJOURD'HUI")).toBeTruthy());
+    expect(screen.getAllByText('45 000 DH').length).toBeGreaterThan(0); // operational_treasury (montant principal du héro)
+    expect(screen.getByText('Comptes inclus dans votre pilotage financier')).toBeTruthy();
+    expect(screen.getByText('Fin de période')).toBeTruthy();
+    expect(screen.getByText('Disponible après engagements')).toBeTruthy();
+    expect(screen.getAllByText('15 000 DH').length).toBeGreaterThan(0); // free_available, mini-métrique
+    // "Budgets restants" / "Plans couverts" définitivement supprimés (règle validée).
+    expect(screen.queryByText('Budgets restants')).toBeNull();
+    expect(screen.queryByText('Plans couverts')).toBeNull();
   });
 
   it('un compte est cliquable → AccountDetail', async () => {
@@ -169,7 +170,7 @@ describe('Accueil — état configuré (§7-17/§31)', () => {
     expect(mockNavigate).toHaveBeenCalledWith('AccountDetail', { id: 'acc-cih' });
   });
 
-  it('R6.3 (point B) : la ligne "Engagé" est cliquable → EngagedDetail avec exactement le montant Home et les composantes de la même source', async () => {
+  it('R6.3 (point B) : la mini-métrique "Disponible après engagements" est cliquable → EngagedDetail avec exactement le montant Home et les composantes de la même source', async () => {
     await render(<HomeScreen />);
     await waitFor(() => screen.getByTestId('home-engaged-row'));
     await fireEvent.press(screen.getByTestId('home-engaged-row'));
@@ -190,18 +191,27 @@ describe('Accueil — état configuré (§7-17/§31)', () => {
     expect(mockNavigate).toHaveBeenCalledWith('DeadlineDetail', { id: 'd1' });
   });
 
-  it('un plan est cliquable → FinancialPlanDetail, avec le taux de couverture affiché', async () => {
+  it('R5 clôture Home §6 : aucun bouton "Payer" visible sur la carte échéance de la Home (l\'action reste dans DeadlineDetailScreen)', async () => {
+    await render(<HomeScreen />);
+    await waitFor(() => screen.getByText('Scolarité Dina'));
+    expect(screen.queryByText('Payer')).toBeNull();
+  });
+
+  it('un plan est cliquable → FinancialPlanDetail, icône school + montant total + ligne payé/provisionné', async () => {
     await render(<HomeScreen />);
     await waitFor(() => screen.getByText('École 2026/2027'));
-    expect(screen.getByText('44% couvert')).toBeTruthy();
+    expect(screen.getByText('🎓')).toBeTruthy();
+    expect(screen.getByText('67 450 DH')).toBeTruthy();
+    expect(screen.getByText('Payé 8 000 DH')).toBeTruthy();
+    expect(screen.getByText('Provisionné 30 000 DH')).toBeTruthy();
     await fireEvent.press(screen.getByText('École 2026/2027'));
     expect(mockNavigate).toHaveBeenCalledWith('FinancialPlanDetail', { id: 'p1' });
   });
 
-  it('le bloc projection est cliquable → Projection', async () => {
+  it('le bloc Projection est cliquable → Projection', async () => {
     await render(<HomeScreen />);
-    await waitFor(() => screen.getByText('DANS 30 JOURS'));
-    await fireEvent.press(screen.getByText('DANS 30 JOURS'));
+    await waitFor(() => screen.getByTestId('home-projection-card'));
+    await fireEvent.press(screen.getByTestId('home-projection-card'));
     expect(mockNavigate).toHaveBeenCalledWith('Projection');
   });
 
@@ -214,11 +224,11 @@ describe('Accueil — état configuré (§7-17/§31)', () => {
 
   it('R6.4 (§5 / test I) : le bloc "Actions à traiter" est absent de l\'accueil', async () => {
     await render(<HomeScreen />);
-    await waitFor(() => screen.getByText('DISPONIBLE LIBRE'));
+    await waitFor(() => screen.getByText("SITUATION PILOTÉE AUJOURD'HUI"));
     expect(screen.queryByText(/action.*à traiter/i)).toBeNull();
   });
 
-  it('R6.1 §10 / R6.3 point D : "Ma situation" affiche "Trésorerie pilotée" en principal (comptes pilotés uniquement), "Patrimoine total" en secondaire, et un badge "Hors pilotage" sur un compte exclu', async () => {
+  it('R6.1 §10 / R6.3 point D (dernier cadrage Home) : "Mes comptes" affiche le badge "Hors pilotage", "Patrimoine total" en secondaire (jamais de ligne "Trésorerie pilotée" doublon du héro), et un montant masqué avec bascule œil sur un compte exclu', async () => {
     mockedApi.listAccounts.mockResolvedValue([
       { id: 'acc-cih', name: 'CIH', soldeCourant: 15000, includeInOperationalTreasury: true },
       { id: 'acc-livret', name: 'Livret bloqué', soldeCourant: 30000, includeInOperationalTreasury: false },
@@ -226,12 +236,20 @@ describe('Accueil — état configuré (§7-17/§31)', () => {
     await render(<HomeScreen />);
     await waitFor(() => screen.getByText('CIH'));
 
-    // §D — le montant PRINCIPAL est la trésorerie pilotée (45000, comptes includeInOperationalTreasury=true),
-    // jamais le patrimoine global (52000, avec le livret hors pilotage) qui reste secondaire.
-    expect(screen.getByText('Trésorerie pilotée')).toBeTruthy();
-    expect(screen.getByTestId('home-piloted-total')).toBeTruthy();
+    // Dernier cadrage Home — la ligne "Trésorerie pilotée" sous les comptes est
+    // retirée (doublon du montant déjà affiché en tête du héro) ; seul le
+    // patrimoine global reste affiché ici, en secondaire.
+    expect(screen.queryByText('Trésorerie pilotée')).toBeNull();
+    expect(screen.queryByTestId('home-piloted-total')).toBeNull();
     expect(screen.getByText('Patrimoine total (avec hors pilotage)')).toBeTruthy();
     expect(screen.getByText('Hors pilotage')).toBeTruthy();
+
+    // Maquette 3 §2 — masqué par défaut, bascule via l'icône œil (état UI local).
+    expect(screen.getByText('•••••• DH')).toBeTruthy();
+    expect(screen.queryByText('30 000 DH')).toBeNull();
+    await fireEvent.press(screen.getByTestId('account-reveal-acc-livret'));
+    expect(screen.getByText('30 000 DH')).toBeTruthy();
+    expect(screen.queryByText('•••••• DH')).toBeNull();
   });
 });
 
@@ -263,12 +281,12 @@ function budgetFixture(overrides: Partial<{
 }
 
 /**
- * Lot 3 — bloc "MES BUDGETS" de l'accueil (§4 de la demande) : réutilise
+ * Lot 3 / Maquette 3 §3 — bloc "Mes budgets" de l'accueil : réutilise
  * EXCLUSIVEMENT summary.budgetsResume déjà calculé côté backend, jamais un
- * recalcul mobile. Positionné avant "Mes plans" (contrainte explicite), cap à 3.
+ * recalcul mobile (donut = simple rendu du même ratio déjà fourni).
  */
-describe('Accueil — bloc "Mes budgets" (Lot 3)', () => {
-  it('affiche les budgets avec consommé/plafond/restant, et navigue vers BudgetDetail au clic', async () => {
+describe('Accueil — bloc "Mes budgets" (Lot 3, Maquette 3)', () => {
+  it('affiche les budgets avec consommé/plafond/restant (donut réel), et navigue vers BudgetDetail au clic', async () => {
     mockedApi.getDashboardSummary.mockResolvedValue({
       ...EMPTY_SUMMARY,
       budgetsResume: [budgetFixture({ id: 'b1', categoryName: 'Courses', consommeADate: 300, budgetPeriode: 1000 })],
@@ -279,7 +297,8 @@ describe('Accueil — bloc "Mes budgets" (Lot 3)', () => {
     await waitFor(() => screen.getByTestId('home-budget-b1'));
     expect(screen.getByText('Courses')).toBeTruthy();
     expect(screen.getByText('300 / 1 000 DH')).toBeTruthy();
-    expect(screen.getByText('Restant : 700 DH')).toBeTruthy();
+    expect(screen.getByText('700 DH restent à consommer')).toBeTruthy();
+    expect(screen.getByText('30%')).toBeTruthy(); // texte au centre du donut (300/1000)
 
     await fireEvent.press(screen.getByTestId('home-budget-b1'));
     expect(mockNavigate).toHaveBeenCalledWith('BudgetDetail', { id: 'b1' });
@@ -319,7 +338,7 @@ describe('Accueil — bloc "Mes budgets" (Lot 3)', () => {
     expect(cards.map((c) => c.props.testID)).toEqual(['home-budget-b-depasse', 'home-budget-b-rythme', 'home-budget-b-proche']);
   });
 
-  it('"Voir tous →" navigue vers Budgets', async () => {
+  it('"Voir tous" navigue vers Budgets', async () => {
     mockedApi.getDashboardSummary.mockResolvedValue({
       ...EMPTY_SUMMARY,
       budgetsResume: [budgetFixture({ id: 'b1' })],
@@ -328,18 +347,18 @@ describe('Accueil — bloc "Mes budgets" (Lot 3)', () => {
     await render(<HomeScreen />);
 
     await waitFor(() => screen.getByTestId('home-budget-b1'));
-    await fireEvent.press(screen.getByText('Voir tous →'));
+    await fireEvent.press(screen.getByText('Voir tous'));
     expect(mockNavigate).toHaveBeenCalledWith('Budgets');
   });
 
-  it('aucun budget → le bloc "MES BUDGETS" est absent (jamais un bloc vide affiché)', async () => {
+  it('aucun budget → le bloc "Mes budgets" est absent (jamais un bloc vide affiché)', async () => {
     mockedApi.getDashboardSummary.mockResolvedValue({ ...EMPTY_SUMMARY, budgetsResume: [] });
     mockedApi.listAccounts.mockResolvedValue([{ id: 'acc-1', name: 'Compte SG', soldeCourant: 0 }]);
     mockedApi.listIncomeSources.mockResolvedValue([{ id: 'inc-1', label: 'Salaire' }]);
     await render(<HomeScreen />);
 
-    await waitFor(() => screen.getByText('DISPONIBLE LIBRE'));
-    expect(screen.queryByText('MES BUDGETS')).toBeNull();
+    await waitFor(() => screen.getByText("SITUATION PILOTÉE AUJOURD'HUI"));
+    expect(screen.queryByText('Mes budgets')).toBeNull();
   });
 });
 
@@ -359,7 +378,9 @@ describe('Accueil — priorité des plans intègre l\'échéance (correctif post
         {
           id: 'plan-loin',
           label: 'Voyage lointain',
+          planType: 'travel' as const,
           knownPlanCost: 60000,
+          paidAmount: 0,
           remainingDue: 50000,
           provisionCoverage: 5000,
           tauxCouverture: 10,
@@ -370,7 +391,9 @@ describe('Accueil — priorité des plans intègre l\'échéance (correctif post
         {
           id: 'plan-proche',
           label: 'École échéance demain',
+          planType: 'school' as const,
           knownPlanCost: 1000,
+          paidAmount: 0,
           remainingDue: 500,
           provisionCoverage: 500,
           tauxCouverture: 50,
@@ -395,7 +418,9 @@ describe('Accueil — priorité des plans intègre l\'échéance (correctif post
         {
           id: 'plan-a-venir',
           label: 'À venir',
+          planType: 'other' as const,
           knownPlanCost: 100000,
+          paidAmount: 0,
           remainingDue: 100000,
           provisionCoverage: 0,
           tauxCouverture: 0,
@@ -406,7 +431,9 @@ describe('Accueil — priorité des plans intègre l\'échéance (correctif post
         {
           id: 'plan-retard',
           label: 'En retard',
+          planType: 'other' as const,
           knownPlanCost: 100,
+          paidAmount: 0,
           remainingDue: 100,
           provisionCoverage: 50,
           tauxCouverture: 50,
@@ -425,9 +452,36 @@ describe('Accueil — priorité des plans intègre l\'échéance (correctif post
   });
 });
 
+/**
+ * Maquette 3 §4 — mapping strict de l'icône selon planType, jamais une
+ * déduction par mots-clés dans le libellé, jamais un type inventé.
+ */
+describe('Accueil — icônes des plans (Maquette 3 §4)', () => {
+  it('school → 🎓, travel → ✈️, other → 📁, jamais déduit du libellé', async () => {
+    mockedApi.getDashboardSummary.mockResolvedValue({
+      ...EMPTY_SUMMARY,
+      financialPlansResume: [
+        { id: 'p-school', label: 'École', planType: 'school' as const, knownPlanCost: 100, paidAmount: 0, remainingDue: 100, provisionCoverage: 0, tauxCouverture: 0, nextDeadlineDate: null, hasOverdue: false, completude: 'complet' },
+        { id: 'p-travel', label: 'Voyage', planType: 'travel' as const, knownPlanCost: 100, paidAmount: 0, remainingDue: 100, provisionCoverage: 0, tauxCouverture: 0, nextDeadlineDate: null, hasOverdue: false, completude: 'complet' },
+        { id: 'p-maison', label: 'Maison (libellé trompeur)', planType: 'other' as const, knownPlanCost: 100, paidAmount: 0, remainingDue: 100, provisionCoverage: 0, tauxCouverture: 0, nextDeadlineDate: null, hasOverdue: false, completude: 'complet' },
+      ],
+    });
+    mockedApi.listAccounts.mockResolvedValue([]);
+    await render(<HomeScreen />);
+
+    await waitFor(() => screen.getByTestId('home-plan-p-school'));
+    expect(screen.getByText('🎓')).toBeTruthy();
+    expect(screen.getByText('✈️')).toBeTruthy();
+    expect(screen.getByText('📁')).toBeTruthy();
+    // "Maison" dans le libellé n'a jamais produit l'icône 🏠 (pas de déduction par mots-clés).
+    expect(screen.queryByText('🏠')).toBeNull();
+  });
+});
+
 /** Correctif post-Vague 3 (point 2) — le seuil "très proche" (orange) de l'accueil doit
  * refléter seuil_a_payer_days du foyer (déjà chargé avec le dashboard), jamais une
- * valeur codée en dur, pour rester cohérent quel que soit le seuil configuré. */
+ * valeur codée en dur, pour rester cohérent quel que soit le seuil configuré. Depuis
+ * la passe Maquette 3, l'urgence colore le FOND de la pastille date, plus le texte. */
 describe('Accueil — seuil "très proche" suit seuil_a_payer_days du foyer (correctif post-Vague 3)', () => {
   const deadlineDueIn10Days = {
     id: 'd-seuil',
@@ -438,6 +492,12 @@ describe('Accueil — seuil "très proche" suit seuil_a_payer_days du foyer (cor
     resteAPayer: 1000,
     coverageStatus: 'non_couverte' as const,
   };
+
+  function pillBackgroundColor(id: string): string | undefined {
+    const pill = screen.getByTestId(`deadline-date-pill-${id}`);
+    const flat = [pill.props.style].flat();
+    return flat.find((s: any) => s?.backgroundColor)?.backgroundColor;
+  }
 
   it('avec seuil_a_payer_days=14, une échéance à 10 jours est classée "très proche" (orange)', async () => {
     mockedApi.getDashboardSummary.mockResolvedValue({
@@ -450,11 +510,7 @@ describe('Accueil — seuil "très proche" suit seuil_a_payer_days du foyer (cor
     await render(<HomeScreen />);
 
     await waitFor(() => screen.getByText('Échéance à 10 jours'));
-    const dateText = screen.getByText(
-      new Date(deadlineDueIn10Days.dueDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }),
-    );
-    const style = [dateText.props.style].flat();
-    expect(style.some((s: any) => s?.color === '#B8860B')).toBe(true);
+    expect(pillBackgroundColor('d-seuil')).toBe('#B8860B');
   });
 
   it('avec seuil_a_payer_days=7 (défaut), la même échéance à 10 jours reste neutre (pas encore "très proche")', async () => {
@@ -468,12 +524,7 @@ describe('Accueil — seuil "très proche" suit seuil_a_payer_days du foyer (cor
     await render(<HomeScreen />);
 
     await waitFor(() => screen.getByText('Échéance à 10 jours'));
-    const dateText = screen.getByText(
-      new Date(deadlineDueIn10Days.dueDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }),
-    );
-    const style = [dateText.props.style].flat();
-    expect(style.some((s: any) => s?.color === '#B8860B')).toBe(false);
-    expect(style.some((s: any) => s?.color === '#172436')).toBe(true);
+    expect(pillBackgroundColor('d-seuil')).toBe('#172436');
   });
 });
 
@@ -501,7 +552,7 @@ describe('Accueil — bandeau de configuration intelligent (§13)', () => {
     mockedApi.listIncomeSources.mockResolvedValue([{ id: 'inc-1', label: 'Salaire' }]);
     await render(<HomeScreen />);
 
-    await waitFor(() => screen.getByText('DISPONIBLE LIBRE'));
+    await waitFor(() => screen.getByText("SITUATION PILOTÉE AUJOURD'HUI"));
     expect(screen.queryByTestId('config-banner')).toBeNull();
     expect(screen.queryByText('Terminer ma configuration →')).toBeNull();
   });
@@ -523,7 +574,7 @@ describe('Accueil — bandeau de configuration intelligent (§13)', () => {
     mockedApi.getMyHousehold.mockResolvedValue({ id: 'h1', settings: { homeBannerDismissed: true } });
     await render(<HomeScreen />);
 
-    await waitFor(() => screen.getByText('DISPONIBLE LIBRE'));
+    await waitFor(() => screen.getByText("SITUATION PILOTÉE AUJOURD'HUI"));
     expect(screen.queryByTestId('config-banner')).toBeNull();
   });
 
@@ -560,12 +611,11 @@ describe('Accueil — bandeau de configuration intelligent (§13)', () => {
 });
 
 /**
- * R5 clôture Home §2 — ordre des blocs validé : Situation pilotée aujourd'hui →
- * Mes comptes → Mes budgets → Mes plans financiers → Échéances importantes →
- * Projection. "Situation pilotée aujourd'hui" (disponible libre) doit précéder
- * "Mes comptes", jamais l'inverse.
+ * R5 clôture Home §2 / Maquette 3 §7 — ordre des blocs validé : Situation pilotée
+ * aujourd'hui → Mes comptes → Mes budgets → Mes plans financiers → Échéances
+ * importantes → Projection, avec les titres de section en casse normale.
  */
-describe('Accueil — ordre des blocs (R5 clôture Home §2)', () => {
+describe('Accueil — ordre des blocs (R5 clôture Home §2, Maquette 3)', () => {
   it("les 6 blocs apparaissent dans l'arbre rendu dans l'ordre validé : Situation pilotée → Comptes → Budgets → Plans → Échéances → Projection", async () => {
     mockedApi.getDashboardSummary.mockResolvedValue({
       ...EMPTY_SUMMARY,
@@ -574,7 +624,9 @@ describe('Accueil — ordre des blocs (R5 clôture Home §2)', () => {
         {
           id: 'p1',
           label: 'École 2026/2027',
+          planType: 'school' as const,
           knownPlanCost: 1000,
+          paidAmount: 200,
           remainingDue: 500,
           provisionCoverage: 500,
           tauxCouverture: 50,
@@ -598,7 +650,7 @@ describe('Accueil — ordre des blocs (R5 clôture Home §2)', () => {
     });
     mockedApi.listAccounts.mockResolvedValue([{ id: 'acc-1', name: 'Compte SG', soldeCourant: 1000 }]);
     const { toJSON } = await render(<HomeScreen />);
-    await waitFor(() => screen.getByText('DANS 30 JOURS'));
+    await waitFor(() => screen.getByTestId('home-projection-card'));
 
     // react-test-renderer JSON contient des références circulaires (_owner/return) :
     // un JSON.stringify direct échoue, donc on les élague explicitement ici (jamais
@@ -611,7 +663,7 @@ describe('Accueil — ordre des blocs (R5 clôture Home §2)', () => {
       }
       return value;
     });
-    const order = ["SITUATION PILOTÉE AUJOURD'HUI", 'MES COMPTES', 'MES BUDGETS', 'MES PLANS', 'PROCHAINEMENT', 'DANS 30 JOURS'];
+    const order = ["SITUATION PILOTÉE AUJOURD'HUI", 'Mes comptes', 'Mes budgets', 'Mes plans financiers', 'Échéances importantes', 'Projection'];
     const positions = order.map((title) => {
       const index = text.indexOf(title);
       expect(index).toBeGreaterThan(-1);

@@ -79,6 +79,40 @@ describe('Vague 3 — accueil-cockpit : champs dashboard enrichis (e2e)', () => 
     expect(item.coverageStatus).toBe('partielle');
   });
 
+  /**
+   * Passe visuelle Home (Maquette 3) — financialPlansResume expose désormais
+   * paidAmount/planType : simple passthrough de champs déjà calculés/stockés
+   * (detailOnTx.paidAmount, FinancialPlan.planType), jamais un second calcul.
+   */
+  it('financialPlansResume expose paidAmount (déjà calculé) et planType (déjà stocké)', async () => {
+    const { auth } = await newHousehold();
+    const account = await http.post('/accounts').set(...auth()).send({ name: 'BP paidAmount', type: 'courant', initialBalance: 20000 }).expect(201);
+    const category = await http.post('/categories').set(...auth()).send({ name: 'École paidAmount', kind: 'expense' }).expect(201);
+    const plan = await http
+      .post('/financial-plans')
+      .set(...auth())
+      .send({ label: 'École paidAmount', periodStart: '2026-09-01', periodEnd: '2027-06-30' })
+      .expect(201);
+    const cp = await http
+      .post('/charge-plans')
+      .set(...auth())
+      .send({ label: 'Scolarité', categoryId: category.body.id, generationMode: 'calendrier_manuel', financialPlanId: plan.body.id, startDate: '2026-09-01' })
+      .expect(201);
+    const deadline = await http
+      .post(`/charge-plans/${cp.body.id}/deadlines`)
+      .set(...auth())
+      .send({ dueDate: '2026-09-30', amountCurrent: 10000, amountStatus: 'confirme' })
+      .expect(201);
+    await http.post(`/deadlines/${deadline.body.id}/payments`).set(...auth()).send({ amount: 3000, accountId: account.body.id }).expect(201);
+
+    const dashboard = await http.get('/dashboard/summary').set(...auth()).expect(200);
+    const planResume = dashboard.body.financialPlansResume.find((p: { id: string }) => p.id === plan.body.id);
+    expect(planResume.paidAmount).toBe(3000);
+    // Passthrough du champ tel quel (créé sans planType explicite ici — hors périmètre
+    // de ce lot, les wizards école/voyage le renseignent ailleurs) : simplement présent.
+    expect(planResume.planType).toBe(plan.body.planType);
+  });
+
   it('deadlineItems marque "couverte" quand la provision couvre tout, "non_couverte" sans provision', async () => {
     const { auth } = await newHousehold();
     const bp = await http.post('/accounts').set(...auth()).send({ name: 'BP couverte', type: 'courant', initialBalance: 10000 }).expect(201);

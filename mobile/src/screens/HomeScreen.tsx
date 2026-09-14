@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { useBottomInset } from '../ui/useBottomInset';
 import { ChoiceSheet } from '../ui/ChoiceSheet';
-import { colors, elevation, radius, spacing } from '../ui/theme';
+import { accountCardPalette, colors, elevation, radius, spacing } from '../ui/theme';
 import { temporalStatus, temporalStatusColor } from '../ui/temporalStatus';
 
 interface Account {
@@ -54,7 +54,9 @@ interface BudgetResume {
 interface FinancialPlanResume {
   id: string;
   label: string;
+  planType: 'school' | 'travel' | 'other';
   knownPlanCost: number;
+  paidAmount: number;
   remainingDue: number;
   provisionCoverage: number;
   tauxCouverture: number | null;
@@ -115,6 +117,14 @@ const PROJECTION_STATUS_COLOR: Record<DashboardSummary['next_30_days']['status']
   INCOMPLETE: colors.textSecondary,
 };
 
+// Maquette 3 §4 — mapping strict, jamais une déduction par mots-clés dans le libellé :
+// seul planType (school|travel|other, seules valeurs du modèle) décide l'icône.
+const PLAN_TYPE_ICON: Record<FinancialPlanResume['planType'], string> = {
+  school: '🎓',
+  travel: '✈️',
+  other: '📁',
+};
+
 /**
  * §19 — un foyer tout juste créé (aucun compte ET aucune autre donnée) n'est plus
  * "empty" pour un motif technique (ex. un compte à 0 DH volontairement) : on
@@ -166,17 +176,6 @@ function urgencyColor(dueDate: string, seuilAPayerDays: number): string {
   return temporalStatusColor(temporalStatus(dueDate, seuilAPayerDays));
 }
 
-// Correctif post-Vague 3 — règle déterministe et documentée à 5 niveaux, réutilisant
-// EXCLUSIVEMENT des champs déjà calculés côté backend (FinancialPlansService.detailOnTx) :
-// jamais de logique métier parallèle recalculée ici. Un plan avec une échéance ouverte
-// proche (ex. demain) ne doit jamais être masqué par un plan moins urgent uniquement
-// parce que son reste à financer est supérieur — d'où la proximité d'échéance en tête,
-// avant le montant :
-//  1) retard (échéance ouverte dépassée) d'abord ;
-//  2) puis échéance ouverte la plus proche (null = aucune échéance ouverte, en dernier) ;
-//  3) puis reste à financer décroissant ;
-//  4) puis taux de couverture croissant (le moins couvert = le plus urgent) ;
-//  5) tie-breaker stable par id (jamais l'ordre de création/réponse API).
 /**
  * Lot 3 — priorité des "budgets clés" affichés en accueil, réutilisant
  * EXCLUSIVEMENT des champs déjà calculés côté backend (variable-budget.util.ts) :
@@ -208,6 +207,17 @@ function prioritizeBudgets(budgets: BudgetResume[]): BudgetResume[] {
   });
 }
 
+// Correctif post-Vague 3 — règle déterministe et documentée à 5 niveaux, réutilisant
+// EXCLUSIVEMENT des champs déjà calculés côté backend (FinancialPlansService.detailOnTx) :
+// jamais de logique métier parallèle recalculée ici. Un plan avec une échéance ouverte
+// proche (ex. demain) ne doit jamais être masqué par un plan moins urgent uniquement
+// parce que son reste à financer est supérieur — d'où la proximité d'échéance en tête,
+// avant le montant :
+//  1) retard (échéance ouverte dépassée) d'abord ;
+//  2) puis échéance ouverte la plus proche (null = aucune échéance ouverte, en dernier) ;
+//  3) puis reste à financer décroissant ;
+//  4) puis taux de couverture croissant (le moins couvert = le plus urgent) ;
+//  5) tie-breaker stable par id (jamais l'ordre de création/réponse API).
 function prioritizePlans(plans: FinancialPlanResume[]): FinancialPlanResume[] {
   return [...plans].sort((a, b) => {
     if (a.hasOverdue !== b.hasOverdue) return a.hasOverdue ? -1 : 1;
@@ -230,10 +240,82 @@ function prioritizePlans(plans: FinancialPlanResume[]): FinancialPlanResume[] {
 }
 
 /**
- * Accueil = cockpit (Vague 3 §7-17). 2 appels API au chargement : GET
- * /dashboard/summary (tout le financier) + GET /accounts (bloc "Ma situation",
- * absent du résumé dashboard) — jamais de boucle N+1, jamais un recalcul mobile
- * de ce que le backend a déjà calculé.
+ * Donut de consommation (Maquette 3 §3/§9) — aucune librairie de rendu vectoriel
+ * disponible dans cet environnement (installation réseau bloquée) : reproduit un
+ * anneau de progression à partir de Views pures (technique "deux demi-cercles
+ * pivotants", standard pour ce cas sans SVG/dégradé conique natif). `pct` est la
+ * valeur RÉELLE déjà calculée côté backend (consommé/plafond) — seul l'anneau visuel
+ * est borné à [0,100] (un cercle ne peut pas dépasser un tour plein), jamais le texte
+ * affiché, qui reste le pourcentage réel.
+ */
+function Donut({ size, pct, warn }: { size: number; pct: number; warn: boolean }) {
+  const clamped = Math.max(0, Math.min(100, pct));
+  const angle = (clamped / 100) * 360;
+  const rightAngle = Math.min(angle, 180);
+  const leftAngle = Math.max(angle - 180, 0);
+  const fill = warn ? colors.warning : colors.success;
+  const track = warn ? colors.donutTrackWarn : colors.donutTrack;
+  const r = size / 2;
+  const hole = size * 0.68;
+
+  return (
+    <View style={{ width: size, height: size, borderRadius: r, backgroundColor: track, overflow: 'hidden' }}>
+      <View style={{ position: 'absolute', top: 0, left: r, width: r, height: size, overflow: 'hidden' }}>
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: -r,
+            width: size,
+            height: size,
+            borderRadius: r,
+            overflow: 'hidden',
+            transform: [{ rotate: `${rightAngle - 180}deg` }],
+          }}
+        >
+          <View style={{ position: 'absolute', top: 0, left: r, width: r, height: size, backgroundColor: fill }} />
+        </View>
+      </View>
+      <View style={{ position: 'absolute', top: 0, left: 0, width: r, height: size, overflow: 'hidden' }}>
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: size,
+            height: size,
+            borderRadius: r,
+            overflow: 'hidden',
+            transform: [{ rotate: `${leftAngle}deg` }],
+          }}
+        >
+          <View style={{ position: 'absolute', top: 0, left: r, width: r, height: size, backgroundColor: fill }} />
+        </View>
+      </View>
+      <View
+        style={{
+          position: 'absolute',
+          top: (size - hole) / 2,
+          left: (size - hole) / 2,
+          width: hole,
+          height: hole,
+          borderRadius: hole / 2,
+          backgroundColor: colors.surface,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Text style={{ fontSize: 15, fontWeight: '800', color: colors.textPrimary }}>{Math.round(pct)}%</Text>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Accueil = cockpit (Vague 3 §7-17, passe visuelle Maquette 3). 2 appels API au
+ * chargement : GET /dashboard/summary (tout le financier) + GET /accounts (bloc
+ * "Mes comptes", absent du résumé dashboard) — jamais de boucle N+1, jamais un
+ * recalcul mobile de ce que le backend a déjà calculé.
  */
 export function HomeScreen() {
   const navigation = useNavigation<any>();
@@ -243,8 +325,11 @@ export function HomeScreen() {
   const [incomeSourcesCount, setIncomeSourcesCount] = useState(0);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [dismissChoiceOpen, setDismissChoiceOpen] = useState(false);
-  const [freeAvailableInfoOpen, setFreeAvailableInfoOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Maquette 3 §2 — masquage local du montant des comptes hors pilotage, état UI
+  // pur (jamais persisté, jamais une règle backend) : réinitialisé à chaque
+  // chargement d'écran, comme n'importe quel état d'affichage éphémère.
+  const [revealedAccountIds, setRevealedAccountIds] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -340,110 +425,109 @@ export function HomeScreen() {
             ]}
           />
 
-          {/* Bloc 1 — Situation pilotée aujourd'hui (ordre Home validé : ce bloc
-              vient AVANT les comptes). §14 (recette téléphone réel) : le
-              disponible libre est l'élément PRINCIPAL (en tête, gros chiffre) —
-              Trésorerie/Réservé/Engagé/Coussin ne sont que des informations
-              secondaires compactes en dessous, jamais au même poids visuel. */}
-          <View style={styles.block}>
-            <Text style={styles.blockTitle}>SITUATION PILOTÉE AUJOURD'HUI</Text>
-            <View style={styles.freeAvailableHero}>
-              <View style={styles.freeAvailableHeroRow}>
-                <Text style={styles.freeAvailableLabel}>DISPONIBLE LIBRE</Text>
-                <TouchableOpacity testID="free-available-info" onPress={() => setFreeAvailableInfoOpen((v) => !v)}>
-                  <Text style={styles.infoIcon}>ⓘ</Text>
-                </TouchableOpacity>
+          {/* Bloc 1 — Situation pilotée aujourd'hui (Maquette 3 §1) : carte héro
+              sombre, montant principal = trésorerie pilotée (comptes inclus dans
+              le pilotage), 2 mini-métriques uniquement (Fin de période / Disponible
+              après engagements — champs déjà fournis, aucun nouveau calcul).
+              Jamais de sparkline fictive : aucune série historique réelle
+              n'existe, l'espace est simplement omis. */}
+          <View style={styles.hero}>
+            <Text style={styles.heroLabel}>SITUATION PILOTÉE AUJOURD'HUI</Text>
+            <Text style={styles.heroAmount}>{summary.operational_treasury.toLocaleString('fr-FR')} DH</Text>
+            <Text style={styles.heroSubtitle}>Comptes inclus dans votre pilotage financier</Text>
+            {!summary.is_complete && (
+              <Text style={styles.heroWarning}>⚠ Calcul incomplet — {summary.unknown_commitments_count} montant(s) encore inconnu(s).</Text>
+            )}
+            <View style={styles.heroMiniRow}>
+              <View style={styles.heroMini}>
+                <Text style={styles.heroMiniLabel}>Fin de période</Text>
+                <Text style={styles.heroMiniValue}>{summary.next_30_days.closing_physical_treasury.toLocaleString('fr-FR')} DH</Text>
               </View>
-              <Text style={[styles.freeAvailableValue, summary.free_available < 0 && styles.negative]}>
-                {summary.free_available.toLocaleString('fr-FR')} DH
-              </Text>
-              {freeAvailableInfoOpen && (
-                <Text style={styles.infoText}>
-                  Votre disponible libre tient compte de l'argent réservé et de votre coussin de sécurité, jusqu'au{' '}
-                  {formatLongDate(summary.horizon_date)}
-                  {summary.horizon_is_fallback ? ' (aucun revenu prévu connu, horizon par défaut)' : ' (prochain revenu prévu)'}.
-                </Text>
-              )}
-              {!summary.is_complete && (
-                <Text style={styles.warning}>⚠ Calcul incomplet — {summary.unknown_commitments_count} montant(s) encore inconnu(s).</Text>
-              )}
-            </View>
-            <View style={styles.breakdownDivider} />
-            <View style={styles.breakdownRow}>
-              <Text style={styles.breakdownLabel}>Trésorerie</Text>
-              <Text style={styles.breakdownValue}>{summary.operational_treasury.toLocaleString('fr-FR')} DH</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.breakdownRow}
-              testID="home-engaged-row"
-              onPress={() =>
-                navigation.getParent()?.navigate('EngagedDetail', {
-                  committedAmount: summary.committed_amount,
-                  deadlineItems: summary.deadlineItems,
-                  variableBudgetItems: summary.variableBudgetItems,
-                  horizonDate: summary.horizon_date,
-                  horizonIsFallback: summary.horizon_is_fallback,
-                })
-              }
-            >
-              <Text style={styles.breakdownLabel}>Engagé ›</Text>
-              <Text style={styles.breakdownValue}>{summary.committed_amount.toLocaleString('fr-FR')} DH</Text>
-            </TouchableOpacity>
-            <View style={styles.breakdownRow}>
-              <Text style={styles.breakdownLabel}>Réservé</Text>
-              <Text style={styles.breakdownValue}>{summary.reserved_amount.toLocaleString('fr-FR')} DH</Text>
-            </View>
-            <View style={styles.breakdownRow}>
-              <Text style={styles.breakdownLabel}>Coussin</Text>
-              <Text style={styles.breakdownValue}>{summary.safety_buffer.toLocaleString('fr-FR')} DH</Text>
+              {/* La ligne "Engagé" (EngagedDetail) n'a plus de rangée dédiée dans le
+                  héro (2 mini-métriques strictement, Maquette 3) : cette carte reste
+                  l'accès à ce détail, cohérent avec ce qu'elle affiche (le disponible
+                  net des engagements) — aucune fonctionnalité supprimée. */}
+              <TouchableOpacity
+                style={styles.heroMini}
+                testID="home-engaged-row"
+                onPress={() =>
+                  navigation.getParent()?.navigate('EngagedDetail', {
+                    committedAmount: summary.committed_amount,
+                    deadlineItems: summary.deadlineItems,
+                    variableBudgetItems: summary.variableBudgetItems,
+                    horizonDate: summary.horizon_date,
+                    horizonIsFallback: summary.horizon_is_fallback,
+                  })
+                }
+              >
+                <Text style={styles.heroMiniLabel}>Disponible après engagements</Text>
+                <Text style={styles.heroMiniValue}>{summary.free_available.toLocaleString('fr-FR')} DH</Text>
+              </TouchableOpacity>
             </View>
           </View>
 
-          {/* Bloc 2 — Mes comptes */}
+          {/* Bloc 2 — Mes comptes (Maquette 3 §2) : cartes colorées compactes,
+              montant masqué par défaut pour un compte hors pilotage (icône œil,
+              état purement local). */}
           {accounts.length > 0 && (
-            <View style={styles.block}>
-              <Text style={styles.blockTitle}>MES COMPTES</Text>
-              {accounts.slice(0, 4).map((a) => (
-                <TouchableOpacity key={a.id} style={styles.accountRow} onPress={() => navigation.getParent()?.navigate('AccountDetail', { id: a.id })}>
-                  <View style={{ flexShrink: 1 }}>
-                    <Text style={styles.accountName}>{a.name}</Text>
-                    {/* R6.1 §10 — badge discret : compte visible, seulement exclu des calculs. */}
-                    {!a.includeInOperationalTreasury && <Text style={styles.offPilotBadge}>Hors pilotage</Text>}
-                  </View>
-                  <Text style={styles.accountAmount}>{a.soldeCourant.toLocaleString('fr-FR')} DH</Text>
+            <View style={styles.sec}>
+              <View style={styles.sectionHead}>
+                <Text style={styles.sectionTitle}>Mes comptes</Text>
+                <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Accounts')}>
+                  <Text style={styles.sectionLink}>Gérer</Text>
                 </TouchableOpacity>
-              ))}
-              {/* R6.3 (point D) — le montant PRINCIPAL de ce bloc ne compte que
-                  les comptes pilotés (includeInOperationalTreasury=true),
-                  jamais le patrimoine global : c'est operational_treasury, pas
-                  patrimoine_liquide_total, qui alimente déjà tous les calculs
-                  (Disponible libre, Engagé...) — cette hiérarchie visuelle rend
-                  simplement explicite ce qui était déjà vrai côté moteur. Le
-                  patrimoine global reste affiché, en second, jamais recalculé
-                  ailleurs. */}
-              <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Trésorerie pilotée</Text>
-                <Text style={styles.totalValue} testID="home-piloted-total">{summary.operational_treasury.toLocaleString('fr-FR')} DH</Text>
               </View>
+              <View style={styles.grid2}>
+                {accounts.slice(0, 4).map((a, i) => {
+                  const masked = !a.includeInOperationalTreasury && !revealedAccountIds[a.id];
+                  return (
+                    <TouchableOpacity
+                      key={a.id}
+                      style={[styles.accountCard, { backgroundColor: accountCardPalette[i % accountCardPalette.length] }]}
+                      onPress={() => navigation.getParent()?.navigate('AccountDetail', { id: a.id })}
+                    >
+                      <View style={styles.accountCardTopRow}>
+                        <Text style={styles.accountCardName} numberOfLines={1}>
+                          {a.name}
+                        </Text>
+                        {!a.includeInOperationalTreasury && (
+                          <TouchableOpacity
+                            testID={`account-reveal-${a.id}`}
+                            onPress={() => setRevealedAccountIds((prev) => ({ ...prev, [a.id]: !prev[a.id] }))}
+                          >
+                            <Ionicons name={masked ? 'eye-outline' : 'eye-off-outline'} size={16} color="#fff" />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                      <Text style={styles.accountCardAmount}>{masked ? '•••••• DH' : `${a.soldeCourant.toLocaleString('fr-FR')} DH`}</Text>
+                      <Text style={styles.accountCardStatus}>{a.includeInOperationalTreasury ? 'Piloté' : 'Hors pilotage'}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              {/* Dernier cadrage Home — la ligne "Trésorerie pilotée" (doublon du
+                  montant déjà affiché en tête du héro) est retirée ici ; le
+                  patrimoine global reste affiché en secondaire, jamais recalculé. */}
               <View style={styles.totalRowSecondary}>
                 <Text style={styles.totalLabelSecondary}>Patrimoine total (avec hors pilotage)</Text>
                 <Text style={styles.totalValueSecondary} testID="home-global-total">{summary.patrimoine_liquide_total.toLocaleString('fr-FR')} DH</Text>
               </View>
-              <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Accounts')}>
-                <Text style={styles.linkText}>Voir mes comptes →</Text>
-              </TouchableOpacity>
             </View>
           )}
 
-          {/* Bloc 3 — Mes budgets (Lot 3). Ordre Home validé : Situation pilotée
-              → Comptes → Budgets → Plans → Échéances → Projection. Réutilise
-              EXCLUSIVEMENT les champs déjà calculés côté backend
-              (dashboard.service.ts.budgetsResume) — aucun recalcul mobile. */}
+          {/* Bloc 3 — Mes budgets (Maquette 3 §3, Lot 3). Donut réel (consommé/
+              plafond, déjà calculé), max 3, priorité déjà validée. */}
           {topBudgets.length > 0 && (
-            <View style={styles.block}>
-              <Text style={styles.blockTitle}>MES BUDGETS</Text>
+            <View style={styles.sec}>
+              <View style={styles.sectionHead}>
+                <Text style={styles.sectionTitle}>Mes budgets</Text>
+                <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Budgets')}>
+                  <Text style={styles.sectionLink}>Voir tous</Text>
+                </TouchableOpacity>
+              </View>
               {topBudgets.map((b) => {
-                const ratio = b.status.budgetPeriode > 0 ? Math.min(b.status.consommeADate / b.status.budgetPeriode, 1) : 0;
+                const pct = b.status.budgetPeriode > 0 ? (b.status.consommeADate / b.status.budgetPeriode) * 100 : 0;
+                const warn = b.status.healthStatus === 'depasse' || b.status.healthStatus === 'proche_limite';
                 return (
                   <TouchableOpacity
                     key={b.id}
@@ -451,123 +535,144 @@ export function HomeScreen() {
                     style={styles.budgetCard}
                     onPress={() => navigation.getParent()?.navigate('BudgetDetail', { id: b.id })}
                   >
-                    <View style={styles.budgetHeaderRow}>
+                    <Donut size={64} pct={pct} warn={warn} />
+                    <View style={{ flex: 1, marginLeft: spacing.md }}>
                       <Text style={styles.budgetLabel}>{b.categoryName}</Text>
                       <Text style={styles.budgetAmounts}>
                         {b.status.consommeADate.toLocaleString('fr-FR')} / {b.status.budgetPeriode.toLocaleString('fr-FR')} DH
                       </Text>
+                      {b.status.rythmeAlerte ? (
+                        <Text style={styles.rythmeAlertBadge} testID={`home-budget-rythme-alerte-${b.id}`}>
+                          ⚠ Rythme élevé pour la période
+                        </Text>
+                      ) : (
+                        <Text style={styles.budgetRemaining}>{b.status.budgetContractuelRestant.toLocaleString('fr-FR')} DH restent à consommer</Text>
+                      )}
                     </View>
-                    {/* Backlog UI module Budgets : remplacer/compléter cette barre par
-                        le rendu donut validé, lors de la passe visuelle finale Home/Budgets. */}
-                    <View style={styles.progressTrack}>
-                      <View style={[styles.progressFill, { width: `${ratio * 100}%` }]} />
-                    </View>
-                    <Text style={styles.budgetRemaining}>Restant : {b.status.budgetContractuelRestant.toLocaleString('fr-FR')} DH</Text>
-                    {b.status.rythmeAlerte && (
-                      <Text style={styles.rythmeAlertBadge} testID={`home-budget-rythme-alerte-${b.id}`}>
-                        ⚠ Rythme élevé — {Math.round(b.status.consumptionRatio * 100)}% consommé pour{' '}
-                        {Math.round(b.status.elapsedRatio * 100)}% de période écoulée
-                      </Text>
-                    )}
                   </TouchableOpacity>
                 );
               })}
-              <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Budgets')}>
-                <Text style={styles.linkText}>Voir tous →</Text>
-              </TouchableOpacity>
             </View>
           )}
 
-          {/* Bloc 4 — Mes plans financiers */}
+          {/* Bloc 4 — Mes plans financiers (Maquette 3 §4) : cartes compactes,
+              icône selon planType (mapping strict), payé/provisionné déjà
+              exposés par le backend (passthrough), barre segmentée. */}
           {topPlans.length > 0 && (
-            <View style={styles.block}>
-              <Text style={styles.blockTitle}>MES PLANS</Text>
-              {topPlans.map((p) => (
-                <TouchableOpacity
-                  key={p.id}
-                  testID={`home-plan-${p.id}`}
-                  style={styles.planCard}
-                  onPress={() => navigation.getParent()?.navigate('FinancialPlanDetail', { id: p.id })}
-                >
-                  <Text style={styles.planLabel}>{p.label}</Text>
-                  <Text style={styles.planAmounts}>
-                    {p.provisionCoverage.toLocaleString('fr-FR')} / {p.knownPlanCost.toLocaleString('fr-FR')} DH
-                  </Text>
-                  {p.tauxCouverture !== null && (
-                    <>
-                      <Text style={styles.planPercent}>{Math.round(p.tauxCouverture)}% couvert</Text>
-                      <View style={styles.progressTrack}>
-                        <View style={[styles.progressFill, { width: `${Math.min(100, p.tauxCouverture)}%` }]} />
-                      </View>
-                    </>
-                  )}
-                  {p.remainingDue > 0 && <Text style={styles.planRemaining}>Reste à financer : {p.remainingDue.toLocaleString('fr-FR')} DH</Text>}
+            <View style={styles.sec}>
+              <View style={styles.sectionHead}>
+                <Text style={styles.sectionTitle}>Mes plans financiers</Text>
+                <TouchableOpacity onPress={() => navigation.getParent()?.navigate('FinancialPlans')}>
+                  <Text style={styles.sectionLink}>Voir tous</Text>
                 </TouchableOpacity>
-              ))}
-              <TouchableOpacity onPress={() => navigation.getParent()?.navigate('FinancialPlans')}>
-                <Text style={styles.linkText}>Voir tous →</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* Bloc 5 — Échéances importantes (R5 clôture Home §1) : sélection déjà
-              triée par reste à payer décroissant + fenêtre 30 jours fixe, côté
-              backend (summary.topDeadlines) — jamais retriée ici. */}
-          {upcomingDeadlines.length > 0 && (
-            <View style={styles.block}>
-              <Text style={styles.blockTitle}>PROCHAINEMENT</Text>
-              {upcomingDeadlines.map((d) => (
-                <TouchableOpacity key={d.id} style={styles.deadlineRow} onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: d.id })}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.deadlineDate, { color: urgencyColor(d.dueDate, summary.seuil_a_payer_days) }]}>{formatShortDate(d.dueDate)}</Text>
-                    <Text style={styles.deadlineLabel}>{d.chargePlanLabel}</Text>
-                    {d.coverageStatus === 'couverte' && <Text style={styles.coveredBadge}>✓ Couvert</Text>}
-                  </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={styles.deadlineAmount}>
-                      {d.resteAPayer !== null ? `${d.resteAPayer.toLocaleString('fr-FR')} DH` : 'À confirmer'}
-                    </Text>
-                    <TouchableOpacity style={styles.payPill} onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: d.id })}>
-                      <Text style={styles.payPillText}>Payer</Text>
+              </View>
+              <View style={styles.grid2}>
+                {topPlans.map((p) => {
+                  const cost = p.knownPlanCost;
+                  const paidPct = cost > 0 ? Math.max(0, Math.min(100, (p.paidAmount / cost) * 100)) : 0;
+                  const provPct = cost > 0 ? Math.max(0, Math.min(100 - paidPct, (p.provisionCoverage / cost) * 100)) : 0;
+                  return (
+                    <TouchableOpacity
+                      key={p.id}
+                      testID={`home-plan-${p.id}`}
+                      style={styles.planCard}
+                      onPress={() => navigation.getParent()?.navigate('FinancialPlanDetail', { id: p.id })}
+                    >
+                      <Text style={styles.planIcon}>{PLAN_TYPE_ICON[p.planType] ?? PLAN_TYPE_ICON.other}</Text>
+                      <Text style={styles.planLabel} numberOfLines={1}>
+                        {p.label}
+                      </Text>
+                      <Text style={styles.planAmount}>{cost.toLocaleString('fr-FR')} DH</Text>
+                      {/* Dernier cadrage Home — payé/provisionné sur 2 lignes distinctes
+                          plutôt qu'une seule ligne "·" (évite un retour à la ligne en
+                          plein milieu d'un montant sur les cartes étroites). */}
+                      <Text style={styles.planSub}>Payé {p.paidAmount.toLocaleString('fr-FR')} DH</Text>
+                      <Text style={styles.planSub}>Provisionné {p.provisionCoverage.toLocaleString('fr-FR')} DH</Text>
+                      {cost > 0 && (paidPct > 0 || provPct > 0) && (
+                        <View style={styles.planTrack}>
+                          <View style={[styles.planTrackPaid, { width: `${paidPct}%` }]} />
+                          <View style={[styles.planTrackProv, { width: `${provPct}%` }]} />
+                        </View>
+                      )}
+                      {p.remainingDue > 0 && <Text style={styles.planRemaining}>Reste à financer : {p.remainingDue.toLocaleString('fr-FR')} DH</Text>}
                     </TouchableOpacity>
-                  </View>
-                </TouchableOpacity>
-              ))}
-              <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Charges')}>
-                <Text style={styles.linkText}>Voir toutes →</Text>
-              </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
           )}
 
-          {/* Bloc 6 — Projection */}
-          <TouchableOpacity style={styles.block} onPress={() => navigation.getParent()?.navigate('Projection')}>
-            <Text style={styles.blockTitle}>DANS 30 JOURS</Text>
-            <View style={styles.breakdownRow}>
-              <Text style={styles.breakdownLabel}>Trésorerie prévue</Text>
-              <Text style={styles.breakdownValue}>{summary.next_30_days.closing_physical_treasury.toLocaleString('fr-FR')} DH</Text>
+          {/* Bloc 5 — Échéances importantes (R5 clôture Home §1, Maquette 3 §5) :
+              sélection déjà triée par reste à payer décroissant + fenêtre 30 jours
+              fixe côté backend (summary.topDeadlines) — jamais retriée ici. Pastille
+              date, ligne entière tapable (le bouton Payer direct a été retiré, l'action
+              reste disponible dans DeadlineDetailScreen). Pas de contexte secondaire
+              inventé : seul chargePlanLabel est réellement exposé aujourd'hui. */}
+          {upcomingDeadlines.length > 0 && (
+            <View style={styles.sec}>
+              <View style={styles.sectionHead}>
+                <Text style={styles.sectionTitle}>Échéances importantes</Text>
+                <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Charges')}>
+                  <Text style={styles.sectionLink}>Voir toutes</Text>
+                </TouchableOpacity>
+              </View>
+              {upcomingDeadlines.map((d) => {
+                const date = new Date(d.dueDate);
+                const color = urgencyColor(d.dueDate, summary.seuil_a_payer_days);
+                return (
+                  <TouchableOpacity key={d.id} style={styles.timelineItem} onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: d.id })}>
+                    <View style={styles.timelineLeft}>
+                      <View testID={`deadline-date-pill-${d.id}`} style={[styles.datePill, { backgroundColor: color }]}>
+                        <Text style={styles.datePillDay}>{date.getDate()}</Text>
+                        <Text style={styles.datePillMonth}>{date.toLocaleDateString('fr-FR', { month: 'short' }).toUpperCase()}</Text>
+                      </View>
+                      <View style={{ flexShrink: 1 }}>
+                        <Text style={styles.timelineLabel}>{d.chargePlanLabel}</Text>
+                        {d.coverageStatus === 'couverte' && <Text style={styles.coveredBadge}>✓ Couvert</Text>}
+                      </View>
+                    </View>
+                    <Text style={styles.timelineAmount}>{d.resteAPayer !== null ? `${d.resteAPayer.toLocaleString('fr-FR')} DH` : 'À confirmer'}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
-            <View style={styles.breakdownRow}>
-              <Text style={styles.breakdownLabel}>Disponible libre prévu</Text>
-              <Text style={styles.breakdownValue}>{summary.next_30_days.closing_free_capacity.toLocaleString('fr-FR')} DH</Text>
+          )}
+
+          {/* Bloc 6 — Projection : contenu/calculs inchangés (next_30_days déjà
+              fourni par le Dashboard/moteur Projection), seul le style de titre est
+              aligné sur les autres sections. */}
+          <View style={styles.sec}>
+            <View style={styles.sectionHead}>
+              <Text style={styles.sectionTitle}>Projection</Text>
             </View>
-            <View style={styles.breakdownRow}>
-              <Text style={styles.breakdownLabel}>Point bas</Text>
-              <Text style={styles.breakdownValue}>
-                {summary.next_30_days.physical_low_point.toLocaleString('fr-FR')} DH le {formatLongDate(summary.next_30_days.physical_low_point_date)}
+            <TouchableOpacity testID="home-projection-card" style={styles.projectionCard} onPress={() => navigation.getParent()?.navigate('Projection')}>
+              <View style={styles.breakdownRow}>
+                <Text style={styles.breakdownLabel}>Trésorerie prévue</Text>
+                <Text style={styles.breakdownValue}>{summary.next_30_days.closing_physical_treasury.toLocaleString('fr-FR')} DH</Text>
+              </View>
+              <View style={styles.breakdownRow}>
+                <Text style={styles.breakdownLabel}>Disponible libre prévu</Text>
+                <Text style={styles.breakdownValue}>{summary.next_30_days.closing_free_capacity.toLocaleString('fr-FR')} DH</Text>
+              </View>
+              <View style={styles.breakdownRow}>
+                <Text style={styles.breakdownLabel}>Point bas</Text>
+                <Text style={styles.breakdownValue}>
+                  {summary.next_30_days.physical_low_point.toLocaleString('fr-FR')} DH le {formatLongDate(summary.next_30_days.physical_low_point_date)}
+                </Text>
+              </View>
+              <Text style={[styles.projectionStatus, { color: PROJECTION_STATUS_COLOR[summary.next_30_days.status] }]}>
+                {PROJECTION_STATUS_LABEL[summary.next_30_days.status]}
               </Text>
-            </View>
-            <Text style={[styles.projectionStatus, { color: PROJECTION_STATUS_COLOR[summary.next_30_days.status] }]}>
-              {PROJECTION_STATUS_LABEL[summary.next_30_days.status]}
-            </Text>
-            {summary.next_30_days.status === 'DEFICIT_PHYSIQUE' && summary.next_30_days.first_negative_date && (
-              <Text style={styles.warning}>
-                Risque de déficit le {formatLongDate(summary.next_30_days.first_negative_date)}
-                {summary.next_30_days.deficit_at_first_negative !== null
-                  ? ` (${summary.next_30_days.deficit_at_first_negative.toLocaleString('fr-FR')} DH)`
-                  : ''}
-              </Text>
-            )}
-          </TouchableOpacity>
+              {summary.next_30_days.status === 'DEFICIT_PHYSIQUE' && summary.next_30_days.first_negative_date && (
+                <Text style={styles.heroWarning}>
+                  Risque de déficit le {formatLongDate(summary.next_30_days.first_negative_date)}
+                  {summary.next_30_days.deficit_at_first_negative !== null
+                    ? ` (${summary.next_30_days.deficit_at_first_negative.toLocaleString('fr-FR')} DH)`
+                    : ''}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </>
       )}
     </ScrollView>
@@ -593,74 +698,112 @@ const styles = StyleSheet.create({
   configBannerText: { color: colors.textPrimary, fontSize: 13, fontWeight: '700', textAlign: 'center' },
   configBannerClose: { paddingLeft: spacing.md, paddingVertical: spacing.xs },
 
-  block: {
+  // Bloc héro (Maquette 3 §1) — dégradé non disponible (pas de librairie native
+  // installable dans cet environnement) : couleur pleine `heroBackground`,
+  // approximation la plus proche du dégradé navy→teal de la maquette.
+  hero: {
+    backgroundColor: colors.heroBackground,
+    borderRadius: 24,
+    padding: spacing.xl,
+    marginBottom: spacing.lg,
+    ...elevation.raised,
+  },
+  heroLabel: { fontSize: 11, fontWeight: '700', color: colors.heroTextMuted, letterSpacing: 0.5 },
+  heroAmount: { fontSize: 32, fontWeight: '900', color: colors.textOnPrimary, marginTop: spacing.xs },
+  heroSubtitle: { fontSize: 12, color: colors.heroTextMuted, marginTop: 4 },
+  heroWarning: { fontSize: 12, color: '#FFD79A', marginTop: spacing.sm, fontWeight: '600' },
+  heroMiniRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
+  heroMini: { flex: 1, backgroundColor: 'rgba(255,255,255,0.10)', borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: 'rgba(255,255,255,0.13)' },
+  heroMiniLabel: { fontSize: 10, color: colors.heroTextMuted, fontWeight: '700' },
+  heroMiniValue: { fontSize: 16, fontWeight: '800', color: colors.textOnPrimary, marginTop: 4 },
+
+  // Structure de section (Maquette 3 §7) — titre en casse normale + lien aligné à
+  // droite, HORS carte (contrairement à l'ancien bloc englobant) : chaque élément
+  // de la section porte sa propre carte, comme dans la maquette.
+  sec: { marginBottom: spacing.xl },
+  sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
+  sectionLink: { fontSize: 12, fontWeight: '600', color: colors.success },
+
+  grid2: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+
+  accountCard: { width: '48%', borderRadius: radius.xl, padding: spacing.md, marginBottom: spacing.sm, ...elevation.card },
+  accountCardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  accountCardName: { fontSize: 11, color: 'rgba(255,255,255,0.85)', fontWeight: '600', flexShrink: 1, marginRight: spacing.xs },
+  accountCardAmount: { fontSize: 19, fontWeight: '900', color: '#fff', marginTop: spacing.sm },
+  accountCardStatus: { fontSize: 10, color: 'rgba(255,255,255,0.85)', marginTop: 2 },
+
+  totalRowSecondary: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 10 },
+  totalLabelSecondary: { fontSize: 11, color: colors.textSecondary },
+  totalValueSecondary: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+
+  budgetCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.surface,
     borderRadius: radius.xl,
-    padding: spacing.lg,
-    marginBottom: spacing.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
     borderWidth: 1,
     borderColor: colors.borderStrong,
     ...elevation.card,
   },
-  blockTitle: { fontSize: 11, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.5, marginBottom: 10 },
-
-  accountRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },
-  accountName: { fontSize: 13, color: colors.textPrimary, fontWeight: '600' },
-  offPilotBadge: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: colors.textSecondary,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.pill,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginTop: spacing.xs,
-    alignSelf: 'flex-start',
-  },
-  accountAmount: { fontSize: 13, color: colors.textPrimary, fontWeight: '700' },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 10 },
-  totalLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '700' },
-  totalValue: { fontSize: 16, color: colors.textPrimary, fontWeight: '800' },
-  totalRowSecondary: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 4 },
-  totalLabelSecondary: { fontSize: 11, color: colors.textSecondary },
-  totalValueSecondary: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
-  linkText: { color: colors.success, fontSize: 12, fontWeight: '700', marginTop: 10 },
-
-  budgetCard: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.divider },
-  budgetHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   budgetLabel: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
-  budgetAmounts: { fontSize: 12, color: colors.textSecondary },
+  budgetAmounts: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginTop: 2 },
   budgetRemaining: { fontSize: 11, color: colors.textSecondary, marginTop: spacing.xs },
   rythmeAlertBadge: { fontSize: 11, fontWeight: '700', color: colors.warning, marginTop: spacing.xs },
 
   breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.xs },
   breakdownLabel: { fontSize: 12, color: colors.textSecondary },
   breakdownValue: { fontSize: 12, color: colors.textPrimary, fontWeight: '600' },
-  breakdownDivider: { height: 1, backgroundColor: colors.divider, marginBottom: spacing.sm },
-  freeAvailableHero: { marginBottom: spacing.xs },
-  freeAvailableHeroRow: { flexDirection: 'row', alignItems: 'center' },
-  freeAvailableLabel: { fontSize: 12, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.5 },
-  infoIcon: { fontSize: 13, color: colors.textSecondary, marginLeft: 6 },
-  freeAvailableValue: { fontSize: 30, fontWeight: '800', color: colors.textPrimary, marginTop: spacing.xs },
-  negative: { color: colors.danger },
-  infoText: { fontSize: 11, color: colors.textSecondary, marginTop: spacing.sm, fontStyle: 'italic' },
-  warning: { fontSize: 12, color: colors.warning, marginTop: spacing.sm, fontWeight: '600' },
 
-  deadlineRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.divider },
-  deadlineDate: { fontSize: 11, fontWeight: '700' },
-  deadlineLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginTop: 2 },
+  datePill: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md },
+  datePillDay: { fontSize: 14, fontWeight: '900', color: '#fff', lineHeight: 16 },
+  datePillMonth: { fontSize: 9, fontWeight: '800', color: '#fff', lineHeight: 11 },
+
+  timelineItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    ...elevation.card,
+  },
+  timelineLeft: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },
+  timelineLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
   coveredBadge: { fontSize: 10, color: colors.success, fontWeight: '700', marginTop: 2 },
-  deadlineAmount: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
-  payPill: { backgroundColor: colors.primary, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: spacing.xs, marginTop: 6 },
-  payPillText: { color: colors.textOnPrimary, fontSize: 10, fontWeight: '700' },
+  timelineAmount: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
 
-  planCard: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.divider },
-  planLabel: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
-  planAmounts: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  planPercent: { fontSize: 11, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.xs },
-  progressTrack: { height: 6, backgroundColor: colors.surfaceSecondary, borderRadius: 3, overflow: 'hidden', marginTop: spacing.xs },
-  progressFill: { height: '100%', backgroundColor: colors.success },
-  planRemaining: { fontSize: 11, color: colors.textSecondary, marginTop: spacing.xs },
+  planCard: {
+    width: '48%',
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    ...elevation.card,
+  },
+  planIcon: { fontSize: 20, marginBottom: spacing.sm },
+  planLabel: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
+  planAmount: { fontSize: 16, fontWeight: '800', color: colors.textPrimary, marginTop: 2 },
+  planSub: { fontSize: 10, color: colors.textSecondary, marginTop: 2 },
+  planTrack: { height: 8, borderRadius: 4, backgroundColor: colors.surfaceSecondary, overflow: 'hidden', flexDirection: 'row', marginTop: spacing.sm },
+  planTrackPaid: { height: '100%', backgroundColor: colors.success },
+  planTrackProv: { height: '100%', backgroundColor: '#7089DF' },
+  planRemaining: { fontSize: 10, color: colors.textSecondary, marginTop: spacing.xs },
 
+  projectionCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    ...elevation.card,
+  },
   projectionStatus: { fontSize: 12, fontWeight: '800', marginTop: spacing.sm },
 });
