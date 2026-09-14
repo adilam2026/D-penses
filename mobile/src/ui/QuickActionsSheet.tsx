@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
-import { Alert, Modal, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { Modal, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as api from '../api/client';
 import { useQuickActions } from '../state/QuickActionsContext';
 import { ChoiceSheet } from './ChoiceSheet';
 import { useBottomInset } from './useBottomInset';
@@ -16,14 +15,17 @@ interface QuickAction {
   icon: IconName;
 }
 
-// Vague 3 §3 — maximum 6 actions du quotidien, jamais une liste de 15 fonctionnalités.
+// TXT réf. §M1 — 6 actions exactes : Dépense/Revenu/Transfert/Charge récurrente/
+// Budget/Plan. "Alimenter une enveloppe" et "Payer une échéance" ne sont plus des
+// entrées de premier niveau (le moteur Provision reste, mais n'est plus exposé ici
+// comme un concept générique) ; le paiement d'une échéance se fait depuis son détail.
 const ACTIONS: QuickAction[] = [
   { key: 'depense', label: 'Dépense', description: 'Une dépense réelle', icon: 'remove-circle-outline' },
   { key: 'revenu', label: 'Revenu', description: 'Un revenu reçu', icon: 'add-circle-outline' },
-  { key: 'paiement', label: 'Payer une échéance', description: 'Régler une charge existante', icon: 'card-outline' },
-  { key: 'alimenter', label: 'Alimenter une enveloppe', description: 'Mettre de côté', icon: 'wallet-outline' },
-  { key: 'plan', label: 'Créer un plan', description: 'École, voyage...', icon: 'folder-outline' },
   { key: 'transfert', label: 'Transfert', description: 'Entre deux comptes', icon: 'swap-horizontal-outline' },
+  { key: 'charge', label: 'Charge récurrente', description: 'Un engagement régulier', icon: 'receipt-outline' },
+  { key: 'budget', label: 'Budget', description: 'Un seuil de contrôle', icon: 'pie-chart-outline' },
+  { key: 'plan', label: 'Plan', description: 'École, voyage...', icon: 'folder-outline' },
 ];
 
 /**
@@ -34,7 +36,6 @@ const ACTIONS: QuickAction[] = [
 export function QuickActionsSheet() {
   const navigation = useNavigation<any>();
   const { visible, close } = useQuickActions();
-  const [checking, setChecking] = useState<string | null>(null);
   const [planChoiceOpen, setPlanChoiceOpen] = useState(false);
   // R6.3 (point I safe-area) — jamais un paddingBottom codé en dur : la barre
   // système Android (gestes ou 3 boutons) doit toujours être évitée.
@@ -45,40 +46,14 @@ export function QuickActionsSheet() {
     navigation.navigate('QuickAdd', { mode });
   }
 
-  async function onAlimenterEnveloppe() {
-    setChecking('alimenter');
-    try {
-      const [pockets, provisions] = await Promise.all([api.listPockets(), api.listProvisions()]);
-      close();
-      if (pockets.length === 0 && provisions.length === 0) {
-        Alert.alert("Vous n'avez pas encore d'enveloppe.", undefined, [
-          { text: 'Annuler', style: 'cancel' },
-          { text: 'Créer une enveloppe', onPress: () => navigation.navigate('CreatePocket', {}) },
-        ]);
-        return;
-      }
-      navigation.navigate('Enveloppes');
-    } finally {
-      setChecking(null);
-    }
+  function onCreerCharge() {
+    close();
+    navigation.navigate('CreateCharge');
   }
 
-  async function onPayerEcheance() {
-    setChecking('paiement');
-    try {
-      const deadlines = await api.listOpenDeadlines();
-      close();
-      if (deadlines.length === 0) {
-        Alert.alert("Vous n'avez pas encore d'échéance à payer.", undefined, [
-          { text: 'Annuler', style: 'cancel' },
-          { text: 'Créer une charge récurrente', onPress: () => navigation.navigate('Charges') },
-        ]);
-        return;
-      }
-      navigation.navigate('QuickAdd', { mode: 'paiement' });
-    } finally {
-      setChecking(null);
-    }
+  function onCreerBudget() {
+    close();
+    navigation.navigate('CreateBudget');
   }
 
   function onCreerPlan() {
@@ -90,7 +65,6 @@ export function QuickActionsSheet() {
   }
 
   function onPress(key: string) {
-    if (checking) return;
     switch (key) {
       case 'depense':
         return goToQuickAdd('depense');
@@ -98,10 +72,10 @@ export function QuickActionsSheet() {
         return goToQuickAdd('revenu');
       case 'transfert':
         return goToQuickAdd('transfert');
-      case 'paiement':
-        return onPayerEcheance();
-      case 'alimenter':
-        return onAlimenterEnveloppe();
+      case 'charge':
+        return onCreerCharge();
+      case 'budget':
+        return onCreerBudget();
       case 'plan':
         return onCreerPlan();
     }
@@ -118,7 +92,7 @@ export function QuickActionsSheet() {
           <Text style={styles.title}>Ajouter</Text>
           <View style={styles.grid}>
             {ACTIONS.map((a) => (
-              <TouchableOpacity key={a.key} testID={`quick-action-${a.key}`} style={styles.action} onPress={() => onPress(a.key)} disabled={checking === a.key}>
+              <TouchableOpacity key={a.key} testID={`quick-action-${a.key}`} style={styles.action} onPress={() => onPress(a.key)}>
                 <View style={styles.iconCircle}>
                   <Ionicons name={a.icon} size={22} color="#172436" />
                 </View>
@@ -151,6 +125,22 @@ export function QuickActionsSheet() {
             description: "Budget et dépenses d'un voyage",
             icon: 'airplane-outline',
             onPress: () => navigation.navigate('TravelWizard'),
+          },
+          {
+            key: 'maison',
+            label: 'Maison',
+            description: 'Bientôt disponible',
+            icon: 'home-outline',
+            disabled: true,
+            onPress: () => {},
+          },
+          {
+            key: 'voiture',
+            label: 'Voiture',
+            description: 'Bientôt disponible',
+            icon: 'car-outline',
+            disabled: true,
+            onPress: () => {},
           },
         ]}
       />

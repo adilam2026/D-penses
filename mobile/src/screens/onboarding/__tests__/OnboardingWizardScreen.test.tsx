@@ -83,15 +83,21 @@ it("'Plus tard' avance sans appeler skipOnboardingStep", async () => {
 });
 
 it('un compte déjà créé affiche "Ajouter un autre compte" et "Continuer" (pattern multi-création §27)', async () => {
-  mockedApi.listAccounts.mockResolvedValue([{ id: 'a1', name: 'CIH' }]);
+  mockedApi.listAccounts.mockResolvedValue([
+    { id: 'a1', name: 'CIH', type: 'courant', soldeCourant: 5000, includeInOperationalTreasury: true },
+  ]);
   await render(<OnboardingWizardScreen />);
 
   await waitFor(() => expect(screen.getByText('Ajouter un autre compte')).toBeTruthy());
   expect(screen.getByTestId('onboarding-continue')).toBeTruthy();
 });
 
-it('un compte créé entre deux passages sur l\'étape affiche la confirmation "Compte ajouté." (multi-création §27)', async () => {
-  mockedApi.listAccounts.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 'a1', name: 'CIH' }]);
+it("un compte créé affiche la vraie liste des comptes (libellé/type/solde/pilotage), pas un simple compteur (TXT réf. §M)", async () => {
+  mockedApi.listAccounts
+    .mockResolvedValueOnce([])
+    .mockResolvedValueOnce([
+      { id: 'a1', name: 'CIH', type: 'courant', soldeCourant: 5000, includeInOperationalTreasury: true },
+    ]);
   await render(<OnboardingWizardScreen />);
   await waitFor(() => screen.getByText("Rien de configuré pour l'instant"));
 
@@ -99,18 +105,21 @@ it('un compte créé entre deux passages sur l\'étape affiche la confirmation "
   expect(mockNavigate).toHaveBeenCalledWith('QuickCreateAccount', undefined);
 
   // Aller à l'étape suivante puis revenir déclenche un nouveau re-focus sur "Comptes" —
-  // le compteur, re-vérifié en direct, est cette fois passé de 0 à 1 (§26 : jamais stocké).
+  // la liste, re-vérifiée en direct, est cette fois passée de 0 à 1 compte (§26 : jamais stocké).
   await fireEvent.press(screen.getByTestId('onboarding-later'));
   await waitFor(() => screen.getByText('Revenus'));
   await fireEvent.press(screen.getByText('Précédent'));
 
-  await waitFor(() => expect(screen.getByText('✓ Compte ajouté.')).toBeTruthy());
+  await waitFor(() => expect(screen.getByTestId('onboarding-accounts-list')).toBeTruthy());
+  expect(screen.getByText('CIH')).toBeTruthy();
+  expect(screen.getByText('Banque · Piloté')).toBeTruthy();
+  expect(screen.getByText('5 000 DH')).toBeTruthy();
 });
 
-it('parcourir les 7 étapes jusqu\'au bout et appuyer sur "Terminer" referme l\'assistant (onboarding terminé)', async () => {
+it('parcourir les 6 étapes jusqu\'au bout et appuyer sur "Terminer" referme l\'assistant (onboarding terminé)', async () => {
   await render(<OnboardingWizardScreen />);
   await waitFor(() => screen.getByText('Comptes'));
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 5; i++) {
     await fireEvent.press(screen.getByTestId('onboarding-later'));
   }
   await waitFor(() => screen.getByText('Projets importants'));
@@ -118,6 +127,16 @@ it('parcourir les 7 étapes jusqu\'au bout et appuyer sur "Terminer" referme l\'
   await fireEvent.press(screen.getByText('Terminer'));
 
   expect(mockGoBack).toHaveBeenCalled();
+});
+
+it("l'étape générique \"Enveloppes / Épargne\" n'existe plus dans le parcours (TXT réf. §4/§25)", async () => {
+  await render(<OnboardingWizardScreen />);
+  await waitFor(() => screen.getByText('Comptes'));
+  for (let i = 0; i < 5; i++) {
+    await fireEvent.press(screen.getByTestId('onboarding-later'));
+  }
+  await waitFor(() => screen.getByText('Projets importants'));
+  expect(screen.queryByText('Enveloppes / Épargne')).toBeNull();
 });
 
 it('navigation Précédent revient à l\'étape précédente sans perdre la progression', async () => {

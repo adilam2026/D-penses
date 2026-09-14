@@ -215,11 +215,10 @@ describe('Accueil — état configuré (§7-17/§31, Maquette 3)', () => {
     expect(mockNavigate).toHaveBeenCalledWith('Projection');
   });
 
-  it('le bouton ☰ ouvre le menu hamburger', async () => {
+  it("TXT réf. §M1 : le bouton ☰ n'existe plus sur l'Accueil (redondant avec l'onglet \"Plus\")", async () => {
     await render(<HomeScreen />);
-    await waitFor(() => screen.getByTestId('hamburger-menu-button'));
-    await fireEvent.press(screen.getByTestId('hamburger-menu-button'));
-    expect(mockNavigate).toHaveBeenCalledWith('HamburgerMenu');
+    await waitFor(() => screen.getByText("SITUATION PILOTÉE AUJOURD'HUI"));
+    expect(screen.queryByTestId('hamburger-menu-button')).toBeNull();
   });
 
   it('R6.4 (§5 / test I) : le bloc "Actions à traiter" est absent de l\'accueil', async () => {
@@ -616,7 +615,7 @@ describe('Accueil — bandeau de configuration intelligent (§13)', () => {
  * importantes → Projection, avec les titres de section en casse normale.
  */
 describe('Accueil — ordre des blocs (R5 clôture Home §2, Maquette 3)', () => {
-  it("les 6 blocs apparaissent dans l'arbre rendu dans l'ordre validé : Situation pilotée → Comptes → Budgets → Plans → Échéances → Projection", async () => {
+  it("TXT réf. §M1 : les 6 blocs apparaissent dans l'arbre rendu dans l'ordre validé : Comptes → Situation pilotée → Budgets → Plans → Échéances → Projection", async () => {
     mockedApi.getDashboardSummary.mockResolvedValue({
       ...EMPTY_SUMMARY,
       budgetsResume: [budgetFixture({ id: 'b1' })],
@@ -663,7 +662,7 @@ describe('Accueil — ordre des blocs (R5 clôture Home §2, Maquette 3)', () =>
       }
       return value;
     });
-    const order = ["SITUATION PILOTÉE AUJOURD'HUI", 'Mes comptes', 'Mes budgets', 'Mes plans financiers', 'Échéances importantes', 'Projection'];
+    const order = ['Mes comptes', "SITUATION PILOTÉE AUJOURD'HUI", 'Mes budgets', 'Mes plans financiers', 'Échéances importantes', 'Projection'];
     const positions = order.map((title) => {
       const index = text.indexOf(title);
       expect(index).toBeGreaterThan(-1);

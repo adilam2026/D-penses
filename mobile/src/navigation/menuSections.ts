@@ -29,7 +29,6 @@ export const HAMBURGER_SECTIONS: { title: string; items: MenuItem[] }[] = [
       { label: 'Revenus réguliers', icon: 'trending-up-outline', route: 'Income' },
       { label: 'Charges récurrentes', icon: 'receipt-outline', route: 'Charges' },
       { label: 'Budgets', icon: 'pie-chart-outline', route: 'Budgets' },
-      { label: 'Enveloppes', icon: 'wallet-outline', route: 'Enveloppes' },
       { label: 'Objectifs', icon: 'flag-outline', route: 'Goals' },
       { label: 'Transferts récurrents', icon: 'swap-horizontal-outline', route: 'RecurringTransfers' },
     ],
@@ -46,6 +45,7 @@ export const HAMBURGER_SECTIONS: { title: string; items: MenuItem[] }[] = [
     title: 'Anticiper',
     items: [
       { label: 'Projection', icon: 'analytics-outline', route: 'Projection' },
+      { label: 'Calendrier', icon: 'calendar-outline', route: 'Calendrier' },
       { label: 'Simulateur', icon: 'help-buoy-outline', route: 'Simulator' },
     ],
   },

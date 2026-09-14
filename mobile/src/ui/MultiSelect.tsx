@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { colors, radius, spacing } from './theme';
+import { useBottomInset } from './useBottomInset';
 
 export interface MultiSelectOption {
   value: string;
@@ -27,6 +28,9 @@ interface MultiSelectProps {
 export function MultiSelect({ label, placeholder = 'Sélectionner…', value, options, onChange, testID, searchThreshold = 8 }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  // TXT réf. §M2 — jamais un paddingBottom codé en dur : la barre système
+  // Android (gestes ou 3 boutons) ne doit jamais recouvrir la dernière option.
+  const bottomInset = useBottomInset(spacing.xxl);
 
   const selectedLabels = options.filter((o) => value.includes(o.value)).map((o) => o.label);
   const summary = selectedLabels.length === 0 ? null : selectedLabels.length <= 2 ? selectedLabels.join(', ') : `${selectedLabels.length} sélectionné(s)`;
@@ -58,7 +62,7 @@ export function MultiSelect({ label, placeholder = 'Sélectionner…', value, op
 
       <Modal visible={open} animationType="slide" transparent onRequestClose={close} testID={testID ? `${testID}-modal` : undefined}>
         <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={close} />
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { paddingBottom: bottomInset }]}>
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>{label ?? placeholder}</Text>
             <TouchableOpacity testID={testID ? `${testID}-done` : undefined} onPress={close}>
@@ -119,7 +123,7 @@ const styles = StyleSheet.create({
   fieldPlaceholder: { color: colors.textPlaceholder },
   chevron: { fontSize: 12, color: colors.textSecondary },
   backdrop: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)' },
-  sheet: { backgroundColor: colors.background, borderTopLeftRadius: 18, borderTopRightRadius: 18, maxHeight: '70%', paddingBottom: spacing.xxl },
+  sheet: { backgroundColor: colors.background, borderTopLeftRadius: 18, borderTopRightRadius: 18, maxHeight: '70%' },
   sheetHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',

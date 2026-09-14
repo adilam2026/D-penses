@@ -4,6 +4,15 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { colors, radius, spacing } from '../../ui/theme';
+import { AccountType, TYPE_LABEL } from '../accounts/accountsLogic';
+
+interface Account {
+  id: string;
+  name: string;
+  type: string;
+  soldeCourant: number;
+  includeInOperationalTreasury: boolean;
+}
 
 interface StepDef {
   key: string;
@@ -21,9 +30,11 @@ interface StepDef {
   allowNotApplicable: boolean;
 }
 
-// Vague 3 §26 — 7 étapes conceptuelles (comptes, revenus, charges, enfants si
-// applicable, budgets, épargne/enveloppes, projets importants), chacune
-// sautable, jamais bloquante (§28).
+// TXT réf. §M — 6 étapes conceptuelles (comptes, revenus, charges, enfants si
+// applicable, budgets, projets importants), chacune sautable, jamais bloquante
+// (§28). L'étape "Enveloppes / Épargne" générique a été retirée du parcours
+// utilisateur (le moteur Provision reste utilisé, mais contextuellement,
+// jamais comme objet générique concurrent de Compte/Budget/Plan — TXT §4/§25).
 const STEPS: StepDef[] = [
   {
     key: 'accounts',
@@ -86,22 +97,6 @@ const STEPS: StepDef[] = [
     allowNotApplicable: true,
   },
   {
-    key: 'savings',
-    title: 'Enveloppes / Épargne',
-    help: "Réservez une partie de votre argent pour un usage précis — école, voyage, imprévus.",
-    route: 'CreatePocket',
-    routeParams: {},
-    actionLabel: 'Créer une enveloppe',
-    actionLabelAgain: 'Créer une autre enveloppe',
-    itemAddedLabel: 'Enveloppe créée.',
-    checkCount: async () => {
-      const [pockets, provisions] = await Promise.all([api.listPockets(), api.listProvisions()]);
-      return pockets.length + provisions.length;
-    },
-    countLabel: (n) => `${n} enveloppe(s) déjà créée(s)`,
-    allowNotApplicable: true,
-  },
-  {
     key: 'plans',
     title: 'Projets importants',
     help: 'École, voyage — un plan financier suit un projet de bout en bout.',
@@ -130,6 +125,7 @@ export function OnboardingWizardScreen() {
   const [counts, setCounts] = useState<Record<string, number | null>>({});
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
   const [justAdded, setJustAdded] = useState(false);
+  const [accountsList, setAccountsList] = useState<Account[]>([]);
   const previousCounts = useRef<Record<string, number>>({});
 
   const current = STEPS[step];
@@ -138,7 +134,17 @@ export function OnboardingWizardScreen() {
   const refreshCurrent = useCallback(async () => {
     setLoadingKey(current.key);
     try {
-      const n = await current.checkCount();
+      let n: number;
+      if (current.key === 'accounts') {
+        // TXT réf. §M — l'étape Comptes doit afficher la vraie liste (libellé/
+        // type/solde/pilotage), pas seulement un compteur : on récupère donc
+        // directement les comptes plutôt que de passer par checkCount().
+        const list: Account[] = await api.listAccounts();
+        setAccountsList(list);
+        n = list.length;
+      } else {
+        n = await current.checkCount();
+      }
       const prev = previousCounts.current[current.key];
       setJustAdded(prev !== undefined && n > prev);
       previousCounts.current[current.key] = n;
@@ -182,6 +188,20 @@ export function OnboardingWizardScreen() {
 
         {loadingKey === current.key ? (
           <ActivityIndicator style={{ marginVertical: 20 }} />
+        ) : current.key === 'accounts' && accountsList.length > 0 ? (
+          <View style={styles.accountsList} testID="onboarding-accounts-list">
+            {accountsList.map((a) => (
+              <View key={a.id} style={styles.accountRow} testID={`onboarding-account-row-${a.id}`}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.accountRowName}>{a.name}</Text>
+                  <Text style={styles.accountRowType}>
+                    {TYPE_LABEL[a.type as AccountType] ?? a.type} · {a.includeInOperationalTreasury ? 'Piloté' : 'Hors pilotage'}
+                  </Text>
+                </View>
+                <Text style={styles.accountRowBalance}>{a.soldeCourant.toLocaleString('fr-FR')} DH</Text>
+              </View>
+            ))}
+          </View>
         ) : (
           <View style={[styles.statusCard, hasExisting && styles.statusCardDone]}>
             <Text style={styles.statusText}>
@@ -238,6 +258,20 @@ const styles = StyleSheet.create({
   statusCard: { backgroundColor: colors.surface, borderRadius: radius.md, padding: 14, marginBottom: spacing.lg, borderWidth: 1, borderColor: colors.border },
   statusCardDone: { borderColor: colors.success, backgroundColor: colors.successLight },
   statusText: { fontSize: 13, color: colors.textPrimary, textAlign: 'center', fontWeight: '600' },
+  accountsList: { gap: spacing.sm, marginBottom: spacing.lg },
+  accountRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  accountRowName: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  accountRowType: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  accountRowBalance: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginLeft: spacing.sm },
   actionButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginBottom: spacing.md },
   actionButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 15 },
   continueButton: { borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginBottom: spacing.md, borderWidth: 1, borderColor: colors.primary },

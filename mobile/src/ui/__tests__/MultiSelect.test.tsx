@@ -2,6 +2,8 @@ import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import { MultiSelect } from '../MultiSelect';
 
+jest.mock('../useBottomInset', () => ({ useBottomInset: () => 16 }));
+
 const OPTIONS = [
   { value: 'c1', label: 'Wael' },
   { value: 'c2', label: 'Dina' },

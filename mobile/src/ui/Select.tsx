@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useBottomInset } from './useBottomInset';
 
 export interface SelectOption {
   value: string;
@@ -29,6 +30,9 @@ interface SelectProps {
 export function Select({ label, placeholder = 'Sélectionner…', value, options, onChange, testID, searchThreshold = 8, disabled }: SelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  // TXT réf. §M2 — jamais un paddingBottom codé en dur : la barre système
+  // Android (gestes ou 3 boutons) ne doit jamais recouvrir la dernière option.
+  const bottomInset = useBottomInset(24);
 
   const selected = options.find((o) => o.value === value) ?? null;
   const filtered = useMemo(() => {
@@ -59,7 +63,7 @@ export function Select({ label, placeholder = 'Sélectionner…', value, options
 
       <Modal visible={open} animationType="slide" transparent onRequestClose={close} testID={testID ? `${testID}-modal` : undefined}>
         <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={close} />
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { paddingBottom: bottomInset }]}>
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>{label ?? placeholder}</Text>
             <TouchableOpacity onPress={close}>
@@ -121,7 +125,7 @@ const styles = StyleSheet.create({
   fieldPlaceholder: { color: '#9AA0A6' },
   chevron: { fontSize: 12, color: '#6B747C' },
   backdrop: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)' },
-  sheet: { backgroundColor: '#F6F5F2', borderTopLeftRadius: 18, borderTopRightRadius: 18, maxHeight: '70%', paddingBottom: 24 },
+  sheet: { backgroundColor: '#F6F5F2', borderTopLeftRadius: 18, borderTopRightRadius: 18, maxHeight: '70%' },
   sheetHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',

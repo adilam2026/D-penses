@@ -4,6 +4,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 import { TransactionsScreen } from '../TransactionsScreen';
 import * as api from '../../../api/client';
 
+jest.mock('../../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
+
 /**
  * Mini-lot T2 — le calendrier natif est mocké au niveau de son contrat, même
  * technique que ui/__tests__/DateField.test.tsx (aucune interaction native

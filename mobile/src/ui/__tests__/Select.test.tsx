@@ -2,10 +2,14 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
 import { Select } from '../Select';
 
+jest.mock('../useBottomInset', () => ({ useBottomInset: () => 16 }));
+
 /**
  * Recette post-Vague 3 (§2/§3) — sélecteur compact remplaçant les longues
  * listes de chips permanentes. Vérifie : affichage du champ, ouverture de la
  * liste, sélection, recherche au-delà du seuil.
+ * TXT réf. §M2 — la marge basse de la bottom sheet passe désormais par
+ * useBottomInset() (jamais un paddingBottom codé en dur).
  */
 const OPTIONS = [
   { value: 'a', label: 'Abonnements' },

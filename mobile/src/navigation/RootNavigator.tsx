@@ -35,6 +35,7 @@ import { GoalsScreen } from '../screens/savings/GoalsScreen';
 import { GoalDetailScreen } from '../screens/savings/GoalDetailScreen';
 import { CreateGoalScreen } from '../screens/savings/CreateGoalScreen';
 import { ProjectionScreen } from '../screens/projection/ProjectionScreen';
+import { CalendarScreen } from '../screens/calendar/CalendarScreen';
 import { SimulatorScreen } from '../screens/simulation/SimulatorScreen';
 import { OnboardingWizardScreen } from '../screens/onboarding/OnboardingWizardScreen';
 import { EpargneScreen } from '../screens/savings/EpargneScreen';
@@ -112,7 +113,7 @@ export function RootNavigator() {
       <Stack.Screen name="RecurringTransferDetail" component={RecurringTransferDetailScreen} options={{ headerShown: true, title: 'Transfert récurrent' }} />
       <Stack.Screen name="QuickAdd" component={QuickAddScreen} options={{ presentation: 'modal' }} />
       <Stack.Screen name="Accounts" component={AccountsScreen} options={{ headerShown: !isWeb, title: 'Comptes' }} />
-      <Stack.Screen name="AccountDetail" component={AccountDetailScreen} options={{ headerShown: true, title: 'Compte' }} />
+      <Stack.Screen name="AccountDetail" component={AccountDetailScreen} options={{ headerShown: !isWeb, title: 'Compte' }} />
       <Stack.Screen
         name="QuickCreateAccount"
         component={QuickCreateAccountScreen}
@@ -123,17 +124,17 @@ export function RootNavigator() {
       <Stack.Screen name="CreateIncome" component={CreateIncomeScreen} options={{ headerShown: true, title: 'Nouveau revenu', presentation: 'modal' }} />
       <Stack.Screen name="Charges" component={ChargesScreen} options={{ headerShown: !isWeb, title: 'Charges récurrentes' }} />
       <Stack.Screen name="CreateCharge" component={CreateChargeScreen} options={{ headerShown: true, title: 'Nouvelle charge', presentation: 'modal' }} />
-      <Stack.Screen name="ChargePlanDetail" component={ChargePlanDetailScreen} options={{ headerShown: true, title: 'Charge récurrente' }} />
-      <Stack.Screen name="DeadlineDetail" component={DeadlineDetailScreen} options={{ headerShown: true, title: 'Échéance' }} />
+      <Stack.Screen name="ChargePlanDetail" component={ChargePlanDetailScreen} options={{ headerShown: !isWeb, title: 'Charge récurrente' }} />
+      <Stack.Screen name="DeadlineDetail" component={DeadlineDetailScreen} options={{ headerShown: !isWeb, title: 'Échéance' }} />
       <Stack.Screen name="EngagedDetail" component={EngagedDetailScreen} options={{ headerShown: true, title: 'Détail de l\'engagé' }} />
-      <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} options={{ headerShown: true, title: 'Transaction' }} />
+      <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} options={{ headerShown: !isWeb, title: 'Transaction' }} />
       <Stack.Screen name="Budgets" component={BudgetsScreen} options={{ headerShown: !isWeb, title: 'Budgets' }} />
-      <Stack.Screen name="BudgetDetail" component={BudgetDetailScreen} options={{ headerShown: true, title: 'Budget' }} />
+      <Stack.Screen name="BudgetDetail" component={BudgetDetailScreen} options={{ headerShown: !isWeb, title: 'Budget' }} />
       <Stack.Screen name="CreateBudget" component={CreateBudgetScreen} options={{ headerShown: true, title: 'Nouveau budget', presentation: 'modal' }} />
       <Stack.Screen name="Children" component={ChildrenScreen} options={{ headerShown: true, title: 'Enfants' }} />
       <Stack.Screen name="ChildCosts" component={ChildCostsScreen} options={{ headerShown: true, title: 'Coûts' }} />
       <Stack.Screen name="FinancialPlans" component={FinancialPlansScreen} options={{ headerShown: !isWeb, title: 'Plans financiers' }} />
-      <Stack.Screen name="FinancialPlanDetail" component={FinancialPlanDetailScreen} options={{ headerShown: true, title: 'Plan financier' }} />
+      <Stack.Screen name="FinancialPlanDetail" component={FinancialPlanDetailScreen} options={{ headerShown: !isWeb, title: 'Plan financier' }} />
       <Stack.Screen name="ConfirmDeadline" component={ConfirmDeadlineScreen} options={{ headerShown: true, title: 'Confirmer la facture', presentation: 'modal' }} />
       <Stack.Screen name="SchoolWizard" component={SchoolWizardScreen} options={{ presentation: 'modal' }} />
       <Stack.Screen name="TravelWizard" component={TravelWizardScreen} options={{ presentation: 'modal' }} />
@@ -143,6 +144,7 @@ export function RootNavigator() {
       <Stack.Screen name="GoalDetail" component={GoalDetailScreen} options={{ headerShown: true, title: 'Objectif' }} />
       <Stack.Screen name="CreateGoal" component={CreateGoalScreen} options={{ headerShown: true, title: 'Nouvel objectif', presentation: 'modal' }} />
       <Stack.Screen name="Projection" component={ProjectionScreen} options={{ headerShown: !isWeb, title: 'Projection' }} />
+      <Stack.Screen name="Calendrier" component={CalendarScreen} options={{ headerShown: !isWeb, title: 'Calendrier' }} />
       <Stack.Screen name="Simulator" component={SimulatorScreen} options={{ headerShown: true, title: 'Simulateur' }} />
       <Stack.Screen name="Onboarding" component={OnboardingWizardScreen} options={{ headerShown: true, title: 'Assistant de démarrage', presentation: 'modal' }} />
       </Stack.Navigator>

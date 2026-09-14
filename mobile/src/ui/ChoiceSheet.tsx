@@ -12,6 +12,10 @@ export interface ChoiceOption {
   description?: string;
   icon?: IconName;
   onPress: () => void;
+  // TXT réf. §M1 (Plans Maison/Voiture, référentiels réels prévus en M7) — une
+  // option non encore disponible reste visible (jamais masquée) mais jamais
+  // cliquable : aucun faux parcours vers un écran non fonctionnel.
+  disabled?: boolean;
 }
 
 interface ChoiceSheetProps {
@@ -44,7 +48,8 @@ export function ChoiceSheet({ visible, title, options, onClose, cancelLabel = 'A
           <TouchableOpacity
             key={o.key}
             testID={testID ? `${testID}-option-${o.key}` : undefined}
-            style={styles.option}
+            style={[styles.option, o.disabled && styles.optionDisabled]}
+            disabled={o.disabled}
             onPress={() => {
               onClose();
               o.onPress();
@@ -52,14 +57,17 @@ export function ChoiceSheet({ visible, title, options, onClose, cancelLabel = 'A
           >
             {o.icon && (
               <View style={styles.iconCircle}>
-                <Ionicons name={o.icon} size={20} color={colors.primary} />
+                <Ionicons name={o.icon} size={20} color={o.disabled ? colors.textSecondary : colors.primary} />
               </View>
             )}
             <View style={styles.optionText}>
-              <Text style={styles.optionLabel}>{o.label}</Text>
+              <Text style={[styles.optionLabel, o.disabled && styles.optionLabelDisabled]}>
+                {o.label}
+                {o.disabled ? ' · non disponible' : ''}
+              </Text>
               {o.description ? <Text style={styles.optionDescription}>{o.description}</Text> : null}
             </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+            {!o.disabled && <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />}
           </TouchableOpacity>
         ))}
         <TouchableOpacity style={styles.cancelButton} onPress={onClose} testID={testID ? `${testID}-cancel` : undefined}>
@@ -89,6 +97,8 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.sm,
   },
+  optionDisabled: { opacity: 0.5 },
+  optionLabelDisabled: { color: colors.textSecondary },
   iconCircle: {
     width: 40,
     height: 40,

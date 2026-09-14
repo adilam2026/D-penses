@@ -4,8 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { HomeScreen } from '../screens/HomeScreen';
 import { TransactionsScreen } from '../screens/transactions/TransactionsScreen';
-import { CalendarScreen } from '../screens/calendar/CalendarScreen';
-import { ProjectionScreen } from '../screens/projection/ProjectionScreen';
+import { BudgetsScreen } from '../screens/budgets/BudgetsScreen';
+import { HamburgerMenuScreen } from '../screens/HamburgerMenuScreen';
 import { useQuickActions } from '../state/QuickActionsContext';
 
 const Tab = createBottomTabNavigator();
@@ -15,8 +15,8 @@ type IconName = keyof typeof Ionicons.glyphMap;
 const TAB_ICONS: Record<string, { active: IconName; inactive: IconName }> = {
   Accueil: { active: 'home', inactive: 'home-outline' },
   Transactions: { active: 'swap-horizontal', inactive: 'swap-horizontal-outline' },
-  Projection: { active: 'trending-up', inactive: 'trending-up-outline' },
-  Calendrier: { active: 'calendar', inactive: 'calendar-outline' },
+  Budgets: { active: 'pie-chart', inactive: 'pie-chart-outline' },
+  Plus: { active: 'menu', inactive: 'menu-outline' },
 };
 
 // Jamais rendu : `tabBarButton` remplace entièrement le bouton par défaut de cet
@@ -40,13 +40,15 @@ function CentralPlusButton() {
 }
 
 /**
- * Navigation basse (Round 4 §1, remplace la disposition post-Vague 3) : Accueil /
- * Transactions / [+] / Projection / Calendrier — 5 positions symétriques, le
- * bouton central [+] occupant mathématiquement le 3e des 5 emplacements (jamais
- * un centrage approximatif sur 4). "Enveloppes" sort de la barre mais reste
- * accessible depuis Accueil, le menu ☰ et les parcours qui l'utilisent (déjà
- * câblé — écran racine "Enveloppes" du Stack, inchangé). Le bouton central n'est
- * jamais un écran réel : `tabPress` est intercepté.
+ * Navigation basse (TXT réf. §M1, remplace la disposition Round 4) : Accueil /
+ * Transactions / [+] / Budgets / Plus — 5 positions symétriques, le bouton
+ * central [+] occupant mathématiquement le 3e des 5 emplacements (jamais un
+ * centrage approximatif sur 4). "Plus" ouvre le menu ☰ (HamburgerMenuScreen,
+ * déjà utilisé en écran racine — même composant, simplement rendu ici comme
+ * onglet) : Projection et Calendrier en sortent mais restent atteignables
+ * depuis ce menu (section "Anticiper", menuSections.ts), inchangés par
+ * ailleurs (toujours des Stack.Screen racine). Le bouton central n'est jamais
+ * un écran réel : `tabPress` est intercepté.
  */
 export function RootTabs() {
   return (
@@ -69,8 +71,8 @@ export function RootTabs() {
         component={QuickActionsPlaceholder}
         options={{ tabBarButton: () => <CentralPlusButton />, tabBarLabel: () => null }}
       />
-      <Tab.Screen name="Projection" component={ProjectionScreen} />
-      <Tab.Screen name="Calendrier" component={CalendarScreen} />
+      <Tab.Screen name="Budgets" component={BudgetsScreen} />
+      <Tab.Screen name="Plus" component={HamburgerMenuScreen} />
     </Tab.Navigator>
   );
 }

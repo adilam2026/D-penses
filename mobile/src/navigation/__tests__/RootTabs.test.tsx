@@ -7,7 +7,7 @@ import { QuickActionsSheet } from '../../ui/QuickActionsSheet';
 import * as api from '../../api/client';
 
 /**
- * Navigation basse (Vague 3 §1/§2/§31) : Accueil / Transactions / [+] / Calendrier,
+ * Navigation basse (TXT réf. §M1) : Accueil / Transactions / [+] / Budgets / Plus,
  * le bouton central ouvre la bottom sheet — jamais une navigation d'onglet réelle.
  */
 jest.mock('../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
@@ -89,21 +89,21 @@ async function renderApp() {
   );
 }
 
-it('la navigation basse propose 5 positions symétriques : Accueil, Transactions, [+], Projection, Calendrier', async () => {
+it('TXT réf. §M1 — la navigation basse propose 5 positions symétriques : Accueil, Transactions, [+], Budgets, Plus', async () => {
   await renderApp();
   await waitFor(() => screen.getByText('Bienvenue dans D-Penses+'));
   expect(screen.getByText('Accueil')).toBeTruthy();
   expect(screen.getByText('Transactions')).toBeTruthy();
-  expect(screen.getByText('Calendrier')).toBeTruthy();
   expect(screen.getByTestId('tab-quick-actions')).toBeTruthy();
-  // Round 4 (§1) — Projection remplace Enveloppes dans la barre basse : avec 5
-  // positions, le bouton central [+] occupe mathématiquement le 3e emplacement,
-  // donc le centre exact de la barre (contrairement à 4 positions, jamais centré).
-  // Enveloppes sort de la barre mais reste accessible (Accueil, menu ☰) — route
-  // racine "Enveloppes" du Stack, inchangée, donc jamais un onglet de plus ici.
-  expect(screen.getByText('Projection')).toBeTruthy();
+  // §M1 — Budgets et Plus (menu ☰) remplacent Projection/Calendrier dans la
+  // barre basse : avec 5 positions, le bouton central [+] occupe
+  // mathématiquement le 3e emplacement, donc le centre exact de la barre
+  // (contrairement à 4 positions, jamais centré). Projection et Calendrier
+  // sortent de la barre mais restent accessibles depuis "Plus" (menu ☰,
+  // section "Anticiper") — routes racine inchangées, jamais un onglet de plus ici.
+  expect(screen.getByText('Budgets')).toBeTruthy();
+  expect(screen.getByText('Plus')).toBeTruthy();
   expect(screen.queryByText('Enveloppes')).toBeNull();
-  expect(screen.queryByText('Plus')).toBeNull();
 });
 
 it('le bouton central "+" ouvre la bottom sheet, jamais une navigation d\'onglet', async () => {

@@ -101,11 +101,7 @@ export function HomeScreen() {
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
     >
       <View style={styles.headerRow}>
-        <TouchableOpacity testID="hamburger-menu-button" style={styles.menuButton} onPress={() => navigation.getParent()?.navigate('HamburgerMenu')}>
-          <Text style={styles.menuButtonText}>☰</Text>
-        </TouchableOpacity>
         <Text style={styles.brand}>D-Penses+</Text>
-        <View style={styles.menuButton} />
       </View>
 
       {fullyEmpty ? (
@@ -139,50 +135,9 @@ export function HomeScreen() {
             ]}
           />
 
-          {/* Bloc 1 — Situation pilotée aujourd'hui (Maquette 3 §1) : carte héro
-              sombre, montant principal = trésorerie pilotée (comptes inclus dans
-              le pilotage), 2 mini-métriques uniquement (Fin de période / Disponible
-              après engagements — champs déjà fournis, aucun nouveau calcul).
-              Jamais de sparkline fictive : aucune série historique réelle
-              n'existe, l'espace est simplement omis. */}
-          <View style={styles.hero}>
-            <Text style={styles.heroLabel}>SITUATION PILOTÉE AUJOURD'HUI</Text>
-            <Text style={styles.heroAmount}>{summary.operational_treasury.toLocaleString('fr-FR')} DH</Text>
-            <Text style={styles.heroSubtitle}>Comptes inclus dans votre pilotage financier</Text>
-            {!summary.is_complete && (
-              <Text style={styles.heroWarning}>⚠ Calcul incomplet — {summary.unknown_commitments_count} montant(s) encore inconnu(s).</Text>
-            )}
-            <View style={styles.heroMiniRow}>
-              <View style={styles.heroMini}>
-                <Text style={styles.heroMiniLabel}>Fin de période</Text>
-                <Text style={styles.heroMiniValue}>{summary.next_30_days.closing_physical_treasury.toLocaleString('fr-FR')} DH</Text>
-              </View>
-              {/* La ligne "Engagé" (EngagedDetail) n'a plus de rangée dédiée dans le
-                  héro (2 mini-métriques strictement, Maquette 3) : cette carte reste
-                  l'accès à ce détail, cohérent avec ce qu'elle affiche (le disponible
-                  net des engagements) — aucune fonctionnalité supprimée. */}
-              <TouchableOpacity
-                style={styles.heroMini}
-                testID="home-engaged-row"
-                onPress={() =>
-                  navigation.getParent()?.navigate('EngagedDetail', {
-                    committedAmount: summary.committed_amount,
-                    deadlineItems: summary.deadlineItems,
-                    variableBudgetItems: summary.variableBudgetItems,
-                    horizonDate: summary.horizon_date,
-                    horizonIsFallback: summary.horizon_is_fallback,
-                  })
-                }
-              >
-                <Text style={styles.heroMiniLabel}>Disponible après engagements</Text>
-                <Text style={styles.heroMiniValue}>{summary.free_available.toLocaleString('fr-FR')} DH</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Bloc 2 — Mes comptes (Maquette 3 §2) : cartes colorées compactes,
-              montant masqué par défaut pour un compte hors pilotage (icône œil,
-              état purement local). */}
+          {/* Bloc 1 — Mes comptes (Maquette 3 §2 ; TXT réf. §M1 — comptes avant
+              situation) : cartes colorées compactes, montant masqué par défaut
+              pour un compte hors pilotage (icône œil, état purement local). */}
           {accounts.length > 0 && (
             <View style={styles.sec}>
               <View style={styles.sectionHead}>
@@ -228,6 +183,47 @@ export function HomeScreen() {
               </View>
             </View>
           )}
+
+          {/* Bloc 2 — Situation pilotée aujourd'hui (Maquette 3 §1) : carte héro
+              sombre, montant principal = trésorerie pilotée (comptes inclus dans
+              le pilotage), 2 mini-métriques uniquement (Fin de période / Disponible
+              après engagements — champs déjà fournis, aucun nouveau calcul).
+              Jamais de sparkline fictive : aucune série historique réelle
+              n'existe, l'espace est simplement omis. */}
+          <View style={styles.hero}>
+            <Text style={styles.heroLabel}>SITUATION PILOTÉE AUJOURD'HUI</Text>
+            <Text style={styles.heroAmount}>{summary.operational_treasury.toLocaleString('fr-FR')} DH</Text>
+            <Text style={styles.heroSubtitle}>Comptes inclus dans votre pilotage financier</Text>
+            {!summary.is_complete && (
+              <Text style={styles.heroWarning}>⚠ Calcul incomplet — {summary.unknown_commitments_count} montant(s) encore inconnu(s).</Text>
+            )}
+            <View style={styles.heroMiniRow}>
+              <View style={styles.heroMini}>
+                <Text style={styles.heroMiniLabel}>Fin de période</Text>
+                <Text style={styles.heroMiniValue}>{summary.next_30_days.closing_physical_treasury.toLocaleString('fr-FR')} DH</Text>
+              </View>
+              {/* La ligne "Engagé" (EngagedDetail) n'a plus de rangée dédiée dans le
+                  héro (2 mini-métriques strictement, Maquette 3) : cette carte reste
+                  l'accès à ce détail, cohérent avec ce qu'elle affiche (le disponible
+                  net des engagements) — aucune fonctionnalité supprimée. */}
+              <TouchableOpacity
+                style={styles.heroMini}
+                testID="home-engaged-row"
+                onPress={() =>
+                  navigation.getParent()?.navigate('EngagedDetail', {
+                    committedAmount: summary.committed_amount,
+                    deadlineItems: summary.deadlineItems,
+                    variableBudgetItems: summary.variableBudgetItems,
+                    horizonDate: summary.horizon_date,
+                    horizonIsFallback: summary.horizon_is_fallback,
+                  })
+                }
+              >
+                <Text style={styles.heroMiniLabel}>Disponible après engagements</Text>
+                <Text style={styles.heroMiniValue}>{summary.free_available.toLocaleString('fr-FR')} DH</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
           {/* Bloc 3 — Mes budgets (Maquette 3 §3, Lot 3). Donut réel (consommé/
               plafond, déjà calculé), max 3, priorité déjà validée. */}
@@ -397,9 +393,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
   scroll: { padding: spacing.xl, paddingTop: 56 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
-  menuButton: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
-  menuButtonText: { fontSize: 20, color: colors.textPrimary },
+  headerRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginBottom: spacing.lg },
   brand: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
 
   welcomeCard: { backgroundColor: colors.primary, borderRadius: 16, padding: spacing.xxl, alignItems: 'center' },
