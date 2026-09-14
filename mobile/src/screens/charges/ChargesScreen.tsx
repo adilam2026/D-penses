@@ -128,6 +128,8 @@ export function ChargesScreen() {
       contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
     >
+      {/* Passe visuelle V3 (Maquette 3) — en-tête cohérent avec la charte Home. */}
+      <Text style={styles.pageTitle}>Charges</Text>
       <Text style={styles.intro}>Vos dépenses récurrentes (loyer, internet, école...), anticipées automatiquement.</Text>
 
       <View style={styles.headerRow}>
@@ -162,6 +164,7 @@ export function ChargesScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   scroll: { padding: spacing.xl },
+  pageTitle: { fontSize: 20, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.lg },
   intro: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, marginBottom: spacing.lg },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   sectionTitle: { fontSize: 11, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.5 },
@@ -171,7 +174,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
+    borderRadius: radius.xl,
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginBottom: spacing.sm,
