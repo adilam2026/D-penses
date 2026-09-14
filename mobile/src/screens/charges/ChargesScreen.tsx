@@ -6,40 +6,7 @@ import { useBottomInset } from '../../ui/useBottomInset';
 import { FREQUENCY_LABEL } from '../../ui/frequency';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
 import { TEMPORAL_STATUS_LABEL, temporalStatus, temporalStatusColor } from '../../ui/temporalStatus';
-
-interface NextDeadline {
-  id: string;
-  dueDate: string;
-  amountStatus: 'inconnu' | 'estime' | 'confirme';
-  resteAPayer: number | string | null | undefined;
-  // Toujours ouverte/partiellement_payee ici (findAll filtre déjà côté backend) —
-  // typé pour rester défensif si ce filtre venait à changer un jour.
-  financialStatus?: 'ouverte' | 'partiellement_payee' | 'soldee' | 'annulee';
-}
-
-interface ChargePlan {
-  id: string;
-  label: string;
-  recurrenceRule: string | null;
-  status: 'actif' | 'inactif';
-  deadlines: NextDeadline[];
-}
-
-const STATUS_LABEL: Record<string, string> = { inconnu: 'Inconnu', estime: 'Estimé', confirme: 'Confirmé' };
-
-// R6.2 (§2, correctif NaN DH) : v peut être null (montant inconnu, cas normal)
-// OU undefined (champ absent de la réponse — jamais un cas normal, mais ne
-// doit RIEN afficher plutôt que "NaN DH"/Number(undefined)) — jamais rendu
-// tel quel : Number.isFinite() rejette explicitement NaN/Infinity.
-function n(v: number | string | null | undefined): number | null {
-  if (v === null || v === undefined) return null;
-  const parsed = typeof v === 'number' ? v : Number(v);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function formatShortDate(iso: string) {
-  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
-}
+import { ChargePlan, STATUS_LABEL, formatShortDate, n } from './chargesLogic';
 
 /**
  * Charges récurrentes (recette post-Vague 3 §6/§7) — liste compacte des

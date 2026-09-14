@@ -4,51 +4,7 @@ import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } fr
 import { Ionicons } from '@expo/vector-icons';
 import * as api from '../../api/client';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
-
-type IconName = keyof typeof Ionicons.glyphMap;
-
-interface CalendarEvent {
-  date: string;
-  kind: 'revenu_prevu' | 'facture_attendue' | 'echeance' | 'montant_inconnu' | 'echeance_payee';
-  label: string;
-  amount: number | null;
-  deadlineId?: string;
-  incomeOccurrenceId?: string;
-}
-
-const KIND_LABEL: Record<CalendarEvent['kind'], string> = {
-  revenu_prevu: 'Revenu prévu',
-  facture_attendue: 'Facture attendue',
-  echeance: 'À payer',
-  montant_inconnu: 'Montant inconnu',
-  echeance_payee: 'Payé',
-};
-
-// §9 (recette téléphone réel) : jamais la couleur seule pour distinguer un type
-// d'événement — un pictogramme différent par kind, la couleur en renfort.
-const KIND_ICON: Record<CalendarEvent['kind'], IconName> = {
-  revenu_prevu: 'arrow-down-circle-outline',
-  facture_attendue: 'document-text-outline',
-  echeance: 'alert-circle-outline',
-  montant_inconnu: 'help-circle-outline',
-  echeance_payee: 'checkmark-circle',
-};
-
-const KIND_COLOR: Record<CalendarEvent['kind'], string> = {
-  revenu_prevu: colors.success,
-  facture_attendue: colors.warning,
-  echeance: colors.primary,
-  montant_inconnu: colors.danger,
-  echeance_payee: colors.textSecondary,
-};
-
-// Ordre d'affichage de la légende — dérivé des mêmes constantes que les lignes
-// (source unique, jamais une liste dupliquée qui pourrait diverger).
-const LEGEND_ORDER: CalendarEvent['kind'][] = ['echeance', 'echeance_payee', 'revenu_prevu', 'montant_inconnu', 'facture_attendue'];
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' });
-}
+import { CalendarEvent, KIND_COLOR, KIND_ICON, KIND_LABEL, LEGEND_ORDER, formatDate } from './calendarLogic';
 
 /**
  * Calendrier financier (§14/§15) — vue dérivée (IncomeOccurrence + Deadline),

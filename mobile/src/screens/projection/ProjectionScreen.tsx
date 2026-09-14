@@ -7,6 +7,7 @@ import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
 import { MultiSelect } from '../../ui/MultiSelect';
+import { CATEGORY_LABEL, formatDh, formatShortDate as formatShortDateShared } from './projectionLogic';
 
 interface Account {
   id: string;
@@ -15,16 +16,6 @@ interface Account {
 
 const HORIZONS = [3, 6, 12, 24, 36, 60] as const;
 const DEFAULT_HORIZON = 12;
-
-const CATEGORY_LABEL: Record<NonNullable<MonthlyLineItem['category']>, string> = {
-  obligatoire: 'Obligatoire',
-  flexible: 'Flexible',
-  projet: 'Projet',
-};
-
-function formatDh(n: number): string {
-  return `${n.toLocaleString('fr-FR')} DH`;
-}
 
 function monthLabel(m: MonthBucketApi): string {
   return m.label;
@@ -80,9 +71,7 @@ function TransferRow({ item }: { item: PlannedTransferItem }) {
   );
 }
 
-function formatShortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
-}
+const formatShortDate = formatShortDateShared;
 
 function IncomeRow({ item }: { item: MonthlyLineItem }) {
   return (

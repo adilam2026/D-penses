@@ -53,12 +53,14 @@ import { QuickActionsSheet } from '../ui/QuickActionsSheet';
 
 const Stack = createNativeStackNavigator();
 
-// WEB-V4.2 — les 3 écrans désormais réellement remplacés par une page Web
-// dédiée (AccountsScreen.web.tsx/BudgetsScreen.web.tsx/FinancialPlansScreen.web.tsx)
+// WEB-V4.2/V4.3 — les écrans désormais réellement remplacés par une page Web
+// dédiée (Accounts/Budgets/FinancialPlans/Charges/Projection .web.tsx)
 // n'affichent plus le header natif React Navigation sur Web (le Header du
-// shell desktop en tient déjà lieu) : jamais de double header. Ne touche
-// QUE ces 3 routes — les écrans détail/formulaire/assistant non redessinés
-// gardent leur header natif actuel, aucun refactor général de ce fichier.
+// shell desktop en tient déjà lieu) : jamais de double header. Ne touche QUE
+// ces routes — les écrans détail/formulaire/assistant non redessinés gardent
+// leur header natif actuel, aucun refactor général de ce fichier.
+// (Calendrier est géré séparément : nested dans "Tabs", RootTabs.web.tsx a
+// déjà headerShown:false, aucune entrée root ici à toucher pour cet écran.)
 const isWeb = Platform.OS === 'web';
 
 /**
@@ -119,7 +121,7 @@ export function RootNavigator() {
       <Stack.Screen name="Income" component={IncomeScreen} options={{ headerShown: true, title: 'Revenus' }} />
       <Stack.Screen name="IncomeSourceDetail" component={IncomeSourceDetailScreen} options={{ headerShown: true, title: 'Revenu' }} />
       <Stack.Screen name="CreateIncome" component={CreateIncomeScreen} options={{ headerShown: true, title: 'Nouveau revenu', presentation: 'modal' }} />
-      <Stack.Screen name="Charges" component={ChargesScreen} options={{ headerShown: true, title: 'Charges récurrentes' }} />
+      <Stack.Screen name="Charges" component={ChargesScreen} options={{ headerShown: !isWeb, title: 'Charges récurrentes' }} />
       <Stack.Screen name="CreateCharge" component={CreateChargeScreen} options={{ headerShown: true, title: 'Nouvelle charge', presentation: 'modal' }} />
       <Stack.Screen name="ChargePlanDetail" component={ChargePlanDetailScreen} options={{ headerShown: true, title: 'Charge récurrente' }} />
       <Stack.Screen name="DeadlineDetail" component={DeadlineDetailScreen} options={{ headerShown: true, title: 'Échéance' }} />
@@ -140,7 +142,7 @@ export function RootNavigator() {
       <Stack.Screen name="Goals" component={GoalsScreen} options={{ headerShown: true, title: 'Objectifs' }} />
       <Stack.Screen name="GoalDetail" component={GoalDetailScreen} options={{ headerShown: true, title: 'Objectif' }} />
       <Stack.Screen name="CreateGoal" component={CreateGoalScreen} options={{ headerShown: true, title: 'Nouvel objectif', presentation: 'modal' }} />
-      <Stack.Screen name="Projection" component={ProjectionScreen} options={{ headerShown: true, title: 'Projection' }} />
+      <Stack.Screen name="Projection" component={ProjectionScreen} options={{ headerShown: !isWeb, title: 'Projection' }} />
       <Stack.Screen name="Simulator" component={SimulatorScreen} options={{ headerShown: true, title: 'Simulateur' }} />
       <Stack.Screen name="Onboarding" component={OnboardingWizardScreen} options={{ headerShown: true, title: 'Assistant de démarrage', presentation: 'modal' }} />
       </Stack.Navigator>
