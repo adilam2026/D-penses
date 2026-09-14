@@ -30,7 +30,12 @@
       "package": "com.depenses.mobile"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "name": "D-Penses+",
+      "shortName": "D-Penses+",
+      "themeColor": "#03155C",
+      "backgroundColor": "#03155C",
+      "display": "standalone"
     }
   }
 }
