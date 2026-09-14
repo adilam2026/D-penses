@@ -1,5 +1,7 @@
 # 06 — Simulation financière de référence (V2.2)
 
+> **En cas de divergence, [docs/00-cahier-des-charges-reference.txt](./00-cahier-des-charges-reference.txt) fait foi.**
+
 > **V2.2** ajoute §10-§11 (mini-cas scolaire et tests des nouvelles capacités : facturation différée, montants inconnus/estimés, charges optionnelles, plan financier générique, charges communes à plusieurs enfants). Le scénario 90 jours (§0-§9) n'est pas retouché.
 >
 > **Revue de cohérence finale (V2.2)** : le mini-cas §10 mélangeait à tort deux instants temporels (un montant connu seulement en janvier utilisé dans un calcul du 30 septembre) — corrigé par deux snapshots explicites (§10.1-§10.3 = 30 septembre, §10.4 = 12 janvier). Ajout de la distinction formelle coût connu (`known_plan_cost`) / besoin futur (`remaining_due`, `remaining_to_fund`), de la contrainte de ventilation analytique, et de 2 tests supplémentaires (§11, TEST 9-10) — cf. §12 pour le résultat de la vérification finale.

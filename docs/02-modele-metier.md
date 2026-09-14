@@ -1,5 +1,7 @@
 # 02 — Modèle métier (V2)
 
+> **En cas de divergence, [docs/00-cahier-des-charges-reference.txt](./00-cahier-des-charges-reference.txt) fait foi.**
+
 > Couvre les points C, D, E, F, G, H. **Document normatif** — toute règle ou formule citée ailleurs doit pointer ici.
 >
 > **V2 — changements structurants par rapport à la V1** : introduction d'une vraie notion de compte financier (`FinancialAccount`), séparation stricte trésorerie physique / capacité libre, correction du calcul des engagements (indépendant du statut UX), généralisation de `reste_a_payer`, refonte du modèle de statuts des échéances (financier persistant vs. temporel calculé), correction de la contradiction sur les remboursements, source de vérité unique pour les soldes d'épargne/provision, mécanique de rapprochement bancaire, transferts inter-comptes, simulateur enrichi, calcul temporel des provisions, et une nouvelle section **Invariants financiers**. Le détail des corrections est synthétisé en fin de réponse.

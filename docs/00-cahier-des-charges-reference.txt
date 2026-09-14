@@ -1,0 +1,1868 @@
+J’ai compris le besoin. Le point central est surtout de reclarifier les objets de l’application, parce qu’aujourd’hui plusieurs notions se mélangent encore : budget, charge, échéance, plan financier, provision, transaction.
+Je te propose donc de verrouiller d’abord le modèle fonctionnel, puis les parcours écran par écran. Je ne donne pas encore un prompt Claude : ce qui suit est un cahier des charges de travail à relire et corriger ensemble.
+1. Vision de D-Penses+
+D-Penses+ doit répondre à 5 questions simples :
+1. Combien d’argent ai-je réellement sur mes comptes ?
+2. Qu’est-ce que j’ai déjà dépensé ?
+3. Qu’est-ce que je vais devoir payer prochainement ?
+4. Est-ce que je respecte mes budgets de consommation ?
+5. Comment ma trésorerie va évoluer dans les prochaines semaines/mois ?
+L’application ne doit donc pas devenir un simple gestionnaire de dépenses ni un outil comptable compliqué.
+Elle doit avoir 4 fonctions principales :
+Suivre → Planifier → Contrôler → Anticiper.
+
+───
+
+2. Les objets à bien séparer
+C’est probablement le point le plus important.
+A. Transaction
+C’est un mouvement réel ou prévu.
+Exemples :
+• légumes : 200 DH ;
+• facture électricité : 580 DH ;
+• vidange voiture : 1 200 DH ;
+• salaire : +46 700 DH ;
+• transfert vers épargne : 1 000 DH.
+Une transaction possède notamment :
+• type : dépense / revenu / transfert ;
+• montant ;
+• date ;
+• compte ;
+• catégorie/type de dépense ;
+• éventuellement budget associé ;
+• éventuellement plan associé ;
+• initiateur ;
+• statut.
+Pour une dépense :
+Prévue → pas encore réellement payée.
+Payée → mouvement réel sur le compte.
+
+───
+
+3. Budget = outil de contrôle, jamais une dépense
+C’est là que je modifierais assez fortement la logique actuelle.
+Si tu crées :
+Courses — 1 500 DH / semaine
+cela ne veut PAS dire :
+Je vais obligatoirement dépenser 1 500 DH.
+Cela veut seulement dire :
+Je veux surveiller mes dépenses de courses et essayer de ne pas dépasser 1 500 DH.
+Donc la création d’un budget ne doit jamais diminuer la trésorerie ni entrer dans la Projection comme une charge.
+Exemple
+Budget :
+Courses
+ 1 500 DH / semaine
+Aujourd’hui :
+• légumes : 200 DH
+• viande : 300 DH
+Le budget affiche :
+Consommé : 500 DH
+Restant avant seuil : 1 000 DH
+33 % consommé
+Mais la trésorerie réelle n’est impactée que par les 500 DH de transactions réellement payées.
+C’est une distinction absolument structurante.
+
+───
+
+4. Comment une transaction alimente un budget
+Je vois 3 modes, qui doivent pouvoir coexister.
+Mode 1 — saisie depuis le budget
+Je vais dans :
+Budgets → Courses
+Puis :
++ Ajouter une dépense
+Je saisis :
+Légumes
+ 200 DH
+ Compte : BP Courses
+L’application crée une vraie transaction.
+Cette transaction apparaît :
+• dans le budget Courses ;
+• dans Transactions ;
+• dans le solde du compte ;
+• dans les statistiques.
+Elle n’est enregistrée qu’une seule fois.
+
+───
+
+Mode 2 — saisie depuis Transactions
+Je clique sur + puis :
+Dépense
+Je saisis :
+Légumes — 200 DH
+Puis éventuellement :
+Budget
+Courses
+La transaction alimente automatiquement le budget.
+
+───
+
+Mode 3 — association automatique par type de dépense
+C’est probablement le plus pratique à terme.
+Je crée un budget :
+Courses 6 000 DH / mois
+Je lui associe les types :
+• alimentation ;
+• supermarché ;
+• marché ;
+• éventuellement produits ménagers.
+Ensuite je saisis simplement :
+200 DH
+ Type : Alimentation
+D-Penses+ comprend automatiquement :
+cette transaction doit alimenter le budget Courses.
+Donc l’utilisateur n’a pas besoin de sélectionner le budget à chaque fois.
+Je prévoirais dans le budget :
+Types de dépenses suivis
+• ☑ Alimentation
+• ☑ Supermarché
+• ☐ Restaurant
+• ☐ Livraison
+Avec possibilité d’en associer plusieurs.
+
+───
+
+5. Catégorie/type de dépense ≠ Budget
+Je garderais deux notions distinctes.
+Type de dépense
+Décrit ce que j’ai payé.
+Exemples :
+• Alimentation
+• Électricité
+• Internet
+• Carburant
+• Assurance
+• Entretien voiture
+• École
+• Restaurant
+• Santé
+• Voyage
+• Abonnement numérique
+Budget
+Décrit ce que je souhaite contrôler.
+Exemple :
+Budget Maison courante pourrait suivre :
+• alimentation ;
+• produits ménagers ;
+• petites réparations.
+Un même type de dépense peut normalement être affecté à un budget actif principal pour éviter le double comptage.
+
+───
+
+6. Fonctionnement d’un budget hebdomadaire
+Exemple :
+Courses
+ 1 500 DH / semaine
+ Début : samedi
+L’application déduit automatiquement :
+Période : samedi → vendredi
+Exemple :
+samedi 12 septembre → vendredi 18 septembre.
+Pendant cette période :
+• transaction 200 DH ;
+• transaction 350 DH ;
+• transaction 450 DH.
+Total :
+1 000 / 1 500 DH
+Vendredi soir / samedi au changement de période :
+le budget repart automatiquement sur une nouvelle période :
+0 / 1 500 DH.
+Mais les anciennes transactions ne disparaissent évidemment pas de l’historique.
+Il faut pouvoir consulter :
+Semaine actuelle
+Semaine précédente
+Historique
+
+───
+
+7. Budget mensuel et période financière
+Même logique.
+Si le foyer a comme jour de clôture 25, un budget mensuel pourrait utiliser par défaut la période financière du foyer :
+26 août → 25 septembre
+puis :
+26 septembre → 25 octobre.
+Mais je mettrais une option :
+Période du budget
+• Période financière du foyer
+• Mois civil
+• Personnalisée
+Pour éviter d’imposer la même logique à absolument tous les budgets.
+
+───
+
+8. Alertes intelligentes sur les budgets
+Je suis d’accord avec ton idée, mais je l’améliorerais : un simple seuil à 50 % n’est pas suffisant.
+Parce que :
+50 % du budget consommé au milieu de la période = normal.
+Mais :
+50 % consommé après seulement 20 % de la période = rythme trop élevé.
+D-Penses+ doit donc comparer :
+% budget consommé
+ avec
+% de période écoulée.
+Exemple :
+Budget : 6 000 DH/mois.
+Au 7e jour sur 30 :
+• 23 % de la période écoulée ;
+• 55 % du budget consommé.
+Alerte :
+Rythme élevé Vous avez utilisé 55 % de votre budget alors que 23 % de la période est écoulée.
+Autre exemple :
+Jour 16 :
+• 53 % de période ;
+• 50 % consommé.
+→ situation normale.
+
+───
+
+9. Niveaux d’alerte proposés
+Je mettrais :
+Normal
+consommation cohérente avec la période.
+À surveiller
+rythme de consommation supérieur au rythme normal.
+60 % / 75 % / 90 %
+alertes progressives.
+100 %
+Budget atteint.
+>100 %
+Budget dépassé de 350 DH.
+Mais aucun blocage.
+Même à 140 %, l’utilisateur peut continuer à enregistrer ses dépenses.
+
+───
+
+10. Modifier un budget pendant la période
+Oui.
+Exemple :
+Budget initial : 1 500 DH.
+Je réalise que ce mois-ci il faut 2 000 DH.
+Je peux modifier.
+Mais idéalement D-Penses+ garde une trace :
+Budget initial : 1 500 DH
+ Budget ajusté : 2 000 DH
+Pas forcément dans l’écran principal, mais dans l’historique.
+Cela évite de falsifier rétrospectivement la compréhension du mois.
+
+───
+
+11. Charges récurrentes
+Objet différent du budget.
+Exemple :
+• Internet 299 DH/mois ;
+• jardinier 600 DH/mois ;
+• crédit immobilier 8 000 DH/mois ;
+• abonnement ChatGPT 220 DH/mois.
+Une charge récurrente crée des échéances prévues.
+Elle doit donc :
+• apparaître au Calendrier ;
+• entrer dans Projection ;
+• apparaître dans Prochainement ;
+• être confirmée lorsqu’elle est payée.
+Contrairement au budget, elle représente une véritable dépense attendue.
+
+───
+
+12. Dépense ponctuelle
+Troisième notion.
+Exemple :
+Réparation voiture
+ 3 500 DH
+ prévue le 15 novembre.
+Tu dois pouvoir la saisir :
+soit à l’avance
++ → Dépense → Prévue
+Elle apparaît immédiatement dans :
+• Calendrier ;
+• Projection ;
+• éventuellement plan financier.
+Mais elle ne débite pas encore le compte.
+soit au moment du paiement
++ → Dépense → Payée maintenant
+Elle débite directement le compte.
+
+───
+
+13. Écran Transactions : le vrai registre global
+Je ferais de Transactions un écran beaucoup plus central.
+En haut :
+Période
+• 30 jours
+• 60 jours
+• 90 jours
+• Année
+• Personnalisée
+Puis filtres :
+• Toutes
+• Dépenses
+• Revenus
+• Transferts
+Et éventuellement :
+• Compte
+• Catégorie
+• Budget
+• Plan
+• Initiateur
+
+───
+
+14. Présentation chronologique
+Je préfère une présentation regroupée par période.
+Exemple :
+SEPTEMBRE 2026
+10 sept. Carrefour Alimentation · Courses −850 DH
+ BP Courses
+ ● Lamiaa
+8 sept. Internet Abonnement −299 DH
+ SG Adil
+ ● Adil
+AOÛT 2026
+...
+Donc pas une immense liste brute.
+
+───
+
+15. Initiateur d’une transaction
+Très bonne évolution.
+Toute création doit enregistrer automatiquement :
+createdByUserId
+Donc si Adil enregistre :
+Électricité payée
+on doit savoir que :
+saisie par Adil.
+Ce n’est pas forcément la personne juridiquement titulaire du compte : c’est la personne ayant initié/enregistré l’opération dans D-Penses+.
+
+───
+
+16. Couleur par membre du foyer
+Je trouve ta proposition plus lisible qu’un nom partout.
+Dans le profil :
+Couleur personnelle
+Par exemple :
+• Adil → vert doux
+• Lamiaa → rose doux
+Dans Transactions :
+Carrefour
+ 850 DH
+ petit point ● vert
+Un appui ou le détail peut afficher :
+Saisi par Adil.
+Et en haut :
+Initiateur
+• Tous
+• Adil ●
+• Lamiaa ●
+Cela donne immédiatement une lecture visuelle sans surcharger.
+
+───
+
+17. Foyer partagé
+Le foyer doit fonctionner comme espace commun.
+Administrateur initial :
+crée D-Penses+ / foyer.
+Puis :
+Inviter un membre
+Exemple épouse/conjoint.
+Les deux voient :
+• comptes partagés autorisés ;
+• budgets ;
+• charges ;
+• plans ;
+• calendrier ;
+• projection ;
+• transactions du foyer.
+Il faudra plus tard décider si certains comptes peuvent être personnels/privés, mais je ne complexifierais pas ça immédiatement.
+
+───
+
+18. Plans financiers : je changerais légèrement le vocabulaire
+Tu utilises « plan financier » et « groupe de charges ».
+Pour l’utilisateur, je pense que Projet / Plan de dépenses est plus compréhensible.
+Exemples :
+• École
+• Voyage
+• Maison
+• Voiture
+Ce sont des ensembles cohérents de dépenses, ponctuelles ou récurrentes.
+Ils ne doivent pas nécessairement fonctionner exactement comme un budget.
+
+───
+
+19. Les 4 grands modèles que je créerais
+École
+On l’a déjà beaucoup travaillé.
+Il contient :
+• enfant ;
+• année scolaire ;
+• scolarité ;
+• restauration ;
+• fournitures ;
+• uniforme ;
+• assurance ;
+• sorties ;
+• réinscription ;
+• garderie ;
+• activités ;
+• autres.
+Avec :
+• déjà payé ;
+• prévu ;
+• option envisagée ;
+• provisionné ;
+• reste à financer.
+
+───
+
+20. Voyage
+Configuration :
+• destination ;
+• date départ ;
+• date retour ;
+• participants.
+Suggestions :
+• transport ;
+• hôtel ;
+• restauration ;
+• location voiture ;
+• activités ;
+• shopping ;
+• visa ;
+• assurance ;
+• autres.
+Puis chaque poste devient une échéance.
+
+───
+
+21. Maison
+Nouveau modèle très intéressant.
+L’utilisateur choisit le logement :
+Villa Almaz
+Puis D-Penses+ propose :
+Énergie & télécom
+• électricité
+• eau
+• Internet
+• téléphone
+Personnel
+• femme de ménage
+• jardinier
+• gardien
+• cuisinier
+• autre personnel
+Entretien
+• pisciniste
+• climatisation
+• chaudière
+• plomberie
+• électricité
+• jardin
+• piscine
+• réparations
+Charges
+• syndic
+• assurance habitation
+• taxes
+• autres.
+L’utilisateur coche simplement ce qui le concerne.
+
+───
+
+22. Voiture comme véritable entité
+Oui : je créerais un objet Véhicule, comme l’objet Enfant.
+Dans Paramètres :
+Mes véhicules
++ Ajouter un véhicule
+Informations simples au départ :
+• nom : Audi Q5 ;
+• marque ;
+• modèle ;
+• année ;
+• immatriculation facultative.
+Puis éventuellement :
+• date d'achat ;
+• kilométrage ;
+• carburant.
+
+───
+
+23. Plan Voiture
+Quand je crée :
+Plan voiture → Audi Q5
+D-Penses+ propose automatiquement :
+• assurance ;
+• vignette ;
+• visite technique ;
+• vidange ;
+• entretien ;
+• pneus ;
+• réparations ;
+• carburant ;
+• lavage ;
+• parking ;
+• péages ;
+• crédit/leasing si applicable.
+Encore une fois :
+ce sont des suggestions.
+Je coche uniquement ce qui m’intéresse.
+
+───
+
+24. Abonnements personnels
+Je créerais aussi une famille prédéfinie :
+Abonnements
+Avec suggestions :
+Télécom
+• forfait GSM
+• Internet secondaire
+Digital
+• Netflix
+• Spotify
+• YouTube Premium
+• ChatGPT
+• Claude
+• Google One
+• iCloud
+• Microsoft 365
+• stockage Cloud
+• VPN
+• autres.
+La plupart deviendront naturellement des charges récurrentes.
+Donc un plan peut servir ici essentiellement comme vue regroupée, tandis que le moteur financier reste celui des charges récurrentes.
+
+───
+
+25. Très important : éviter les doublons
+C’est un risque majeur si on ajoute Plans + Charges + Budgets.
+Une dépense ne doit jamais exister trois fois.
+Exemple :
+Internet Maison 299 DH.
+Cela peut être :
+• une charge récurrente ;
+• classée dans le plan Maison ;
+• éventuellement rattachée à une catégorie Internet.
+Mais il n’existe toujours qu’une seule charge financière réelle.
+Le plan n’est qu’un regroupement.
+Même principe :
+Carrefour 850 DH :
+• transaction réelle ;
+• catégorie alimentation ;
+• alimente budget Courses.
+Mais c’est toujours une transaction unique.
+
+───
+
+26. Le bouton central +
+Je simplifierais énormément ce menu.
+Quand on appuie sur + :
+Dépense
+Enregistrer ou planifier une dépense ponctuelle.
+Revenu
+Enregistrer ou planifier un revenu.
+Transfert
+Entre deux comptes.
+Charge récurrente
+Créer une dépense périodique.
+Puis un deuxième groupe :
+Budget de contrôle
+Créer un seuil de dépenses.
+Plan de dépenses
+École, Voyage, Maison, Voiture...
+Ça suffit.
+Je ne mettrais pas 15 choix au premier niveau.
+
+───
+
+27. Accueil : je la recentrerais
+L’accueil ne doit pas essayer de tout montrer.
+Je garderais environ 5 blocs.
+1 — Ma situation
+Comptes pilotés + total.
+Comptes hors pilotage séparés.
+2 — Disponible
+Combien je peux réellement utiliser jusqu’à la prochaine clôture.
+3 — À venir
+3 à 5 prochaines échéances.
+4 — Mes budgets
+Pas nécessairement tous.
+Par exemple :
+Courses 920 / 1 500 DH 61 % 3 jours restants
+⚠ Rythme élevé
+5 — Mes plans
+École, Voyage, etc.
+Et éventuellement une petite trajectoire de trésorerie ensuite.
+
+───
+
+28. Je déplacerais l’historique complet hors de Home
+Tu évoques l’historique sur l’accueil.
+Je mettrais éventuellement :
+Dernières transactions
+3 ou 5 lignes maximum.
+Avec :
+Voir toutes →
+Et Transactions devient l’écran d’analyse complet.
+Sinon Home devient vite énorme.
+
+───
+
+29. Calendrier
+Là aussi, je renforcerais l’organisation.
+Le calendrier montre :
+• charges récurrentes à venir ;
+• dépenses ponctuelles prévues ;
+• revenus prévus ;
+• transferts prévus ;
+• échéances des plans.
+Vue :
+Mois financier courant
+Puis navigation :
+← Septembre → Octobre →
+Chaque journée peut afficher les événements.
+Et sous le calendrier :
+10 septembre
+Jardinier — 600 DH
+17 septembre
+Internet — 299 DH
+etc.
+
+───
+
+30. Projection
+Elle doit rester différente du budget.
+La Projection utilise :
+• soldes réels ;
+• revenus prévus ;
+• charges récurrentes ;
+• dépenses ponctuelles prévues ;
+• échéances certaines des plans ;
+• transferts entrants/sortants du périmètre piloté.
+Elle ne doit pas utiliser les budgets de contrôle comme dépenses futures.
+Donc si :
+Courses : budget 6 000 DH
+mais aucune dépense future précise n’est saisie :
+on ne retire pas automatiquement 6 000 DH de la Projection.
+C’est une règle à verrouiller.
+
+───
+
+31. Une option possible plus tard
+On pourrait éventuellement proposer :
+Utiliser ce budget comme estimation de dépenses futures
+mais ce serait une option explicite, désactivée par défaut.
+Sinon on risque de mélanger :
+budget maximal autorisé et dépense réellement prévue.
+Je ne l’intégrerais pas maintenant.
+
+───
+
+32. Parcours cible : acheter des légumes
+Voilà ce que je veux que D-Penses+ permette.
+Parcours ultra rapide
++
+→ Dépense
+Montant : 200 DH
+ Libellé : Légumes
+ Type : Alimentation
+ Compte : BP Courses
+D-Penses+ détecte :
+Alimentation → Budget Courses
+Et affiche :
+Budget Courses : 1 020 / 1 500 DH 68 % consommé
+Transaction enregistrée.
+C’est terminé.
+Pas besoin de naviguer dans cinq écrans.
+
+───
+
+33. Parcours alternatif depuis le budget
+Budgets → Courses
+On voit :
+1 020 / 1 500 DH
+Puis :
++ Dépense
+L’application préremplit :
+Budget : Courses
+Je saisis seulement :
+200 DH
+ légumes
+ compte.
+
+───
+
+34. Parcours cible : nouvelle voiture
+Paramètres → Véhicules → Ajouter
+Audi Q5
+Ensuite :
++ → Plan de dépenses → Voiture
+Sélection :
+Audi Q5
+D-Penses+ propose :
+• Assurance ☑
+• Vignette ☑
+• Visite technique ☑
+• Vidange ☑
+• Pneus ☐
+• Carburant ☑
+• Crédit ☐
+Puis on complète dates/montants.
+Certaines deviennent charges récurrentes. D’autres deviennent dépenses ponctuelles prévues.
+
+───
+
+35. Parcours cible : Maison
++ → Plan de dépenses → Maison
+Sélection/création :
+Villa Almaz
+Suggestions :
+• Eau
+• Électricité
+• Internet
+• Jardinier
+• Pisciniste
+• Personnel
+• Assurance
+• Réparations
+• etc.
+L’utilisateur coche.
+L’application demande ensuite uniquement les informations nécessaires :
+montant
+ fréquence
+ prochaine échéance
+pour les éléments récurrents.
+
+───
+
+36. Architecture fonctionnelle que je retiendrais
+En résumé, D-Penses+ aurait 7 objets métier très clairs :
+
+Objet
+À quoi il sert
+Impact trésorerie future ?
+
+Compte
+Où se trouve l'argent
+Oui
+
+Transaction
+Mouvement réel
+Oui
+
+Dépense prévue
+Paiement ponctuel futur
+Oui
+
+Charge récurrente
+Paiement futur répétitif
+Oui
+
+Budget
+Seuil de contrôle
+Non
+
+Plan de dépenses
+Regroupe plusieurs dépenses
+Via ses échéances
+
+Provision
+Argent réservé à un besoin
+Oui dans le disponible, pas comme dépense
+
+
+C’est cette séparation qui, à mon avis, manque encore un peu aujourd’hui.
+
+───
+
+37. Ce que je changerais dans l’application actuelle
+Je ne repartirais surtout pas de zéro.
+Une grosse partie existe déjà.
+Je ferais plutôt évoluer D-Penses+ autour de 5 chantiers fonctionnels :
+Chantier 1 — Budgets
+Faire du budget un vrai outil de contrôle non comptable :
+• périodes ;
+• consommation ;
+• historique ;
+• alertes ;
+• association automatique aux catégories.
+Chantier 2 — Transactions
+En faire le registre central :
+• filtres ;
+• période ;
+• initiateur ;
+• couleurs ;
+• rattachement budget/plan.
+Chantier 3 — Plans
+Transformer les plans en vrais regroupements évolutifs :
+• École ;
+• Voyage ;
+• Maison ;
+• Voiture ;
+• Abonnements.
+Chantier 4 — Référentiels
+Ajouter :
+• types de dépenses personnalisables ;
+• véhicules ;
+• éventuellement logements.
+Chantier 5 — Cockpit
+Accueil plus synthétique :
+• situation ;
+• disponible ;
+• prochaines échéances ;
+• budgets ;
+• plans ;
+• quelques dernières transactions.
+
+───
+
+38. Trois décisions que je te propose de verrouiller avant Claude
+Il y a seulement trois sujets sur lesquels je veux ton accord, car ils structurent beaucoup le futur développement.
+Première décision : un Budget ne génère jamais automatiquement une dépense ou une Projection. Il mesure uniquement les transactions réellement enregistrées. Je pense que c’est exactement ton besoin.
+Deuxième décision : les plans Maison, Voiture, École, Voyage, Abonnements sont surtout des regroupements intelligents. Les vrais objets financiers restent dessous : charge récurrente, échéance ponctuelle, transaction, provision. Cela évite les doublons.
+Troisième décision : pour l’association budget ↔ transaction, je proposerais cette priorité :
+1. budget explicitement sélectionné sur la transaction ;
+2. sinon détection automatique via le type de dépense ;
+3. sinon aucun budget.
+Cela te donne à la fois automatisation et contrôle manuel.
+Si ces trois principes te conviennent, on pourra passer au niveau suivant : je te rédigerai le parcours complet écran par écran, depuis l’onboarding jusqu’au paiement, avec exactement ce qu’on affiche, ce qu’on clique, les boutons, les filtres et les automatismes. Là on aura un vrai cahier des charges suffisamment verrouillé pour redonner à Claude sans repartir dans tous les sens.
+
+.....
+
+Alors pour le budget, normalement c'est le seul. Par contre, quelque part, en fixant ce budget, si je le vois, je saurai à quel montant dans mes comptes de cette année. Normalement il doit dire : si on compte le budget prévisionnel pour les courses, tu vas être par exemple à 6 000 dirhams. Mais si on ne les compte pas, parce qu'on ne les a pas encore engagés, je ne sais pas sincèrement comment faire. Mais l'idée, c'est que aujourd'hui, 6 000 dirhams, j'ai aucune. Seul le budget de course que j'ai fixé, c'est 6 000 dirhams par exemple pour bien 500 par semaine. Sur quatre semaines, ça fait 6 000 par exemple. Donc si je veux voir que c'est réellement solde sur le compte ici, normalement, logiquement, c'est le budget respecté, je vais être à 4 000 dirhams. Bien sûr, si je le fixe, ça va fonctionner. Donc peut-être ça fera partie de l'enveloppe de projection, ou bien sur le compte principal. Et oui, ça, ça, c'est l'idée toujours sur le compte principal, mon solde disponible. Aujourd'hui, le solde théorique fin de mois, solde théorique fin de mois, on le regarde pour deux. Regarde toi la remontée. Le solde théorique comprennent les charges prévisionnelles, c'est tout. Et le solde actuel, qui intègre en plus des charges prévisionnelles, le budget qu'on avait fixé pour l'alimentation. Donc regarde comment faire cette séparation pour que le client, le métier, ne sera pas perdu. Voilà. Et sur l'écran d'accueil, je veux que ça soit simple. Donc, un bouton haut, je m'affiche le total des comptes, par exemple. Je combien ? 500 comptes qui font partie de la comptabilité. Ou bien, il affiche tout un coup sous forme de blocs carrés en couleur, plusieurs couleurs. Par exemple, le compte A, le compte B, le compte C. Le compte A et le compte B, c'est des comptes que je peux intégrer dans la comptabilité. Le compte C, c'est un compte épa. Donc le compte A, le compte B, je peux afficher le total compte aujourd'hui. Le premier compte A, c'est alimentaire, le compte B, 14 000 dirhams. Et le compte C, c'est un compte épa qui fait partie de la suite de la comptabilité, on l'affiche, mais on masque le solde. On met un petit œil à côté pour afficher ou masquer. Très bien. Sur la deuxième ligne, je mettrai le solde disponible, et le total solde disponible. Là, je résume tous les comptes, et total solde théorique fin de mois, etc. Sur la première ligne, normalement, j'ai déjà affiché les trois comptes que j'ai. Et juste en bas, j'ai les différents soldes qui s'affichent normalement, les soldes qui n'intègrent pas sont des comptes qui font partie de la comptabilité. Sauf si je pars aujourd'hui sur le compte A, le solde entier s'actualise et ne prend en compte que le compte sélectionné. Et si je sélectionne déjà un compte B et sélectionne les deux, pour désélectionner, on doit re-sélectionner un autre compte. Donc ça va être finalement dynamique. Je peux juste cliquer sur sélectionner le compte et cliquer, et ça désélectionne. Ça me permettra d'optimiser l'affichage tout en bas. Par contre, ça posera un problème parce que normalement, moi, quand je mets les charges avec compte, je ne sais pas quel compte sera impacté, soit le compte A et le compte B. Donc peut-être ça ne sera pas pertinent de raisonner ça. Donc je pense que c'est bon. On enlève cette partie de sélection des comptes, parce que ça va juste chambouler le tableau. Alors qu'on avait dit la première ligne, c'est les comptes projet, le premier bloc plutôt, c'est les comptes projet. Le deuxième bloc, c'est les soldes, etc. Troisième bloc, peut-être une note de couverture ou bien de paiement, etc. des plans financiers que j'ai déjà mis, scolarité enfant A, scolarité enfant B, voiture, logement. Et je pense qu'on avait mis des dépenses liées à mon personnel, je m'en rappelle. essentielles. Une question des profits financiers avec le code de couverture. Juste après, si nécessaire, si emballer, on peut afficher l'échéance, prochaine échéance. Dans ma fiche, échéance, prochaine échéance. Je pense qu'on affiche les prochaines échéances importantes. Et là, peut-être on voit les trois échéances qui ont le montant le plus important. Parce que ça sert à afficher 20 000, 200 dirhams, etc. Peut-être on affiche les échéances les plus importantes. Les prochaines échéances, c'est les plus importantes. Ça, c'est important. Et je pense c'est limité sur ça donc sur la page d'accueil pour ne pas trop oublier la page. Et il ne faut pas oublier bien sûr d'ajouter et de maintenir l'option de transfert récurrent ou bien virement permanent. Ça c'est important. Si on veut faire des virements d'un compte A vers un compte B, ça automatique, etc. Voilà, ou bien transférer vers un compte. C'est important de garder ça. Je vais l'expliquer, le virement permanent, il doit avoir une date fin, sinon ça va être éliminé sans date fin. J'ai une autre idée aussi pour le plan financier, ou bien plan de voiture, quand je mets un plan de voiture, je ne parle que de voiture, Audi, OP. Normalement à l'intérieur, je mets bilan, je mets entretien, assurance. Donc sur l'historique, donc il doit être référencé, les transactions avec le nom de la voiture, c'est-à-dire bilan, tiret Audi, bilan, tiret OP. Parce que des fois, je vais faire, je verrai deux lignes bilan, bilan, je ne sais pas à quelle voiture elle correspond. Et la même chose pour les frais de scolarité, quand je mets scolarité par exemple P1, ça doit être tiret, Dina tiret Oe. Comme ça je fais la différence. Et ce qui est important, donc les frais de voiture, etc., c'est des coûts récurrents, planifiés, on ne sait pas les suivre toujours. Par contre, la scolarité, c'est une année scolaire, par exemple 2023-2024. Je dois avoir l'option de dire est-ce que je fais référence de frais de scolarité année par année, c'est-à-dire ce paramètre automatiquement, d'accord ? Et chaque année, je dirais est-ce que le montant de scolarité, ou bien je choisis quel type de dépense ou de charge sera augmenté. Parce que généralement les frais de scolarité sont augmentés de 1500 dirhams chaque année et les activités sont augmentées de 100 dirhams. Chaque transaction est augmentée de 500 dirhams. L'uniforme également de 100 dirhams. Donc peut-être je dirais chaque type de frais, ou bien au montant de chaque année, soit je choisis un pourcentage, soit je choisis un montant. Et ça me permettra de générer des lignes de charge prévisionnelles. Et pourquoi je dis ça ? Parce que si je prends en compte l'année 2023-2027 et je ne pars faire une projection effectivement d'ici juin 2027, j'aurai bien sûr les charges de la scolarité qui sont intégrées. Ça va donner une vue de budget. Par contre, si je fais une projection sur cinq ans, normalement ça va être faussement monté parce que ça ne va pas intégrer les frais de scolarité de l'année suivante. Alors si je fais la référence des frais de scolarité, ça me permettra d'avoir plus ou moins une vue réelle année par année. Parfois il y a un problème. Donc ça je préfère la récurrence avec une augmentation par exemple de 5% ou bien 200 dirhams, etc. Donc les lignes de transactions vont s'étaler sur les années. Donc si l'année prochaine, je viens et je veux créer un plan financier, un plan financier de scolarité, un vrai plan avec les vrais montants. Normalement, une fois que je mets plan financier 2027-2028, normalement il doit se baser sur le taux d'augmentation que j'avais fait, sur les lignes qui sont déjà parues, toutes les lignes qui sont déjà pré-remplies. Et si je commence à le modifier, à l'ajuster, je dois mettre à jour les lignes qui étaient déjà générées et pas générer des lignes en double. Donc ça c'est important à prendre en compte.
+
+.......
+
+Oui, là le besoin devient beaucoup plus clair. Et surtout, il faut corriger une ambiguïté qu’on avait encore : le budget ne doit pas être une charge engagée, mais il doit quand même pouvoir être pris en compte dans une vision prudente de fin de période.
+Je te propose de verrouiller ça comme suit.
+1. Les 3 niveaux de solde à distinguer
+Je pense qu’il faut arrêter d’avoir un seul « disponible » qui mélange tout.
+On aurait plutôt :
+Solde actuel
+C’est l’argent réellement disponible aujourd’hui sur les comptes pilotés.
+Exemple :
+• Compte A : 10 000 DH
+• Compte B : 14 000 DH
+Solde actuel piloté = 24 000 DH
+Aucune dépense future n’est encore déduite.
+
+───
+
+Solde projeté avec engagements connus
+C’est :
+Solde actuel
+• revenus prévus − charges récurrentes prévues − dépenses ponctuelles déjà planifiées ± transferts ayant un impact sur le périmètre piloté.
+Exemple :
+24 000 DH
+• salaires futurs : 20 000
+ − charges connues : 12 000
+→ Solde projeté fin de période : 32 000 DH
+Ici, le budget Courses de 6 000 DH n’est pas encore déduit, car ce n’est pas une obligation certaine.
+
+───
+
+Solde prudent avec budgets
+C’est la vision que tu décris maintenant.
+On part du solde projeté et on ajoute une hypothèse :
+« Si je consomme entièrement les budgets que je me suis fixés, où vais-je terminer ? »
+Exemple :
+Solde projeté fin de période : 32 000 DH
+ Budget Courses restant à consommer : 6 000 DH
+→ Solde prudent fin de période : 26 000 DH
+C’est, à mon avis, la meilleure solution.
+Ainsi on ne transforme jamais le budget en charge réelle, mais on peut l’intégrer dans une projection prudente.
+
+───
+
+2. Très important : ne pas déduire deux fois ce qui a déjà été dépensé
+Exemple :
+Budget Courses mensuel : 6 000 DH.
+Tu as déjà dépensé :
+1 500 DH.
+Il reste :
+4 500 DH de budget disponible.
+Dans la projection prudente, on ne doit pas retirer encore 6 000 DH.
+On retire seulement :
+Budget restant = 4 500 DH.
+Parce que les 1 500 DH déjà payés ont déjà impacté le compte réel.
+Donc :
+Impact prudent du budget = plafond du budget − consommation déjà réalisée dans la période.
+Avec plancher à 0 si budget dépassé.
+
+───
+
+3. Le budget reste donc un seul objet
+Je suis d’accord avec toi : pas besoin de créer une deuxième notion d’enveloppe séparée.
+Le même Budget porte simplement deux dimensions :
+Suivi
+Courses : 1 500 / 6 000 DH consommés.
+Simulation prudente
+Il reste potentiellement 4 500 DH à consommer avant la fin de la période.
+C’est beaucoup plus simple.
+Dans le budget, on pourrait avoir un interrupteur :
+Inclure le restant du budget dans la projection prudente : Oui / Non
+Par défaut : Oui.
+Ainsi un budget purement indicatif pourrait être exclu si besoin.
+
+───
+
+4. Sur la Projection, je montrerais les deux scénarios
+Par exemple :
+OCTOBRE 2026
+26 sept. → 25 oct.
+Situation projetée — engagements connus
+ 18 400 DH
+Situation prudente — budgets inclus
+ 12 400 DH
+Puis en petit :
+6 000 DH de budgets variables encore disponibles sur la période.
+Ça permet immédiatement de comprendre l’écart.
+Et surtout, on ne mélange pas budget et charge dans le détail.
+
+───
+
+5. Accueil : je simplifierais beaucoup
+Ta nouvelle idée est meilleure que la version actuelle.
+Je structurerais Home en 4 blocs seulement.
+
+───
+
+Bloc 1 — MES COMPTES
+Je ferais des petites cartes horizontales ou carrées.
+SG Adil
+10 000 DH
+BP Courses
+14 000 DH
+Épargne Lamiaa
+🔒 •••••• DHHors pilotage 👁
+Pour un compte hors pilotage, je suis d’accord avec ton idée :
+• il reste visible ;
+• son solde peut être masqué par défaut ;
+• œil pour l’afficher ;
+• il n’entre pas dans les calculs opérationnels.
+Puis juste dessous :
+Total comptes pilotés
+24 000 DH
+Le patrimoine global peut rester secondaire voire dans « Mes comptes », pas nécessairement sur Home.
+
+───
+
+Bloc 2 — MA SITUATION
+Je mettrais trois chiffres très simples :
+Aujourd’hui
+24 000 DH Solde réel des comptes pilotés.
+Fin de période
+18 400 DH Après engagements connus.
+Fin de période — prudente
+12 400 DH Après engagements connus + budgets restant à consommer.
+C’est beaucoup plus clair que :
+trésorerie / engagé / réservé / coussin / disponible libre
+quand on ouvre l’application rapidement.
+On peut conserver ces notions dans le détail au clic.
+
+───
+
+6. Le troisième chiffre répond exactement à ton problème
+Si tu as :
+• 10 000 DH aujourd’hui ;
+• aucune charge future connue ;
+• budget Courses = 6 000 DH ;
+• rien encore consommé ;
+alors :
+Solde actuel : 10 000 DH
+Solde projeté : 10 000 DH
+Solde prudent : 4 000 DH
+Donc tu sais immédiatement :
+« Si je respecte mon enveloppe Courses prévue, il me restera environ 4 000 DH. »
+C’est exactement le besoin que tu décris.
+
+───
+
+7. Bloc 3 — PLANS IMPORTANTS
+Je garderais ici :
+• École Wael
+• École Dina
+• Voyage
+• Maison
+• Voiture
+Mais seulement une synthèse.
+Exemple :
+École Wael
+22 % payé 3 400 DH payés
+ 20 000 DH provisionnés
+ 44 350 DH à financer
+Audi Q5
+Prochaine échéance : Assurance
+ 3 800 DH · 15 nov. 2026
+Pas besoin de montrer toutes les lignes sur Home.
+
+───
+
+8. Bloc 4 — ÉCHÉANCES IMPORTANTES
+Ton idée est pertinente : plutôt que les trois prochaines chronologiquement, je montrerais les échéances importantes à venir.
+Mais je mettrais un compromis :
+Prochaines échéances importantes
+Sur les 30 prochains jours, afficher les 3 montants les plus élevés.
+Exemple :
+• 30 sept. — Scolarité Wael — 21 800 DH
+• 30 sept. — Scolarité Dina — 21 800 DH
+• 5 oct. — Crédit immobilier — 8 000 DH
+Puis :
+Voir toutes →
+Parce qu’un GSM à 200 DH n’a pas besoin de prendre la moitié de l’écran alors qu’une échéance de 20 000 DH approche.
+
+───
+
+9. Et les petites échéances ?
+Elles restent bien sûr dans :
+• Calendrier ;
+• Projection ;
+• Transactions prévues ;
+• détail du plan.
+Donc aucune information n’est perdue.
+
+───
+
+10. Je ne mettrais pas plus de blocs sur Home
+Pour moi :
+1. Mes comptes
+2. Ma situation
+3. Mes plans
+4. Échéances importantes
+Et éventuellement 3 dernières transactions tout en bas plus tard.
+Pas davantage.
+Sinon on recommence à construire une page interminable.
+
+───
+
+11. Transfert permanent : à conserver absolument
+Oui.
+Il doit avoir :
+• compte source ;
+• compte destination ;
+• montant ;
+• fréquence ;
+• date de début ;
+• date de fin facultative ;
+• prochaine occurrence ;
+• statut actif/inactif.
+Je suis d’accord avec ta formulation :
+Date de fin
+Facultative
+Si aucune date de fin :
+transfert permanent jusqu’à arrêt manuel.
+Exemple :
+Épargne Lamiaa
+ 1 000 DH/mois
+ 28 sept. 2026 → Sans date de fin
+Et bouton :
+Arrêter le transfert
+
+───
+
+12. Attention à la projection infinie
+Un transfert sans date de fin ne signifie pas qu’on génère physiquement 20 ans d’occurrences en base.
+Le moteur doit générer uniquement jusqu’à l’horizon de projection demandé.
+Projection 12 mois → occurrences sur 12 mois.
+Projection 5 ans → occurrences sur 5 ans.
+Exactement comme une charge récurrente.
+
+───
+
+13. Véhicule : chaque transaction doit être contextualisée
+Complètement d’accord.
+Si tu as deux véhicules :
+• Audi Q5
+• Opel Corsa
+Une transaction nommée simplement :
+Vidange
+est insuffisante.
+Il faut afficher automatiquement :
+Vidange — Audi Q5
+et :
+Vidange — Opel Corsa
+Même principe pour :
+Assurance — Audi Q5
+ Carburant — Opel Corsa
+ Pneus — Audi Q5
+Techniquement, je ne modifierais pas nécessairement le label stocké.
+Je garderais :
+label = Vidange
+vehicleId = Audi Q5
+Puis l’UI produit :
+Vidange · Audi Q5
+Ça garde les données propres.
+
+───
+
+14. Même principe pour les enfants
+Exactement.
+Au lieu de :
+Scolarité T1
+ Scolarité T1
+on doit afficher :
+Scolarité T1 · Wael
+Scolarité T1 · Dina
+Ou, si plusieurs établissements existent un jour :
+Scolarité T1 · Wael · EFI
+Dans les transactions, calendrier, projection et recherche, le contexte doit toujours être identifiable.
+
+───
+
+15. Principe général de contextualisation
+Une dépense peut être liée à une entité métier :
+• enfant ;
+• véhicule ;
+• logement ;
+• voyage ;
+• éventuellement personne.
+Donc le rendu devient :
+Libellé · Entité
+Exemples :
+Assurance · Audi Q5
+ Électricité · Villa Almaz
+ Scolarité T2 · Dina
+ Hôtel · Voyage Agadir
+C’est très puissant pour la lisibilité.
+
+───
+
+16. Je créerais donc trois référentiels
+On a déjà :
+Enfants
+J’ajouterais :
+Véhicules
+• nom
+• marque
+• modèle
+• immatriculation facultative
+• date achat éventuellement.
+Logements
+• nom : Villa Almaz
+• résidence principale / secondaire / locative
+• éventuellement ville.
+Les plans viennent ensuite se rattacher à ces objets.
+
+───
+
+17. Scolarité multi-années : ton idée est très intéressante
+Là, il faut distinguer deux notions :
+Plan scolaire réel
+Exemple :
+2026/2027 — EFI Wael
+Montants connus/confirmés de cette année.
+Prévision scolaire pluriannuelle
+Exemple :
+2027/2028
+ 2028/2029
+ 2029/2030
+calculée avec des hypothèses d’augmentation.
+C’est très différent.
+
+───
+
+18. Je ne créerais pas automatiquement de vrais plans pour 5 ans
+Je créerais plutôt des prévisions générées.
+Exemple :
+Scolarité T1 2026/27 : 21 800 DH.
+Tu définis :
+Augmentation annuelle : +1 500 DH
+Alors :
+2027/28 → 23 300 DH
+ 2028/29 → 24 800 DH
+ 2029/30 → 26 300 DH.
+Ces montants alimentent la projection longue durée, mais restent marqués :
+Prévision estimée
+et non « vraie échéance confirmée ».
+
+───
+
+19. Deux méthodes d’augmentation
+Pour chaque poste, tu choisis :
+Montant fixe
++1 500 DH/an
+ou
+Pourcentage
++5 %/an
+Exemple uniforme :
+2026 : 3 400
+ +100 DH/an
+2027 : 3 500
+ 2028 : 3 600.
+Exemple restauration :
++5 % / an.
+
+───
+
+20. Paramétrage poste par poste
+Oui, pas une inflation globale uniquement.
+Dans le plan scolaire :
+
+Poste
+Évolution annuelle
+
+Scolarité
++1 500 DH
+
+Restauration
++5 %
+
+Uniforme
++100 DH
+
+Sorties
++100 DH
+
+Réinscription
++500 DH
+
+
+Il faudrait également proposer :
+Pas d’augmentation
+et éventuellement :
+Même règle pour tous les postes
+pour aller vite.
+
+───
+
+21. Horizon de prévision
+Je proposerais :
+Projeter jusqu’à :
+• 1 an
+• 3 ans
+• 5 ans
+• fin primaire
+• date personnalisée
+Mais techniquement, l’application peut recalculer à la volée plutôt que créer toutes les lignes définitivement.
+
+───
+
+22. Ce qu’il faut absolument éviter : dupliquer les futures années
+Tu as parfaitement identifié le problème.
+Supposons qu’on avait prédit :
+2027/2028
+Scolarité T1 estimée : 23 300 DH.
+Arrivé en 2027, tu crées le vrai plan 2027/2028.
+L’application ne doit surtout pas garder :
+• prévision 23 300 ;
+• vraie échéance 23 800 ;
+sinon Projection = 47 100 DH.
+
+───
+
+23. Transformation Prévision → Plan réel
+Le parcours doit être :
+Créer le plan scolaire 2027/2028
+D-Penses+ détecte :
+Une prévision existe déjà pour Wael / EFI / 2027-2028.
+Puis :
+Utiliser cette prévision comme base ?
+→ Oui.
+Il pré-remplit :
+• Scolarité : 23 300
+• Restauration : ...
+• Uniforme : ...
+• Sorties : ...
+Tu ajustes :
+Scolarité réellement annoncée : 23 800.
+À validation :
+la prévision 23 300 est remplacée/supplantée par l’échéance réelle 23 800.
+Pas de doublon.
+
+───
+
+24. Statuts à utiliser
+Cela permet une architecture très propre :
+Projeté
+Généré automatiquement par hypothèse.
+Estimé
+Utilisateur a commencé à construire le vrai plan.
+Confirmé
+Montant officiellement connu.
+Payé
+Transaction réalisée.
+Ainsi une même obligation évolue dans le temps, au lieu d'être dupliquée.
+
+───
+
+25. La projection à 5 ans devient alors vraiment intéressante
+Exemple pour Wael et Dina :
+2026/27
+montants réels connus.
+2027/28
+prévisions + inflation paramétrée.
+2028/29
+prévisions.
+2029/30
+prévisions.
+La Projection peut donc réellement montrer :
+coût scolaire annuel estimé
+et faire apparaître un futur besoin de financement.
+C’est beaucoup plus pertinent qu’une projection qui s’arrête dès que les charges actuellement saisies s’arrêtent.
+
+───
+
+26. Même logique possible pour la voiture
+On peut utiliser une récurrence longue durée.
+Exemple :
+Assurance Audi Q5 4 000 DH/an +3 %/an
+Vidange 1 200 DH tous les 12 mois
+Vignette 1 500 DH/an
+Mais pour une voiture, je privilégierais des charges récurrentes ordinaires attachées au véhicule, plutôt qu’un nouveau moteur spécifique.
+
+───
+
+27. Maison pareil
+Exemple :
+Internet · Villa Almaz 299 DH/mois.
+Jardinier · Villa Almaz 600 DH/mois.
+Pisciniste · Villa Almaz 800 DH/mois.
+Ce sont de vraies charges récurrentes avec simplement :
+housingId = Villa Almaz
+Le « plan Maison » est alors surtout une vue consolidée.
+
+───
+
+28. Nouvelle architecture globale que je retiendrais
+On arrive maintenant à quelque chose de très cohérent :
+COMPTES
+où est l’argent.
+TRANSACTIONS
+ce qui s’est réellement passé.
+ÉCHÉANCES
+ce qui va réellement être payé.
+CHARGES RÉCURRENTES
+ce qui génère régulièrement des échéances.
+BUDGETS
+plafonds de contrôle avec impact uniquement dans la projection prudente.
+PLANS
+regroupements intelligents de dépenses.
+ENTITÉS
+Enfant / Véhicule / Logement / Voyage.
+PRÉVISIONS LONG TERME
+hypothèses futures remplaçables par des données réelles.
+Ça devient beaucoup plus robuste.
+
+───
+
+29. Je changerais donc légèrement la Home proposée précédemment
+① MES COMPTES
+Cartes :
+SG Adil
+ 10 000 DH
+BP Courses
+ 14 000 DH
+Épargne Lamiaa
+ 👁 •••••
+ Hors pilotage
+Puis :
+Total piloté : 24 000 DH
+
+───
+
+② MA SITUATION
+Aujourd’hui
+24 000 DH
+Fin de période — engagements connus
+18 400 DH
+Fin de période — budgets inclus
+12 400 DH
+Sous le troisième :
+dont 6 000 DH de budgets encore disponibles.
+C'est cette formulation que je trouve la plus compréhensible.
+Je n'utiliserais d'ailleurs probablement plus le terme « Disponible libre » comme grand indicateur principal : il a créé beaucoup d’ambiguïtés depuis le début.
+
+───
+
+30. ③ MES PLANS
+3–4 cartes compactes :
+École Wael
+ 22 % couvert
+École Dina
+ 18 % couvert
+Audi Q5
+ 3 prochaines charges
+Voyage Agadir
+ 5 000 DH prévus
+Puis :
+Voir tous
+
+───
+
+31. ④ ÉCHÉANCES IMPORTANTES
+Je ferais :
+3 montants les plus importants des 30 prochains jours
+avec éventuellement un filtre automatique qui exclut les montants dérisoires.
+Puis :
+Voir le calendrier
+
+───
+
+32. Ce que je considère maintenant comme verrouillé
+Je pense qu’on peut déjà figer ces principes :
+1. Budget = seuil de contrôle, jamais une charge.
+2. Le reste du budget peut alimenter une projection prudente distincte.
+3. Une transaction peut être rattachée automatiquement à un budget par son type.
+4. Les comptes hors pilotage restent visibles mais hors calculs.
+5. Home très synthétique : comptes → situation → plans → grosses échéances.
+6. Transferts permanents conservés, avec date de fin facultative.
+7. Transactions contextualisées par enfant/véhicule/logement/voyage.
+8. Véhicules et logements deviennent de vrais référentiels.
+9. Les plans sont des regroupements, pas des moteurs financiers parallèles.
+10. Scolarité : possibilité de projection pluriannuelle avec hausse fixe ou %.
+11. Une vraie année scolaire créée plus tard remplace la prévision correspondante, sans doublon.
+12. Projection peut donc fonctionner sur plusieurs années avec degrés de certitude différents.
+Le prochain travail utile n’est plus encore de coder. Il faut maintenant définir précisément les écrans et parcours : Accueil, +, Transactions, Budgets, Plan Maison, Plan Voiture, Plan École, et surtout comment distinguer visuellement réel / engagé / budgété / projeté. Une fois cette couche verrouillée, on pourra transformer ça en lot Claude propre, sans repartir dans des corrections de philosophie métier tous les deux APK.
+
+..........
+
+En fait, sur le plan important pour école et évolution, c'est sympa d'afficher ce qu'on a déjà payé, le reste à payer, etc. Par contre pour voyage, maison, bien sûr, peut-être mettre le budget prévu pour maison, le budget prévu sur le mois. Oui, je pense chaque mois on met le budget prévu, donc et ce qu'on a déjà payé. Parce que ça n'a aucun sens d'afficher le prochain échéance de l'arrodi alors que l'idée c'est de présenter donc chaque mois combien il prévoit. Donc sur école, eidina et ouais, c'est normal, c'est un budget annuel de l'année scolaire. Par contre voyage, maison, voiture, on verra chaque mois s'il y a quelque chose qui est prévu. Par exemple voyage, ce mois, on n'écrit pas de voyage prévu. Si le mois prochain, s'il y a un voyage qui est prévu ce mois, on mettra directement voyage prévu, total prévu par exemple 5 000 dirhams. Et si déjà j'ai déjà engagé par exemple une réservation d'hôtel, et je l'ai payé par exemple… etc. Et voiture, la même chose. Il mettra donc s'il n'y a pas de charge ce mois, il n'y a pas de charge. Sinon on fait un total des charges prévues au total. Peut-être après maison, faire des détails de personnes. aussi une chose sur la distinction des opérations initiées par moi ou par le client. Je préfère pas procéder par un petit point coloré. Donc c'est pas clair. Donc soit je mets carrément à droite ou bien à gauche de la ligne, du bonhomme. Je mettrai par exemple tout à gauche, donc une ligne verticale sur la hauteur du bloc avec notre couleur, ou bien je colorie toute la ligne, tout le bloc. Donc l'arrière-plan de la ligne, je le mettrai en bleu doux ou bien quelque chose comme ça pour éviter d'identifier la meilleure en rose doux. Je pense que ça pourrait être plus simple parce que le petit point généralement, c'est pas décisif. Et bien sûr, c'est très important. Chaque chose, c'est pour, pour la modification, c'est très très simple. On clique, il n'y a plus le montant modifié, la date d'échéance prévue modifiée, ou bien tout simplement, je le mets payé totalement, ou bien le montant payé, soit je mets c'est payé totalement, je me paye totalement, s'il est partiellement, je sais le montant à payer partiellement. Comme j'ai dit, par exemple, si j'ai une provision, si j'ai une charge récurrente, je descends par mois. Par contre lui, il est retraitant, donc il vient au milieu du mois, je met son garde. Donc il doit mettre payé partiellement, je mets son garde et il est enregistré sous la transaction. Et par la suite de mois, ça a payé, il continue, mais la charge récurrente elle reste toujours là. Parce que dans l'application, quand je mets payé partiellement, il est apparu dans l'historique des transactions, mais il disparaît des charges récurrentes. Je l'enregistre. Donc normalement, je peux me content payer partiellement, et là, soit je me paye, je résouds le responsable pour qu'il disparaisse des provisions. aussi j'ai notre idée sur la présentation, puisse c'est de colorer des visuels. Parce qu'une application, une fichier, un plus de conteneurs pour des visuels, une jauge bien des taux de couverture, c'est par type de couleur. Donc ça doit montrer donc ça, c'est très important pour que devienne très intéressant.
+
+........
+
+Oui. Je pense que tu voulais dire que le budget est un élément de pilotage important, donc il doit apparaître avant les Plans financiers sur l’accueil. C’est plus logique.
+Je figerais donc l’ordre de la Home comme ceci :
+1. Mes comptes — soldes des comptes pilotés + comptes hors pilotage visibles séparément.
+2. Ma situation — solde aujourd’hui, solde projeté avec engagements connus, puis solde prudent avec budgets.
+3. Mes budgets — suivi immédiat des plafonds de dépenses.
+4. Mes plans financiers — École, Maison, Voiture, Voyage selon leur logique propre.
+5. Échéances importantes — quelques grosses échéances à venir.
+Bloc « Mes budgets »
+Il doit être très visuel et compact, sans afficher toute la mécanique du budget.
+Par exemple :
+Courses — Septembre
+Budget : 6 000 DH
+ Consommé : 1 800 DH · Reste : 4 200 DH
+██████░░░░░░░░░░░░░░ 30 %
+Puis éventuellement :
+30 % consommé · période à 45 %
+Ce dernier indicateur est intéressant parce qu’il permet de savoir si le rythme de dépense est normal.
+Si tu as consommé 70 % du budget alors qu’on n’est qu’à 40 % de la période, D-Penses+ peut afficher :
+⚠ Rythme élevé — 70 % du budget consommé à 40 % de la période.
+Mais si tu es à 50 % du budget et 55 % de la période, pas besoin d’alerte.
+Pour un budget hebdomadaire
+Même carte, mais avec sa vraie période :
+Courses — semaine du 12 au 18 sept.
+ Budget : 1 500 DH
+ Consommé : 900 DH
+ Reste : 600 DH
+60 % consommé
+À la nouvelle période, le compteur du budget repart à zéro automatiquement, mais les transactions restent évidemment dans l’historique global.
+Et je mettrais « Voir tous les budgets → » sous les 2 ou 3 budgets principaux. Au clic, on retrouve tous les budgets avec modification du montant, périodicité, rattachement aux catégories/types de dépenses et historique des périodes.
+Donc oui : Budgets avant Plans financiers, et avec une vraie jauge de consommation. Ça répond beaucoup plus directement à la question quotidienne : « Sur ce que je m'étais autorisé à dépenser, où j'en suis ? »
+
+........
+
+Très bien, je pense. Alors, pour, c'est vraiment abonnement. Moi, je propose, on doit avancer petit à petit, parce que, c'est super fonctionnel, en bloc. Tu sais pas. Je préfère comme, pas évolution. C'est parfait. Je dois pas consommer beaucoup de tokens, on doit faire beaucoup d'IDs. Donc, ça doit être simple, faire suivant qu'il monter. Et à chaque fois qu'il monte, il me récapitule peut-être comment il a développé ça, jusqu'ici, et comment il a mis ça et quel parcours il a. Après, on le challenge, juste par écrit. Pas besoin de regarder en application, parce que ça va consommer beaucoup de tokens, et ça va être difficile à gérer par la suite. Donc, on doit partir développer quelque chose au milieu. Qu'est-ce qu'il va développer réellement ? Un parcours fonctionnel, qu'elle est exceptionnellement générée, qu'elle module l'intérêt. Et nous, on va essayer toujours de travailler, ça, on va. On ne, on passe à la deuxième partie. C'est le principe pour avancer ça, éviter les erreurs du passé. Deuxième question. Moi, je souhaite également avoir une version web de cette application. Oui, il va gérer en application, c'est très bien. Mais également créer avoir une version web. Comme ça, si je suis sur mon PC, je pourrais l'afficher sur le PC, et ça serait très simple, pour les tables. Et seulement, si je suis sur mon téléphone, c'est facile. Donc, on ne sait pas à quel moment on peut dégérer. Est-ce que à la fin de l'intégration des longs, des modules, on met, la version web, qui est assez large, avec des visuels, avec une mise en page. Comment on peut résoudre. Et ça, c'est une chose. Troisième chose, quand on va générer la version web, même les téléphones iPhone, ils peuvent l'utiliser sans besoin de désinstaller l'application. Comme ça, ça nous évite de faire beaucoup de tests iPhone, sauf si super, on a l'application de la personne qu'on est passé à notre application. Parce que moi, je n'ai pas une idée, et je ne sais pas comment ça marche. Je préfère rester sur l'application, facile à notre place. Et par ça, on ne peut pas la suite. Voilà, dis moi comment tu vois la chose
+
+.......
+
+Oui. Et je changerais maintenant notre méthode de travail : on arrête les gros lots qui touchent 15 sujets à la fois. C’est justement ce qui a créé une partie des décalages précédents.
+1. Comment je ferais travailler Claude maintenant
+On avance par modules fonctionnels fermés, un par un. Pour chaque module, il y a 3 temps :
+1. Nous définissons le besoin ici. On verrouille le parcours utilisateur, les règles métier, les écrans et les cas particuliers.
+2. Claude développe uniquement ce module. Pas de redesign général, pas de gros audit de toute l’application, pas d’APK, et seulement quelques tests ciblés.
+3. Claude nous rend un mini-rapport fonctionnel, pas 30 pages techniques : ce qu’il a créé, le parcours exact dans l’application, les règles appliquées, les choix qu’il a faits et ce qui reste éventuellement. Ensuite on challenge son rapport par écrit. S’il y a une incohérence, on la corrige avant de passer au module suivant.
+Je trouve cette méthode nettement plus sûre et moins consommatrice de tokens.
+L’ordre que je recommande
+
+Étape
+Module
+Pourquoi maintenant
+
+1
+Budgets
+On vient pratiquement de verrouiller sa philosophie
+
+2
+Transactions
+Cœur du suivi réel + rattachement aux budgets
+
+3
+Paiements / échéances
+Partiel, total, reste à payer
+
+4
+Charges récurrentes & transferts permanents
+Génération future propre
+
+5
+Référentiels
+Enfants, véhicules, logements
+
+6
+Plans
+École, Maison, Voiture, Voyage, Abonnements
+
+7
+Projection
+Consolider toutes les nouvelles règles
+
+8
+Accueil
+Construire le cockpit à partir de données désormais stables
+
+9
+Web
+Adapter toute l’expérience au grand écran
+
+
+Et je ferais Accueil assez tard. Sinon à chaque nouveau module on sera obligé de refaire Home.
+
+───
+
+2. Premier module : Budget
+Je commencerais précisément par celui-là.
+Le lot ne ferait que :
+Budget → période → catégories associées → transactions consommées → jauge → alertes → historique des périodes → projection prudente.
+Et rien d’autre.
+À la fin, Claude doit pouvoir nous dire par exemple :
+L'utilisateur crée « Courses », fixe 1 500 DH/semaine, choisit samedi comme début de période et associe Alimentation. Une dépense Alimentation de 200 DH alimente automatiquement Courses. Le budget passe à 200/1 500 DH. Le compte est débité de 200 DH. Le budget lui-même ne crée aucune charge. Le restant de 1 300 DH intervient uniquement dans la projection prudente. Samedi suivant, une nouvelle période démarre à 0/1 500 DH et l'ancienne reste consultable.
+Si ce récit est exactement conforme à ton besoin, on valide le module et on n’y revient plus, sauf bug.
+C’est cette façon d’avancer que je privilégierais.
+
+───
+
+3. Pour la version Web : oui, mais je ne la construirais pas à la fin de tout
+Il y a deux extrêmes à éviter.
+Construire Android + Web simultanément maintenant ferait consommer beaucoup de temps à Claude alors que le métier continue d’évoluer.
+Mais attendre que toute l’application Android soit terminée avant de penser au Web pourrait aussi être une erreur : on pourrait construire certains écrans ou composants trop spécifiquement pour mobile.
+Je ferais donc une distinction :
+Maintenant : rendre l’architecture compatible Web.
+Plus tard : développer réellement l’interface Web.
+Autrement dit, quand Claude travaille sur les nouveaux modules, il doit conserver :
+• backend/API commun ;
+• règles métier communes ;
+• modèles de données communs ;
+• calculs côté moteur communs ;
+• aucune logique financière importante enfermée uniquement dans un écran Android.
+Android et Web deviennent simplement deux interfaces devant le même moteur D-Penses+.
+
+───
+
+4. À quel moment je lancerais réellement le Web ?
+Après avoir stabilisé les modules fondamentaux :
+Budgets + Transactions + Échéances + Charges récurrentes + Plans.
+À ce stade, le métier sera suffisamment stable.
+On pourra alors faire un lot spécifique :
+D-Penses+ Web
+Et surtout, je ne chercherais pas à copier l’interface mobile pixel par pixel.
+Sur téléphone :
+cartes verticales, bottom sheets, navigation basse, saisie rapide.
+Sur PC :
+menu latéral, largeur importante, tableaux, plusieurs colonnes, graphiques plus grands, filtres permanents.
+Même données, mêmes calculs, UX différente selon l’écran.
+
+───
+
+5. La version Web serait même meilleure pour certaines fonctions
+Par exemple Transactions sur PC pourrait devenir quelque chose comme :
+
+Date
+Opération
+Type
+Budget
+Plan
+Compte
+Initiateur
+Montant
+
+11/09/26
+Carrefour
+Alimentation
+Courses
+—
+BP
+Adil
+-850
+
+10/09/26
+Internet
+Internet
+—
+Maison
+SG
+Lamiaa
+-299
+
+
+Avec filtres au-dessus.
+Sur téléphone, cette table serait pénible. On garde donc les cartes.
+Même chose pour la Projection : sur Web, on pourra avoir une vraie trajectoire 12/24/60 mois avec graphique + tableau détaillé.
+Donc le Web n’est pas juste Android agrandi.
+
+───
+
+6. Et pour iPhone : là, ton idée est particulièrement intéressante
+Oui : si D-Penses+ possède une bonne version Web responsive, un utilisateur iPhone pourra l'utiliser directement dans Safari sans qu'on développe immédiatement une application iOS native.
+Encore mieux, on peut faire du Web une PWA.
+Sur iPhone, l’utilisateur ouvre D-Penses+ dans Safari puis peut l’ajouter à son écran d’accueil. Il obtient une icône D-Penses+ et l'application s'ouvre ensuite avec une expérience beaucoup plus proche d'une application.
+Cela nous évite, au moins dans un premier temps :
+• build iOS spécifique ;
+• distribution App Store/TestFlight ;
+• validation Apple ;
+• une deuxième grosse campagne de tests natifs.
+Ce n'est pas exactement équivalent à une application iPhone native sur tous les aspects, mais pour D-Penses+ — saisie, consultation, tableaux, budgets, projections, calendrier — c'est une stratégie très crédible.
+
+───
+
+7. Et Android ?
+Je garderais exactement ta situation actuelle :
+Android → APK D-Penses+
+C’est ton usage principal, donc on garde l’expérience native/mobile que tu testes déjà.
+iPhone → Web/PWA dans un premier temps
+PC/Mac → Web
+Et si un jour D-Penses+ devient un produit destiné à beaucoup d’utilisateurs et qu’une vraie application iOS apporte quelque chose, on pourra la faire ensuite.
+On n’en a pas besoin pour valider le produit.
+
+───
+
+8. Le schéma cible devient très simple
+text
+D-PENSES+
+
+                 MOTEUR / BACKEND
+          ┌────────────────────────────┐
+          │ Comptes                    │
+          │ Transactions               │
+          │ Budgets                    │
+          │ Échéances                  │
+          │ Charges récurrentes        │
+          │ Plans                      │
+          │ Projection                 │
+          │ Foyer / utilisateurs       │
+          └─────────────┬──────────────┘
+                        │
+             même donnée / mêmes règles
+                        │
+          ┌─────────────┴──────────────┐
+          │                            │
+     ANDROID APK                    WEB / PWA
+     Samsung                        PC / Mac
+     expérience mobile              iPhone / iPad
+
+C’est cette architecture que je viserais.
+
+───
+
+9. Une conséquence importante pour Claude dès le prochain lot
+Je lui donnerais désormais une règle permanente :
+Toute nouvelle règle métier doit être implémentée dans le backend/moteur partagé et exposée par API. L’écran mobile ne doit pas devenir la source de vérité. Préserver la possibilité pour une future interface Web/PWA de consommer exactement les mêmes règles et données.
+Ça ne lui demande pratiquement aucun travail Web maintenant, donc peu de tokens supplémentaires, mais ça évite de nous enfermer.
+
+───
+
+Ce que je ferais maintenant
+Je ne donnerais pas encore les 9 modules à Claude.
+On prend seulement :
+MODULE 1 — BUDGETS
+On lui donne un bloc relativement court. Il développe. Il nous rend son parcours fonctionnel et ses choix. On ne construit pas d’APK. Nous lisons son rapport ensemble, on challenge éventuellement deux ou trois points, puis on lui dit :
+Module Budget validé. Passe au module Transactions.
+Et ainsi de suite.
+Après les modules cœur, on fait le Web/PWA, puis seulement à la fin une vraie campagne de recette Android + Web/iPhone.
+C’est beaucoup plus maîtrisable que de lui envoyer maintenant un cahier de 200 lignes couvrant toute D-Penses+.
+
+......
+
+Eh bien, la dernière chose qu'on doit détailler, c'est, pour mon collègue de la confidentialité des données. Par exemple, je lui ai proposé un collègue de travail d'installer l'application sur son téléphone. On m'a demandé est-ce que j'ai accès à la base de données, est-ce que je peux revoir leurs données confidentielles, leurs comptes et tout ça. Alors, un collègue qui connaît un peu la partie technique, il m'a proposé de crypter les données et peut-être en local, au moment du lancement de l'application sur le téléphone, comme si l'accès de cryptage, il est toujours associé à l'application installée sur le téléphone. C'est-à-dire personne ne peut accéder à la base de données si l'application est installée sur son téléphone. Je ne sais pas comment il voit la chose et comment je vais gérer ça. Et bien sûr, on doit, au moment de la personne entre, mettre une fenêtre avec un petit texte. Quand tu cliques, il affiche le détail, sur notre engagement de respect des données, le cryptage des données, comme ça personne n'a accès, et peut l'accès sur les éléments de données locale, et c'est important comment je vais cette partie de les données.
+
+.....
+
+Oui. Et avant de lancer les nouveaux modules, c’est le bon moment pour verrouiller la sécurité, parce que si tu commences à faire tester D-Penses+ à des collègues avec leurs vraies données financières, la question devient importante.
+L’idée de ton collègue est bonne dans son intention, mais je la modifierais sur un point : une clé uniquement présente dans l’application installée sur le téléphone ne suffit pas si tu veux ensuite avoir Android + Web + éventuellement plusieurs téléphones pour le même foyer.
+Ce qu'on cherche à garantir
+Pour un collègue qui crée son foyer dans D-Penses+, l’objectif devrait être :
+Même toi, en tant que propriétaire/administrateur technique de D-Penses+, tu ne dois pas pouvoir lire ses montants, comptes, transactions, revenus, budgets ou plans directement dans la base.
+Si quelqu’un ouvre la base PostgreSQL, il ne devrait pas voir :
+Salaire : 32 000 DH
+ Compte AWB : 75 000 DH
+ Crédit : 8 500 DH
+mais des données chiffrées inutilisables sans la clé correspondante.
+C’est un niveau de confidentialité beaucoup plus fort que simplement dire « la base est protégée par mot de passe ».
+
+───
+
+L'architecture que je viserais
+Je séparerais les données en deux catégories.
+Données techniques lisibles par le serveur
+Le strict nécessaire :
+• identifiant du foyer ;
+• identifiants techniques ;
+• utilisateur ;
+• relations foyer/utilisateur ;
+• dates techniques ;
+• version du chiffrement ;
+• états nécessaires au fonctionnement ;
+• données d’authentification appropriées.
+Données financières sensibles chiffrées
+Notamment :
+• noms/libellés sensibles des comptes ;
+• soldes ;
+• transactions ;
+• montants ;
+• revenus ;
+• dépenses ;
+• budgets ;
+• provisions ;
+• plans financiers ;
+• éventuellement commentaires et pièces associées.
+Dans PostgreSQL, ces champs seraient enregistrés sous forme chiffrée.
+
+───
+
+Mais où mettre la clé ?
+C'est là que je ne suivrais pas exactement l'idée :
+« une clé définitivement liée à l'installation Android ».
+Imagine :
+Adil crée le foyer sur Samsung.
+Demain Lamiaa rejoint le même foyer sur son téléphone.
+Après-demain Adil ouvre D-Penses+ Web sur son PC.
+Il faut que les trois appareils puissent déchiffrer le même foyer, sans que le serveur possède simplement une clé générale permettant de tout lire.
+Je privilégierais donc une architecture de type :
+une clé de chiffrement propre à chaque foyer.
+Conceptuellement :
+text
+FOYER ADIL/LAMIAA
+       │
+       └── clé Foyer A
+             │
+             ├── Samsung Adil
+             ├── téléphone Lamiaa
+             └── navigateur Web autorisé
+
+FOYER COLLÈGUE
+       │
+       └── clé Foyer B
+             │
+             └── téléphone collègue
+
+Les foyers sont cryptographiquement séparés.
+
+───
+
+Et le serveur ?
+Le principe fort serait :
+le backend stocke les données chiffrées sans disposer simplement de la clé permettant de lire tous les foyers.
+Le déchiffrement se produit sur l’appareil autorisé.
+C'est beaucoup plus proche de ce que ton collègue imaginait.
+Et surtout cela répond à sa question :
+« Adil peut-il ouvrir sa base et voir mes finances ? »
+Avec une véritable architecture de chiffrement de bout en bout correctement réalisée, la réponse recherchée devient :
+Non : l’administrateur de la base peut voir des données techniques et des blocs chiffrés, mais pas le contenu financier en clair.
+
+───
+
+Il y a néanmoins un prix à payer
+C’est important avant de demander ça à Claude.
+Si le serveur ne peut pas lire les montants, il ne peut plus facilement faire :
+somme des dépenses du mois
+ projection
+ total du budget
+ recherche sur un libellé
+ calcul du reste à payer
+sur les données stockées.
+Ces calculs doivent alors être réalisés après déchiffrement côté client, ou avec une architecture plus sophistiquée.
+Or D-Penses+ possède déjà beaucoup de calculs financiers côté backend.
+Donc passer brutalement à du chiffrement de bout en bout de tous les champs maintenant pourrait nécessiter une refonte majeure du moteur.
+Je ne demanderais surtout pas à Claude demain :
+« chiffre toute la base ».
+Ça pourrait casser énormément de choses.
+
+───
+
+Je proposerais donc une étude sécurité avant développement
+Comme pour nos modules, un petit lot uniquement d'analyse :
+LOT S0 — Architecture confidentialité
+Claude ne code rien.
+Il examine l'architecture actuelle et nous rend seulement :
+1. Quelles données D-Penses+ stocke aujourd'hui ?
+Il les classe :
+public/technique
+ personnel
+ financier sensible
+ secret/authentification
+2. Où les calculs sont-ils réalisés aujourd'hui ?
+Backend ou mobile.
+3. Quels champs pourraient être chiffrés côté client immédiatement sans casser les moteurs ?
+4. Quels champs doivent actuellement rester exploitables par le backend ?
+5. Que faudrait-il modifier pour atteindre progressivement un véritable modèle où l'administrateur ne peut pas lire les finances ?
+6. Comment gérer la clé entre Android, deuxième membre du foyer et futur Web/PWA ?
+Ça nous permettra de choisir l'architecture avant qu'il touche au code.
+
+───
+
+Et il y a d'autres protections indispensables
+Le chiffrement ne remplace pas le contrôle d'accès.
+Chaque requête doit garantir :
+utilisateur authentifié → appartient au foyer → autorisé à accéder à cette ressource.
+Un utilisateur du foyer A ne doit jamais pouvoir demander une transaction du foyer B simplement en changeant un identifiant dans une requête.
+Ça doit être testé côté serveur.
+C'est probablement encore plus important à court terme que de chiffrer PostgreSQL.
+
+───
+
+Sur le téléphone
+Je protégerais également les secrets locaux avec les mécanismes sécurisés du système plutôt qu’un mot de passe écrit dans le code de D-Penses+.
+Sur Android, la clé/secrets nécessaires peuvent être protégés par le stockage sécurisé lié au système.
+Et D-Penses+ pourrait proposer :
+Verrouiller D-Penses+
+• biométrie
+• code du téléphone
+Ainsi quelqu’un qui prend le téléphone déverrouillé ne rentre pas forcément directement dans les finances.
+
+───
+
+Et pour le futur Web
+Même principe.
+Mais il faut prévoir proprement :
+nouvel appareil → authentification → autorisation → récupération/transfert sécurisé de l'accès à la clé du foyer.
+Il ne faut surtout pas avoir dans le JavaScript du site :
+MASTER_KEY_D_PENSES = ...
+😅
+Une clé générale incluse dans l'APK ou le site serait récupérable et détruirait une bonne partie de la protection.
+
+───
+
+La sauvegarde/récupération devient également un sujet
+Si personne sauf l'utilisateur ne possède la clé, que se passe-t-il s'il :
+• perd son Samsung ;
+• n'a aucun autre appareil autorisé ;
+• réinstalle D-Penses+ ?
+Une sécurité absolue peut signifier :
+données définitivement perdues.
+Il faut donc prévoir une récupération sécurisée : clé de récupération, autre membre du foyer autorisé, mécanisme cryptographique de récupération, etc.
+C'est une décision produit à prendre consciemment.
+
+───
+
+Le message de confidentialité dans l'application
+Oui, mais seulement après avoir réellement implémenté la protection correspondante.
+Je ne voudrais surtout pas que D-Penses+ affiche aujourd'hui :
+« Personne, y compris l'administrateur, ne peut accéder à vos données »
+si techniquement toi, avec PostgreSQL, tu peux encore les lire.
+Le texte doit correspondre exactement à l'architecture réelle.
+Au premier lancement, je verrais quelque chose de très simple :
+Vos données financières restent privées
+D-Penses+ protège vos informations financières et limite leur accès aux membres autorisés de votre foyer.
+Puis :
+Comment mes données sont protégées ?
+qui ouvre une fiche plus détaillée expliquant :
+• ce qui est chiffré ;
+• où le déchiffrement se produit ;
+• qui peut accéder au foyer ;
+• quelles données techniques sont conservées ;
+• sauvegarde/récupération ;
+• suppression du compte et des données.
+Et :
+Continuer
+Pas 40 lignes juridiques au premier lancement.
+
+───
+
+Je placerais donc la sécurité avant le Module Budget
+Notre feuille de route devient :
+S0 — Confidentialité & architecture cryptographique : étude uniquement
+→ nous challengeons le rapport de Claude.
+→ nous décidons du niveau de chiffrement.
+→ Claude implémente la fondation sécurité nécessaire.
+Puis seulement :
+M1 Budgets → M2 Transactions → M3 Paiements → etc.
+C'est particulièrement pertinent maintenant : mieux vaut modifier le socle de stockage avant d'ajouter encore beaucoup de nouvelles données, et avant de donner D-Penses+ à plusieurs collègues avec leurs vraies finances.
+Et surtout, pour S0 je demanderais zéro développement, zéro APK, zéro suite complète de tests. Claude doit simplement examiner le code existant et nous proposer 2 ou 3 architectures avec leurs conséquences. Ça consommera relativement peu de tokens et nous évitera de choisir une solution de chiffrement séduisante sur le papier mais incompatible avec le fonctionnement réel de D-Penses+.

@@ -1,5 +1,7 @@
 # 04 — Architecture technique, modèle de données, notifications, offline, sécurité (V2)
 
+> **En cas de divergence, [docs/00-cahier-des-charges-reference.txt](./00-cahier-des-charges-reference.txt) fait foi.**
+
 > Couvre les points O, P, Q, R, S. S'appuie sur le modèle métier V2 (document 02) — comptes financiers, rapprochement, transferts, `reste_a_payer` généralisé, statuts scindés financier/temporel.
 
 ---

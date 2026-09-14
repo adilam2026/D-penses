@@ -1,5 +1,7 @@
 # 05 — Roadmap, risques, plan de développement (V2.2)
 
+> **En cas de divergence, [docs/00-cahier-des-charges-reference.txt](./00-cahier-des-charges-reference.txt) fait foi.**
+
 > Couvre les points K, L, T. La portée V1/V2/V3 (K) reste globalement valide ; ce document met à jour la présence des comptes financiers dès le lot 0/1, ajoute des risques issus des revues de cohérence, et ajoute des **tests de calcul obligatoires par lot** (point 22 des remarques V2) — le développement n'est plus découpé uniquement par écrans. **V2.2** ajoute au Lot 4 les tests liés à la facturation différée, aux montants inconnus/estimés, aux charges optionnelles et aux charges communes à plusieurs enfants.
 
 **Nouveau risque V2.2** — un `FinancialPlan` mal compris comme « le budget total définitif » malgré des montants `inconnu` en son sein romprait la promesse « INCONNU ≠ 0 DH » (document 02, RG-103/RG-113). Mitigation : aucun écran n'affiche un total de `FinancialPlan` sans son statut de complétude accolé (document 03, I.10ter) — vérifié comme critère d'acceptation du Lot 4.

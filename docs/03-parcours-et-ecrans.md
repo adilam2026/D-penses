@@ -1,5 +1,7 @@
 # 03 — Parcours utilisateurs & structure des écrans (V2.2)
 
+> **En cas de divergence, [docs/00-cahier-des-charges-reference.txt](./00-cahier-des-charges-reference.txt) fait foi.**
+
 > Couvre les points I, J. Les parcours I.2 à I.10 de la V1 restent valides tels quels (saisie rapide, confirmation d'échéance, paiement partiel, revenu, épargne, simulateur, Actions à traiter) — non reproduits ici sauf changement. S'y ajoutent les parcours comptes/rapprochement/transferts et le simulateur enrichi (V2), puis confirmation de montant, plan financier générique, vue par enfant et assistant scolaire (V2.2).
 
 ---

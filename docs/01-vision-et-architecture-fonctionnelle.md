@@ -1,5 +1,7 @@
 # 01 — Synthèse produit & architecture fonctionnelle (V2.2)
 
+> **En cas de divergence, [docs/00-cahier-des-charges-reference.txt](./00-cahier-des-charges-reference.txt) fait foi.**
+
 > Couvre les points A, B, M, N. **V2** : vocabulaire de trésorerie clarifié en deux projections distinctes (physique / capacité libre), introduction des comptes financiers comme brique de base. **V2.2** : ajout du principe « une donnée manquante n'est jamais zéro » (A.2bis) et du module Plan financier générique (B.2). Voir document 02 pour les définitions normatives complètes.
 
 ---
