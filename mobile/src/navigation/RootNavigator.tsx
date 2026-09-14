@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Platform, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuth } from '../auth/AuthContext';
 import { LoginScreen } from '../screens/auth/LoginScreen';
@@ -53,6 +53,14 @@ import { QuickActionsSheet } from '../ui/QuickActionsSheet';
 
 const Stack = createNativeStackNavigator();
 
+// WEB-V4.2 — les 3 écrans désormais réellement remplacés par une page Web
+// dédiée (AccountsScreen.web.tsx/BudgetsScreen.web.tsx/FinancialPlansScreen.web.tsx)
+// n'affichent plus le header natif React Navigation sur Web (le Header du
+// shell desktop en tient déjà lieu) : jamais de double header. Ne touche
+// QUE ces 3 routes — les écrans détail/formulaire/assistant non redessinés
+// gardent leur header natif actuel, aucun refactor général de ce fichier.
+const isWeb = Platform.OS === 'web';
+
 /**
  * Bascule entre trois états (docs/03 §I.1) : non connecté → Auth, connecté sans
  * foyer actif → onboarding foyer (RG-001), connecté avec foyer actif → application.
@@ -101,7 +109,7 @@ export function RootNavigator() {
       <Stack.Screen name="RecurringTransfers" component={RecurringTransfersScreen} options={{ headerShown: true, title: 'Transferts récurrents' }} />
       <Stack.Screen name="RecurringTransferDetail" component={RecurringTransferDetailScreen} options={{ headerShown: true, title: 'Transfert récurrent' }} />
       <Stack.Screen name="QuickAdd" component={QuickAddScreen} options={{ presentation: 'modal' }} />
-      <Stack.Screen name="Accounts" component={AccountsScreen} options={{ headerShown: true, title: 'Comptes' }} />
+      <Stack.Screen name="Accounts" component={AccountsScreen} options={{ headerShown: !isWeb, title: 'Comptes' }} />
       <Stack.Screen name="AccountDetail" component={AccountDetailScreen} options={{ headerShown: true, title: 'Compte' }} />
       <Stack.Screen
         name="QuickCreateAccount"
@@ -117,12 +125,12 @@ export function RootNavigator() {
       <Stack.Screen name="DeadlineDetail" component={DeadlineDetailScreen} options={{ headerShown: true, title: 'Échéance' }} />
       <Stack.Screen name="EngagedDetail" component={EngagedDetailScreen} options={{ headerShown: true, title: 'Détail de l\'engagé' }} />
       <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} options={{ headerShown: true, title: 'Transaction' }} />
-      <Stack.Screen name="Budgets" component={BudgetsScreen} options={{ headerShown: true, title: 'Budgets' }} />
+      <Stack.Screen name="Budgets" component={BudgetsScreen} options={{ headerShown: !isWeb, title: 'Budgets' }} />
       <Stack.Screen name="BudgetDetail" component={BudgetDetailScreen} options={{ headerShown: true, title: 'Budget' }} />
       <Stack.Screen name="CreateBudget" component={CreateBudgetScreen} options={{ headerShown: true, title: 'Nouveau budget', presentation: 'modal' }} />
       <Stack.Screen name="Children" component={ChildrenScreen} options={{ headerShown: true, title: 'Enfants' }} />
       <Stack.Screen name="ChildCosts" component={ChildCostsScreen} options={{ headerShown: true, title: 'Coûts' }} />
-      <Stack.Screen name="FinancialPlans" component={FinancialPlansScreen} options={{ headerShown: true, title: 'Plans financiers' }} />
+      <Stack.Screen name="FinancialPlans" component={FinancialPlansScreen} options={{ headerShown: !isWeb, title: 'Plans financiers' }} />
       <Stack.Screen name="FinancialPlanDetail" component={FinancialPlanDetailScreen} options={{ headerShown: true, title: 'Plan financier' }} />
       <Stack.Screen name="ConfirmDeadline" component={ConfirmDeadlineScreen} options={{ headerShown: true, title: 'Confirmer la facture', presentation: 'modal' }} />
       <Stack.Screen name="SchoolWizard" component={SchoolWizardScreen} options={{ presentation: 'modal' }} />

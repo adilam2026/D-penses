@@ -162,6 +162,9 @@ export interface TransactionFilters {
   budgetId?: string;
   financialPlanId?: string;
   createdByUserId?: string;
+  /** Portail Web v4 (WEB-V4.2) — le endpoint accepte déjà `limit` côté serveur
+   *  (défaut 200) ; simple passthrough, aucun nouvel endpoint. */
+  limit?: number;
 }
 
 export const listTransactions = (filters: TransactionFilters = {}) => {
@@ -174,6 +177,7 @@ export const listTransactions = (filters: TransactionFilters = {}) => {
   if (filters.budgetId) params.push(`budgetId=${encodeURIComponent(filters.budgetId)}`);
   if (filters.financialPlanId) params.push(`financialPlanId=${encodeURIComponent(filters.financialPlanId)}`);
   if (filters.createdByUserId) params.push(`createdByUserId=${encodeURIComponent(filters.createdByUserId)}`);
+  if (filters.limit) params.push(`limit=${filters.limit}`);
   return apiFetch(`/transactions${params.length ? `?${params.join('&')}` : ''}`);
 };
 

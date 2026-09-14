@@ -5,6 +5,7 @@ import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { FormField } from '../../ui/FormField';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
+import { AccountType, TYPE_LABEL } from './accountsLogic';
 
 interface Account {
   id: string;
@@ -15,15 +16,6 @@ interface Account {
   isFavorite: boolean;
   includeInOperationalTreasury: boolean;
 }
-
-type AccountType = 'courant' | 'especes' | 'epargne' | 'autre';
-
-const TYPE_LABEL: Record<AccountType, string> = {
-  courant: 'Banque',
-  especes: 'Espèces',
-  epargne: 'Épargne',
-  autre: 'Autre',
-};
 
 /** Comptes (Lot 1, docs/03 §I.11) — écran secondaire, jamais en navigation principale (§23). */
 export function AccountsScreen() {

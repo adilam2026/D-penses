@@ -3,34 +3,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
-
-interface FinancialPlan {
-  id: string;
-  label: string;
-  planType: 'school' | 'travel' | 'other';
-  destination: string | null;
-  knownPlanCost: number;
-  // Passe visuelle V2 (Maquette 3) — paidAmount/provisionCoverage : déjà exposés
-  // par GET /financial-plans (FinancialPlansService.detailOnTx, RG-110→114),
-  // simplement absents de cette interface mobile jusqu'ici. Aucun changement
-  // backend, aucun nouveau calcul.
-  paidAmount: number;
-  provisionCoverage: number;
-  remainingDue: number;
-  completude: 'complet' | 'contient_estimations' | 'contient_inconnues';
-}
-
-const COMPLETUDE_LABEL: Record<FinancialPlan['completude'], string> = {
-  complet: 'Complet',
-  contient_estimations: 'Contient des estimations',
-  contient_inconnues: 'Incomplet — montants inconnus',
-};
-
-const PLAN_TYPE_ICON: Record<FinancialPlan['planType'], string> = {
-  school: '🎓',
-  travel: '✈️',
-  other: '📁',
-};
+import { COMPLETUDE_LABEL, FinancialPlan, PLAN_TYPE_ICON } from './financialPlansLogic';
 
 /** Liste des FinancialPlan (§7/§15) — École 2026/2027, Vacances, Travaux maison... */
 export function FinancialPlansScreen() {

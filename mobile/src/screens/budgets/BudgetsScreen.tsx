@@ -4,39 +4,7 @@ import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } fr
 import * as api from '../../api/client';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
 import { Donut } from '../../ui/Donut';
-
-interface BudgetStatus {
-  budgetPeriode: number;
-  consommeADate: number;
-  budgetContractuelRestant: number;
-  rythmeProjete: number;
-  healthStatus: 'sous_budget' | 'proche_limite' | 'depasse';
-  // Lot 3 — alerte de rythme (% consommé vs % période écoulée), additive et
-  // distincte de healthStatus (ratio consommé/plafond seul) — jamais fusionnées.
-  consumptionRatio: number;
-  elapsedRatio: number;
-  rythmeAlerte: boolean;
-}
-
-interface Budget {
-  id: string;
-  referenceAmount: number;
-  referencePeriod: 'semaine' | 'mois';
-  category: { name: string };
-  status: BudgetStatus;
-}
-
-const HEALTH_LABEL: Record<BudgetStatus['healthStatus'], string> = {
-  sous_budget: 'Sous budget',
-  proche_limite: 'Proche limite',
-  depasse: 'Dépassé',
-};
-
-const HEALTH_COLOR: Record<BudgetStatus['healthStatus'], string> = {
-  sous_budget: colors.success,
-  proche_limite: colors.warning,
-  depasse: colors.danger,
-};
+import { Budget, HEALTH_COLOR, HEALTH_LABEL } from './budgetsLogic';
 
 /** Écran Budgets Variables (Lot 3 §17) — montants toujours affichés, jamais seulement un pourcentage. */
 export function BudgetsScreen() {
