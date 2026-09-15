@@ -4,6 +4,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../auth/AuthContext';
 import { useBottomInset } from '../ui/useBottomInset';
+import { useTopInset } from '../ui/useTopInset';
 import { colors, radius, spacing } from '../ui/theme';
 import { HAMBURGER_SECTIONS as SECTIONS } from '../navigation/menuSections';
 
@@ -17,10 +18,11 @@ import { HAMBURGER_SECTIONS as SECTIONS } from '../navigation/menuSections';
 export function HamburgerMenuScreen() {
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
+  const topInset = useTopInset();
   const { signOut } = useAuth();
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: bottomInset }}>
+    <ScrollView style={styles.container} contentContainerStyle={{ paddingTop: topInset, paddingBottom: bottomInset }}>
       <Text style={styles.title}>Menu</Text>
 
       {SECTIONS.map((section) => (
@@ -44,7 +46,7 @@ export function HamburgerMenuScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background, paddingTop: 56, paddingHorizontal: spacing.xl },
+  container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: spacing.xl },
   title: { fontSize: 22, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.xl },
   section: { marginBottom: spacing.xl },
   sectionTitle: { fontSize: 12, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', marginBottom: spacing.sm, letterSpacing: 0.5 },

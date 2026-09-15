@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { useTopInset } from '../../ui/useTopInset';
 import { DateField } from '../../ui/DateField';
 import { Select } from '../../ui/Select';
 import { MultiSelect } from '../../ui/MultiSelect';
@@ -55,6 +56,7 @@ const DEFAULT_POSTES = ['Transport', 'Hôtel', 'Alimentation', 'Activités', 'Im
 export function TravelWizardScreen() {
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
+  const topInset = useTopInset();
   const { scrollRef, handleFocus } = useKeyboardAwareScroll();
 
   const [destination, setDestination] = useState('');
@@ -164,7 +166,7 @@ export function TravelWizardScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingTop: topInset, paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Nouveau plan Voyage</Text>
         <Text style={styles.intro}>Estimez le coût de votre voyage poste par poste — chaque poste devient une échéance suivie séparément.</Text>
 
@@ -307,7 +309,7 @@ export function TravelWizardScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  scroll: { padding: spacing.xxl, paddingTop: 40 },
+  scroll: { padding: spacing.xxl },
   title: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: 4 },
   intro: { fontSize: 13, color: colors.textSecondary, lineHeight: 19, marginBottom: spacing.lg },
   sectionLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm, marginTop: 12 },

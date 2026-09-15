@@ -4,6 +4,7 @@ import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, Toucha
 import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { useBottomInset } from '../ui/useBottomInset';
+import { useTopInset } from '../ui/useTopInset';
 import { ChoiceSheet } from '../ui/ChoiceSheet';
 import { accountCardPalette, colors, elevation, radius, spacing } from '../ui/theme';
 import { Donut } from '../ui/Donut';
@@ -34,6 +35,7 @@ import {
 export function HomeScreen() {
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
+  const topInset = useTopInset();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [incomeSourcesCount, setIncomeSourcesCount] = useState(0);
@@ -97,11 +99,15 @@ export function HomeScreen() {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}
+      contentContainerStyle={[styles.scroll, { paddingTop: topInset, paddingBottom: bottomInset }]}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
     >
       <View style={styles.headerRow}>
+        <TouchableOpacity testID="home-hamburger" style={styles.hamburgerButton} onPress={() => navigation.getParent()?.navigate('HamburgerMenu')}>
+          <Ionicons name="menu" size={24} color={colors.textPrimary} />
+        </TouchableOpacity>
         <Text style={styles.brand}>D-Penses+</Text>
+        <View style={styles.headerRowSpacer} />
       </View>
 
       {fullyEmpty ? (
@@ -135,56 +141,9 @@ export function HomeScreen() {
             ]}
           />
 
-          {/* Bloc 1 — Mes comptes (Maquette 3 §2 ; TXT réf. §M1 — comptes avant
-              situation) : cartes colorées compactes, montant masqué par défaut
-              pour un compte hors pilotage (icône œil, état purement local). */}
-          {accounts.length > 0 && (
-            <View style={styles.sec}>
-              <View style={styles.sectionHead}>
-                <Text style={styles.sectionTitle}>Mes comptes</Text>
-                <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Accounts')}>
-                  <Text style={styles.sectionLink}>Gérer</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.grid2}>
-                {accounts.slice(0, 4).map((a, i) => {
-                  const masked = !a.includeInOperationalTreasury && !revealedAccountIds[a.id];
-                  return (
-                    <TouchableOpacity
-                      key={a.id}
-                      style={[styles.accountCard, { backgroundColor: accountCardPalette[i % accountCardPalette.length] }]}
-                      onPress={() => navigation.getParent()?.navigate('AccountDetail', { id: a.id })}
-                    >
-                      <View style={styles.accountCardTopRow}>
-                        <Text style={styles.accountCardName} numberOfLines={1}>
-                          {a.name}
-                        </Text>
-                        {!a.includeInOperationalTreasury && (
-                          <TouchableOpacity
-                            testID={`account-reveal-${a.id}`}
-                            onPress={() => setRevealedAccountIds((prev) => ({ ...prev, [a.id]: !prev[a.id] }))}
-                          >
-                            <Ionicons name={masked ? 'eye-outline' : 'eye-off-outline'} size={16} color="#fff" />
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                      <Text style={styles.accountCardAmount}>{masked ? '•••••• DH' : `${a.soldeCourant.toLocaleString('fr-FR')} DH`}</Text>
-                      <Text style={styles.accountCardStatus}>{a.includeInOperationalTreasury ? 'Piloté' : 'Hors pilotage'}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-              {/* Dernier cadrage Home — la ligne "Trésorerie pilotée" (doublon du
-                  montant déjà affiché en tête du héro) est retirée ici ; le
-                  patrimoine global reste affiché en secondaire, jamais recalculé. */}
-              <View style={styles.totalRowSecondary}>
-                <Text style={styles.totalLabelSecondary}>Patrimoine total (avec hors pilotage)</Text>
-                <Text style={styles.totalValueSecondary} testID="home-global-total">{summary.patrimoine_liquide_total.toLocaleString('fr-FR')} DH</Text>
-              </View>
-            </View>
-          )}
-
-          {/* Bloc 2 — Situation (TXT réf. §M4) : carte héro sombre, 3 niveaux
+          {/* Bloc 1 — Situation (corrections UI/UX finales §1 : premier bloc
+              fonctionnel après le titre, avant Mes comptes — aucun calcul
+              changé, uniquement sa position). Carte héro sombre, 3 niveaux
               réellement distincts — Aujourd'hui (trésorerie pilotée réelle) /
               Fin de période engagements connus (zéro budget) / Fin de période
               budgets inclus (prudente). "Disponible après engagements"
@@ -231,6 +190,55 @@ export function HomeScreen() {
               </View>
             </View>
           </View>
+
+          {/* Bloc 2 — Mes comptes (Maquette 3 §2) : cartes colorées compactes,
+              montant masqué par défaut pour un compte hors pilotage (icône
+              œil, état purement local). */}
+          {accounts.length > 0 && (
+            <View style={styles.sec}>
+              <View style={styles.sectionHead}>
+                <Text style={styles.sectionTitle}>Mes comptes</Text>
+                <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Accounts')}>
+                  <Text style={styles.sectionLink}>Gérer</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.grid2}>
+                {accounts.slice(0, 4).map((a, i) => {
+                  const masked = !a.includeInOperationalTreasury && !revealedAccountIds[a.id];
+                  return (
+                    <TouchableOpacity
+                      key={a.id}
+                      style={[styles.accountCard, { backgroundColor: accountCardPalette[i % accountCardPalette.length] }]}
+                      onPress={() => navigation.getParent()?.navigate('AccountDetail', { id: a.id })}
+                    >
+                      <View style={styles.accountCardTopRow}>
+                        <Text style={styles.accountCardName} numberOfLines={1}>
+                          {a.name}
+                        </Text>
+                        {!a.includeInOperationalTreasury && (
+                          <TouchableOpacity
+                            testID={`account-reveal-${a.id}`}
+                            onPress={() => setRevealedAccountIds((prev) => ({ ...prev, [a.id]: !prev[a.id] }))}
+                          >
+                            <Ionicons name={masked ? 'eye-outline' : 'eye-off-outline'} size={16} color="#fff" />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                      <Text style={styles.accountCardAmount}>{masked ? '•••••• DH' : `${a.soldeCourant.toLocaleString('fr-FR')} DH`}</Text>
+                      <Text style={styles.accountCardStatus}>{a.includeInOperationalTreasury ? 'Piloté' : 'Hors pilotage'}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              {/* Dernier cadrage Home — la ligne "Trésorerie pilotée" (doublon du
+                  montant déjà affiché en tête du héro) est retirée ici ; le
+                  patrimoine global reste affiché en secondaire, jamais recalculé. */}
+              <View style={styles.totalRowSecondary}>
+                <Text style={styles.totalLabelSecondary}>Patrimoine total (avec hors pilotage)</Text>
+                <Text style={styles.totalValueSecondary} testID="home-global-total">{summary.patrimoine_liquide_total.toLocaleString('fr-FR')} DH</Text>
+              </View>
+            </View>
+          )}
 
           {/* Bloc 3 — Mes budgets (Maquette 3 §3, Lot 3). Donut réel (consommé/
               plafond, déjà calculé), max 3, priorité déjà validée. */}
@@ -330,7 +338,9 @@ export function HomeScreen() {
             <View style={styles.sec}>
               <View style={styles.sectionHead}>
                 <Text style={styles.sectionTitle}>Échéances importantes</Text>
-                <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Charges')}>
+                {/* Corrections UI/UX finales §9 — "Voir toutes" ouvre le calendrier
+                    des échéances, jamais l'écran de création de charge récurrente. */}
+                <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Calendrier')}>
                   <Text style={styles.sectionLink}>Voir toutes</Text>
                 </TouchableOpacity>
               </View>
@@ -400,8 +410,10 @@ export function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
-  scroll: { padding: spacing.xl, paddingTop: 56 },
-  headerRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginBottom: spacing.lg },
+  scroll: { padding: spacing.xl },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
+  hamburgerButton: { width: 32, height: 32, alignItems: 'flex-start', justifyContent: 'center' },
+  headerRowSpacer: { width: 32, height: 32 },
   brand: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
 
   welcomeCard: { backgroundColor: colors.primary, borderRadius: 16, padding: spacing.xxl, alignItems: 'center' },

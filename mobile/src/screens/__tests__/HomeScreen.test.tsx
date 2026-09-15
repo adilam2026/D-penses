@@ -9,6 +9,7 @@ import * as api from '../../api/client';
  * menu ☰, conformité de l'ordre/du contenu des 6 blocs validés.
  */
 jest.mock('../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
+jest.mock('../../ui/useTopInset', () => ({ useTopInset: () => 16 }));
 
 const mockNavigate = jest.fn();
 const mockGetParent = jest.fn(() => ({ navigate: mockNavigate }));
@@ -229,12 +230,6 @@ describe('Accueil — état configuré (§7-17/§31, Maquette 3)', () => {
     expect(mockNavigate).toHaveBeenCalledWith('Projection');
   });
 
-  it("TXT réf. §M1 : le bouton ☰ n'existe plus sur l'Accueil (redondant avec l'onglet \"Plus\")", async () => {
-    await render(<HomeScreen />);
-    await waitFor(() => screen.getByText("AUJOURD'HUI"));
-    expect(screen.queryByTestId('hamburger-menu-button')).toBeNull();
-  });
-
   it('R6.4 (§5 / test I) : le bloc "Actions à traiter" est absent de l\'accueil', async () => {
     await render(<HomeScreen />);
     await waitFor(() => screen.getByText("AUJOURD'HUI"));
@@ -362,6 +357,33 @@ describe('Accueil — bloc "Mes budgets" (Lot 3, Maquette 3)', () => {
     await waitFor(() => screen.getByTestId('home-budget-b1'));
     await fireEvent.press(screen.getByText('Voir tous'));
     expect(mockNavigate).toHaveBeenCalledWith('Budgets');
+  });
+
+  // Corrections UI/UX finales §9 — "Voir toutes" sur Échéances importantes
+  // ouvre le calendrier des échéances, jamais l'écran de création de charge.
+  it('Échéances importantes → "Voir toutes" navigue vers Calendrier (jamais Charges)', async () => {
+    mockedApi.getDashboardSummary.mockResolvedValue({
+      ...EMPTY_SUMMARY,
+      topDeadlines: [
+        {
+          id: 'd1',
+          chargePlanId: 'cp1',
+          chargePlanLabel: 'Scolarité Dina',
+          dueDate: '2026-09-30',
+          amountStatus: 'confirme' as const,
+          resteAPayer: 21800,
+          coverageStatus: 'non_couverte' as const,
+          engagementNonCouvert: 21800,
+        },
+      ],
+    });
+    mockedApi.listAccounts.mockResolvedValue([{ id: 'acc-1', name: 'Compte SG', soldeCourant: 1000 }]);
+    await render(<HomeScreen />);
+
+    await waitFor(() => screen.getByText('Échéances importantes'));
+    await fireEvent.press(screen.getByText('Voir toutes'));
+    expect(mockNavigate).toHaveBeenCalledWith('Calendrier');
+    expect(mockNavigate).not.toHaveBeenCalledWith('Charges');
   });
 
   it('aucun budget → le bloc "Mes budgets" est absent (jamais un bloc vide affiché)', async () => {
@@ -624,12 +646,25 @@ describe('Accueil — bandeau de configuration intelligent (§13)', () => {
 });
 
 /**
- * R5 clôture Home §2 / Maquette 3 §7 — ordre des blocs validé : Situation pilotée
- * aujourd'hui → Mes comptes → Mes budgets → Mes plans financiers → Échéances
- * importantes → Projection, avec les titres de section en casse normale.
+ * Corrections UI/UX finales §1 — ordre des blocs validé : Situation pilotée
+ * aujourd'hui (premier bloc fonctionnel après le titre) → Mes comptes → Mes
+ * budgets → Mes plans financiers → Échéances importantes → Projection, avec
+ * les titres de section en casse normale.
  */
-describe('Accueil — ordre des blocs (R5 clôture Home §2, Maquette 3)', () => {
-  it("TXT réf. §M1 : les 6 blocs apparaissent dans l'arbre rendu dans l'ordre validé : Comptes → Situation pilotée → Budgets → Plans → Échéances → Projection", async () => {
+// Corrections UI/UX finales §7 — le menu ☰ n'est plus un onglet de la barre
+// basse : un bouton dédié en haut à gauche de l'écran racine ouvre HamburgerMenu.
+it('le bouton ☰ en haut à gauche navigue vers HamburgerMenu', async () => {
+  mockedApi.getDashboardSummary.mockResolvedValue(EMPTY_SUMMARY);
+  mockedApi.listAccounts.mockResolvedValue([]);
+  await render(<HomeScreen />);
+
+  await waitFor(() => screen.getByTestId('home-hamburger'));
+  await fireEvent.press(screen.getByTestId('home-hamburger'));
+  expect(mockNavigate).toHaveBeenCalledWith('HamburgerMenu');
+});
+
+describe('Accueil — ordre des blocs (corrections UI/UX finales §1)', () => {
+  it("les 6 blocs apparaissent dans l'arbre rendu dans l'ordre validé : Situation pilotée → Comptes → Budgets → Plans → Échéances → Projection", async () => {
     mockedApi.getDashboardSummary.mockResolvedValue({
       ...EMPTY_SUMMARY,
       budgetsResume: [budgetFixture({ id: 'b1' })],
@@ -676,7 +711,7 @@ describe('Accueil — ordre des blocs (R5 clôture Home §2, Maquette 3)', () =>
       }
       return value;
     });
-    const order = ['Mes comptes', "AUJOURD'HUI", 'Mes budgets', 'Mes plans financiers', 'Échéances importantes', 'Projection'];
+    const order = ["AUJOURD'HUI", 'Mes comptes', 'Mes budgets', 'Mes plans financiers', 'Échéances importantes', 'Projection'];
     const positions = order.map((title) => {
       const index = text.indexOf(title);
       expect(index).toBeGreaterThan(-1);

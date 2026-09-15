@@ -1,7 +1,9 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as api from '../../api/client';
+import { ChoiceSheet } from '../../ui/ChoiceSheet';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
 import { COMPLETUDE_LABEL, FinancialPlan, PLAN_TYPE_ICON } from './financialPlansLogic';
 
@@ -10,6 +12,10 @@ export function FinancialPlansScreen() {
   const navigation = useNavigation<any>();
   const [plans, setPlans] = useState<FinancialPlan[]>([]);
   const [loading, setLoading] = useState(true);
+  // Corrections UI/UX finales §5/§11 — un seul bouton "+" ouvre le choix du type
+  // de plan (École/Voyage/Voiture/Maison/Abonnements), jamais 2 boutons fixes
+  // en tête d'écran. Même pattern/options que QuickActionsSheet.onCreerPlan().
+  const [planChoiceOpen, setPlanChoiceOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -29,13 +35,10 @@ export function FinancialPlansScreen() {
   return (
     <View style={styles.container}>
       {/* Passe visuelle V2 (Maquette 3) — en-tête cohérent avec la charte Home. */}
-      <Text style={styles.pageTitle}>Plans financiers</Text>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.addButtonOutline} onPress={() => navigation.navigate('SchoolWizard')}>
-          <Text style={styles.addButtonOutlineText}>🎓 Frais scolaires</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.addButtonOutline} onPress={() => navigation.navigate('TravelWizard')}>
-          <Text style={styles.addButtonOutlineText}>✈️ Voyage</Text>
+        <Text style={styles.pageTitle}>Plans financiers</Text>
+        <TouchableOpacity testID="financial-plans-add-button" style={styles.addButton} onPress={() => setPlanChoiceOpen(true)}>
+          <Ionicons name="add" size={22} color={colors.textOnPrimary} />
         </TouchableOpacity>
       </View>
 
@@ -85,16 +88,59 @@ export function FinancialPlansScreen() {
           );
         }}
       />
+
+      <ChoiceSheet
+        visible={planChoiceOpen}
+        title="Nouveau plan"
+        testID="plan-type-choice"
+        onClose={() => setPlanChoiceOpen(false)}
+        options={[
+          {
+            key: 'scolaire',
+            label: 'Frais scolaires',
+            description: 'Échéances de scolarité et services associés',
+            icon: 'school-outline',
+            onPress: () => navigation.navigate('SchoolWizard'),
+          },
+          {
+            key: 'voyage',
+            label: 'Voyage',
+            description: "Budget et dépenses d'un voyage",
+            icon: 'airplane-outline',
+            onPress: () => navigation.navigate('TravelWizard'),
+          },
+          {
+            key: 'voiture',
+            label: 'Voiture',
+            description: 'Charges liées à un véhicule',
+            icon: 'car-outline',
+            onPress: () => navigation.navigate('VehicleWizard'),
+          },
+          {
+            key: 'maison',
+            label: 'Maison',
+            description: 'Charges liées à un logement',
+            icon: 'home-outline',
+            onPress: () => navigation.navigate('HousingWizard'),
+          },
+          {
+            key: 'abonnements',
+            label: 'Abonnements',
+            description: 'Vue regroupée de vos abonnements',
+            icon: 'repeat-outline',
+            onPress: () => navigation.navigate('SubscriptionsWizard'),
+          },
+        ]}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background, paddingTop: spacing.lg, paddingHorizontal: spacing.xl },
-  pageTitle: { fontSize: 20, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.lg },
-  header: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: spacing.lg, gap: spacing.sm },
-  addButtonOutline: { backgroundColor: colors.primary, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: spacing.sm },
-  addButtonOutlineText: { color: colors.textOnPrimary, fontSize: 12, fontWeight: '600' },
+  pageTitle: { fontSize: 20, fontWeight: '700', color: colors.textPrimary },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
+  addButton: { backgroundColor: colors.primary, width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   empty: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.xxl },
   card: {
     backgroundColor: colors.surface,

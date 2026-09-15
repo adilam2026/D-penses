@@ -98,6 +98,22 @@ it('affiche le récapitulatif (solde actuel/après, reste à payer) avant confir
   await waitFor(() => expect(mockedApi.createPayment).toHaveBeenCalledWith('dl1', { amount: 1000, accountId: 'acc1', paidDate: expect.any(String) }));
 });
 
+// Corrections UI/UX finales §3 — le bloc "Confirmer la facture" (montant réel
+// + bouton "Confirmer" séparé) est retiré, y compris pour une échéance dont
+// amountStatus n'est pas "confirme" (l'ancien déclencheur du bloc) : le
+// paiement (total ou partiel) reste le seul parcours pour agir sur l'échéance.
+it('ne montre jamais le bloc "Confirmer la facture" (retiré), le parcours Payer reste présent', async () => {
+  mockedApi.getDeadline.mockResolvedValue({ ...DEADLINE, amountStatus: 'estime' as const });
+  await render(<DeadlineDetailScreen />);
+
+  await waitFor(() => expect(screen.getByTestId('deadline-pay-account-select')).toBeTruthy());
+  expect(screen.queryByText('Confirmer la facture')).toBeNull();
+  expect(screen.queryByTestId('confirm-amount-input')).toBeNull();
+  expect(screen.queryByText('Confirmer')).toBeNull();
+  expect(screen.getByText('Payer (total ou partiel)')).toBeTruthy();
+  expect(screen.getByTestId('deadline-pay-amount-input')).toBeTruthy();
+});
+
 it('paiement partiel : affiche explicitement le reste à payer après opération', async () => {
   mockedApi.getDeadline.mockResolvedValue(DEADLINE);
   await render(<DeadlineDetailScreen />);

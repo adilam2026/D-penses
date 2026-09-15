@@ -19,6 +19,7 @@ jest.mock('../../../ui/DateField', () => {
 });
 
 jest.mock('../../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
+jest.mock('../../../ui/useTopInset', () => ({ useTopInset: () => 16 }));
 
 // Correctif post-Vague 3 (§1, suivi) — le clavier recouvrait la zone active sur
 // Garderie/Réinscription/Sorties malgré useKeyboardAwareScroll déjà introduit

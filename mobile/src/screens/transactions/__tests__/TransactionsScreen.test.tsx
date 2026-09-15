@@ -5,6 +5,11 @@ import { TransactionsScreen } from '../TransactionsScreen';
 import * as api from '../../../api/client';
 
 jest.mock('../../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
+jest.mock('../../../ui/useTopInset', () => ({ useTopInset: () => 16 }));
+jest.mock('@expo/vector-icons', () => {
+  const { Text } = require('react-native');
+  return { Ionicons: (props: any) => require('react').createElement(Text, null, props.name) };
+});
 
 /**
  * Mini-lot T2 — le calendrier natif est mocké au niveau de son contrat, même

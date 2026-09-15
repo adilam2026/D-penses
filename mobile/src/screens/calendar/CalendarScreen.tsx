@@ -1,21 +1,27 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { RefreshControl, SectionList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as api from '../../api/client';
+import { useTopInset } from '../../ui/useTopInset';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
-import { CalendarEvent, KIND_COLOR, KIND_ICON, KIND_LABEL, LEGEND_ORDER, formatDate } from './calendarLogic';
+import { CalendarEvent, KIND_COLOR, KIND_ICON, KIND_LABEL, LEGEND_ORDER, formatDayMonth, groupEventsByMonth } from './calendarLogic';
 
 /**
- * Calendrier financier (§14/§15) — vue dérivée (IncomeOccurrence + Deadline),
- * jamais une source de données persistée. Facture attendue et échéance restent
- * deux événements distincts pour une seule Deadline métier.
+ * Calendrier financier (§14/§15, corrections UI/UX finales §8) — vue dérivée
+ * (IncomeOccurrence + Deadline), jamais une source de données persistée.
+ * Facture attendue et échéance restent deux événements distincts pour une
+ * seule Deadline métier. Liste groupée par mois (jamais une seconde règle de
+ * tri : groupEventsByMonth reste la seule source de regroupement).
  */
 export function CalendarScreen() {
   const navigation = useNavigation<any>();
+  const topInset = useTopInset();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [legendOpen, setLegendOpen] = useState(false);
+
+  const sections = useMemo(() => groupEventsByMonth(events), [events]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -41,8 +47,14 @@ export function CalendarScreen() {
   );
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Calendrier</Text>
+    <View style={[styles.container, { paddingTop: topInset }]}>
+      <View style={styles.headerRow}>
+        <TouchableOpacity testID="calendar-hamburger" style={styles.hamburgerButton} onPress={() => navigation.getParent()?.navigate('HamburgerMenu')}>
+          <Ionicons name="menu" size={24} color={colors.textPrimary} />
+        </TouchableOpacity>
+        <Text style={styles.title}>Calendrier</Text>
+        <View style={styles.headerRowSpacer} />
+      </View>
 
       <TouchableOpacity testID="legend-toggle" style={styles.legendToggle} onPress={() => setLegendOpen((v) => !v)}>
         <Text style={styles.legendToggleText}>Légende</Text>
@@ -59,10 +71,11 @@ export function CalendarScreen() {
         </View>
       )}
 
-      <FlatList
-        data={events}
+      <SectionList
+        sections={sections}
         keyExtractor={(e, i) => `${e.kind}-${e.date}-${i}`}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
+        renderSectionHeader={({ section }) => <Text style={styles.sectionHeader}>{section.title}</Text>}
         ListEmptyComponent={!loading ? <Text style={styles.empty}>Aucun événement dans les prochains jours.</Text> : null}
         renderItem={({ item }) => (
           <TouchableOpacity
@@ -79,7 +92,7 @@ export function CalendarScreen() {
             <View style={styles.rowBody}>
               <Text style={styles.rowLabel}>{item.label}</Text>
               <Text style={[styles.rowMeta, { color: KIND_COLOR[item.kind] }]}>
-                {formatDate(item.date)} · {KIND_LABEL[item.kind]}
+                {formatDayMonth(item.date)} · {KIND_LABEL[item.kind]}
               </Text>
             </View>
             {item.amount !== null && <Text style={styles.rowAmount}>{item.amount.toLocaleString('fr-FR')} DH</Text>}
@@ -91,8 +104,20 @@ export function CalendarScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background, paddingTop: 56, paddingHorizontal: spacing.xl },
-  title: { fontSize: 22, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.md },
+  container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: spacing.xl },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md },
+  hamburgerButton: { width: 32, height: 32, alignItems: 'flex-start', justifyContent: 'center' },
+  headerRowSpacer: { width: 32, height: 32 },
+  sectionHeader: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    backgroundColor: colors.background,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  title: { fontSize: 22, fontWeight: '700', color: colors.textPrimary },
   legendToggle: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', marginBottom: spacing.sm },
   legendToggleText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginRight: 4 },
   legend: {

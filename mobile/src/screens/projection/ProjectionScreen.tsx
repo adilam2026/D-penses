@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as api from '../../api/client';
 import {
   MonthBucketApi,
@@ -11,6 +12,7 @@ import {
   UNDETERMINED_ACCOUNT,
 } from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { useTopInset } from '../../ui/useTopInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
 import { MultiSelect } from '../../ui/MultiSelect';
@@ -273,6 +275,7 @@ function MonthCard({
 export function ProjectionScreen() {
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
+  const topInset = useTopInset();
   const { scrollRef } = useKeyboardAwareScroll();
 
   const [horizonMonths, setHorizonMonths] = useState<number>(DEFAULT_HORIZON);
@@ -332,8 +335,19 @@ export function ProjectionScreen() {
   }
 
   return (
-    <ScrollView ref={scrollRef} style={styles.container} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
-      <Text style={styles.title}>Projection</Text>
+    <ScrollView
+      ref={scrollRef}
+      style={styles.container}
+      contentContainerStyle={[styles.scroll, { paddingTop: topInset, paddingBottom: bottomInset }]}
+      keyboardShouldPersistTaps="handled"
+    >
+      <View style={styles.headerRow}>
+        <TouchableOpacity testID="projection-hamburger" style={styles.hamburgerButton} onPress={() => navigation.getParent()?.navigate('HamburgerMenu')}>
+          <Ionicons name="menu" size={24} color={colors.textPrimary} />
+        </TouchableOpacity>
+        <Text style={styles.title}>Projection</Text>
+        <View style={styles.headerRowSpacer} />
+      </View>
 
       <Text style={styles.sectionLabel}>Horizon</Text>
       <View style={styles.chipRow}>
@@ -448,8 +462,11 @@ function SummaryFigure({ label, value, signed, isCount }: { label: string; value
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
-  scroll: { padding: spacing.xl, paddingTop: spacing.lg },
-  title: { fontSize: 22, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.lg },
+  scroll: { padding: spacing.xl },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
+  hamburgerButton: { width: 32, height: 32, alignItems: 'flex-start', justifyContent: 'center' },
+  headerRowSpacer: { width: 32, height: 32 },
+  title: { fontSize: 22, fontWeight: '700', color: colors.textPrimary },
   sectionLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm, marginTop: 4 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: spacing.sm },
   chip: {

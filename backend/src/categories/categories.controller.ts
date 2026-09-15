@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { CategoriesService } from './categories.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
+import { UpdateCategoryDto } from './dto/update-category.dto';
 import { CurrentUser, AuthenticatedUser } from '../common/decorators/current-user.decorator';
 import { HouseholdRequiredGuard } from '../common/guards/household-required.guard';
 
@@ -17,6 +18,11 @@ export class CategoriesController {
   @Post()
   create(@Body() dto: CreateCategoryDto, @CurrentUser() user: AuthenticatedUser) {
     return this.categories.create(user.sub, user.householdId!, dto);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateCategoryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.categories.update(user.sub, user.householdId!, id, dto);
   }
 
   @Delete(':id')

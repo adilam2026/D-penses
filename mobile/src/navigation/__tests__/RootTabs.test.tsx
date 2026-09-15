@@ -89,20 +89,22 @@ async function renderApp() {
   );
 }
 
-it('TXT réf. §M1 — la navigation basse propose 5 positions symétriques : Accueil, Transactions, [+], Budgets, Plus', async () => {
+it('corrections UI/UX finales §6 — la navigation basse propose 5 positions symétriques : Accueil, Transactions, [+], Calendrier, Projection', async () => {
   await renderApp();
   await waitFor(() => screen.getByText('Bienvenue dans D-Penses+'));
   expect(screen.getByText('Accueil')).toBeTruthy();
   expect(screen.getByText('Transactions')).toBeTruthy();
   expect(screen.getByTestId('tab-quick-actions')).toBeTruthy();
-  // §M1 — Budgets et Plus (menu ☰) remplacent Projection/Calendrier dans la
-  // barre basse : avec 5 positions, le bouton central [+] occupe
-  // mathématiquement le 3e emplacement, donc le centre exact de la barre
-  // (contrairement à 4 positions, jamais centré). Projection et Calendrier
-  // sortent de la barre mais restent accessibles depuis "Plus" (menu ☰,
-  // section "Anticiper") — routes racine inchangées, jamais un onglet de plus ici.
-  expect(screen.getByText('Budgets')).toBeTruthy();
-  expect(screen.getByText('Plus')).toBeTruthy();
+  // §6 — Budgets et le menu ☰ ("Plus") sortent de la barre basse : avec 5
+  // positions, le bouton central [+] occupe mathématiquement le 3e
+  // emplacement, donc le centre exact de la barre (contrairement à 4
+  // positions, jamais centré). Budgets reste accessible depuis le menu ☰
+  // (section "Mes finances") et son propre Stack.Screen racine ; le menu ☰
+  // se déplace vers un bouton dédié en haut à gauche de chaque écran racine.
+  expect(screen.getByText('Calendrier')).toBeTruthy();
+  expect(screen.getByText('Projection')).toBeTruthy();
+  expect(screen.queryByText('Budgets')).toBeNull();
+  expect(screen.queryByText('Plus')).toBeNull();
   expect(screen.queryByText('Enveloppes')).toBeNull();
 });
 

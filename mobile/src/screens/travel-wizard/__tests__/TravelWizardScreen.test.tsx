@@ -11,6 +11,7 @@ import * as api from '../../../api/client';
  * pour les postes non personnalisés si celle-ci change.
  */
 jest.mock('../../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
+jest.mock('../../../ui/useTopInset', () => ({ useTopInset: () => 16 }));
 
 jest.mock('../../../ui/DateField', () => {
   const { TextInput } = require('react-native');

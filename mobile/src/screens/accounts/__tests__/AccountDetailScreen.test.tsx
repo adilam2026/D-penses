@@ -36,6 +36,7 @@ jest.mock('../../../api/client', () => {
     getAccount: jest.fn(),
     listAccounts: jest.fn(),
     listReconciliations: jest.fn(),
+    listTransactions: jest.fn(),
     updateAccount: jest.fn(),
     createTransfer: jest.fn(),
   };
@@ -75,6 +76,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockedApi.listAccounts.mockResolvedValue([]);
   mockedApi.listReconciliations.mockResolvedValue([]);
+  mockedApi.listTransactions.mockResolvedValue([]);
 });
 
 it('affiche le menu "..." avec Modifier et Archiver pour un compte actif', async () => {
@@ -160,7 +162,12 @@ it('un compte archivé affiche "Réactiver" et masque le formulaire de transfert
   await render(<AccountDetailScreen />);
 
   await waitFor(() => expect(screen.getByTestId('account-reactivate')).toBeTruthy());
-  expect(screen.getByText(/archivez-le pour transférer|réactivez-le pour transférer/i)).toBeTruthy();
+
+  await fireEvent.press(screen.getByTestId('account-menu-button'));
+  await waitFor(() => expect(screen.getByTestId('account-menu-option-transfert')).toBeTruthy());
+  await fireEvent.press(screen.getByTestId('account-menu-option-transfert'));
+
+  await waitFor(() => expect(screen.getByText(/archivez-le pour transférer|réactivez-le pour transférer/i)).toBeTruthy());
 });
 
 it('Réactiver appelle updateAccount(status=actif)', async () => {
@@ -180,6 +187,11 @@ it('transfert : sélecteur compact + preview avant/après sur les 2 comptes, bou
   mockedApi.createTransfer.mockResolvedValue({});
   await render(<AccountDetailScreen />);
 
+  await waitFor(() => expect(screen.getByTestId('account-menu-button')).toBeTruthy());
+  await fireEvent.press(screen.getByTestId('account-menu-button'));
+  await waitFor(() => expect(screen.getByTestId('account-menu-option-transfert')).toBeTruthy());
+  await fireEvent.press(screen.getByTestId('account-menu-option-transfert'));
+
   await waitFor(() => expect(screen.getByTestId('account-transfer-dest-select')).toBeTruthy());
   expect(screen.queryByTestId('account-transfer-preview')).toBeNull();
 
@@ -194,4 +206,34 @@ it('transfert : sélecteur compact + preview avant/après sur les 2 comptes, bou
 
   await fireEvent.press(screen.getByText('CONFIRMER LE TRANSFERT'));
   await waitFor(() => expect(mockedApi.createTransfer).toHaveBeenCalledWith({ fromAccountId: 'acc1', toAccountId: 'acc2', amount: 300 }));
+});
+
+// Corrections UI/UX finales §4 — l'écran principal d'un compte est son
+// historique (jamais le rapprochement/transfert), filtré par accountId via
+// le même registre que l'écran Transactions.
+it("affiche l'historique des transactions de ce compte (réutilise le registre Transactions filtré par accountId)", async () => {
+  mockedApi.getAccount.mockResolvedValue(ACTIVE_ACCOUNT);
+  mockedApi.listTransactions.mockResolvedValue([
+    {
+      kind: 'adhoc_expense',
+      displayKind: 'depense',
+      id: 'tx1',
+      occurredAt: '2026-09-10T00:00:00.000Z',
+      amount: -150,
+      accountName: 'Compte principal',
+      label: 'Courses · Adil',
+      categoryName: null,
+      categoryTypeName: null,
+      categorySubtypeName: null,
+      createdByUserId: null,
+      createdByName: null,
+      budgetId: null,
+      financialPlanId: null,
+    },
+  ] as any);
+  await render(<AccountDetailScreen />);
+
+  await waitFor(() => expect(mockedApi.listTransactions).toHaveBeenCalledWith({ accountId: 'acc1' }));
+  await waitFor(() => expect(screen.getByText('Courses · Adil')).toBeTruthy());
+  expect(screen.getByTestId('account-history-row-adhoc_expense-tx1')).toBeTruthy();
 });

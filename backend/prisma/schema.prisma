@@ -409,13 +409,18 @@ model Housing {
 }
 
 model Category {
-  id          String       @id @default(uuid())
-  householdId String?      @map("household_id") // NULL = catégorie système, partagée par tous les foyers
+  id          String            @id @default(uuid())
+  householdId String?           @map("household_id") // NULL = catégorie système, partagée par tous les foyers
   name        String
   icon        String?
   kind        CategoryKind
-  isSystem    Boolean      @default(false) @map("is_system")
-  createdAt   DateTime     @default(now()) @map("created_at")
+  isSystem    Boolean           @default(false) @map("is_system")
+  // Corrections UI/UX finales §10 — une catégorie déjà utilisée n'est plus jamais
+  // bloquée à la suppression (BadRequestException) : elle est archivée
+  // (status=inactive), jamais retirée de son historique (transactions/budgets/
+  // charges gardent leur relation intacte, ils ne filtrent jamais par status).
+  status      ReferentialStatus @default(active)
+  createdAt   DateTime          @default(now()) @map("created_at")
 
   household       Household?       @relation(fields: [householdId], references: [id], onDelete: Cascade)
   incomeSources   IncomeSource[]

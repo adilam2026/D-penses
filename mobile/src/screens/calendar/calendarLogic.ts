@@ -57,3 +57,36 @@ export const LEGEND_ORDER: CalendarEvent['kind'][] = ['echeance', 'echeance_paye
 export function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' });
 }
+
+// Corrections UI/UX finales §8 — "30 sept." (jamais le jour de semaine), pour
+// une ligne compacte dans la liste groupée par mois.
+export function formatDayMonth(iso: string) {
+  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+}
+
+export function monthKey(dateIso: string): string {
+  return dateIso.slice(0, 7);
+}
+
+export function monthSectionTitle(key: string): string {
+  const [y, m] = key.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).toUpperCase();
+}
+
+/**
+ * Corrections UI/UX finales §8 — regroupement par mois, ordre chronologique
+ * croissant (le mois le plus proche en premier), jamais un second calcul des
+ * événements eux-mêmes (CalendarEvent reste la seule source, dérivée de
+ * GET /calendar).
+ */
+export function groupEventsByMonth(events: CalendarEvent[]): { title: string; data: CalendarEvent[] }[] {
+  const byMonth = new Map<string, CalendarEvent[]>();
+  for (const e of events) {
+    const key = monthKey(e.date);
+    if (!byMonth.has(key)) byMonth.set(key, []);
+    byMonth.get(key)!.push(e);
+  }
+  return Array.from(byMonth.entries())
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([key, data]) => ({ title: monthSectionTitle(key), data: data.slice().sort((x, y) => (x.date < y.date ? -1 : 1)) }));
+}

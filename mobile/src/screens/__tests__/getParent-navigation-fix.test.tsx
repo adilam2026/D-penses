@@ -7,6 +7,10 @@ import { BudgetsScreen } from '../budgets/BudgetsScreen';
 import * as api from '../../api/client';
 
 jest.mock('../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
+jest.mock('@expo/vector-icons', () => {
+  const { Text } = require('react-native');
+  return { Ionicons: (props: any) => require('react').createElement(Text, null, props.name) };
+});
 
 /**
  * Correctif critique post-Vague 3 (§16 "bugs supplémentaires trouvés") — audit
@@ -47,12 +51,14 @@ beforeEach(() => {
 });
 
 describe('FinancialPlansScreen', () => {
-  it('taper "Frais scolaires" navigue réellement vers SchoolWizard', async () => {
+  it('bouton "+" → choix "Frais scolaires" navigue réellement vers SchoolWizard', async () => {
     mockedApi.listFinancialPlans.mockResolvedValue([]);
     await render(<FinancialPlansScreen />);
-    await waitFor(() => screen.getByText(/Frais scolaires/));
+    await waitFor(() => screen.getByTestId('financial-plans-add-button'));
+    await fireEvent.press(screen.getByTestId('financial-plans-add-button'));
+    await waitFor(() => expect(screen.getByTestId('plan-type-choice-option-scolaire')).toBeTruthy());
 
-    await fireEvent.press(screen.getByText(/Frais scolaires/));
+    await fireEvent.press(screen.getByTestId('plan-type-choice-option-scolaire'));
 
     expect(mockNavigate).toHaveBeenCalledWith('SchoolWizard');
   });

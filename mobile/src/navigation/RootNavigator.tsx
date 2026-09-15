@@ -151,8 +151,13 @@ export function RootNavigator() {
       <Stack.Screen name="Goals" component={GoalsScreen} options={{ headerShown: true, title: 'Objectifs' }} />
       <Stack.Screen name="GoalDetail" component={GoalDetailScreen} options={{ headerShown: true, title: 'Objectif' }} />
       <Stack.Screen name="CreateGoal" component={CreateGoalScreen} options={{ headerShown: true, title: 'Nouvel objectif', presentation: 'modal' }} />
-      <Stack.Screen name="Projection" component={ProjectionScreen} options={{ headerShown: !isWeb, title: 'Projection' }} />
-      <Stack.Screen name="Calendrier" component={CalendarScreen} options={{ headerShown: !isWeb, title: 'Calendrier' }} />
+      {/* Corrections UI/UX finales §2/§6/§8 — Projection et Calendrier deviennent des
+          onglets de la barre basse (RootTabs) EN PLUS d'être atteignables en push
+          racine (ex. depuis le menu ☰) : les deux composants gèrent déjà eux-mêmes
+          leur propre titre + safe-area (useTopInset), jamais de header natif ici
+          pour éviter un double titre/double padding selon le chemin d'accès. */}
+      <Stack.Screen name="Projection" component={ProjectionScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Calendrier" component={CalendarScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Simulator" component={SimulatorScreen} options={{ headerShown: true, title: 'Simulateur' }} />
       <Stack.Screen name="Onboarding" component={OnboardingWizardScreen} options={{ headerShown: true, title: 'Assistant de démarrage', presentation: 'modal' }} />
       </Stack.Navigator>

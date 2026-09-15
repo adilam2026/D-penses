@@ -142,17 +142,20 @@ describe('R5 clôture — gaps corrigés (e2e)', () => {
   // F — Catégories sécurisées
   // ============================================================
   describe('§3 — Catégories sécurisées', () => {
-    it('F. une catégorie utilisée par une dépense réelle ne peut pas être supprimée brutalement', async () => {
+    it('F. une catégorie utilisée par une dépense réelle est archivée (jamais un hard delete brutal)', async () => {
       const { auth } = await newHousehold();
       const account = await createAccount(auth, 'Compte catégorie utilisée', 1000);
       const cat = await createCategory(auth, 'Catégorie utilisée F');
-      await http.post('/expenses').set(...auth()).send({ amount: 50, accountId: account, categoryId: cat }).expect(201);
+      const expense = await http.post('/expenses').set(...auth()).send({ amount: 50, accountId: account, categoryId: cat }).expect(201);
 
-      const res = await http.delete(`/categories/${cat}`).set(...auth()).expect(400);
-      expect(res.body.message).toMatch(/utilisée/);
+      const res = await http.delete(`/categories/${cat}`).set(...auth()).expect(200);
+      expect(res.body.archived).toBe(true);
 
-      const stillThere = await http.get('/categories').set(...auth()).expect(200);
-      expect(stillThere.body.find((c: { id: string }) => c.id === cat)).toBeDefined();
+      const activeList = await http.get('/categories').set(...auth()).expect(200);
+      expect(activeList.body.find((c: { id: string }) => c.id === cat)).toBeUndefined();
+
+      const detail = await http.get(`/transactions/adhoc_expense/${expense.body.expense.id}`).set(...auth()).expect(200);
+      expect(detail.body.label).toBe('Catégorie utilisée F'); // l'historique garde sa catégorie malgré l'archivage
     });
 
     it('une catégorie inutilisée reste supprimable normalement (non-régression)', async () => {

@@ -9,67 +9,7 @@ import { Select } from '../../ui/Select';
 import { DateField } from '../../ui/DateField';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
 import { TEMPORAL_STATUS_LABEL, temporalStatus, temporalStatusColor } from '../../ui/temporalStatus';
-
-const AMOUNT_STATUS_OPTIONS = [
-  { value: 'confirme', label: 'Confirmé' },
-  { value: 'estime', label: 'Estimé' },
-  { value: 'inconnu', label: 'Inconnu' },
-];
-
-interface Deadline {
-  id: string;
-  chargePlanId: string;
-  dueDate: string;
-  amountCurrent: number | string | null;
-  amountStatus: 'inconnu' | 'estime' | 'confirme';
-  financialStatus: 'ouverte' | 'partiellement_payee' | 'soldee' | 'annulee';
-  resteAPayer: number | string | null;
-  provisionId: string | null;
-  chargePlan: { label: string };
-}
-
-interface Payment {
-  id: string;
-  amount: number | string;
-  paidDate: string;
-  type: string;
-  accountId: string;
-  provisionId: string | null;
-}
-
-interface Account {
-  id: string;
-  name: string;
-  soldeCourant: number;
-}
-
-interface Provision {
-  id: string;
-  name: string;
-  allocationMode: 'virtual_allocation' | 'backed_by_account';
-  linkedAccountId: string | null;
-  currentAmount: number | string;
-}
-
-const STATUS_LABEL: Record<Deadline['financialStatus'], string> = {
-  ouverte: 'Ouverte',
-  partiellement_payee: 'Partiellement payée',
-  soldee: 'Soldée',
-  annulee: 'Annulée',
-};
-
-function n(v: number | string | null): number | null {
-  if (v === null) return null;
-  return typeof v === 'number' ? v : Number(v);
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
-}
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
+import { AMOUNT_STATUS_OPTIONS, Account, Deadline, Payment, Provision, STATUS_LABEL, formatDate, n, todayIso } from './deadlineDetailLogic';
 
 /**
  * Détail d'une échéance — parcours de paiement UNIQUE de l'app (R6 clôture §5) :
@@ -93,9 +33,6 @@ export function DeadlineDetailScreen() {
   // Mini-lot Paiements/Échéances — même seuil que ChargesScreen/HomeScreen
   // (seuil_a_payer_days du foyer), jamais une valeur dupliquée en dur.
   const [seuilAPayerDays, setSeuilAPayerDays] = useState(7);
-
-  const [confirmAmount, setConfirmAmount] = useState('');
-  const [confirming, setConfirming] = useState(false);
 
   // R6.4 (§3) — "Modifier" une échéance existante : libellé/catégorie sont des
   // propriétés du ChargePlan parent (déjà éditables via ChargePlanDetailScreen,
@@ -131,7 +68,6 @@ export function DeadlineDetailScreen() {
       setPayments(p);
       setAccounts(accountList);
       setSeuilAPayerDays(household?.settings?.seuilAPayerDays ?? 7);
-      if (d.amountCurrent !== null) setConfirmAmount(String(n(d.amountCurrent)));
 
       if (d.provisionId) {
         const prov: Provision = await api.getProvision(d.provisionId);
@@ -155,24 +91,6 @@ export function DeadlineDetailScreen() {
       load();
     }, [load]),
   );
-
-  async function onConfirmBilling() {
-    setError(null);
-    const value = Number(confirmAmount.replace(',', '.'));
-    if (!value || value <= 0) {
-      setError('Montant invalide');
-      return;
-    }
-    setConfirming(true);
-    try {
-      await api.updateDeadline(id, { amountCurrent: value, amountStatus: 'confirme', billingDate: todayIso() });
-      await load();
-    } catch (err) {
-      setError(err instanceof api.ApiError ? err.message : 'Confirmation impossible');
-    } finally {
-      setConfirming(false);
-    }
-  }
 
   function openEdit() {
     if (!deadline) return;
@@ -316,24 +234,6 @@ export function DeadlineDetailScreen() {
             <Text style={styles.heroChargePlanLink}>Modifier le libellé / la catégorie →</Text>
           </TouchableOpacity>
         </View>
-
-        {isOpen && deadline.amountStatus !== 'confirme' && (
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Confirmer la facture</Text>
-            <FormField
-              testID="confirm-amount-input"
-              label="Montant réel"
-              placeholder="Montant réel (DH)"
-              keyboardType="decimal-pad"
-              value={confirmAmount}
-              onChangeText={setConfirmAmount}
-              onFocus={handleFocus}
-            />
-            <TouchableOpacity style={styles.button} onPress={onConfirmBilling} disabled={confirming}>
-              {confirming ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Confirmer</Text>}
-            </TouchableOpacity>
-          </View>
-        )}
 
         {isOpen && accounts.length === 0 && (
           <View style={styles.noAccountCard}>

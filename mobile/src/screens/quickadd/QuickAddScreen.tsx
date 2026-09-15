@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { useTopInset } from '../../ui/useTopInset';
 import { accountCreatedBus } from '../../state/events';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { Select } from '../../ui/Select';
@@ -83,6 +84,7 @@ export function QuickAddScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const bottomInset = useBottomInset();
+  const topInset = useTopInset();
   const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   // Vague 3 §3 — la bottom sheet "+" peut présélectionner l'action (Dépense/Revenu/
   // Payer une échéance/Transfert) ; sans paramètre, comportement inchangé (Dépense).
@@ -345,7 +347,7 @@ export function QuickAddScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingTop: topInset, paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>{presetBudget ? 'Ajouter une dépense' : 'Ajouter'}</Text>
 
         {/* M3 §5 — rattaché à un budget précis : un seul type d'objet possible
@@ -692,7 +694,7 @@ export function QuickAddScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  scroll: { padding: spacing.xxl, paddingTop: 40 },
+  scroll: { padding: spacing.xxl },
   segment: { flexDirection: 'row', backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: 4, marginBottom: spacing.sm },
   segmentItem: { flex: 1, paddingVertical: 10, borderRadius: radius.sm, alignItems: 'center' },
   segmentActive: { backgroundColor: colors.surface },

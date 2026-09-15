@@ -339,9 +339,15 @@ export const listCategories = () => apiFetch('/categories');
 export const createCategory = (data: { name: string; kind: 'income' | 'expense' | 'both'; icon?: string }) =>
   apiFetch('/categories', { method: 'POST', body: data });
 
-// R5 clôture §3 — le backend refuse déjà la suppression d'une catégorie système
-// ou encore utilisée (revenus/charges/budgets/dépenses réelles) : jamais de
-// contrôle dupliqué ici, le message d'erreur backend est affiché tel quel.
+// Corrections UI/UX finales §10 — renommer/changer le type, y compris une
+// catégorie système : jamais bloqué côté backend, jamais de contrôle dupliqué ici.
+export const updateCategory = (id: string, data: { name?: string; kind?: 'income' | 'expense' | 'both' }) =>
+  apiFetch(`/categories/${id}`, { method: 'PATCH', body: data });
+
+// Corrections UI/UX finales §10 — une catégorie inutilisée est réellement
+// supprimée ({archived:false}) ; une catégorie déjà utilisée est archivée
+// ({archived:true}) au lieu d'un refus bloquant : jamais d'erreur à afficher
+// ici pour ce cas, elle disparaît simplement de listCategories().
 export const deleteCategory = (id: string) => apiFetch(`/categories/${id}`, { method: 'DELETE' });
 
 // Vague 2 §1/§3 — Type (rattaché à une Catégorie) et Sous-type (rattaché à un Type),

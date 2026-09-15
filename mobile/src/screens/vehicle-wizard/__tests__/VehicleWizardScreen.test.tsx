@@ -9,6 +9,7 @@ import * as api from '../../../api/client';
  * jamais imposée), réutilise POST /vehicle-wizard (ChargePlan/Deadline existant).
  */
 jest.mock('../../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
+jest.mock('../../../ui/useTopInset', () => ({ useTopInset: () => 16 }));
 
 jest.mock('../../../ui/DateField', () => {
   const { TextInput } = require('react-native');

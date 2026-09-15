@@ -5,6 +5,7 @@ import * as api from '../../../api/client';
 
 /** M8 — Plan Maison : même patron que VehicleWizardScreen, postes groupés par catégorie. */
 jest.mock('../../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
+jest.mock('../../../ui/useTopInset', () => ({ useTopInset: () => 16 }));
 
 jest.mock('../../../ui/DateField', () => {
   const { TextInput } = require('react-native');

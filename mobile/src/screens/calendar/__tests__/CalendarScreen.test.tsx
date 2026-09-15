@@ -22,6 +22,8 @@ jest.mock('@expo/vector-icons', () => {
   return { Ionicons: (props: any) => require('react').createElement(Text, null, props.name) };
 });
 
+jest.mock('../../../ui/useTopInset', () => ({ useTopInset: () => 16 }));
+
 jest.mock('../../../api/client', () => ({ getCalendar: jest.fn() }));
 const mockedApi = api as jest.Mocked<typeof api>;
 
@@ -57,6 +59,15 @@ it('la légende est repliée par défaut, puis affiche les 5 types', async () =>
   expect(screen.getByText('Revenu prévu')).toBeTruthy();
   expect(screen.getByText('Montant inconnu')).toBeTruthy();
   expect(screen.getByText('Facture attendue')).toBeTruthy();
+});
+
+// Corrections UI/UX finales §8 — la liste principale est groupée par mois
+// (SEPTEMBRE 2026, OCTOBRE 2026...), ordre chronologique croissant.
+it('groupe les événements par mois (en-têtes de section)', async () => {
+  await render(<CalendarScreen />);
+  await waitFor(() => screen.getByText('Jardinier'));
+
+  expect(screen.getByText(/SEPTEMBRE 2026/)).toBeTruthy();
 });
 
 it('taper une échéance navigue vers DeadlineDetail, un revenu prévu (sans deadlineId) ne navigue pas', async () => {

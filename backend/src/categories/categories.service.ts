@@ -1,19 +1,47 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
+import { UpdateCategoryDto } from './dto/update-category.dto';
 
 @Injectable()
 export class CategoriesService {
   constructor(private readonly rlsContext: RlsContextService) {}
 
-  /** Catégories système (household_id NULL) + catégories propres au foyer (document 02 §31). */
+  /**
+   * Catégories système (household_id NULL) + catégories propres au foyer (document
+   * 02 §31), ACTIVES uniquement (corrections UI/UX finales §10) — une catégorie
+   * archivée disparaît de cette liste (donc des sélecteurs), jamais des relations
+   * déjà existantes (transactions/budgets/charges lisent leur catégorie par
+   * relation directe, jamais filtrée par status).
+   */
   async findAll(userId: string, householdId: string) {
     return this.rlsContext.run(userId, householdId, () =>
       this.rlsContext.getClient().category.findMany({
-        where: { OR: [{ householdId: null }, { householdId }] },
+        where: { status: 'active', OR: [{ householdId: null }, { householdId }] },
         orderBy: [{ isSystem: 'desc' }, { name: 'asc' }],
       }),
     );
+  }
+
+  /**
+   * Corrections UI/UX finales §10 — renommer/changer le type d'une catégorie,
+   * y compris une catégorie système (partagée par tous les foyers, comme sa
+   * lecture l'est déjà) : jamais bloquée ici pour préserver un écran "impossible
+   * à gérer". Reste interdit uniquement pour une catégorie d'un AUTRE foyer.
+   */
+  async update(userId: string, householdId: string, id: string, dto: UpdateCategoryDto) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const category = await tx.category.findFirst({ where: { id } });
+      if (!category) throw new NotFoundException('Catégorie introuvable');
+      if (category.householdId !== null && category.householdId !== householdId) {
+        throw new ForbiddenException("Impossible de modifier une catégorie d'un autre foyer");
+      }
+      return tx.category.update({
+        where: { id },
+        data: { name: dto.name?.trim(), kind: dto.kind },
+      });
+    });
   }
 
   async create(userId: string, householdId: string, dto: CreateCategoryDto) {
@@ -25,22 +53,23 @@ export class CategoriesService {
   }
 
   /**
-   * R5 clôture §3 — sécuriser la suppression : jamais une suppression brutale
-   * qui casserait une référence utilisée par des données financières réelles
-   * (historique). Comptée à travers toute la hiérarchie (Catégorie directe ET
-   * ses Types, puisque Category→CategoryType est en CASCADE côté base — un
-   * DELETE ici supprimerait aussi silencieusement des Types eux-mêmes utilisés).
-   * Refus explicite plutôt qu'une désactivation (aucun champ `active` sur
-   * Category aujourd'hui — l'ajouter sortirait du périmètre schéma de cette
-   * clôture) : les anciennes transactions gardent alors leur catégorie intacte.
+   * Corrections UI/UX finales §10 — jamais un refus bloquant pour l'utilisateur :
+   * une catégorie non utilisée est réellement supprimée (comportement historique,
+   * R5 clôture §3) ; une catégorie déjà utilisée (revenus/charges/budgets/dépenses
+   * réelles, y compris via ses CategoryType) est ARCHIVÉE (status=inactive) au
+   * lieu d'un hard delete — elle disparaît de findAll() (donc des sélecteurs),
+   * jamais de l'historique : aucune relation existante n'est touchée, aucune
+   * transaction passée ne perd sa catégorie. Reste interdit uniquement pour une
+   * catégorie d'un AUTRE foyer (jamais une catégorie système, désormais gérable
+   * comme les autres).
    */
   async remove(userId: string, householdId: string, id: string) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
       const category = await tx.category.findFirst({ where: { id } });
       if (!category) throw new NotFoundException('Catégorie introuvable');
-      if (category.isSystem || category.householdId !== householdId) {
-        throw new ForbiddenException('Impossible de supprimer une catégorie système ou hors de votre foyer');
+      if (category.householdId !== null && category.householdId !== householdId) {
+        throw new ForbiddenException("Impossible de supprimer une catégorie d'un autre foyer");
       }
 
       const [incomeSources, chargePlans, variableBudgets, adhocDirect, budgetDirect, adhocViaType, budgetViaType] = await Promise.all([
@@ -54,12 +83,12 @@ export class CategoriesService {
       ]);
       const usageCount = incomeSources + chargePlans + variableBudgets + adhocDirect + budgetDirect + adhocViaType + budgetViaType;
       if (usageCount > 0) {
-        throw new BadRequestException(
-          `Cette catégorie est utilisée par ${usageCount} élément(s) (revenus, charges, budgets ou dépenses réelles) — suppression impossible pour préserver l'historique financier.`,
-        );
+        await tx.category.update({ where: { id }, data: { status: 'inactive' } });
+        return { archived: true };
       }
 
       await tx.category.delete({ where: { id } });
+      return { archived: false };
     });
   }
 }

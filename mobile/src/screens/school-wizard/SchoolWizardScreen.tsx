@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, FocusEvent, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { useTopInset } from '../../ui/useTopInset';
 import { DateField } from '../../ui/DateField';
 import { FREQUENCY_LABEL } from '../../ui/frequency';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
@@ -165,6 +166,7 @@ const STEP_TITLES = ['Enfant(s) & établissement', 'Scolarité', 'Services scola
 export function SchoolWizardScreen() {
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
+  const topInset = useTopInset();
   const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [step, setStep] = useState(0);
 
@@ -475,7 +477,7 @@ export function SchoolWizardScreen() {
   // même pendant que cette porte est affichée).
   if (children.length === 0) {
     return (
-      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={[styles.container, { paddingTop: topInset }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           ref={scrollRef}
           contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset, justifyContent: 'center', flexGrow: 1 }]}
@@ -766,7 +768,7 @@ export function SchoolWizardScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={[styles.container, { paddingTop: topInset }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Text style={styles.stepCounter}>
         Étape {step + 1}/{STEP_TITLES.length}
       </Text>
@@ -984,7 +986,7 @@ function AlreadyPaidEditor({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background, paddingTop: 40 },
+  container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
   scroll: { padding: spacing.xxl },
   stepCounter: { fontSize: 11, color: colors.textSecondary, textAlign: 'center' },

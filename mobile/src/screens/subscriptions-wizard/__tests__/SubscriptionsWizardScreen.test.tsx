@@ -5,6 +5,7 @@ import * as api from '../../../api/client';
 
 /** M8 (guard-rail §12) — Plan Abonnements : vue regroupée, aucun référentiel, jamais mensuel imposé. */
 jest.mock('../../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
+jest.mock('../../../ui/useTopInset', () => ({ useTopInset: () => 16 }));
 
 jest.mock('../../../ui/DateField', () => {
   const { TextInput } = require('react-native');

@@ -1,10 +1,12 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Modal, RefreshControl, SectionList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as api from '../../api/client';
 import { DateField } from '../../ui/DateField';
 import { MultiSelect } from '../../ui/MultiSelect';
 import { Select } from '../../ui/Select';
+import { useTopInset } from '../../ui/useTopInset';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
 // Portail Web v4 §1 — types/constantes/fonctions pures extraits tels quels vers
 // transactionsLogic.ts (aucun changement de comportement), partagés avec
@@ -35,6 +37,7 @@ import {
  */
 export function TransactionsScreen() {
   const navigation = useNavigation<any>();
+  const topInset = useTopInset();
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [appliedFilters, setAppliedFilters] = useState<Filters>(EMPTY_FILTERS);
@@ -132,8 +135,11 @@ export function TransactionsScreen() {
   const filtersActive = hasActiveFilters(appliedFilters);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: topInset }]}>
       <View style={styles.header}>
+        <TouchableOpacity testID="transactions-hamburger" style={styles.hamburgerButton} onPress={() => navigation.getParent()?.navigate('HamburgerMenu')}>
+          <Ionicons name="menu" size={24} color={colors.textPrimary} />
+        </TouchableOpacity>
         <Text style={styles.title}>Transactions</Text>
         <View style={styles.headerActions}>
           <TouchableOpacity testID="transactions-filters-button" style={styles.filterButton} onPress={openFilters}>
@@ -328,9 +334,10 @@ export function TransactionsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background, paddingTop: 56, paddingHorizontal: spacing.xl },
+  container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: spacing.xl },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
-  title: { fontSize: 22, fontWeight: '700', color: colors.textPrimary },
+  hamburgerButton: { width: 32, height: 32, alignItems: 'flex-start', justifyContent: 'center', marginRight: spacing.xs },
+  title: { fontSize: 22, fontWeight: '700', color: colors.textPrimary, flex: 1 },
   headerActions: { flexDirection: 'row', alignItems: 'center' },
   filterButton: {
     backgroundColor: colors.surface,
