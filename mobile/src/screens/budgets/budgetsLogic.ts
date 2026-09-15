@@ -20,6 +20,11 @@ export interface BudgetStatus {
 
 export interface Budget {
   id: string;
+  // M3 — libellé libre, primaire à l'affichage (category.name devient
+  // secondaire). Optionnel : absent pour une fiche pas encore migrée/rechargée,
+  // toujours lu avec un repli sur category.name côté écran.
+  label?: string;
+  categoryTypes?: Array<{ id: string; name: string }>;
   referenceAmount: number;
   referencePeriod: 'semaine' | 'mois';
   category: { name: string };

@@ -18,6 +18,7 @@ interface DeadlineItem {
 interface VariableBudgetItem {
   variableBudgetId: string;
   amount: number;
+  label?: string;
   categoryName: string;
 }
 
@@ -92,7 +93,7 @@ export function EngagedDetailScreen() {
           <Text style={styles.sectionTitle}>Budgets variables ({budgetsTotal.toLocaleString('fr-FR')} DH)</Text>
           {variableBudgetItems.map((b) => (
             <View key={b.variableBudgetId} style={styles.row} testID={`engaged-budget-${b.variableBudgetId}`}>
-              <Text style={styles.rowLabel}>{b.categoryName}</Text>
+              <Text style={styles.rowLabel}>{b.label || b.categoryName}</Text>
               <Text style={styles.rowValue}>{b.amount.toLocaleString('fr-FR')} DH</Text>
             </View>
           ))}

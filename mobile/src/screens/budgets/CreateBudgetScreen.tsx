@@ -6,6 +6,7 @@ import { useBottomInset } from '../../ui/useBottomInset';
 import { DateField } from '../../ui/DateField';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { Select } from '../../ui/Select';
+import { MultiSelect } from '../../ui/MultiSelect';
 import { FormField } from '../../ui/FormField';
 import { colors, radius, spacing } from '../../ui/theme';
 
@@ -15,8 +16,14 @@ interface Category {
   kind: 'income' | 'expense' | 'both';
 }
 
+interface CategoryTypeOption {
+  id: string;
+  name: string;
+  active: boolean;
+}
+
 interface CreatedBudget {
-  categoryName: string;
+  label: string;
   amount: number;
   period: 'semaine' | 'mois';
 }
@@ -42,6 +49,13 @@ export function CreateBudgetScreen() {
   const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  // M3 — libellé libre requis à la création (ex. "Courses"), distinct de la
+  // catégorie/des types suivis ci-dessous.
+  const [label, setLabel] = useState('');
+  // M3 — types suivis (facultatif) : liste vide = toute la catégorie
+  // (comportement historique). Options rechargées à chaque changement de catégorie.
+  const [categoryTypeOptions, setCategoryTypeOptions] = useState<CategoryTypeOption[]>([]);
+  const [categoryTypeIds, setCategoryTypeIds] = useState<string[]>([]);
   const [amount, setAmount] = useState('');
   const [period, setPeriod] = useState<'semaine' | 'mois'>('semaine');
   // Lot 6 — mode du mois, pertinent uniquement pour period='mois' (inerte pour
@@ -64,8 +78,25 @@ export function CreateBudgetScreen() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    setCategoryTypeOptions([]);
+    setCategoryTypeIds([]);
+    if (!categoryId) return;
+    let cancelled = false;
+    api.listCategoryTypes(categoryId).then((types: CategoryTypeOption[]) => {
+      if (!cancelled) setCategoryTypeOptions(types);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [categoryId]);
+
   async function onSubmit() {
     setError(null);
+    if (!label.trim()) {
+      setError('Le libellé est obligatoire');
+      return;
+    }
     const numericAmount = Number(amount.replace(',', '.'));
     if (!categoryId) {
       setError('Choisissez une catégorie');
@@ -83,7 +114,9 @@ export function CreateBudgetScreen() {
     setSubmitting(true);
     try {
       await api.createVariableBudget({
+        label: label.trim(),
         categoryId,
+        categoryTypeIds,
         referenceAmount: numericAmount,
         referencePeriod: period,
         startDate,
@@ -91,9 +124,10 @@ export function CreateBudgetScreen() {
         customStartDay: period === 'mois' && monthMode === 'personnalise' ? numericCustomStartDay : undefined,
         includeInPrudentProjection,
       });
-      const categoryName = categories.find((c) => c.id === categoryId)?.name ?? '';
-      setCreated((prev) => [...prev, { categoryName, amount: numericAmount, period }]);
+      setCreated((prev) => [...prev, { label: label.trim(), amount: numericAmount, period }]);
+      setLabel('');
       setCategoryId(null);
+      setCategoryTypeIds([]);
       setAmount('');
       setMonthMode('calendaire');
       setCustomStartDay('');
@@ -115,11 +149,20 @@ export function CreateBudgetScreen() {
           <Text style={styles.sectionLabel}>Budgets ajoutés</Text>
           {created.map((b, i) => (
             <Text key={i} style={styles.createdLine}>
-              {b.categoryName} — {b.amount.toLocaleString('fr-FR')} DH / {b.period === 'semaine' ? 'semaine' : 'mois'}
+              {b.label} — {b.amount.toLocaleString('fr-FR')} DH / {b.period === 'semaine' ? 'semaine' : 'mois'}
             </Text>
           ))}
         </View>
       )}
+
+      <FormField
+        testID="create-budget-label-input"
+        label="Libellé"
+        placeholder="Ex. Courses"
+        value={label}
+        onChangeText={setLabel}
+        onFocus={handleFocus}
+      />
 
       <Text style={styles.sectionLabel}>Catégorie</Text>
       {loading ? (
@@ -132,6 +175,17 @@ export function CreateBudgetScreen() {
           value={categoryId}
           onChange={setCategoryId}
           options={categories.map((c) => ({ value: c.id, label: c.name }))}
+        />
+      )}
+
+      {categoryTypeOptions.length > 0 && (
+        <MultiSelect
+          testID="create-budget-category-types"
+          label="Types suivis (facultatif)"
+          placeholder="Toute la catégorie"
+          value={categoryTypeIds}
+          onChange={setCategoryTypeIds}
+          options={categoryTypeOptions.filter((t) => t.active).map((t) => ({ value: t.id, label: t.name }))}
         />
       )}
 

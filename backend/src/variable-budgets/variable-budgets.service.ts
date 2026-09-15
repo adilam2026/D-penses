@@ -3,9 +3,11 @@ import { RlsContextService } from '../common/prisma/rls-context.service';
 import { getBudgetExpenseConsumption, toNumber } from '../common/ledger/ledger.util';
 import {
   addDaysUTC,
+  budgetExceededAmount,
   BudgetLike,
   budgetHealthStatus,
   computeBudgetPeriodStatus,
+  consumptionThresholdLevel,
   getCurrentPeriodWindow,
   MonthMode,
   periodEndExclusive,
@@ -162,14 +164,19 @@ export class VariableBudgetsService {
     categoryTypeId: string | null,
     at: Date = new Date(),
   ) {
+    // M3 — categoryTypeId=<id> cible tout budget qui SUIT ce type précis parmi
+    // ses (éventuellement plusieurs) CategoryType (table de jonction) ; =null
+    // cible exclusivement les budgets scopés à toute la catégorie (jonction
+    // vide) — même contrat qu'avant ce lot, seule la source de la comparaison
+    // change (colonne singulière → jonction), la priorité §3 reste identique.
     return tx.variableBudget.findMany({
       where: {
         householdId,
         categoryId,
-        categoryTypeId,
         status: 'actif',
         startDate: { lte: at },
         OR: [{ endDate: null }, { endDate: { gte: at } }],
+        categoryTypes: categoryTypeId ? { some: { categoryTypeId } } : { none: {} },
       },
     });
   }
@@ -186,12 +193,15 @@ export class VariableBudgetsService {
    * Chevauchement de scope (§ "un budget principal actif par type") — avertissement
    * NON BLOQUANT uniquement, jamais un refus de création/modification (RG-000).
    * `excludeId` évite qu'un budget existant se signale lui-même lors d'un update.
+   * M3 — categoryTypeIds=[] signale un chevauchement avec tout budget scopé à
+   * toute la catégorie ; non vide signale un chevauchement dès qu'AU MOINS UN
+   * type suivi est commun aux deux budgets (jamais un refus, cf. ci-dessus).
    */
   private async findOverlappingBudgets(
     tx: TxClient,
     householdId: string,
     categoryId: string,
-    categoryTypeId: string | null,
+    categoryTypeIds: string[],
     startDate: Date,
     endDate: Date | null,
     excludeId?: string,
@@ -200,13 +210,45 @@ export class VariableBudgetsService {
       where: {
         householdId,
         categoryId,
-        categoryTypeId,
         status: 'actif',
         id: excludeId ? { not: excludeId } : undefined,
         startDate: endDate ? { lte: endDate } : undefined,
         OR: [{ endDate: null }, { endDate: { gte: startDate } }],
+        categoryTypes: categoryTypeIds.length > 0 ? { some: { categoryTypeId: { in: categoryTypeIds } } } : { none: {} },
       },
     });
+  }
+
+  /** M3 — jeu de CategoryType actuellement suivis par un budget (jamais versionné,
+   *  cf. commentaire du modèle VariableBudgetCategoryType). */
+  private async fetchCategoryTypesOnTx(tx: TxClient, budgetId: string) {
+    const rows = await tx.variableBudgetCategoryType.findMany({
+      where: { variableBudgetId: budgetId },
+      include: { categoryType: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map((r) => ({ id: r.categoryType.id, name: r.categoryType.name }));
+  }
+
+  /** M3 — remplace intégralement le jeu de CategoryType suivis par un budget
+   *  (jamais un diff champ-par-champ : toujours resynchronisé en entier, comme
+   *  pour un instantané complet — cf. VariableBudgetVersion). */
+  private async syncCategoryTypesOnTx(tx: TxClient, budgetId: string, categoryTypeIds: string[]) {
+    await tx.variableBudgetCategoryType.deleteMany({ where: { variableBudgetId: budgetId } });
+    if (categoryTypeIds.length > 0) {
+      await tx.variableBudgetCategoryType.createMany({
+        data: categoryTypeIds.map((categoryTypeId) => ({ variableBudgetId: budgetId, categoryTypeId })),
+      });
+    }
+  }
+
+  /** M3 — dérive le jeu de CategoryType demandé à partir des deux formes d'API
+   *  acceptées (categoryTypeIds pluriel, prioritaire ; categoryTypeId singulier,
+   *  compatibilité ascendante) ; undefined = aucune des deux fournie. */
+  private resolveRequestedCategoryTypeIds(dto: { categoryTypeId?: string | null; categoryTypeIds?: string[] | null }): string[] | undefined {
+    if (dto.categoryTypeIds !== undefined) return dto.categoryTypeIds ?? [];
+    if (dto.categoryTypeId !== undefined) return dto.categoryTypeId ? [dto.categoryTypeId] : [];
+    return undefined;
   }
 
   private async statusFor(tx: TxClient, budgetRow: any, mode: ProjectionMode, today: Date, closingDay: number) {
@@ -217,6 +259,9 @@ export class VariableBudgetsService {
     return {
       ...status,
       healthStatus: budgetHealthStatus(status.consommeADate, status.budgetPeriode),
+      // M3 §8 (dimension B) — additif, jamais fusionné avec healthStatus ci-dessus.
+      thresholdLevel: consumptionThresholdLevel(status.consumptionRatio),
+      exceededAmount: budgetExceededAmount(status.budgetContractuelRestant),
     };
   }
 
@@ -251,13 +296,17 @@ export class VariableBudgetsService {
       const tx = this.rlsContext.getClient();
       const category = await tx.category.findFirst({ where: { id: dto.categoryId, OR: [{ householdId: null }, { householdId }] } });
       if (!category) throw new NotFoundException('Catégorie introuvable');
-      if (dto.categoryTypeId) {
-        await this.validateCategoryTypeScope(tx, householdId, dto.categoryId, dto.categoryTypeId);
+
+      // M3 — categoryTypeIds (pluriel) prioritaire sur categoryTypeId (singulier,
+      // compatibilité ascendante) ; ni l'un ni l'autre = toute la catégorie ([]).
+      const categoryTypeIds = this.resolveRequestedCategoryTypeIds(dto) ?? [];
+      for (const typeId of categoryTypeIds) {
+        await this.validateCategoryTypeScope(tx, householdId, dto.categoryId, typeId);
       }
 
       const startDate = new Date(dto.startDate);
       const endDate = dto.endDate ? new Date(dto.endDate) : null;
-      const overlapping = await this.findOverlappingBudgets(tx, householdId, dto.categoryId, dto.categoryTypeId ?? null, startDate, endDate);
+      const overlapping = await this.findOverlappingBudgets(tx, householdId, dto.categoryId, categoryTypeIds, startDate, endDate);
 
       // Mini-lot weekStartDay foyer : valeur explicite > réglage foyer (pertinent
       // uniquement pour un budget hebdomadaire — inerte pour un budget mensuel,
@@ -277,11 +326,20 @@ export class VariableBudgetsService {
       }
       const customStartDay = effectiveMonthMode === 'personnalise' ? dto.customStartDay! : null;
 
+      // M3 — colonne singulière conservée en compatibilité ascendante : dérivée
+      // du jeu multi-types (un seul type ⇒ ce type ; 0 ou plusieurs ⇒ null, la
+      // jonction devient seule source de vérité pour ces cas).
+      const derivedCategoryTypeId = categoryTypeIds.length === 1 ? categoryTypeIds[0] : null;
+
       const budget = await tx.variableBudget.create({
         data: {
           householdId,
+          // M3 — omis/vide = category.name (même convention que le backfill de
+          // migration) : jamais un champ bloquant pour un appelant qui ne le
+          // fournit pas encore (cf. WEB-V4.4A en standby).
+          label: dto.label?.trim() || category.name,
           categoryId: dto.categoryId,
-          categoryTypeId: dto.categoryTypeId,
+          categoryTypeId: derivedCategoryTypeId,
           referenceAmount: dto.referenceAmount,
           referencePeriod: dto.referencePeriod,
           weekStartDay,
@@ -292,9 +350,11 @@ export class VariableBudgetsService {
           includeInPrudentProjection: dto.includeInPrudentProjection ?? true,
         },
       });
+      await this.syncCategoryTypesOnTx(tx, budget.id, categoryTypeIds);
+      const categoryTypes = await this.fetchCategoryTypesOnTx(tx, budget.id);
       // Avertissement NON bloquant (RG-000) : "en principe un budget principal actif
       // par type" — jamais un refus, jamais une désambiguïsation forcée à la création.
-      return { ...budget, overlapWarning: overlapping.length > 0 ? overlapping.map((b) => b.id) : null };
+      return { ...budget, categoryTypeIds, categoryTypes, overlapWarning: overlapping.length > 0 ? overlapping.map((b) => b.id) : null };
     });
   }
 
@@ -303,9 +363,20 @@ export class VariableBudgetsService {
       const tx = this.rlsContext.getClient();
       const mode = await this.projectionMode(tx, householdId);
       const closingDay = await this.householdClosingDayOnTx(tx, householdId);
-      const budgets = await tx.variableBudget.findMany({ where: { householdId }, orderBy: { createdAt: 'desc' }, include: { category: true } });
+      const budgets = await tx.variableBudget.findMany({
+        where: { householdId },
+        orderBy: { createdAt: 'desc' },
+        include: { category: true, categoryTypes: { include: { categoryType: true }, orderBy: { createdAt: 'asc' } } },
+      });
       const today = new Date();
-      return Promise.all(budgets.map(async (b) => ({ ...b, status: await this.statusFor(tx, b, mode, today, closingDay) })));
+      return Promise.all(
+        budgets.map(async (b) => ({
+          ...b,
+          categoryTypeIds: b.categoryTypes.map((t) => t.categoryTypeId),
+          categoryTypes: b.categoryTypes.map((t) => ({ id: t.categoryType.id, name: t.categoryType.name })),
+          status: await this.statusFor(tx, b, mode, today, closingDay),
+        })),
+      );
     });
   }
 
@@ -379,7 +450,15 @@ export class VariableBudgetsService {
 
     const consomme = await this.consommeADate(tx, id, periodStart, periodEnd);
     const periodStatus = computeBudgetPeriodStatus(budgetLikeFinal, todayForStatus, consomme, mode);
-    const status = { ...periodStatus, healthStatus: budgetHealthStatus(periodStatus.consommeADate, periodStatus.budgetPeriode) };
+    const status = {
+      ...periodStatus,
+      healthStatus: budgetHealthStatus(periodStatus.consommeADate, periodStatus.budgetPeriode),
+      // M3 §8 (dimension B) — calculé sur le statut de LA PÉRIODE AFFICHÉE
+      // (budgetLikeFinal/todayForStatus ci-dessus), jamais sur la période
+      // courante : une ancienne période dépassée à l'époque le reste à l'affichage.
+      thresholdLevel: consumptionThresholdLevel(periodStatus.consumptionRatio),
+      exceededAmount: budgetExceededAmount(periodStatus.budgetContractuelRestant),
+    };
 
     const history = await tx.budgetExpense.findMany({
       where: { variableBudgetId: id, spentDate: { gte: periodStart, lt: periodEndExcl } },
@@ -393,8 +472,17 @@ export class VariableBudgetsService {
 
     const isCurrentPeriod = periodStart.getTime() <= now.getTime() && now.getTime() < periodEndExcl.getTime();
 
+    // M3 — jeu de CategoryType COURANT (jamais versionné, cf. modèle) : une
+    // période passée affiche donc toujours le périmètre de suivi ACTUEL du
+    // budget, jamais un instantané historique — seule la consommation déjà
+    // enregistrée (BudgetExpense, déjà classée au moment de chaque dépense)
+    // reste figée pour cette période (§7).
+    const categoryTypes = await this.fetchCategoryTypesOnTx(tx, id);
+
     return {
       ...budget,
+      categoryTypeIds: categoryTypes.map((t) => t.id),
+      categoryTypes,
       status,
       history,
       periodNavigation: {
@@ -470,20 +558,33 @@ export class VariableBudgetsService {
         const category = await tx.category.findFirst({ where: { id: dto.categoryId, OR: [{ householdId: null }, { householdId }] } });
         if (!category) throw new NotFoundException('Catégorie introuvable');
       }
-      if (dto.categoryTypeId) {
-        await this.validateCategoryTypeScope(tx, householdId, effectiveCategoryId, dto.categoryTypeId);
-      }
 
-      // `null` explicite (≠ undefined) : repasse le budget au scope catégorie
-      // entière — ne jamais utiliser `??` ici, qui traiterait null comme absent.
-      const effectiveCategoryTypeId = dto.categoryTypeId !== undefined ? dto.categoryTypeId : budget.categoryTypeId;
+      // M3 — categoryTypeIds (pluriel) prioritaire sur categoryTypeId (singulier) ;
+      // undefined = ni l'un ni l'autre fourni, le jeu actuel est conservé tel quel
+      // (jamais resynchronisé dans ce cas — comportement historique inchangé).
+      const requestedCategoryTypeIds = this.resolveRequestedCategoryTypeIds(dto);
+      if (requestedCategoryTypeIds) {
+        for (const typeId of requestedCategoryTypeIds) {
+          await this.validateCategoryTypeScope(tx, householdId, effectiveCategoryId, typeId);
+        }
+      }
+      const currentCategoryTypeIds = requestedCategoryTypeIds ?? (await this.fetchCategoryTypesOnTx(tx, id)).map((t) => t.id);
+      // Colonne singulière conservée en compatibilité ascendante : dérivée du
+      // jeu effectif quand il change explicitement, sinon la valeur en base.
+      const effectiveCategoryTypeId =
+        requestedCategoryTypeIds !== undefined
+          ? currentCategoryTypeIds.length === 1
+            ? currentCategoryTypeIds[0]
+            : null
+          : budget.categoryTypeId;
+
       const effectiveStartDate = budget.startDate; // startDate n'est jamais modifiable (§14, hors périmètre)
       const effectiveEndDate = dto.endDate !== undefined ? new Date(dto.endDate) : budget.endDate;
       const overlapping = await this.findOverlappingBudgets(
         tx,
         householdId,
         effectiveCategoryId,
-        effectiveCategoryTypeId,
+        currentCategoryTypeIds,
         effectiveStartDate,
         effectiveEndDate,
         id,
@@ -512,7 +613,7 @@ export class VariableBudgetsService {
         (dto.referenceAmount !== undefined && toNumber(dto.referenceAmount) !== toNumber(budget.referenceAmount)) ||
         (dto.referencePeriod !== undefined && dto.referencePeriod !== budget.referencePeriod) ||
         (dto.categoryId !== undefined && dto.categoryId !== budget.categoryId) ||
-        (dto.categoryTypeId !== undefined && dto.categoryTypeId !== budget.categoryTypeId) ||
+        effectiveCategoryTypeId !== budget.categoryTypeId ||
         (dto.weekStartDay !== undefined && dto.weekStartDay !== budget.weekStartDay) ||
         effectiveMonthMode !== budget.monthMode ||
         effectiveCustomStartDay !== budget.customStartDay ||
@@ -556,17 +657,21 @@ export class VariableBudgetsService {
       await tx.variableBudget.update({
         where: { id },
         data: {
+          label: dto.label,
           referenceAmount: dto.referenceAmount,
           endDate: dto.endDate !== undefined ? new Date(dto.endDate) : undefined,
           referencePeriod: dto.referencePeriod,
           weekStartDay: dto.weekStartDay,
           categoryId: dto.categoryId,
-          categoryTypeId: dto.categoryTypeId,
+          categoryTypeId: requestedCategoryTypeIds !== undefined ? effectiveCategoryTypeId : undefined,
           monthMode: effectiveMonthMode,
           customStartDay: effectiveCustomStartDay,
           includeInPrudentProjection: dto.includeInPrudentProjection,
         },
       });
+      if (requestedCategoryTypeIds !== undefined) {
+        await this.syncCategoryTypesOnTx(tx, id, requestedCategoryTypeIds);
+      }
       const detail = await this.detailOnTx(tx, householdId, id);
       return { ...detail, overlapWarning: overlapping.length > 0 ? overlapping.map((b) => b.id) : null };
     });
@@ -608,7 +713,13 @@ export class VariableBudgetsService {
       const mode = await this.projectionMode(tx, householdId);
       const closingDay = await this.householdClosingDayOnTx(tx, householdId);
       const budgets = await this.findActiveBudgetsRaw(tx, householdId, categoryId, at);
-      return Promise.all(budgets.map(async (b) => ({ ...b, status: await this.statusFor(tx, b, mode, at, closingDay) })));
+      return Promise.all(
+        budgets.map(async (b) => ({
+          ...b,
+          categoryTypes: await this.fetchCategoryTypesOnTx(tx, b.id),
+          status: await this.statusFor(tx, b, mode, at, closingDay),
+        })),
+      );
     });
   }
 

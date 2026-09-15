@@ -373,7 +373,12 @@ export const getVariableBudgetHistory = (id: string) => apiFetch(`/variable-budg
 export type MonthMode = 'calendaire' | 'financier' | 'personnalise';
 
 export const createVariableBudget = (data: {
+  /** M3 — libellé libre (ex. "Courses"). Omis = category.name par défaut (serveur). */
+  label?: string;
   categoryId: string;
+  /** M3 — plusieurs CategoryType suivis (prioritaire sur categoryTypeId ci-dessous
+   *  si les deux sont fournis). Omis/vide = toute la catégorie. */
+  categoryTypeIds?: string[];
   referenceAmount: number;
   referencePeriod: 'semaine' | 'mois';
   startDate: string;
@@ -389,6 +394,8 @@ export const createVariableBudget = (data: {
 export const updateVariableBudget = (
   id: string,
   data: {
+    /** M3 — libellé libre, jamais versionné. */
+    label?: string;
     referenceAmount?: number;
     endDate?: string;
     referencePeriod?: 'semaine' | 'mois';
@@ -397,6 +404,8 @@ export const updateVariableBudget = (
     monthMode?: MonthMode;
     customStartDay?: number;
     includeInPrudentProjection?: boolean;
+    /** M3 — remplace intégralement le jeu de CategoryType suivis ; [] = toute la catégorie. */
+    categoryTypeIds?: string[];
   },
 ) => apiFetch(`/variable-budgets/${id}`, { method: 'PATCH', body: data });
 

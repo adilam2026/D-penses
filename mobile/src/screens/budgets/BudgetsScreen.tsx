@@ -55,11 +55,15 @@ export function BudgetsScreen() {
                 <Donut size={64} pct={ratio * 100} warn={warn} />
                 <View style={styles.cardContent}>
                   <View style={styles.cardHeader}>
-                    <Text style={styles.cardTitle}>{item.category.name}</Text>
+                    {/* M3 §11 — le LIBELLÉ devient le nom principal partout. */}
+                    <Text style={styles.cardTitle}>{item.label || item.category.name}</Text>
                     <Text style={[styles.statusBadge, { color: HEALTH_COLOR[item.status.healthStatus] }]}>
                       {HEALTH_LABEL[item.status.healthStatus]}
                     </Text>
                   </View>
+                  {(item.categoryTypes?.length ?? 0) > 0 && (
+                    <Text style={styles.cardFollows}>Suit : {item.categoryTypes!.map((t) => t.name).join(', ')}</Text>
+                  )}
                   <Text style={styles.cardSubtitle}>
                     {item.referenceAmount.toLocaleString('fr-FR')} DH / {item.referencePeriod}
                   </Text>
@@ -115,6 +119,7 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
   statusBadge: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
+  cardFollows: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
   cardSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2, marginBottom: 10 },
   figuresRow: { flexDirection: 'row', justifyContent: 'space-between' },
   figureLabel: { fontSize: 11, color: colors.textSecondary },

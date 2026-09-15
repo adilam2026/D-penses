@@ -30,6 +30,9 @@ export interface DeadlineItem {
 export interface VariableBudgetItem {
   variableBudgetId: string;
   amount: number;
+  // M3 — libellé libre, primaire à l'affichage ; categoryName reste secondaire.
+  // Optionnel : absent pour une réponse pas encore migrée, repli sur categoryName.
+  label?: string;
   categoryName: string;
 }
 
@@ -46,6 +49,9 @@ export interface BudgetResumeStatus {
 
 export interface BudgetResume {
   id: string;
+  // M3 — libellé libre, primaire à l'affichage ; categoryName reste secondaire.
+  // Optionnel : absent pour une réponse pas encore migrée, repli sur categoryName.
+  label?: string;
   categoryName: string;
   referenceAmount: number;
   referencePeriod: 'semaine' | 'mois';

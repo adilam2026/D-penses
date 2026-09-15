@@ -254,7 +254,8 @@ export function HomeScreen() {
                   >
                     <Donut size={64} pct={pct} warn={warn} />
                     <View style={{ flex: 1, marginLeft: spacing.md }}>
-                      <Text style={styles.budgetLabel}>{b.categoryName}</Text>
+                      {/* M3 §11 — le LIBELLÉ devient le nom principal partout. */}
+                      <Text style={styles.budgetLabel}>{b.label || b.categoryName}</Text>
                       <Text style={styles.budgetAmounts}>
                         {b.status.consommeADate.toLocaleString('fr-FR')} / {b.status.budgetPeriode.toLocaleString('fr-FR')} DH
                       </Text>

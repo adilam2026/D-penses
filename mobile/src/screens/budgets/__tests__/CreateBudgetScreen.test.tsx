@@ -20,7 +20,7 @@ jest.mock('../../../ui/useKeyboardAwareScroll', () => ({
 
 jest.mock('../../../api/client', () => {
   const actual = jest.requireActual('../../../api/client');
-  return { ...actual, listCategories: jest.fn(), createVariableBudget: jest.fn() };
+  return { ...actual, listCategories: jest.fn(), listCategoryTypes: jest.fn(), createVariableBudget: jest.fn() };
 });
 
 const mockedApi = api as jest.Mocked<typeof api>;
@@ -46,9 +46,16 @@ async function selectCategory() {
   await flush();
 }
 
+// M3 — le libellé est désormais requis avant toute soumission.
+async function fillLabel() {
+  fireEvent.changeText(screen.getByTestId('create-budget-label-input'), 'Courses');
+  await flush();
+}
+
 describe('CreateBudgetScreen — mode du mois (Lot 6)', () => {
   beforeEach(() => {
     mockedApi.listCategories.mockResolvedValue(categories);
+    mockedApi.listCategoryTypes.mockResolvedValue([]);
     mockedApi.createVariableBudget.mockResolvedValue({ id: 'b1' } as any);
   });
 
@@ -85,6 +92,7 @@ describe('CreateBudgetScreen — mode du mois (Lot 6)', () => {
     await render(<CreateBudgetScreen />);
     await waitFor(() => screen.getByTestId('create-budget-category-select'));
     await selectCategory();
+    await fillLabel();
     fireEvent.changeText(screen.getByTestId('create-budget-amount-input'), '1000');
     await flush();
     await fireEvent.press(screen.getByText('Mois'));
@@ -104,6 +112,7 @@ describe('CreateBudgetScreen — mode du mois (Lot 6)', () => {
     await render(<CreateBudgetScreen />);
     await waitFor(() => screen.getByTestId('create-budget-category-select'));
     await selectCategory();
+    await fillLabel();
     fireEvent.changeText(screen.getByTestId('create-budget-amount-input'), '1000');
     await flush();
     await fireEvent.press(screen.getByText('Mois'));
@@ -123,6 +132,7 @@ describe('CreateBudgetScreen — mode du mois (Lot 6)', () => {
     await render(<CreateBudgetScreen />);
     await waitFor(() => screen.getByTestId('create-budget-category-select'));
     await selectCategory();
+    await fillLabel();
     fireEvent.changeText(screen.getByTestId('create-budget-amount-input'), '1000');
     await flush();
     await fireEvent.press(screen.getByText('Mois'));
@@ -145,6 +155,7 @@ describe('CreateBudgetScreen — mode du mois (Lot 6)', () => {
     await render(<CreateBudgetScreen />);
     await waitFor(() => screen.getByTestId('create-budget-category-select'));
     await selectCategory();
+    await fillLabel();
     fireEvent.changeText(screen.getByTestId('create-budget-amount-input'), '1000');
     await flush();
 
@@ -165,6 +176,7 @@ describe('CreateBudgetScreen — mode du mois (Lot 6)', () => {
 describe('CreateBudgetScreen — includeInPrudentProjection (mini-lot)', () => {
   beforeEach(() => {
     mockedApi.listCategories.mockResolvedValue(categories);
+    mockedApi.listCategoryTypes.mockResolvedValue([]);
     mockedApi.createVariableBudget.mockResolvedValue({ id: 'b1' } as any);
   });
 
@@ -180,6 +192,7 @@ describe('CreateBudgetScreen — includeInPrudentProjection (mini-lot)', () => {
     await render(<CreateBudgetScreen />);
     await waitFor(() => screen.getByTestId('create-budget-category-select'));
     await selectCategory();
+    await fillLabel();
     fireEvent.changeText(screen.getByTestId('create-budget-amount-input'), '1000');
     await flush();
 
@@ -193,6 +206,7 @@ describe('CreateBudgetScreen — includeInPrudentProjection (mini-lot)', () => {
     await render(<CreateBudgetScreen />);
     await waitFor(() => screen.getByTestId('create-budget-category-select'));
     await selectCategory();
+    await fillLabel();
     fireEvent.changeText(screen.getByTestId('create-budget-amount-input'), '1000');
     await flush();
     await fireEvent(screen.getByTestId('create-budget-include-prudent-switch'), 'valueChange', false);
@@ -201,6 +215,77 @@ describe('CreateBudgetScreen — includeInPrudentProjection (mini-lot)', () => {
     await fireEvent.press(screen.getByTestId('create-budget-submit'));
     await waitFor(() =>
       expect(mockedApi.createVariableBudget).toHaveBeenCalledWith(expect.objectContaining({ includeInPrudentProjection: false })),
+    );
+  });
+});
+
+/**
+ * M3 — libellé libre requis, types suivis facultatifs (multi-CategoryType).
+ */
+describe('CreateBudgetScreen — M3 (libellé requis, types suivis)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedApi.listCategories.mockResolvedValue(categories);
+    mockedApi.listCategoryTypes.mockResolvedValue([]);
+    mockedApi.createVariableBudget.mockResolvedValue({ id: 'b1' } as any);
+  });
+
+  it('soumission bloquée sans libellé, aucun appel API', async () => {
+    await render(<CreateBudgetScreen />);
+    await waitFor(() => screen.getByTestId('create-budget-category-select'));
+    await selectCategory();
+    fireEvent.changeText(screen.getByTestId('create-budget-amount-input'), '1000');
+    await flush();
+
+    await fireEvent.press(screen.getByTestId('create-budget-submit'));
+    await waitFor(() => screen.getByText('Le libellé est obligatoire'));
+    expect(mockedApi.createVariableBudget).not.toHaveBeenCalled();
+  });
+
+  it('le libellé et categoryTypeIds=[] (toute la catégorie) sont envoyés au create', async () => {
+    await render(<CreateBudgetScreen />);
+    await waitFor(() => screen.getByTestId('create-budget-category-select'));
+    await selectCategory();
+    await fillLabel();
+    fireEvent.changeText(screen.getByTestId('create-budget-amount-input'), '1000');
+    await flush();
+
+    await fireEvent.press(screen.getByTestId('create-budget-submit'));
+    await waitFor(() =>
+      expect(mockedApi.createVariableBudget).toHaveBeenCalledWith(
+        expect.objectContaining({ label: 'Courses', categoryTypeIds: [] }),
+      ),
+    );
+  });
+
+  it('aucun sélecteur de types tant que la catégorie choisie ne compte aucun CategoryType', async () => {
+    await render(<CreateBudgetScreen />);
+    await waitFor(() => screen.getByTestId('create-budget-category-select'));
+    await selectCategory();
+    expect(screen.queryByTestId('create-budget-category-types')).toBeNull();
+  });
+
+  it('les types sélectionnés dans le MultiSelect sont envoyés dans categoryTypeIds', async () => {
+    mockedApi.listCategoryTypes.mockResolvedValue([
+      { id: 't1', name: 'Supermarché', active: true },
+      { id: 't2', name: 'Marché', active: true },
+    ]);
+    await render(<CreateBudgetScreen />);
+    await waitFor(() => screen.getByTestId('create-budget-category-select'));
+    await selectCategory();
+    await fillLabel();
+    await waitFor(() => screen.getByTestId('create-budget-category-types'));
+
+    await fireEvent.press(screen.getByTestId('create-budget-category-types'));
+    await flush();
+    await fireEvent.press(await screen.findByTestId('create-budget-category-types-option-t1'));
+    await flush();
+
+    fireEvent.changeText(screen.getByTestId('create-budget-amount-input'), '1000');
+    await flush();
+    await fireEvent.press(screen.getByTestId('create-budget-submit'));
+    await waitFor(() =>
+      expect(mockedApi.createVariableBudget).toHaveBeenCalledWith(expect.objectContaining({ categoryTypeIds: ['t1'] })),
     );
   });
 });

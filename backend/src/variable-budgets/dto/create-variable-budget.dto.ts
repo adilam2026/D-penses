@@ -1,16 +1,37 @@
-import { IsBoolean, IsIn, IsInt, IsISO8601, IsNumber, IsOptional, IsPositive, IsUUID, Max, Min } from 'class-validator';
+import { ArrayUnique, IsArray, IsBoolean, IsIn, IsInt, IsISO8601, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
 
 const MONTH_MODE_VALUES = ['calendaire', 'financier', 'personnalise'] as const;
 
 export class CreateVariableBudgetDto {
+  /** M3 — libellé libre (ex. "Courses", "Loisirs"), distinct des catégories/types
+   *  suivis ci-dessous. Champ vivant, jamais versionné. Omis = category.name
+   *  par défaut (service) — jamais un champ obligatoire côté API : la fiche
+   *  WEB-V4.4A en standby crée des budgets sans le fournir, comportement
+   *  historique préservé à l'identique. */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(80)
+  label?: string;
+
   @IsUUID()
   categoryId!: string;
 
-  /** Lot 2 — budget scopé à ce CategoryType précis (doit appartenir à categoryId) ;
-   *  omis = budget scopé à toute la catégorie (comportement historique). */
+  /** Lot 2 — conservé pour compatibilité ascendante : équivalent à
+   *  categoryTypeIds=[valeur]. Omis (avec categoryTypeIds également omis) =
+   *  budget scopé à toute la catégorie (comportement historique). */
   @IsOptional()
   @IsUUID()
   categoryTypeId?: string;
+
+  /** M3 — un budget peut suivre PLUSIEURS CategoryType (doivent tous appartenir
+   *  à categoryId). Liste vide ou omise = toute la catégorie. Prioritaire sur
+   *  categoryTypeId si les deux sont fournis. */
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsUUID(undefined, { each: true })
+  categoryTypeIds?: string[];
 
   @IsNumber()
   @IsPositive()

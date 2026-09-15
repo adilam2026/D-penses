@@ -61,7 +61,16 @@ export class DashboardService {
       const budgetsResume = await Promise.all(
         budgets.map(async (b) => {
           const status = await this.variableBudgets.getBudgetStatusOnTx(tx, householdId, b.id, referenceDate);
-          return { id: b.id, categoryName: b.category.name, referenceAmount: toNumber(b.referenceAmount), referencePeriod: b.referencePeriod, status };
+          // M3 — libellé libre en primaire ; categoryName reste exposé tel quel
+          // (secondaire, compatibilité ascendante avec HomeScreen.web.tsx en standby).
+          return {
+            id: b.id,
+            label: b.label,
+            categoryName: b.category.name,
+            referenceAmount: toNumber(b.referenceAmount),
+            referencePeriod: b.referencePeriod,
+            status,
+          };
         }),
       );
 
@@ -140,10 +149,10 @@ export class DashboardService {
         // Σ deadlineItems.engagementNonCouvert + Σ variableBudgetItems.amount = committed_amount,
         // par construction (jamais un second calcul de détail côté mobile). categoryName
         // enrichi ici depuis `budgets` déjà chargé ci-dessus, sans requête supplémentaire.
-        variableBudgetItems: disponible.variableBudgetItems.map((i) => ({
-          ...i,
-          categoryName: budgets.find((b) => b.id === i.variableBudgetId)?.category.name ?? '',
-        })),
+        variableBudgetItems: disponible.variableBudgetItems.map((i) => {
+          const budget = budgets.find((b) => b.id === i.variableBudgetId);
+          return { ...i, label: budget?.label, categoryName: budget?.category.name ?? '' };
+        }),
         optionsEnvisagees: {
           total: disponible.envisagedTotal,
           hasUnknown: disponible.envisagedHasUnknown,

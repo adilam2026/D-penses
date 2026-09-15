@@ -258,13 +258,44 @@ export function computeBudgetPeriodStatus(
 
 export type BudgetHealthStatus = 'sous_budget' | 'proche_limite' | 'depasse';
 
-/** Statut continu d'affichage (docs/02 §F.3) — jamais stocké, toujours calculé. */
+/** Statut continu d'affichage (docs/02 §F.3) — jamais stocké, toujours calculé.
+ *  Historique (80/100%, 3 valeurs) — consommé par le portail WEB-V4.4A en
+ *  standby (BudgetsScreen.web.tsx/HomeScreen.web.tsx via budgetsLogic.ts) :
+ *  jamais modifié ni retiré, jamais réutilisé pour M3 §8 dimension B ci-dessous
+ *  (seuils distincts, cf. thresholdLevel). */
 export function budgetHealthStatus(consommeADate: number, budgetPeriode: number): BudgetHealthStatus {
   if (budgetPeriode <= 0) return consommeADate > 0 ? 'depasse' : 'sous_budget';
   const ratio = consommeADate / budgetPeriode;
   if (ratio >= 1) return 'depasse';
   if (ratio >= 0.8) return 'proche_limite';
   return 'sous_budget';
+}
+
+// M3 §8 (dimension B — seuils absolus de consommation, distincts de la dimension
+// A — rythme/rythmeAlerte, jamais fusionnés) — RÈGLE MÉTIER PARTAGÉE : calculée
+// une seule fois ici (moteur commun), jamais recalculée côté mobile ni côté web
+// (« Mobile et Web consomment les mêmes règles métier »). Le rendu (badge/
+// couleur/texte) reste local à chaque client ; seul l'ÉTAT (quel palier, quel
+// montant de dépassement) est une donnée serveur. consumptionRatio n'est jamais
+// plafonné (cf. ci-dessus) : un dépassement réel produit toujours 'depasse',
+// quelle que soit son ampleur. 100% exact est un état PROPRE ('atteint'),
+// distinct de 90–<100% ET de >100% — jamais confondu avec l'un ou l'autre.
+export type ThresholdLevel = 'sous_60' | 'entre_60_75' | 'entre_75_90' | 'entre_90_100' | 'atteint' | 'depasse';
+
+export function consumptionThresholdLevel(consumptionRatio: number): ThresholdLevel {
+  if (consumptionRatio > 1) return 'depasse';
+  if (consumptionRatio === 1) return 'atteint';
+  if (consumptionRatio >= 0.9) return 'entre_90_100';
+  if (consumptionRatio >= 0.75) return 'entre_75_90';
+  if (consumptionRatio >= 0.6) return 'entre_60_75';
+  return 'sous_60';
+}
+
+/** §8 — montant de dépassement explicite ("Budget dépassé de X DH"), jamais
+ *  seulement un pourcentage. budgetContractuelRestant est déjà négatif en cas
+ *  de dépassement : ce montant en est l'opposé (0 si non dépassé). */
+export function budgetExceededAmount(budgetContractuelRestant: number): number {
+  return budgetContractuelRestant < 0 ? round2(-budgetContractuelRestant) : 0;
 }
 
 /**

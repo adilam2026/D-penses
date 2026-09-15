@@ -8,8 +8,10 @@ import * as api from '../../../api/client';
  * des figures existantes (rythmeProjete/previsionRythmeRestant restent des
  * indicateurs informatifs, ne définissent pas l'alerte).
  */
+const mockNavigate = jest.fn();
+
 jest.mock('@react-navigation/native', () => ({
-  useNavigation: () => ({ navigate: jest.fn(), goBack: jest.fn() }),
+  useNavigation: () => ({ navigate: mockNavigate, goBack: jest.fn() }),
   useRoute: () => ({ params: { id: 'b1' } }),
   // Lot 4 — re-déclenche quand la référence de `cb` change (comme le ferait
   // useFocusEffect réel tant que l'écran reste au premier plan), nécessaire ici
@@ -29,7 +31,13 @@ jest.mock('@expo/vector-icons', () => {
 
 jest.mock('../../../api/client', () => {
   const actual = jest.requireActual('../../../api/client');
-  return { ...actual, getVariableBudget: jest.fn(), getVariableBudgetHistory: jest.fn(), updateVariableBudget: jest.fn() };
+  return {
+    ...actual,
+    getVariableBudget: jest.fn(),
+    getVariableBudgetHistory: jest.fn(),
+    updateVariableBudget: jest.fn(),
+    listCategoryTypes: jest.fn(),
+  };
 });
 
 const mockedApi = api as jest.Mocked<typeof api>;
@@ -88,6 +96,110 @@ describe('BudgetDetailScreen — alerte de rythme (Lot 3)', () => {
 
     await waitFor(() => screen.getByText('Courses'));
     expect(screen.queryByTestId('budget-rythme-alerte')).toBeNull();
+  });
+});
+
+/**
+ * M3 — libellé comme nom principal, "Suit : X, Y" secondaire, seuils de
+ * consommation, "+ Ajouter une dépense".
+ */
+describe('BudgetDetailScreen — M3 (libellé, multi-types, seuils, + Ajouter une dépense)', () => {
+  beforeEach(() => {
+    mockNavigate.mockClear();
+  });
+
+  it('affiche le label comme titre principal (distinct de category.name)', async () => {
+    mockedApi.getVariableBudget.mockResolvedValue({ ...detailFixture(false), label: 'Courses de la semaine' });
+    await render(<BudgetDetailScreen />);
+
+    await waitFor(() => screen.getByText('Courses de la semaine'));
+  });
+
+  it('retombe sur category.name quand label est absent (fiche non migrée)', async () => {
+    mockedApi.getVariableBudget.mockResolvedValue(detailFixture(false));
+    await render(<BudgetDetailScreen />);
+
+    await waitFor(() => screen.getByText('Courses'));
+  });
+
+  it('affiche "Suit : X, Y" quand le budget suit plusieurs CategoryType', async () => {
+    mockedApi.getVariableBudget.mockResolvedValue({
+      ...detailFixture(false),
+      label: 'Courses',
+      categoryTypeIds: ['t1', 't2'],
+      categoryTypes: [{ id: 't1', name: 'Supermarché' }, { id: 't2', name: 'Marché' }],
+    });
+    await render(<BudgetDetailScreen />);
+
+    await waitFor(() => screen.getByTestId('budget-follows-types'));
+    expect(screen.getByText('Suit : Supermarché, Marché')).toBeTruthy();
+  });
+
+  it("aucune ligne \"Suit\" quand le budget est scopé à toute la catégorie", async () => {
+    mockedApi.getVariableBudget.mockResolvedValue({ ...detailFixture(false), label: 'Courses', categoryTypeIds: [], categoryTypes: [] });
+    await render(<BudgetDetailScreen />);
+
+    await waitFor(() => screen.getByText('Courses'));
+    expect(screen.queryByTestId('budget-follows-types')).toBeNull();
+  });
+
+  it('affiche "Budget dépassé de X DH" à partir de thresholdLevel/exceededAmount fournis par l\'API (jamais recalculés côté mobile)', async () => {
+    const fixture = detailFixture(false);
+    mockedApi.getVariableBudget.mockResolvedValue({
+      ...fixture,
+      label: 'Courses',
+      status: { ...fixture.status, consumptionRatio: 1.3, budgetContractuelRestant: -300, thresholdLevel: 'depasse', exceededAmount: 300 },
+    });
+    await render(<BudgetDetailScreen />);
+
+    await waitFor(() => screen.getByTestId('budget-consumption-threshold'));
+    expect(screen.getByText(/Budget dépassé de 300 DH/)).toBeTruthy();
+  });
+
+  it("affiche \"Budget atteint\" quand thresholdLevel='atteint' (100% exact, distinct de 90–<100% ET de dépassé)", async () => {
+    const fixture = detailFixture(false);
+    mockedApi.getVariableBudget.mockResolvedValue({
+      ...fixture,
+      label: 'Courses',
+      status: { ...fixture.status, consumptionRatio: 1, budgetContractuelRestant: 0, thresholdLevel: 'atteint', exceededAmount: 0 },
+    });
+    await render(<BudgetDetailScreen />);
+
+    await waitFor(() => screen.getByTestId('budget-consumption-threshold'));
+    expect(screen.getByText('Budget atteint')).toBeTruthy();
+    expect(screen.queryByText(/Budget dépassé/)).toBeNull();
+  });
+
+  it('aucun bandeau de seuil quand thresholdLevel=sous_60 (fourni par l\'API)', async () => {
+    const fixture = detailFixture(false);
+    mockedApi.getVariableBudget.mockResolvedValue({
+      ...fixture,
+      label: 'Courses',
+      status: { ...fixture.status, consumptionRatio: 0.3, budgetContractuelRestant: 700, thresholdLevel: 'sous_60', exceededAmount: 0 },
+    });
+    await render(<BudgetDetailScreen />);
+
+    await waitFor(() => screen.getByText('Courses'));
+    expect(screen.queryByTestId('budget-consumption-threshold')).toBeNull();
+  });
+
+  it('"+ Ajouter une dépense" navigue vers QuickAdd avec variableBudgetId/categoryId prérempli', async () => {
+    mockedApi.getVariableBudget.mockResolvedValue({
+      ...detailFixture(false),
+      label: 'Courses',
+      categoryTypeIds: [],
+    });
+    await render(<BudgetDetailScreen />);
+    await waitFor(() => screen.getByTestId('budget-add-expense'));
+
+    await fireEvent.press(screen.getByTestId('budget-add-expense'));
+    expect(mockNavigate).toHaveBeenCalledWith('QuickAdd', {
+      mode: 'depense',
+      variableBudgetId: 'b1',
+      budgetLabel: 'Courses',
+      categoryId: 'cat-1',
+      categoryTypeId: undefined,
+    });
   });
 });
 
@@ -259,6 +371,7 @@ describe('BudgetDetailScreen — édition du mode du mois (Lot 6)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedApi.updateVariableBudget.mockResolvedValue({ id: 'b1' } as any);
+    mockedApi.listCategoryTypes.mockResolvedValue([]);
   });
 
   it('affiche le sélecteur de mode pour un budget mensuel', async () => {
@@ -296,11 +409,13 @@ describe('BudgetDetailScreen — édition du mode du mois (Lot 6)', () => {
     await fireEvent.press(screen.getByTestId('budget-edit-save'));
     await waitFor(() =>
       expect(mockedApi.updateVariableBudget).toHaveBeenCalledWith('b1', {
+        label: 'Courses',
         referenceAmount: 1000,
         referencePeriod: 'mois',
         monthMode: 'personnalise',
         customStartDay: 25,
         includeInPrudentProjection: true,
+        categoryTypeIds: [],
       }),
     );
   });
@@ -320,11 +435,13 @@ describe('BudgetDetailScreen — édition du mode du mois (Lot 6)', () => {
     await fireEvent.press(screen.getByTestId('budget-edit-save'));
     await waitFor(() =>
       expect(mockedApi.updateVariableBudget).toHaveBeenCalledWith('b1', {
+        label: 'Courses',
         referenceAmount: 1000,
         referencePeriod: 'mois',
         monthMode: 'financier',
         customStartDay: undefined,
         includeInPrudentProjection: true,
+        categoryTypeIds: [],
       }),
     );
   });
@@ -359,11 +476,13 @@ describe('BudgetDetailScreen — édition du mode du mois (Lot 6)', () => {
     await fireEvent.press(screen.getByTestId('budget-edit-save'));
     await waitFor(() => expect(mockedApi.updateVariableBudget).toHaveBeenCalledTimes(1));
     expect(mockedApi.updateVariableBudget).toHaveBeenCalledWith('b1', {
+      label: 'Courses',
       referenceAmount: 1500,
       referencePeriod: 'mois',
       monthMode: 'personnalise',
       customStartDay: 10,
       includeInPrudentProjection: true,
+      categoryTypeIds: [],
     });
   });
 
@@ -381,11 +500,13 @@ describe('BudgetDetailScreen — édition du mode du mois (Lot 6)', () => {
     await fireEvent.press(screen.getByTestId('budget-edit-save'));
     await waitFor(() =>
       expect(mockedApi.updateVariableBudget).toHaveBeenCalledWith('b1', {
+        label: 'Courses',
         referenceAmount: 1000,
         referencePeriod: 'semaine',
         monthMode: 'calendaire',
         customStartDay: undefined,
         includeInPrudentProjection: true,
+        categoryTypeIds: [],
       }),
     );
   });
@@ -401,6 +522,7 @@ describe('BudgetDetailScreen — includeInPrudentProjection (mini-lot)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedApi.updateVariableBudget.mockResolvedValue({ id: 'b1' } as any);
+    mockedApi.listCategoryTypes.mockResolvedValue([]);
   });
 
   it('état initial fidèle au backend : true', async () => {

@@ -1,124 +1,30 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { ActivityIndicator, Alert, FlatList, Modal, RefreshControl, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { ChoiceSheet } from '../../ui/ChoiceSheet';
 import { FormField } from '../../ui/FormField';
+import { MultiSelect } from '../../ui/MultiSelect';
 import { Select } from '../../ui/Select';
 import { colors, radius, spacing } from '../../ui/theme';
+import {
+  BudgetAmendmentEntry,
+  BudgetDetail,
+  FIELD_LABELS,
+  MONTH_MODE_LABELS,
+  PERIOD_OPTIONS,
+  THRESHOLD_COLOR,
+  THRESHOLD_LABEL,
+  formatDate,
+  formatDateTime,
+  formatFieldValue,
+  periodEndExclusive,
+} from './budgetDetailLogic';
 
-interface HistoryEntry {
+interface CategoryTypeOption {
   id: string;
-  amount: number;
-  spentDate: string;
-  notes: string | null;
-}
-
-const MONTH_MODE_LABELS: Record<api.MonthMode, string> = {
-  calendaire: 'Calendaire',
-  financier: 'Financier',
-  personnalise: 'Personnalisé',
-};
-
-// Lot 4 — sous-ensemble des 7 champs suivis, tel qu'exposé par
-// initialValues/adjustedValues (seul referenceAmount est affiché pour l'instant,
-// les autres restent disponibles pour un affichage plus riche ultérieur).
-interface BudgetConfigValues {
-  referenceAmount: number;
-  referencePeriod: 'semaine' | 'mois';
-}
-
-interface PeriodNavigation {
-  at: string;
-  periodStart: string;
-  periodEnd: string;
-  isCurrentPeriod: boolean;
-  previousPeriodAt: string;
-  nextPeriodAt: string | null; // null = période courante, jamais de navigation vers le futur
-}
-
-interface BudgetAmendmentEntry {
-  budgetId: string;
-  field: string;
-  oldValue: unknown;
-  newValue: unknown;
-  changedAt: string;
-  effectiveFrom: string;
-}
-
-interface BudgetDetail {
-  id: string;
-  categoryId: string;
-  category: { name: string };
-  referenceAmount: number;
-  referencePeriod: 'semaine' | 'mois';
-  weekStartDay: number;
-  // Lot 6 — mode du mois, inerte pour referencePeriod='semaine'.
-  monthMode: api.MonthMode;
-  customStartDay: number | null;
-  includeInPrudentProjection: boolean;
-  status: {
-    periodStart: string;
-    periodEnd: string;
-    budgetPeriode: number;
-    consommeADate: number;
-    budgetContractuelRestant: number;
-    rythmeProjete: number;
-    previsionRythmeRestant: number;
-    projectionPrudenteRestante: number;
-    // Lot 3 — alerte de rythme (% consommé vs % période écoulée), additive et
-    // distincte de healthStatus (ratio consommé/plafond seul) — jamais fusionnées.
-    consumptionRatio: number;
-    elapsedRatio: number;
-    rythmeAlerte: boolean;
-  };
-  history: HistoryEntry[];
-  // Lot 4 — navigation de périodes + valeur initiale/ajustée si le budget a été
-  // modifié pendant la période affichée (null si rien n'a changé).
-  periodNavigation: PeriodNavigation;
-  initialValues: BudgetConfigValues | null;
-  adjustedValues: BudgetConfigValues | null;
-}
-
-const PERIOD_OPTIONS = [
-  { value: 'semaine', label: 'Semaine' },
-  { value: 'mois', label: 'Mois' },
-];
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long' });
-}
-
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
-const FIELD_LABELS: Record<string, string> = {
-  referenceAmount: 'Montant de référence',
-  referencePeriod: 'Périodicité',
-  categoryId: 'Catégorie',
-  categoryTypeId: 'Type de catégorie',
-  weekStartDay: 'Jour de début de semaine',
-  includeInPrudentProjection: 'Inclus dans la projection prudente',
-  endDate: 'Date de fin',
-  monthMode: 'Mode du mois',
-  customStartDay: 'Jour de départ personnalisé',
-};
-
-function formatFieldValue(field: string, value: unknown): string {
-  if (value === null || value === undefined) return '—';
-  if (field === 'referenceAmount') return `${Number(value).toLocaleString('fr-FR')} DH`;
-  if (field === 'includeInPrudentProjection') return value ? 'Oui' : 'Non';
-  if (field === 'endDate') return formatDate(value as string);
-  if (field === 'monthMode') return MONTH_MODE_LABELS[value as api.MonthMode] ?? String(value);
-  return String(value);
-}
-
-// Lot 4 — même convention semi-ouverte que le backend (periodEndExclusive) : le
-// dernier jour de période (periodEnd) n'est que le début de son dernier jour, la
-// vraie borne de sortie est minuit UTC du lendemain.
-function periodEndExclusive(periodEndIso: string): number {
-  return new Date(periodEndIso).getTime() + 86400000;
+  name: string;
+  active: boolean;
 }
 
 /** Fiche budget (§18, R6.4 §1 — Modifier/Supprimer) — dépenses de la période courante, sans graphique. */
@@ -135,7 +41,13 @@ export function BudgetDetailScreen() {
   // R6.4 (§1) — menu "..." (Modifier/Supprimer), même pattern que AccountDetailScreen (§19).
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [editLabel, setEditLabel] = useState('');
   const [editAmount, setEditAmount] = useState('');
+  // M3 — jeu de CategoryType suivis, édité via MultiSelect (options chargées à
+  // l'ouverture de la modale, cf. openEdit ci-dessous). Liste vide = toute la
+  // catégorie (comportement historique), jamais réinterprété comme "aucun type".
+  const [categoryTypeOptions, setCategoryTypeOptions] = useState<CategoryTypeOption[]>([]);
+  const [editCategoryTypeIds, setEditCategoryTypeIds] = useState<string[]>([]);
   const [editPeriod, setEditPeriod] = useState<'semaine' | 'mois'>('mois');
   // Lot 6 — mode du mois, pertinent uniquement pour editPeriod='mois'. Tout
   // changement de editPeriod (dans les deux sens) les réinitialise à leur
@@ -189,7 +101,10 @@ export function BudgetDetailScreen() {
   function openEdit() {
     if (!detail) return;
     setMenuOpen(false);
+    setEditLabel(detail.label ?? detail.category.name);
     setEditAmount(String(detail.referenceAmount));
+    setEditCategoryTypeIds(detail.categoryTypeIds ?? []);
+    api.listCategoryTypes(detail.categoryId).then((types: CategoryTypeOption[]) => setCategoryTypeOptions(types));
     setEditPeriod(detail.referencePeriod);
     // Lot 6 — le mode du mois n'a de sens que pour un budget déjà 'mois' ; pour
     // un budget 'semaine' (mode potentiellement inerte/obsolète en base), le
@@ -218,6 +133,10 @@ export function BudgetDetailScreen() {
   }
 
   async function onSaveEdit() {
+    if (!editLabel.trim()) {
+      setEditError('Le libellé est obligatoire');
+      return;
+    }
     const value = Number(editAmount.replace(',', '.'));
     if (!value || value <= 0) {
       setEditError('Montant invalide');
@@ -234,11 +153,13 @@ export function BudgetDetailScreen() {
     setEditError(null);
     try {
       await api.updateVariableBudget(id, {
+        label: editLabel.trim(),
         referenceAmount: value,
         referencePeriod: editPeriod,
         monthMode: editMonthMode,
         customStartDay: editMonthMode === 'personnalise' ? numericCustomStartDay : undefined,
         includeInPrudentProjection: editIncludeInPrudentProjection,
+        categoryTypeIds: editCategoryTypeIds,
       });
       setEditOpen(false);
       setAmendments(null); // Lot 4 — l'historique vient de changer, invalidé pour être rechargé à la prochaine ouverture.
@@ -249,6 +170,21 @@ export function BudgetDetailScreen() {
     } finally {
       setEditSaving(false);
     }
+  }
+
+  function onAddExpense() {
+    if (!detail) return;
+    // M3 §5 — Budget > Fiche > "+ Ajouter une dépense" : réutilise le formulaire
+    // de saisie existant, variableBudgetId prérempli → une seule transaction,
+    // visible dans le budget, dans Transactions, dans le solde du compte et
+    // dans les statistiques (jamais un second objet financier dupliqué).
+    navigation.navigate('QuickAdd', {
+      mode: 'depense',
+      variableBudgetId: detail.id,
+      budgetLabel: detail.label,
+      categoryId: detail.categoryId,
+      categoryTypeId: detail.categoryTypeIds?.length === 1 ? detail.categoryTypeIds[0] : undefined,
+    });
   }
 
   function onRequestDelete() {
@@ -298,7 +234,14 @@ export function BudgetDetailScreen() {
     <View style={styles.container}>
       <View style={styles.headerRow}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.title}>{detail.category.name}</Text>
+          {/* M3 §11 — le LIBELLÉ devient le nom principal partout ; la
+              catégorie/les types suivis deviennent une info secondaire. */}
+          <Text style={styles.title}>{detail.label || detail.category.name}</Text>
+          {(detail.categoryTypes?.length ?? 0) > 0 && (
+            <Text style={styles.followsLine} testID="budget-follows-types">
+              Suit : {detail.categoryTypes!.map((t) => t.name).join(', ')}
+            </Text>
+          )}
           <Text style={styles.subtitle}>
             {detail.referenceAmount.toLocaleString('fr-FR')} DH / {detail.referencePeriod} · {formatDate(status.periodStart)} — {formatDate(status.periodEnd)}
           </Text>
@@ -308,6 +251,10 @@ export function BudgetDetailScreen() {
         </TouchableOpacity>
       </View>
       {deleteError && <Text style={styles.error}>{deleteError}</Text>}
+
+      <TouchableOpacity testID="budget-add-expense" style={styles.addExpenseButton} onPress={onAddExpense}>
+        <Text style={styles.addExpenseButtonText}>+ Ajouter une dépense</Text>
+      </TouchableOpacity>
 
       {/* Lot 4 — navigation < précédente | période | suivante >. "Suivante" masquée
           sur la période courante (jamais de navigation vers le futur). */}
@@ -354,6 +301,25 @@ export function BudgetDetailScreen() {
         <Figure label="Projection au rythme actuel" value={status.rythmeProjete} />
         <Figure label="Prévision prudente restante" value={status.projectionPrudenteRestante} highlight />
       </View>
+
+      {/* M3 §8 (dimension B — seuils de consommation) : état fourni par le moteur
+          backend partagé (status.thresholdLevel/exceededAmount, jamais recalculé
+          ici) — additive, distincte de l'alerte de rythme ci-dessous (dimension
+          A) — jamais bloquant, montant de dépassement toujours explicite. */}
+      {status.thresholdLevel && status.thresholdLevel !== 'sous_60' && (
+        <View
+          style={[styles.thresholdBanner, { borderColor: THRESHOLD_COLOR[status.thresholdLevel] }]}
+          testID="budget-consumption-threshold"
+        >
+          <Text style={[styles.thresholdText, { color: THRESHOLD_COLOR[status.thresholdLevel] }]}>
+            {status.thresholdLevel === 'depasse'
+              ? `⚠ Budget dépassé de ${(status.exceededAmount ?? 0).toLocaleString('fr-FR')} DH`
+              : status.thresholdLevel === 'atteint'
+                ? 'Budget atteint'
+                : `${THRESHOLD_LABEL[status.thresholdLevel]} — ${Math.round(status.consumptionRatio * 100)}% consommé`}
+          </Text>
+        </View>
+      )}
 
       {/* Lot 3 — alerte de rythme : additive, jamais fusionnée avec le badge
           healthStatus (ratio consommé/plafond seul, affiché sur BudgetsScreen). */}
@@ -409,7 +375,7 @@ export function BudgetDetailScreen() {
       <ChoiceSheet
         testID="budget-menu"
         visible={menuOpen}
-        title={detail.category.name}
+        title={detail.label || detail.category.name}
         onClose={() => setMenuOpen(false)}
         options={[
           { key: 'modifier', label: 'Modifier', icon: 'create-outline', onPress: openEdit },
@@ -421,9 +387,17 @@ export function BudgetDetailScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard} testID="budget-edit-form">
             <Text style={styles.modalTitle}>Modifier le budget</Text>
-            <Text style={styles.modalNote}>
-              Le libellé de ce budget provient de la catégorie « {detail.category.name} » — pour le changer, choisissez une autre catégorie ailleurs.
-            </Text>
+            <FormField testID="budget-edit-label" label="Libellé" placeholder="Ex. Courses" value={editLabel} onChangeText={setEditLabel} />
+            {categoryTypeOptions.length > 0 && (
+              <MultiSelect
+                testID="budget-edit-category-types"
+                label={`Types suivis (catégorie ${detail.category.name})`}
+                placeholder="Toute la catégorie"
+                value={editCategoryTypeIds}
+                onChange={setEditCategoryTypeIds}
+                options={categoryTypeOptions.filter((t) => t.active).map((t) => ({ value: t.id, label: t.name }))}
+              />
+            )}
             <FormField testID="budget-edit-amount" label="Montant de référence (DH)" keyboardType="decimal-pad" value={editAmount} onChangeText={setEditAmount} />
             <Select testID="budget-edit-period" label="Périodicité" value={editPeriod} onChange={onChangeEditPeriod} options={PERIOD_OPTIONS} />
             {editPeriod === 'mois' && (
@@ -494,10 +468,27 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   title: { fontSize: 22, fontWeight: '700', color: colors.textPrimary },
+  followsLine: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
   subtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 4, marginBottom: spacing.lg },
   menuButton: { paddingHorizontal: 10, paddingVertical: 4 },
   menuButtonText: { fontSize: 18, fontWeight: '700', color: colors.textSecondary },
   error: { color: colors.danger, fontSize: 12, marginTop: 4, marginBottom: 8 },
+  addExpenseButton: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  addExpenseButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 14 },
+  thresholdBanner: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+  },
+  thresholdText: { fontSize: 12, fontWeight: '700' },
   figuresGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: spacing.xl },
   figure: { width: '50%', backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm },
   figureLabel: { fontSize: 11, color: colors.textSecondary },

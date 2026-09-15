@@ -1,4 +1,4 @@
-import { IsBoolean, IsIn, IsInt, IsISO8601, IsNumber, IsOptional, IsPositive, IsUUID, Max, Min } from 'class-validator';
+import { ArrayUnique, IsArray, IsBoolean, IsIn, IsInt, IsISO8601, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
 
 const REFERENCE_PERIOD_VALUES = ['semaine', 'mois'] as const;
 const MONTH_MODE_VALUES = ['calendaire', 'financier', 'personnalise'] as const;
@@ -13,6 +13,14 @@ const MONTH_MODE_VALUES = ['calendaire', 'financier', 'personnalise'] as const;
  * reste daté tel quel.
  */
 export class UpdateVariableBudgetDto {
+  /** M3 — libellé libre, jamais versionné (un renommage n'est pas une
+   *  "modification" au sens de l'historique de périodes). */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(80)
+  label?: string;
+
   @IsOptional()
   @IsNumber()
   @IsPositive()
@@ -56,6 +64,16 @@ export class UpdateVariableBudgetDto {
   @IsOptional()
   @IsUUID()
   categoryTypeId?: string | null;
+
+  /** M3 — remplace intégralement le jeu de CategoryType suivis (doivent tous
+   *  appartenir à categoryId). `null` explicite ou tableau vide = repasse au
+   *  scope catégorie entière ; absent (undefined) = jeu actuel conservé.
+   *  Prioritaire sur categoryTypeId si les deux sont fournis. */
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsUUID(undefined, { each: true })
+  categoryTypeIds?: string[] | null;
 
   /** Lot 1 — bascule Oui/Non de la participation au Solde prudent. */
   @IsOptional()

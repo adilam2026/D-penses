@@ -390,12 +390,13 @@ model CategoryType {
   active      Boolean  @default(true)
   createdAt   DateTime @default(now()) @map("created_at")
 
-  category        Category          @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  household       Household?        @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  subtypes        CategorySubtype[]
-  budgetExpenses  BudgetExpense[]
-  adHocExpenses   AdHocExpense[]
-  variableBudgets VariableBudget[]
+  category            Category                     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  household           Household?                   @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  subtypes            CategorySubtype[]
+  budgetExpenses      BudgetExpense[]
+  adHocExpenses       AdHocExpense[]
+  variableBudgets     VariableBudget[]
+  variableBudgetLinks VariableBudgetCategoryType[]
 
   @@index([categoryId])
   @@index([householdId])
@@ -906,12 +907,22 @@ model Payment {
 model VariableBudget {
   id                         String               @id @default(uuid())
   householdId                String               @map("household_id")
+  // M3 — libellé libre du budget (ex. "Courses", "Loisirs"), distinct des
+  // catégories/types suivis ci-dessous. Champ VIVANT, jamais versionné (absent
+  // de TRACKED_FIELDS/VariableBudgetVersion) : un renommage n'est pas une
+  // "modification" au sens de l'historique de périodes. Backfill de migration =
+  // category.name (jamais categoryType.name, cf. arbitrage M3).
+  label                      String               @default("")
   categoryId                 String               @map("category_id")
   // Lot 2 (module Budgets) : NULL = budget scopé à toute la catégorie (comportement
   // historique) ; renseigné = budget scopé à ce seul CategoryType précis (doit
   // appartenir à categoryId, vérifié en service). Jamais un nouveau regroupement
   // au-dessus des catégories — réutilise la hiérarchie Category → CategoryType déjà
   // en place (même convention que BudgetExpense/AdHocExpense).
+  // M3 — conservé temporairement pour compatibilité ascendante (entrée API
+  // singulière encore acceptée, convertie en categoryTypes:[ce type] en service) ;
+  // la source de vérité devient VariableBudgetCategoryType ci-dessous. Jamais
+  // supprimé dans ce lot (migration additive uniquement).
   categoryTypeId             String?              @map("category_type_id")
   referenceAmount            Decimal              @map("reference_amount") @db.Decimal(14, 2)
   referencePeriod            ReferencePeriod      @map("reference_period")
@@ -940,15 +951,37 @@ model VariableBudget {
   createdAt                  DateTime             @default(now()) @map("created_at")
   updatedAt                  DateTime             @updatedAt @map("updated_at")
 
-  household    Household               @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  category     Category                @relation(fields: [categoryId], references: [id])
-  categoryType CategoryType?           @relation(fields: [categoryTypeId], references: [id])
-  expenses     BudgetExpense[]
-  versions     VariableBudgetVersion[]
+  household     Household                    @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  category      Category                     @relation(fields: [categoryId], references: [id])
+  categoryType  CategoryType?                @relation(fields: [categoryTypeId], references: [id])
+  expenses      BudgetExpense[]
+  versions      VariableBudgetVersion[]
+  categoryTypes VariableBudgetCategoryType[]
 
   @@index([householdId])
   @@index([categoryTypeId])
   @@map("variable_budget")
+}
+
+// M3 — support de PLUSIEURS CategoryType suivis par un même budget (ex. le
+// budget "Courses" suit Alimentation·Supermarché ET Alimentation·Marché).
+// Liste VIDE pour un budget = comportement historique inchangé (toute la
+// catégorie parente, jamais réinterprété comme "aucun type"). Jamais versionné
+// (comme categoryTypeId ci-dessus) : la priorité de rattachement (§3) compare
+// toujours l'état COURANT de ce jeu, pas un instantané historique — seule la
+// consommation déjà enregistrée (BudgetExpense) reste figée dans le temps.
+model VariableBudgetCategoryType {
+  id               String   @id @default(uuid())
+  variableBudgetId String   @map("variable_budget_id")
+  categoryTypeId   String   @map("category_type_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  variableBudget VariableBudget @relation(fields: [variableBudgetId], references: [id], onDelete: Cascade)
+  categoryType   CategoryType   @relation(fields: [categoryTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([variableBudgetId, categoryTypeId])
+  @@index([categoryTypeId])
+  @@map("variable_budget_category_type")
 }
 
 enum VariableBudgetStatus {

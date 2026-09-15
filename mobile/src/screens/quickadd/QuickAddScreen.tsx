@@ -88,6 +88,18 @@ export function QuickAddScreen() {
   // Payer une échéance/Transfert) ; sans paramètre, comportement inchangé (Dépense).
   const initialMode = (route.params?.mode as Mode | undefined) ?? 'depense';
   const [mode, setMode] = useState<Mode>(initialMode);
+  // M3 §5 — arrivée depuis Budget > Fiche > "+ Ajouter une dépense" : réutilise
+  // ce même formulaire (jamais un second écran/objet financier), le rattachement
+  // au budget est explicite (variableBudgetId) — la catégorie/le type ne sont
+  // donc plus à choisir ici (déjà déterminés par le budget lui-même).
+  const presetBudget = route.params?.variableBudgetId
+    ? {
+        variableBudgetId: route.params.variableBudgetId as string,
+        budgetLabel: route.params.budgetLabel as string,
+        categoryId: route.params.categoryId as string,
+        categoryTypeId: (route.params.categoryTypeId as string | undefined) ?? undefined,
+      }
+    : null;
   const [label, setLabel] = useState('');
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
@@ -105,12 +117,12 @@ export function QuickAddScreen() {
   const [transferNote, setTransferNote] = useState('');
 
   const [categories, setCategories] = useState<Category[]>([]);
-  const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [categoryId, setCategoryId] = useState<string | null>(presetBudget?.categoryId ?? null);
   const [budgetHint, setBudgetHint] = useState<string | null>(null);
 
   // Vague 2 §1/§4 — Type filtré par Catégorie, Sous-type filtré par Type, tous deux facultatifs.
   const [categoryTypes, setCategoryTypes] = useState<CategoryType[]>([]);
-  const [categoryTypeId, setCategoryTypeId] = useState<string | null>(null);
+  const [categoryTypeId, setCategoryTypeId] = useState<string | null>(presetBudget?.categoryTypeId ?? null);
   const [categorySubtypeId, setCategorySubtypeId] = useState<string | null>(null);
   const [addingType, setAddingType] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
@@ -280,9 +292,10 @@ export function QuickAddScreen() {
         await api.createExpense({
           amount: numericAmount,
           accountId: accountId!,
-          categoryId: categoryId ?? undefined,
-          categoryTypeId: categoryTypeId ?? undefined,
-          categorySubtypeId: categorySubtypeId ?? undefined,
+          categoryId: presetBudget ? presetBudget.categoryId : categoryId ?? undefined,
+          categoryTypeId: presetBudget ? presetBudget.categoryTypeId : categoryTypeId ?? undefined,
+          categorySubtypeId: presetBudget ? undefined : categorySubtypeId ?? undefined,
+          variableBudgetId: presetBudget?.variableBudgetId,
           notes: notes || undefined,
         });
       } else if (mode === 'revenu') {
@@ -333,15 +346,19 @@ export function QuickAddScreen() {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Ajouter</Text>
+        <Text style={styles.title}>{presetBudget ? 'Ajouter une dépense' : 'Ajouter'}</Text>
 
-        <View style={styles.modeRow}>
-          {(Object.keys(MODE_LABEL) as Mode[]).map((m) => (
-            <TouchableOpacity key={m} style={[styles.modeChip, mode === m && styles.modeChipActive]} onPress={() => setMode(m)}>
-              <Text style={[styles.modeChipText, mode === m && styles.modeChipTextActive]}>{MODE_LABEL[m]}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {/* M3 §5 — rattaché à un budget précis : un seul type d'objet possible
+            (une dépense), jamais de choix Revenu/Échéance/Transfert ici. */}
+        {!presetBudget && (
+          <View style={styles.modeRow}>
+            {(Object.keys(MODE_LABEL) as Mode[]).map((m) => (
+              <TouchableOpacity key={m} style={[styles.modeChip, mode === m && styles.modeChipActive]} onPress={() => setMode(m)}>
+                <Text style={[styles.modeChipText, mode === m && styles.modeChipTextActive]}>{MODE_LABEL[m]}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         {loading ? (
           <ActivityIndicator style={{ marginTop: 24 }} />
@@ -386,7 +403,17 @@ export function QuickAddScreen() {
               />
             )}
 
-            {mode === 'depense' && (
+            {mode === 'depense' && presetBudget && (
+              // M3 §5 — catégorie/type déjà déterminés par le budget d'origine,
+              // jamais un second choix qui pourrait décorréler la dépense de la
+              // fiche depuis laquelle elle a été lancée.
+              <View style={styles.presetBudgetBanner} testID="quickadd-preset-budget-banner">
+                <Text style={styles.presetBudgetLabel}>Budget</Text>
+                <Text style={styles.presetBudgetValue}>{presetBudget.budgetLabel}</Text>
+              </View>
+            )}
+
+            {mode === 'depense' && !presetBudget && (
               <>
                 {/* §8 (recette téléphone réel) : sélecteur compact D-Penses+ (Select
                     partagé) au lieu d'une grande liste de chips permanente — plus de
@@ -529,9 +556,11 @@ export function QuickAddScreen() {
                       </>
                     );
                   })()}
-
-                <FormField testID="quickadd-notes-input" placeholder="Note (facultatif)" value={notes} onChangeText={setNotes} onFocus={handleFocus} />
               </>
+            )}
+
+            {mode === 'depense' && (
+              <FormField testID="quickadd-notes-input" placeholder="Note (facultatif)" value={notes} onChangeText={setNotes} onFocus={handleFocus} />
             )}
 
             {mode !== 'paiement' && (
@@ -744,6 +773,16 @@ const styles = StyleSheet.create({
   inlineAddButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12, justifyContent: 'center' },
   inlineAddButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 13 },
   hint: { fontSize: 12, color: colors.textSecondary, marginBottom: spacing.md, fontStyle: 'italic' },
+  presetBudgetBanner: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  presetBudgetLabel: { fontSize: 11, color: colors.textSecondary },
+  presetBudgetValue: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginTop: 2 },
   button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.sm },
   buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 15 },
   cancel: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.lg, fontSize: 13 },
