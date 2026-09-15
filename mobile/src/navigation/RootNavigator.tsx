@@ -30,6 +30,9 @@ import { ConfirmDeadlineScreen } from '../screens/financial-plans/ConfirmDeadlin
 import { SchoolProjectionScreen } from '../screens/financial-plans/SchoolProjectionScreen';
 import { SchoolWizardScreen } from '../screens/school-wizard/SchoolWizardScreen';
 import { TravelWizardScreen } from '../screens/travel-wizard/TravelWizardScreen';
+import { VehicleWizardScreen } from '../screens/vehicle-wizard/VehicleWizardScreen';
+import { HousingWizardScreen } from '../screens/housing-wizard/HousingWizardScreen';
+import { SubscriptionsWizardScreen } from '../screens/subscriptions-wizard/SubscriptionsWizardScreen';
 import { CreatePocketScreen } from '../screens/savings/CreatePocketScreen';
 import { PocketDetailScreen } from '../screens/savings/PocketDetailScreen';
 import { GoalsScreen } from '../screens/savings/GoalsScreen';
@@ -140,6 +143,9 @@ export function RootNavigator() {
       <Stack.Screen name="SchoolProjection" component={SchoolProjectionScreen} options={{ headerShown: true, title: 'Projection pluriannuelle' }} />
       <Stack.Screen name="SchoolWizard" component={SchoolWizardScreen} options={{ presentation: 'modal' }} />
       <Stack.Screen name="TravelWizard" component={TravelWizardScreen} options={{ presentation: 'modal' }} />
+      <Stack.Screen name="VehicleWizard" component={VehicleWizardScreen} options={{ presentation: 'modal' }} />
+      <Stack.Screen name="HousingWizard" component={HousingWizardScreen} options={{ presentation: 'modal' }} />
+      <Stack.Screen name="SubscriptionsWizard" component={SubscriptionsWizardScreen} options={{ presentation: 'modal' }} />
       <Stack.Screen name="CreatePocket" component={CreatePocketScreen} options={{ headerShown: true, title: 'Nouvelle enveloppe', presentation: 'modal' }} />
       <Stack.Screen name="PocketDetail" component={PocketDetailScreen} options={{ headerShown: true, title: 'Épargne' }} />
       <Stack.Screen name="Goals" component={GoalsScreen} options={{ headerShown: true, title: 'Objectifs' }} />

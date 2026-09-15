@@ -129,18 +129,23 @@ export function QuickActionsSheet() {
           {
             key: 'maison',
             label: 'Maison',
-            description: 'Bientôt disponible',
+            description: 'Charges liées à un logement',
             icon: 'home-outline',
-            disabled: true,
-            onPress: () => {},
+            onPress: () => navigation.navigate('HousingWizard'),
           },
           {
             key: 'voiture',
             label: 'Voiture',
-            description: 'Bientôt disponible',
+            description: 'Charges liées à un véhicule',
             icon: 'car-outline',
-            disabled: true,
-            onPress: () => {},
+            onPress: () => navigation.navigate('VehicleWizard'),
+          },
+          {
+            key: 'abonnements',
+            label: 'Abonnements',
+            description: 'Vue regroupée de vos abonnements',
+            icon: 'repeat-outline',
+            onPress: () => navigation.navigate('SubscriptionsWizard'),
           },
         ]}
       />

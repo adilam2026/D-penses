@@ -39,6 +39,17 @@ export class TravelWizardDto {
   @IsUUID()
   linkedProvisionId?: string;
 
+  /** M7+M8 (guard-rail §13) — participants du voyage : réutilise FinancialPlanBeneficiary existant, aucun nouveau modèle. */
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  participantUserIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  participantChildIds?: string[];
+
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })

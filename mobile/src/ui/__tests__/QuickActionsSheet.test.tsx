@@ -96,8 +96,8 @@ describe('QuickActionsSheet — les 6 actions (TXT réf. §M1)', () => {
   });
 });
 
-describe('QuickActionsSheet — chooser "Plan" (TXT réf. §M1)', () => {
-  it('propose École/Voyage/Maison/Voiture via un modal interne (jamais un Alert natif)', async () => {
+describe('QuickActionsSheet — chooser "Plan" (TXT réf. §M1/M7+M8)', () => {
+  it('propose École/Voyage/Maison/Voiture/Abonnements via un modal interne (jamais un Alert natif)', async () => {
     await renderOpenSheet();
     await fireEvent.press(screen.getByTestId('quick-action-plan'));
 
@@ -105,6 +105,7 @@ describe('QuickActionsSheet — chooser "Plan" (TXT réf. §M1)', () => {
     expect(screen.getByTestId('plan-type-choice-option-voyage')).toBeTruthy();
     expect(screen.getByTestId('plan-type-choice-option-maison')).toBeTruthy();
     expect(screen.getByTestId('plan-type-choice-option-voiture')).toBeTruthy();
+    expect(screen.getByTestId('plan-type-choice-option-abonnements')).toBeTruthy();
 
     await fireEvent.press(screen.getByTestId('plan-type-choice-option-scolaire'));
     expect(mockNavigate).toHaveBeenCalledWith('SchoolWizard');
@@ -119,16 +120,30 @@ describe('QuickActionsSheet — chooser "Plan" (TXT réf. §M1)', () => {
     expect(mockNavigate).toHaveBeenCalledWith('TravelWizard');
   });
 
-  it("§M1 — \"Maison\" et \"Voiture\" (référentiels M7, pas encore construits) sont visibles mais non cliquables : jamais un faux parcours", async () => {
+  it('M7+M8 — "Maison" navigue vers HousingWizard, "Voiture" vers VehicleWizard (référentiels construits, jamais un faux parcours)', async () => {
     await renderOpenSheet();
     await fireEvent.press(screen.getByTestId('quick-action-plan'));
     await waitFor(() => screen.getByTestId('plan-type-choice-option-maison'));
 
     await fireEvent.press(screen.getByTestId('plan-type-choice-option-maison'));
-    await fireEvent.press(screen.getByTestId('plan-type-choice-option-voiture'));
+    expect(mockNavigate).toHaveBeenCalledWith('HousingWizard');
+  });
 
-    expect(mockNavigate).not.toHaveBeenCalled();
-    expect(screen.getByText('Maison · non disponible')).toBeTruthy();
-    expect(screen.getByText('Voiture · non disponible')).toBeTruthy();
+  it('M7+M8 — "Voiture" navigue vers VehicleWizard', async () => {
+    await renderOpenSheet();
+    await fireEvent.press(screen.getByTestId('quick-action-plan'));
+    await waitFor(() => screen.getByTestId('plan-type-choice-option-voiture'));
+
+    await fireEvent.press(screen.getByTestId('plan-type-choice-option-voiture'));
+    expect(mockNavigate).toHaveBeenCalledWith('VehicleWizard');
+  });
+
+  it('M7+M8 — "Abonnements" navigue vers SubscriptionsWizard', async () => {
+    await renderOpenSheet();
+    await fireEvent.press(screen.getByTestId('quick-action-plan'));
+    await waitFor(() => screen.getByTestId('plan-type-choice-option-abonnements'));
+
+    await fireEvent.press(screen.getByTestId('plan-type-choice-option-abonnements'));
+    expect(mockNavigate).toHaveBeenCalledWith('SubscriptionsWizard');
   });
 });

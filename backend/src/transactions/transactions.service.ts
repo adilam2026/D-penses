@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { RlsContextService } from '../common/prisma/rls-context.service';
-import { budgetExpenseConsumptionAmount, toNumber } from '../common/ledger/ledger.util';
+import { budgetExpenseConsumptionAmount, contextualLabel, toNumber } from '../common/ledger/ledger.util';
 
 const ORIGIN_LABEL: Record<string, string> = {
   income: 'Revenu confirmé',
@@ -34,6 +34,10 @@ interface LedgerRow {
   created_by_name: string | null;
   budget_id: string | null;
   financial_plan_id: string | null;
+  // M7+M8 (guard-rail §4/§14) — NULL hors branche 'payment' (jamais de Plan
+  // Voiture/Maison sur un budget_expense/adhoc_expense/transfert/ajustement/revenu).
+  vehicle_id: string | null;
+  housing_id: string | null;
 }
 
 export interface TransactionListFilters {
@@ -97,14 +101,19 @@ export class TransactionsService {
       if (filters.financialPlanId) conditions.push(Prisma.sql`le.financial_plan_id = ${filters.financialPlanId}`);
       if (filters.createdByUserId) conditions.push(Prisma.sql`le.created_by_user_id = ${filters.createdByUserId}`);
 
-      const rows = await tx.$queryRaw<LedgerRow[]>(Prisma.sql`
+      const rows = await tx.$queryRaw<(LedgerRow & { vehicle_name: string | null; housing_name: string | null; travel_destination: string | null })[]>(Prisma.sql`
         SELECT le.kind, le.id, le.occurred_at, le.amount, le.account_id,
                fa.name AS account_name, le.label, le.category_id, c.name AS category_name,
                le.category_type_id, le.category_type_name, le.category_subtype_id, le.category_subtype_name,
-               le.created_by_user_id, le.created_by_name, le.budget_id, le.financial_plan_id
+               le.created_by_user_id, le.created_by_name, le.budget_id, le.financial_plan_id,
+               le.vehicle_id, le.housing_id, v.name AS vehicle_name, h.name AS housing_name,
+               fp.destination AS travel_destination
         FROM ledger_entry le
         JOIN financial_account fa ON fa.id = le.account_id
         LEFT JOIN category c ON c.id = le.category_id
+        LEFT JOIN vehicle v ON v.id = le.vehicle_id
+        LEFT JOIN housing h ON h.id = le.housing_id
+        LEFT JOIN financial_plan fp ON fp.id = le.financial_plan_id AND fp.plan_type = 'travel'
         WHERE ${Prisma.join(conditions, ' AND ')}
         ORDER BY le.occurred_at DESC, le.id DESC
         LIMIT ${limit}
@@ -121,11 +130,12 @@ export class TransactionsService {
         // Vague 2 §20 : "Type · Sous-type" quand un type est renseigné (ex. "Courses · Viande"),
         // sinon le label existant (catégorie/plan) est conservé tel quel — jamais de régression
         // pour les lignes sans type (revenus, paiements, transferts, anciennes dépenses).
-        label: r.category_type_name
-          ? r.category_subtype_name
-            ? `${r.category_type_name} · ${r.category_subtype_name}`
-            : r.category_type_name
-          : r.label,
+        // M7+M8 (guard-rail §4/§14) : contextualisation "Libellé · Entité" appliquée APRÈS
+        // (jamais avant, pour ne pas interférer avec le pattern Type · Sous-type existant).
+        label: contextualLabel(
+          r.category_type_name ? (r.category_subtype_name ? `${r.category_type_name} · ${r.category_subtype_name}` : r.category_type_name) : (r.label ?? ''),
+          { vehicleName: r.vehicle_name, housingName: r.housing_name, travelDestination: r.travel_destination },
+        ),
         categoryId: r.category_id,
         categoryName: r.category_name,
         categoryTypeId: r.category_type_id,
@@ -155,13 +165,22 @@ export class TransactionsService {
         case 'payment': {
           const p = await tx.payment.findFirst({
             where: { id, deadline: { chargePlan: { householdId } } },
-            include: { deadline: { include: { chargePlan: { include: { financialPlan: true } } } }, account: true },
+            include: {
+              deadline: { include: { chargePlan: { include: { financialPlan: true, vehicle: true, housing: true } } } },
+              account: true,
+            },
           });
           if (!p) throw new NotFoundException('Transaction introuvable');
           const cp = p.deadline.chargePlan;
+          // M7+M8 (guard-rail §4/§14) — "Libellé · Entité", jamais stocké dans cp.label.
+          const contextualized = contextualLabel(cp.label, {
+            vehicleName: cp.vehicle?.name,
+            housingName: cp.housing?.name,
+            travelDestination: cp.financialPlan?.planType === 'travel' ? cp.financialPlan.destination : undefined,
+          });
           return {
             ...base,
-            label: cp.label,
+            label: contextualized,
             amount: -toNumber(p.amount),
             date: p.paidDate,
             accountId: p.accountId,
@@ -169,7 +188,7 @@ export class TransactionsService {
             // n'a débité aucun compte réel — jamais un nom de compte inventé.
             accountName: p.account?.name ?? null,
             note: p.notes ?? null,
-            deadline: { id: p.deadline.id, dueDate: p.deadline.dueDate, chargePlanLabel: cp.label },
+            deadline: { id: p.deadline.id, dueDate: p.deadline.dueDate, chargePlanLabel: contextualized },
             financialPlan: cp.financialPlan ? { id: cp.financialPlan.id, label: cp.financialPlan.label } : null,
             provisionId: p.provisionId,
           };

@@ -113,10 +113,22 @@ enum ChargePlanGenerationMode {
 
 // Lot 11 (§9/§11 cadrage V1) — distingue les FinancialPlan pour l'UI mobile (assistant
 // scolaire vs voyage vs plan libre), purement informatif.
+// M7+M8 — extension additive : vehicle/housing/subscriptions, même principe (jamais
+// de logique métier branchée dessus, purement informatif/UI).
 enum FinancialPlanType {
   school
   travel
+  vehicle
+  housing
+  subscriptions
   other
+}
+
+// M7+M8 — statut des référentiels Vehicle/Housing (ultra-simples : id/householdId/
+// name/status uniquement, jamais de fiche technique — cf. guard-rails M7+M8 §1/§2).
+enum ReferentialStatus {
+  active
+  inactive
 }
 
 enum ObligationStatus {
@@ -317,6 +329,8 @@ model Household {
   categoryTypes      CategoryType[]
   categorySubtypes   CategorySubtype[]
   schoolProjections  SchoolProjection[]
+  vehicles           Vehicle[]
+  housings           Housing[]
 
   @@map("household")
 }
@@ -357,6 +371,41 @@ model Child {
 
   @@index([householdId])
   @@map("child")
+}
+
+// M7+M8 — référentiel véhicule ULTRA SIMPLE (guard-rail §1) : uniquement le nom saisi
+// par l'utilisateur, aucune fiche technique (marque/modèle/immatriculation/etc.).
+model Vehicle {
+  id          String            @id @default(uuid())
+  householdId String            @map("household_id")
+  name        String
+  status      ReferentialStatus @default(active)
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  household      Household       @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  financialPlans FinancialPlan[]
+  chargePlans    ChargePlan[]
+
+  @@index([householdId])
+  @@map("vehicle")
+}
+
+// M7+M8 — référentiel logement ULTRA SIMPLE (guard-rail §2), même principe que Vehicle.
+model Housing {
+  id          String            @id @default(uuid())
+  householdId String            @map("household_id")
+  name        String
+  status      ReferentialStatus @default(active)
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  household      Household       @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  financialPlans FinancialPlan[]
+  chargePlans    ChargePlan[]
+
+  @@index([householdId])
+  @@map("housing")
 }
 
 model Category {
@@ -811,6 +860,11 @@ model ChargePlan {
   // RG-110 : un ChargePlan appartient à 0 ou 1 FinancialPlan — jamais un conteneur
   // universel obligatoire (§9), une dépense de courses n'y est jamais rattachée.
   financialPlanId      String?                  @map("financial_plan_id")
+  // M7+M8 (guard-rail §3/§4) — rattachement direct à l'entité, jamais déduit
+  // uniquement via financialPlanId (un ChargePlan sait résoudre son entité par
+  // lui-même, même principe que schoolProjections.sourceDeadlineId en M9B).
+  vehicleId            String?                  @map("vehicle_id")
+  housingId            String?                  @map("housing_id")
   startDate            DateTime                 @map("start_date") @db.Date
   endDate              DateTime?                @map("end_date") @db.Date
   priorityLevel        Int                      @default(1) @map("priority_level")
@@ -822,6 +876,8 @@ model ChargePlan {
   category          Category?          @relation(fields: [categoryId], references: [id])
   defaultAccount    FinancialAccount?  @relation("ChargePlanDefaultAccount", fields: [defaultAccountId], references: [id])
   financialPlan     FinancialPlan?     @relation(fields: [financialPlanId], references: [id])
+  vehicle           Vehicle?           @relation(fields: [vehicleId], references: [id])
+  housing           Housing?           @relation(fields: [housingId], references: [id])
   deadlines         Deadline[]
   children          ChargePlanChild[]
   // M9 — poste source d'une chaîne de prévisions pluriannuelles (identité stable
@@ -830,6 +886,8 @@ model ChargePlan {
 
   @@index([householdId])
   @@index([financialPlanId])
+  @@index([vehicleId])
+  @@index([housingId])
   @@map("charge_plan")
 }
 
@@ -854,16 +912,16 @@ model Deadline {
   createdAt              DateTime                @default(now()) @map("created_at")
   updatedAt              DateTime                @updatedAt @map("updated_at")
 
-  chargePlan       ChargePlan                @relation(fields: [chargePlanId], references: [id], onDelete: Cascade)
-  provision        Provision?                @relation(fields: [provisionId], references: [id])
-  payments         Payment[]
-  childAllocations DeadlineChildAllocation[]
+  chargePlan                ChargePlan                @relation(fields: [chargePlanId], references: [id], onDelete: Cascade)
+  provision                 Provision?                @relation(fields: [provisionId], references: [id])
+  payments                  Payment[]
+  childAllocations          DeadlineChildAllocation[]
   // M9 — prévisions remplacées PAR cette échéance réelle (0..n en théorie, 0..1 en
   // pratique : une Deadline naît d'au plus une prévision).
-  replacedSchoolProjections SchoolProjection[] @relation("SchoolProjectionReplacedByDeadline")
+  replacedSchoolProjections SchoolProjection[]        @relation("SchoolProjectionReplacedByDeadline")
   // M9B §3 — chaînes de prévision dont CETTE Deadline est l'origine réelle (0..n,
   // une chaîne par (poste, ce déclenchement) — cf. SchoolProjection.sourceDeadlineId).
-  sourcedSchoolProjections  SchoolProjection[] @relation("SchoolProjectionSourceDeadline")
+  sourcedSchoolProjections  SchoolProjection[]        @relation("SchoolProjectionSourceDeadline")
 
   // Lot 11 (§1) : anti-doublon pour ensureChargeDeadlinesUntil (createMany skipDuplicates) —
   // un même ChargePlan ne peut jamais avoir deux échéances à la même due_date.
@@ -1170,22 +1228,31 @@ model FinancialPlan {
   // Lot 6 (RG-112) — relation informative pour l'affichage consolidé ; la couverture
   // réelle reste régie par RG-090 indépendamment du FinancialPlan.
   linkedProvisionId String?           @map("linked_provision_id")
+  // M7+M8 (guard-rail §3) — le Plan sait quelle entité il regroupe (Voiture/Maison),
+  // jamais de moteur financier supplémentaire porté par le Plan lui-même. NULL pour
+  // les plans non-vehicle/non-housing.
+  vehicleId         String?           @map("vehicle_id")
+  housingId         String?           @map("housing_id")
   createdAt         DateTime          @default(now()) @map("created_at")
   updatedAt         DateTime          @updatedAt @map("updated_at")
 
-  household         Household                  @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  chargePlans       ChargePlan[]
-  beneficiaries     FinancialPlanBeneficiary[]
-  linkedProvision   Provision?                 @relation(fields: [linkedProvisionId], references: [id])
+  household                 Household                  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  chargePlans               ChargePlan[]
+  beneficiaries             FinancialPlanBeneficiary[]
+  linkedProvision           Provision?                 @relation(fields: [linkedProvisionId], references: [id])
+  vehicle                   Vehicle?                   @relation(fields: [vehicleId], references: [id])
+  housing                   Housing?                   @relation(fields: [housingId], references: [id])
   // M9 — prévisions dont ce plan réel est l'origine de la chaîne (jamais l'inverse :
   // une SchoolProjection ne référence PAS le plan réel dont elle a été calculée année
   // par année, seulement son plan D'ORIGINE, cf. sourceFinancialPlanId).
-  schoolProjectionsOrigin  SchoolProjection[] @relation("SchoolProjectionSourcePlan")
+  schoolProjectionsOrigin   SchoolProjection[]         @relation("SchoolProjectionSourcePlan")
   // M9 — prévisions REMPLACÉES par ce plan (celui-ci est le plan réel créé à partir
   // d'une ou plusieurs prévisions, cf. replacedByFinancialPlanId).
-  schoolProjectionsReplaced SchoolProjection[] @relation("SchoolProjectionReplacedByPlan")
+  schoolProjectionsReplaced SchoolProjection[]         @relation("SchoolProjectionReplacedByPlan")
 
   @@index([householdId])
+  @@index([vehicleId])
+  @@index([housingId])
   @@map("financial_plan")
 }
 
@@ -1230,46 +1297,46 @@ enum SchoolProjectionStatus {
 // prévision→réel (jamais une suppression : historique consultable, jamais les deux à la
 // fois dans la Projection longue durée — cf. SchoolProjectionsService.listActiveForPlan).
 model SchoolProjection {
-  id                    String                       @id @default(uuid())
-  householdId           String                       @map("household_id")
-  childId               String                       @map("child_id")
+  id                        String                       @id @default(uuid())
+  householdId               String                       @map("household_id")
+  childId                   String                       @map("child_id")
   // Copié depuis FinancialPlan.schoolName au moment du calcul (jamais un live-join —
   // même logique que label ci-dessous, stabilité historique de l'affichage).
-  schoolName            String?                      @map("school_name")
+  schoolName                String?                      @map("school_name")
   // Copié depuis ChargePlan.label au moment du calcul.
-  label                 String
-  schoolYear            String                       @map("school_year")
-  targetDate            DateTime                     @map("target_date") @db.Date
-  sourceFinancialPlanId String                       @map("source_financial_plan_id")
-  sourceChargePlanId    String                       @map("source_charge_plan_id")
+  label                     String
+  schoolYear                String                       @map("school_year")
+  targetDate                DateTime                     @map("target_date") @db.Date
+  sourceFinancialPlanId     String                       @map("source_financial_plan_id")
+  sourceChargePlanId        String                       @map("source_charge_plan_id")
   // M9B §3 — un ChargePlan PEUT porter plusieurs Deadline distinctes (POST
   // /charge-plans/:id/deadlines n'est jamais limité à une seule) : sourceChargePlanId
   // seul ne suffit donc pas à tracer la ligne réelle exacte. sourceDeadlineId fige la
   // Deadline réelle d'origine de TOUTE la chaîne (propagé tel quel à chaque année
   // suivante, jamais recalculé) — traçabilité complète, jamais une ambiguïté sur
   // "quelle échéance a servi de référence".
-  sourceDeadlineId      String?                      @map("source_deadline_id")
-  referenceAmount       Decimal                      @map("reference_amount") @db.Decimal(14, 2)
-  increaseType          SchoolProjectionIncreaseType @map("increase_type")
+  sourceDeadlineId          String?                      @map("source_deadline_id")
+  referenceAmount           Decimal                      @map("reference_amount") @db.Decimal(14, 2)
+  increaseType              SchoolProjectionIncreaseType @map("increase_type")
   // NULL ssi increaseType = aucune (même convention que Deadline.amountCurrent/amountStatus).
-  increaseValue         Decimal?                     @map("increase_value") @db.Decimal(14, 2)
-  computedAmount        Decimal                      @map("computed_amount") @db.Decimal(14, 2)
-  status                SchoolProjectionStatus       @default(projete)
-  previousProjectionId  String?                      @unique @map("previous_projection_id")
-  replacedByFinancialPlanId String?                  @map("replaced_by_financial_plan_id")
-  replacedByDeadlineId      String?                  @map("replaced_by_deadline_id")
-  createdAt             DateTime                     @default(now()) @map("created_at")
-  updatedAt             DateTime                     @updatedAt @map("updated_at")
+  increaseValue             Decimal?                     @map("increase_value") @db.Decimal(14, 2)
+  computedAmount            Decimal                      @map("computed_amount") @db.Decimal(14, 2)
+  status                    SchoolProjectionStatus       @default(projete)
+  previousProjectionId      String?                      @unique @map("previous_projection_id")
+  replacedByFinancialPlanId String?                      @map("replaced_by_financial_plan_id")
+  replacedByDeadlineId      String?                      @map("replaced_by_deadline_id")
+  createdAt                 DateTime                     @default(now()) @map("created_at")
+  updatedAt                 DateTime                     @updatedAt @map("updated_at")
 
-  household           Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  child                Child             @relation(fields: [childId], references: [id])
-  sourceFinancialPlan  FinancialPlan     @relation("SchoolProjectionSourcePlan", fields: [sourceFinancialPlanId], references: [id], onDelete: Cascade)
-  sourceChargePlan     ChargePlan        @relation(fields: [sourceChargePlanId], references: [id], onDelete: Cascade)
-  sourceDeadline       Deadline?         @relation("SchoolProjectionSourceDeadline", fields: [sourceDeadlineId], references: [id])
-  previousProjection   SchoolProjection? @relation("SchoolProjectionChain", fields: [previousProjectionId], references: [id])
-  nextProjection       SchoolProjection? @relation("SchoolProjectionChain")
-  replacedByFinancialPlan FinancialPlan? @relation("SchoolProjectionReplacedByPlan", fields: [replacedByFinancialPlanId], references: [id])
-  replacedByDeadline      Deadline?      @relation("SchoolProjectionReplacedByDeadline", fields: [replacedByDeadlineId], references: [id])
+  household               Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  child                   Child             @relation(fields: [childId], references: [id])
+  sourceFinancialPlan     FinancialPlan     @relation("SchoolProjectionSourcePlan", fields: [sourceFinancialPlanId], references: [id], onDelete: Cascade)
+  sourceChargePlan        ChargePlan        @relation(fields: [sourceChargePlanId], references: [id], onDelete: Cascade)
+  sourceDeadline          Deadline?         @relation("SchoolProjectionSourceDeadline", fields: [sourceDeadlineId], references: [id])
+  previousProjection      SchoolProjection? @relation("SchoolProjectionChain", fields: [previousProjectionId], references: [id])
+  nextProjection          SchoolProjection? @relation("SchoolProjectionChain")
+  replacedByFinancialPlan FinancialPlan?    @relation("SchoolProjectionReplacedByPlan", fields: [replacedByFinancialPlanId], references: [id])
+  replacedByDeadline      Deadline?         @relation("SchoolProjectionReplacedByDeadline", fields: [replacedByDeadlineId], references: [id])
 
   // Une ligne (poste) ne peut avoir qu'UNE prévision par année scolaire cible —
   // jamais deux valeurs concurrentes pour la même (poste, année).

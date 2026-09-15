@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
-import { getDeadlineBalance, toNumber } from '../common/ledger/ledger.util';
+import { contextualLabel, getDeadlineBalance, toNumber } from '../common/ledger/ledger.util';
 import { engagementNonCouvert } from '../common/ledger/provision.util';
 import { CreateFinancialPlanDto } from './dto/create-financial-plan.dto';
 import { UpdateFinancialPlanDto } from './dto/update-financial-plan.dto';
@@ -75,8 +75,11 @@ export class FinancialPlansService {
     });
     const chargePlans = await tx.chargePlan.findMany({
       where: { financialPlanId: id },
-      include: { deadlines: true, category: true, children: { include: { child: true } } },
+      include: { deadlines: true, category: true, children: { include: { child: true } }, vehicle: true, housing: true },
     });
+    // M7+M8 (guard-rail §4/§14) — "Libellé · Entité", jamais stocké dans cp.label.
+    const labelOf = (cp: (typeof chargePlans)[number]) =>
+      contextualLabel(cp.label, { vehicleName: cp.vehicle?.name, housingName: cp.housing?.name, travelDestination: plan.planType === 'travel' ? plan.destination : undefined });
 
     const certainPlans = chargePlans.filter((cp) => cp.obligationStatus === 'obligatoire' || cp.obligationStatus === 'optionnelle_souscrite');
     const envisagedPlans = chargePlans.filter((cp) => cp.obligationStatus === 'optionnelle_envisagee');
@@ -102,7 +105,7 @@ export class FinancialPlansService {
         if (d.financialStatus === 'annulee') continue; // exclue de tout calcul, comme une charge refusée (RG-107)
         if (d.amountStatus === 'inconnu') {
           hasUnknown = true;
-          unknownItems.push({ chargePlanId: cp.id, label: cp.label, deadlineId: d.id });
+          unknownItems.push({ chargePlanId: cp.id, label: labelOf(cp), deadlineId: d.id });
           continue; // jamais compté 0 (RG-103), exclu de toute somme numérique
         }
         if (d.amountStatus === 'estime') hasEstimate = true;
@@ -148,7 +151,7 @@ export class FinancialPlansService {
 
         deadlinesCertain.push({
           ...d,
-          chargePlanLabel: cp.label,
+          chargePlanLabel: labelOf(cp),
           resteAPayer,
           coverageAffectee: round2(coverageAffectee),
           engagementNonCouvert: round2(engagementNonCouvertAmount),
@@ -172,7 +175,7 @@ export class FinancialPlansService {
         envisagedTotal += toNumber(d.amountCurrent);
         cpKnown = true;
       }
-      envisagedItems.push({ chargePlanId: cp.id, label: cp.label, amountKnown: cpKnown });
+      envisagedItems.push({ chargePlanId: cp.id, label: labelOf(cp), amountKnown: cpKnown });
     }
 
     // §14 : le niveau le plus prudent domine — une seule valeur inconnue suffit à
@@ -198,10 +201,10 @@ export class FinancialPlansService {
       envisagedItems,
       unknownItems,
       deadlinesCertain,
-      refusedChargePlans: refusedPlans.map((cp) => ({ id: cp.id, label: cp.label })), // historique conservé (RG-107)
+      refusedChargePlans: refusedPlans.map((cp) => ({ id: cp.id, label: labelOf(cp) })), // historique conservé (RG-107)
       // M9B — liste minimale des postes (id+label), additive : sert au formulaire de
       // prévision pluriannuelle (un poste par ligne, jamais fusionné).
-      chargePlans: chargePlans.map((cp) => ({ id: cp.id, label: cp.label })),
+      chargePlans: chargePlans.map((cp) => ({ id: cp.id, label: labelOf(cp) })),
     };
   }
 
@@ -328,6 +331,10 @@ export class FinancialPlansService {
           label: dto.label,
           planType: original.planType,
           destination: original.destination,
+          // M7+M8 — la copie reste rattachée à la MÊME entité que l'original (jamais
+          // perdue silencieusement : un Plan Voiture dupliqué reste un Plan Voiture).
+          vehicleId: original.vehicleId,
+          housingId: original.housingId,
           periodStart: original.periodStart,
           periodEnd: original.periodEnd,
           // linkedProvisionId volontairement omis : une copie ne partage jamais
@@ -352,6 +359,8 @@ export class FinancialPlansService {
             defaultAccountId: cp.defaultAccountId,
             obligationStatus: cp.obligationStatus,
             financialPlanId: copy.id,
+            vehicleId: cp.vehicleId,
+            housingId: cp.housingId,
             startDate: cp.startDate,
             endDate: cp.endDate,
             priorityLevel: cp.priorityLevel,

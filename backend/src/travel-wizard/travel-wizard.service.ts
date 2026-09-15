@@ -36,6 +36,21 @@ export class TravelWizardService {
         },
       });
 
+      // M7+M8 (guard-rail §13) — participants : réutilise EXCLUSIVEMENT
+      // FinancialPlanBeneficiary (déjà user|child, déjà exposé via
+      // GET .../beneficiaries), même validation que addBeneficiary — jamais un
+      // nouveau modèle « participant » dédié au voyage.
+      for (const userId2 of dto.participantUserIds ?? []) {
+        const membership = await tx.householdMembership.findFirst({ where: { userId: userId2, householdId } });
+        if (!membership) throw new NotFoundException("Cet utilisateur n'appartient pas à ce foyer");
+        await tx.financialPlanBeneficiary.create({ data: { financialPlanId: plan.id, beneficiaryType: 'user', userId: userId2 } });
+      }
+      for (const childId of dto.participantChildIds ?? []) {
+        const child = await tx.child.findFirst({ where: { id: childId, householdId } });
+        if (!child) throw new NotFoundException("Cet enfant n'appartient pas à ce foyer");
+        await tx.financialPlanBeneficiary.create({ data: { financialPlanId: plan.id, beneficiaryType: 'child', childId } });
+      }
+
       const chargePlans = [];
       for (const item of dto.items) {
         const amountStatus = item.amount === null || item.amount === undefined ? 'inconnu' : 'estime';

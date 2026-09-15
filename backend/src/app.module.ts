@@ -29,6 +29,11 @@ import { ProjectionModule } from './projection/projection.module';
 import { SimulationModule } from './simulation/simulation.module';
 import { RecurringTransfersModule } from './recurring-transfers/recurring-transfers.module';
 import { SchoolProjectionsModule } from './school-projections/school-projections.module';
+import { VehiclesModule } from './vehicles/vehicles.module';
+import { HousingModule } from './housing/housing.module';
+import { VehicleWizardModule } from './vehicle-wizard/vehicle-wizard.module';
+import { HousingWizardModule } from './housing-wizard/housing-wizard.module';
+import { SubscriptionsWizardModule } from './subscriptions-wizard/subscriptions-wizard.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -60,6 +65,11 @@ import { AppController } from './app.controller';
     SimulationModule,
     RecurringTransfersModule,
     SchoolProjectionsModule,
+    VehiclesModule,
+    HousingModule,
+    VehicleWizardModule,
+    HousingWizardModule,
+    SubscriptionsWizardModule,
   ],
   controllers: [AppController],
   providers: [

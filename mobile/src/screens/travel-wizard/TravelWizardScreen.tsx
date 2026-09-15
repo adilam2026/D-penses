@@ -4,6 +4,7 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleShe
 import { useBottomInset } from '../../ui/useBottomInset';
 import { DateField } from '../../ui/DateField';
 import { Select } from '../../ui/Select';
+import { MultiSelect } from '../../ui/MultiSelect';
 import * as api from '../../api/client';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { colors, radius, spacing } from '../../ui/theme';
@@ -63,6 +64,11 @@ export function TravelWizardScreen() {
   const [provisions, setProvisions] = useState<Provision[]>([]);
   const [linkedProvisionId, setLinkedProvisionId] = useState<string | null>(null);
 
+  // M7+M8 (guard-rail §13) — participants : membres du foyer + enfants, réutilise
+  // FinancialPlanBeneficiary existant (aucun nouveau modèle « participant »).
+  const [participantOptions, setParticipantOptions] = useState<{ value: string; label: string }[]>([]);
+  const [participantIds, setParticipantIds] = useState<string[]>([]);
+
   // R6.2 (§13-14) : date par défaut = date de début du voyage (règle 1), jamais
   // "aujourd'hui" — periodStart vaut déjà todayIso() à ce stade (état initialisé
   // juste au-dessus, même ordre de rendu React), donc identique au comportement
@@ -77,6 +83,11 @@ export function TravelWizardScreen() {
 
   useEffect(() => {
     api.listProvisions().then(setProvisions);
+    api.getMyHousehold().then((h: any) => {
+      const memberOptions = (h.memberships ?? []).map((m: any) => ({ value: `user:${m.user.id}`, label: `${m.user.firstName} ${m.user.lastName}` }));
+      const childOptions = (h.children ?? []).map((c: any) => ({ value: `child:${c.id}`, label: c.firstName }));
+      setParticipantOptions([...memberOptions, ...childOptions]);
+    });
   }, []);
 
   // R6.2 (§13-14, règles 1/3/4) : un changement de date de début du voyage met
@@ -131,12 +142,16 @@ export function TravelWizardScreen() {
     }
     setSubmitting(true);
     try {
+      const participantUserIds = participantIds.filter((id) => id.startsWith('user:')).map((id) => id.slice(5));
+      const participantChildIds = participantIds.filter((id) => id.startsWith('child:')).map((id) => id.slice(6));
       await api.submitTravelWizard({
         label: `Voyage${destination.trim() ? ` — ${destination.trim()}` : ''}`,
         destination: destination.trim() || undefined,
         periodStart,
         periodEnd,
         linkedProvisionId: linkedProvisionId ?? undefined,
+        participantUserIds: participantUserIds.length > 0 ? participantUserIds : undefined,
+        participantChildIds: participantChildIds.length > 0 ? participantChildIds : undefined,
         items,
       });
       navigation.goBack();
@@ -176,6 +191,20 @@ export function TravelWizardScreen() {
               value={linkedProvisionId ?? NO_PROVISION}
               options={[{ value: NO_PROVISION, label: 'Aucune' }, ...provisions.map((p) => ({ value: p.id, label: p.name }))]}
               onChange={(v) => setLinkedProvisionId(v === NO_PROVISION ? null : v)}
+            />
+          </>
+        )}
+
+        {participantOptions.length > 0 && (
+          <>
+            <Text style={styles.sectionLabel}>Participants (optionnel)</Text>
+            <MultiSelect
+              testID="travel-participants-select"
+              label="Participants"
+              placeholder="Aucun"
+              value={participantIds}
+              options={participantOptions}
+              onChange={setParticipantIds}
             />
           </>
         )}

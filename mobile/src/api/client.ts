@@ -569,8 +569,69 @@ export const submitTravelWizard = (data: {
   periodStart: string;
   periodEnd: string;
   linkedProvisionId?: string;
+  // M7+M8 (guard-rail §13) — participants : réutilise FinancialPlanBeneficiary
+  // existant (membres du foyer + enfants), aucun nouveau modèle participant.
+  participantUserIds?: string[];
+  participantChildIds?: string[];
   items: TravelWizardItem[];
 }) => apiFetch('/travel-wizard', { method: 'POST', body: data });
+
+// ---------- M7 — référentiel Véhicule + Plan Voiture ----------
+export interface Vehicle {
+  id: string;
+  name: string;
+  status: 'active' | 'inactive';
+}
+
+export const listVehicles = (): Promise<Vehicle[]> => apiFetch('/vehicles');
+export const createVehicle = (name: string): Promise<Vehicle> => apiFetch('/vehicles', { method: 'POST', body: { name } });
+
+/** guard-rail §6/§7 — périodicités proposées, toujours modifiables par l'utilisateur. */
+export type WizardRecurrenceRule = 'ponctuel' | 'hebdomadaire' | 'mensuel' | 'trimestriel' | 'semestriel' | 'annuel';
+
+export interface VehicleWizardItem {
+  label: string;
+  amount?: number | null;
+  recurrenceRule: WizardRecurrenceRule;
+  dueDate: string;
+  endDate?: string;
+}
+
+export const submitVehicleWizard = (data: { vehicleId?: string; vehicleName?: string; items: VehicleWizardItem[] }) =>
+  apiFetch('/vehicle-wizard', { method: 'POST', body: data });
+
+// ---------- M8 — référentiel Logement + Plan Maison ----------
+export interface Housing {
+  id: string;
+  name: string;
+  status: 'active' | 'inactive';
+}
+
+export const listHousing = (): Promise<Housing[]> => apiFetch('/housing');
+export const createHousing = (name: string): Promise<Housing> => apiFetch('/housing', { method: 'POST', body: { name } });
+
+export interface HousingWizardItem {
+  label: string;
+  amount?: number | null;
+  recurrenceRule: WizardRecurrenceRule;
+  dueDate: string;
+  endDate?: string;
+}
+
+export const submitHousingWizard = (data: { housingId?: string; housingName?: string; items: HousingWizardItem[] }) =>
+  apiFetch('/housing-wizard', { method: 'POST', body: data });
+
+// ---------- M8 — Plan Abonnements (vue regroupée, aucun référentiel dédié) ----------
+export interface SubscriptionsWizardItem {
+  label: string;
+  amount?: number | null;
+  recurrenceRule: WizardRecurrenceRule;
+  dueDate: string;
+  endDate?: string;
+}
+
+export const submitSubscriptionsWizard = (data: { label: string; items: SubscriptionsWizardItem[] }) =>
+  apiFetch('/subscriptions-wizard', { method: 'POST', body: data });
 
 // ---------- Actions à traiter ----------
 export const listActionsATraiter = () => apiFetch('/actions-a-traiter');

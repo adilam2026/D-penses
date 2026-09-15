@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
-import { toNumber } from '../common/ledger/ledger.util';
+import { contextualLabel, toNumber } from '../common/ledger/ledger.util';
 import { computeHorizon, DASHBOARD_FALLBACK_HORIZON_DAYS } from '../common/ledger/treasury.util';
 import { ensureChargeDeadlinesUntil, ensureIncomeOccurrencesUntil, ensureRecurringTransfersUntil } from '../common/ledger/occurrence-generation.util';
 
@@ -73,15 +73,22 @@ export class CalendarService {
             { expectedBillingDate: { gte: rangeStart, lte: rangeEnd } },
           ],
         },
-        include: { chargePlan: true },
+        include: { chargePlan: { include: { vehicle: true, housing: true, financialPlan: true } } },
       });
       for (const d of deadlines) {
+        // M7+M8 (guard-rail §4/§14) — "Libellé · Entité", jamais stocké dans chargePlan.label.
+        const label = contextualLabel(d.chargePlan.label, {
+          vehicleName: d.chargePlan.vehicle?.name,
+          housingName: d.chargePlan.housing?.name,
+          travelDestination: d.chargePlan.financialPlan?.planType === 'travel' ? d.chargePlan.financialPlan.destination : undefined,
+        });
+
         // Facture attendue (RG-100) — événement distinct de l'échéance, uniquement si non encore reçue.
         if (d.expectedBillingDate && d.expectedBillingDate >= rangeStart && d.expectedBillingDate <= rangeEnd && d.billingDate === null) {
           events.push({
             date: d.expectedBillingDate,
             kind: 'facture_attendue',
-            label: `${d.chargePlan.label} — facture attendue`,
+            label: `${label} — facture attendue`,
             amount: null,
             deadlineId: d.id,
           });
@@ -96,7 +103,7 @@ export class CalendarService {
           events.push({
             date: d.dueDate,
             kind,
-            label: d.chargePlan.label,
+            label,
             amount: d.amountCurrent === null ? null : toNumber(d.amountCurrent),
             deadlineId: d.id,
           });

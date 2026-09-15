@@ -126,3 +126,19 @@ export async function getBudgetExpenseConsumption(
   `;
   return toNumber(rows[0]?.total);
 }
+
+/**
+ * M7+M8 (guard-rail §4/§14) — pattern UNIQUE de contextualisation "Libellé · Entité" :
+ * le libellé métier (`ChargePlan.label`) ne contient JAMAIS le nom de l'entité — la
+ * composition se fait ICI, au moment de l'affichage, à partir de la relation déjà
+ * chargée. Un ChargePlan n'appartient jamais à plus d'une entité à la fois
+ * (vehicleId/housingId mutuellement exclusifs en pratique) : la première trouvée
+ * gagne, jamais une double concaténation. `destination` sert le cas Voyage (pas de
+ * référentiel dédié, guard-rail §13 — "Hôtel · Voyage Agadir").
+ */
+export function contextualLabel(label: string, entity: { vehicleName?: string | null; housingName?: string | null; travelDestination?: string | null }): string {
+  if (entity.vehicleName) return `${label} · ${entity.vehicleName}`;
+  if (entity.housingName) return `${label} · ${entity.housingName}`;
+  if (entity.travelDestination) return `${label} · Voyage ${entity.travelDestination}`;
+  return label;
+}

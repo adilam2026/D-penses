@@ -28,7 +28,7 @@ jest.mock('@react-navigation/native', () => ({
 
 jest.mock('../../../api/client', () => {
   const actual = jest.requireActual('../../../api/client');
-  return { ...actual, listProvisions: jest.fn(), submitTravelWizard: jest.fn() };
+  return { ...actual, listProvisions: jest.fn(), submitTravelWizard: jest.fn(), getMyHousehold: jest.fn() };
 });
 
 const mockedApi = api as jest.Mocked<typeof api>;
@@ -36,6 +36,7 @@ const mockedApi = api as jest.Mocked<typeof api>;
 beforeEach(() => {
   jest.clearAllMocks();
   mockedApi.listProvisions.mockResolvedValue([]);
+  mockedApi.getMyHousehold.mockResolvedValue({ memberships: [], children: [] } as any);
 });
 
 it('AE. la date de début du voyage préremplit "Date prévue" de chaque poste (jamais vide)', async () => {
@@ -114,4 +115,31 @@ it('envoie bien les dates par défaut au submit, sans jamais laisser un poste in
   for (const item of payload.items) {
     expect(item.dueDate).toBeTruthy();
   }
+});
+
+/**
+ * M7+M8 (guard-rail §13) — participants du voyage : réutilise
+ * FinancialPlanBeneficiary (membres du foyer + enfants), aucun nouveau modèle.
+ */
+it('M7+M8 : sélectionne des participants (membre + enfant) et les envoie séparément au submit', async () => {
+  mockedApi.getMyHousehold.mockResolvedValue({
+    memberships: [{ user: { id: 'user-1', firstName: 'Adil', lastName: 'T' } }],
+    children: [{ id: 'child-1', firstName: 'Yasmine' }],
+  } as any);
+  mockedApi.submitTravelWizard.mockResolvedValue({ financialPlan: { id: 'plan1' }, chargePlans: [] });
+
+  await render(<TravelWizardScreen />);
+  await waitFor(() => screen.getByTestId('travel-participants-select'));
+
+  await fireEvent.press(screen.getByTestId('travel-participants-select'));
+  await fireEvent.press(await screen.findByTestId('travel-participants-select-option-user:user-1'));
+  await fireEvent.press(await screen.findByTestId('travel-participants-select-option-child:child-1'));
+  await fireEvent.press(screen.getByTestId('travel-participants-select-done'));
+
+  await fireEvent.press(screen.getByText('Créer le plan Voyage'));
+
+  await waitFor(() => expect(mockedApi.submitTravelWizard).toHaveBeenCalled());
+  const [payload] = mockedApi.submitTravelWizard.mock.calls[0];
+  expect(payload.participantUserIds).toEqual(['user-1']);
+  expect(payload.participantChildIds).toEqual(['child-1']);
 });

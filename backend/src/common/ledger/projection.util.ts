@@ -1,5 +1,5 @@
 import { Prisma, ObligationStatus } from '@prisma/client';
-import { getBudgetExpenseConsumption, getDeadlineBalances, round2, toNumber } from './ledger.util';
+import { contextualLabel, getBudgetExpenseConsumption, getDeadlineBalances, round2, toNumber } from './ledger.util';
 import { computeTreasurySummary } from './treasury.util';
 import { computePocketCurrentAmount } from './provision.util';
 import {
@@ -336,7 +336,9 @@ async function deadlineCandidates(
     : ['obligatoire', 'optionnelle_souscrite'];
   const plans = await tx.chargePlan.findMany({
     where: { householdId, obligationStatus: { in: scope } },
-    include: { deadlines: true },
+    // M7+M8 (guard-rail §4/§14) — vehicle/housing/financialPlan chargés ici (même
+    // requête batchée, jamais N+1) pour composer "Libellé · Entité" via contextualLabel.
+    include: { deadlines: true, vehicle: true, housing: true, financialPlan: true },
   });
 
   // Lot 9 (§26) : un seul aller-retour SQL pour toutes les Deadline à montant connu,
@@ -352,6 +354,12 @@ async function deadlineCandidates(
 
   const result: DeadlineCandidate[] = [];
   for (const cp of plans) {
+    // M7+M8 (guard-rail §4/§14) — "Libellé · Entité", jamais stocké dans cp.label.
+    const label = contextualLabel(cp.label, {
+      vehicleName: cp.vehicle?.name,
+      housingName: cp.housing?.name,
+      travelDestination: cp.financialPlan?.planType === 'travel' ? cp.financialPlan.destination : undefined,
+    });
     for (const d of cp.deadlines) {
       if (d.financialStatus === 'annulee' || d.financialStatus === 'soldee') continue;
       if (d.dueDate > horizonEnd) continue; // hors de l'horizon demandé — invisible à cet appel
@@ -362,14 +370,14 @@ async function deadlineCandidates(
         defaultAccountId: cp.defaultAccountId,
       };
       if (d.amountStatus === 'inconnu') {
-        result.push({ id: d.id, dueDate: d.dueDate, chargePlanLabel: cp.label, resteAPayer: 0, amountStatus: 'inconnu', provisionId: d.provisionId, ...common });
+        result.push({ id: d.id, dueDate: d.dueDate, chargePlanLabel: label, resteAPayer: 0, amountStatus: 'inconnu', provisionId: d.provisionId, ...common });
         continue;
       }
       const balance = balances.get(d.id);
       result.push({
         id: d.id,
         dueDate: d.dueDate,
-        chargePlanLabel: cp.label,
+        chargePlanLabel: label,
         resteAPayer: round2(balance?.resteAPayer ?? 0),
         amountStatus: d.amountStatus,
         provisionId: d.provisionId,
