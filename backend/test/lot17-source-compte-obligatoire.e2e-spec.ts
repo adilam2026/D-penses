@@ -50,6 +50,21 @@ describe('Round 3 §17 — source de compte obligatoire pour tout mouvement rée
     return found.soldeCourant;
   }
 
+  /**
+   * Une date réelle de mouvement (paidDate/actualDate) doit toujours rester
+   * postérieure à l'AccountBalanceSnapshot du compte, horodaté à l'instant réel
+   * de création (RG-080 — account_current_balance filtre occurred_at > declared_at).
+   * Un littéral calendaire figé finit par être dépassé par l'horloge système et
+   * exclut alors silencieusement le mouvement du solde ; on ancre donc toujours
+   * sur le "now" réel du test, jamais sur une date historique — même précaution
+   * que test/lot7.e2e-spec.ts (nextMondayUTC/addDaysUTC) et lot5 TEST B.
+   */
+  function futureDate(daysFromNow: number): string {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() + daysFromNow);
+    return d.toISOString().slice(0, 10);
+  }
+
   async function newDeadline(auth: () => [string, string], categoryId: string, amount: number) {
     const cp = await http
       .post('/charge-plans')
@@ -84,7 +99,7 @@ describe('Round 3 §17 — source de compte obligatoire pour tout mouvement rée
       await http
         .post(`/deadlines/${deadlineId}/payments`)
         .set(...auth())
-        .send({ amount: 1200, accountId: account.body.id, paidDate: '2026-09-10' })
+        .send({ amount: 1200, accountId: account.body.id, paidDate: futureDate(2) })
         .expect(201);
 
       expect(await soldeCourant(auth, account.body.id)).toBe(8800);
@@ -108,7 +123,7 @@ describe('Round 3 §17 — source de compte obligatoire pour tout mouvement rée
       await http
         .post(`/deadlines/${deadlineId}/payments`)
         .set(...auth())
-        .send({ amount: 4000, accountId: account.body.id, paidDate: '2026-09-10' })
+        .send({ amount: 4000, accountId: account.body.id, paidDate: futureDate(2) })
         .expect(201);
 
       expect(await soldeCourant(auth, account.body.id)).toBe(0);
@@ -121,7 +136,7 @@ describe('Round 3 §17 — source de compte obligatoire pour tout mouvement rée
       await http
         .post(`/deadlines/${deadlineId}/payments`)
         .set(...auth())
-        .send({ amount: 6000, accountId: account2.body.id, paidDate: '2026-09-11' })
+        .send({ amount: 6000, accountId: account2.body.id, paidDate: futureDate(3) })
         .expect(201);
       expect(await soldeCourant(auth, account2.body.id)).toBe(0);
       const finalDeadline = await http.get(`/deadlines/${deadlineId}`).set(...auth()).expect(200);
@@ -142,7 +157,7 @@ describe('Round 3 §17 — source de compte obligatoire pour tout mouvement rée
       await http
         .post(`/deadlines/${deadlineId}/payments`)
         .set(...auth())
-        .send({ amount: 600, accountId: cash.body.id, paidDate: '2026-09-10' })
+        .send({ amount: 600, accountId: cash.body.id, paidDate: futureDate(2) })
         .expect(201);
 
       expect(await soldeCourant(auth, cash.body.id)).toBe(1400);
@@ -167,7 +182,7 @@ describe('Round 3 §17 — source de compte obligatoire pour tout mouvement rée
       await http
         .post(`/deadlines/${deadlineId}/payments`)
         .set(...auth())
-        .send({ amount: 3000, accountId: account.body.id, fundingSource: 'provision', provisionId: provision.body.id, paidDate: '2026-09-10' })
+        .send({ amount: 3000, accountId: account.body.id, fundingSource: 'provision', provisionId: provision.body.id, paidDate: futureDate(2) })
         .expect(201);
 
       // Un seul débit physique de 3000 sur le compte — jamais un double débit.
@@ -196,7 +211,7 @@ describe('Round 3 §17 — source de compte obligatoire pour tout mouvement rée
       await http
         .post(`/deadlines/${deadlineId}/payments`)
         .set(...auth())
-        .send({ amount: 3000, accountId: bp.body.id, fundingSource: 'provision', provisionId: provision.body.id, paidDate: '2026-09-10' })
+        .send({ amount: 3000, accountId: bp.body.id, fundingSource: 'provision', provisionId: provision.body.id, paidDate: futureDate(2) })
         .expect(201);
 
       expect(await soldeCourant(auth, bp.body.id)).toBe(5000);
@@ -223,7 +238,7 @@ describe('Round 3 §17 — source de compte obligatoire pour tout mouvement rée
       await http
         .post(`/deadlines/${deadlineId}/payments`)
         .set(...auth())
-        .send({ amount: 3000, accountId: bp.body.id, paidDate: '2026-09-10' })
+        .send({ amount: 3000, accountId: bp.body.id, paidDate: futureDate(2) })
         .expect(201);
 
       expect(await soldeCourant(auth, bp.body.id)).toBe(5000);
@@ -271,7 +286,7 @@ describe('Round 3 §17 — source de compte obligatoire pour tout mouvement rée
       await http
         .post(`/income-occurrences/${occurrence.body.id}/confirm`)
         .set(...auth())
-        .send({ actualAmount: 29500, actualDate: '2026-09-10', accountId: account.body.id })
+        .send({ actualAmount: 29500, actualDate: futureDate(2), accountId: account.body.id })
         .expect(201);
 
       expect(await soldeCourant(auth, account.body.id)).toBe(29500);

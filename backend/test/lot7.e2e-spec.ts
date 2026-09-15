@@ -333,9 +333,18 @@ describe('Lot 7 — Moteur global de projection & trous de trésorerie (e2e)', (
     const h = await newHousehold();
     const accountA = await createAccount(h.auth, 'Compte A', 30000, true);
     const savings = await createAccount(h.auth, 'Épargne', 0, false);
-    await http.post('/accounts/transfers').set(...h.auth()).send({ fromAccountId: accountA, toAccountId: savings, amount: 4000, plannedDate: '2026-09-10' }).expect(201);
+    // Le transfert doit rester réellement PLANIFIÉ (jamais exécuté immédiatement,
+    // cf. AccountsService.create isImmediate = plannedDate <= Date.now()) : sa
+    // plannedDate doit donc toujours être dans le futur réel — jamais un littéral
+    // calendaire figé qui finit par être dépassé par l'horloge système (même
+    // précaution que TEST 7 ci-dessus, nextMondayUTC/addDaysUTC).
+    const today = new Date();
+    const atDate = isoDate(addDaysUTC(today, 2));
+    const plannedDate = isoDate(addDaysUTC(today, 10));
+    const toDate = isoDate(addDaysUTC(today, 15));
+    await http.post('/accounts/transfers').set(...h.auth()).send({ fromAccountId: accountA, toAccountId: savings, amount: 4000, plannedDate }).expect(201);
 
-    const proj = await getProjection(h.auth, { at: '2026-09-02', to: '2026-09-15' });
+    const proj = await getProjection(h.auth, { at: atDate, to: toDate });
     expect(proj.body.opening_physical_treasury).toBe(30000);
     expect(proj.body.closing_physical_treasury).toBe(26000);
   });
