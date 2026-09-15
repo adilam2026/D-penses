@@ -684,6 +684,11 @@ export interface MonthBucketApi {
   balance: number;
   cumulative_balance: number;
   projected_cash_balance: number; // Round 4bis §7 — trésorerie initiale + cumul des flux
+  // TXT réf. §M4/§5 — "Situation prudente — budgets inclus" pour cette période
+  // (même cumul, moins l'impact cumulé des budgets includeInPrudentProjection=true)
+  // et l'écart correspondant ("X DH de budgets encore disponibles sur la période").
+  projected_cash_balance_prudent: number;
+  prudent_budget_remaining: number;
   income_items: MonthlyLineItem[];
   expense_items: MonthlyLineItem[];
   movable_expense_total: number;

@@ -3,6 +3,8 @@ import { RlsContextService } from '../common/prisma/rls-context.service';
 import { computeProjection, ProjectionResult } from '../common/ledger/projection.util';
 import { computeMonthlyProjection, MonthlyProjectionResult } from '../common/ledger/monthly-projection.util';
 import { addDaysUTC } from '../common/ledger/variable-budget.util';
+import { computeVariableBudgetCommitments } from '../common/ledger/treasury.util';
+import { round2 } from '../common/ledger/ledger.util';
 import { ensureChargeDeadlinesUntil, ensureIncomeOccurrencesUntil, ensureRecurringTransfersUntil } from '../common/ledger/occurrence-generation.util';
 import { DEFAULT_CLOSING_DAY, getFinancialPeriodBounds, getFinancialPeriodOf, shiftFinancialPeriod } from '../common/ledger/financial-period.util';
 
@@ -36,7 +38,11 @@ export class ProjectionService {
       await ensureIncomeOccurrencesUntil(tx, householdId, horizonEnd);
       await ensureChargeDeadlinesUntil(tx, householdId, horizonEnd);
       await ensureRecurringTransfersUntil(tx, householdId, horizonEnd);
-      return this.toApi(await computeProjection(tx, householdId, referenceDate, horizonEnd));
+      const [projection, prudent] = await Promise.all([
+        computeProjection(tx, householdId, referenceDate, horizonEnd),
+        this.prudentImpact(tx, householdId, referenceDate, horizonEnd),
+      ]);
+      return this.toApi(projection, prudent);
     });
   }
 
@@ -49,7 +55,26 @@ export class ProjectionService {
     // ce second passage un no-op sûr, jamais un doublon (idempotence, §1).
     await ensureIncomeOccurrencesUntil(tx, householdId, horizonEnd);
     await ensureChargeDeadlinesUntil(tx, householdId, horizonEnd);
-    return this.toApi(await computeProjection(tx, householdId, referenceDate, horizonEnd));
+    const [projection, prudent] = await Promise.all([
+      computeProjection(tx, householdId, referenceDate, horizonEnd),
+      this.prudentImpact(tx, householdId, referenceDate, horizonEnd),
+    ]);
+    return this.toApi(projection, prudent);
+  }
+
+  /**
+   * TXT réf. §M4 — "Fin de période prudente" = engagements connus − restant des
+   * budgets includeInPrudentProjection=true (formule contractuelle, jamais le
+   * rythme). Réutilise EXCLUSIVEMENT computeVariableBudgetCommitments
+   * (treasury.util.ts, déjà la bonne formule/le bon filtre pour "Solde actuel") :
+   * jamais un second calcul de restant budgétaire. Un seul appel par requête
+   * réelle (jamais dans la boucle chaude de computeProjection/Simulateur, cf. Lot 9).
+   */
+  private async prudentImpact(tx: TxClient, householdId: string, referenceDate: Date, horizonEnd: Date): Promise<number> {
+    const settings = await tx.householdSettings.findUnique({ where: { householdId } });
+    const closingDay = settings?.closingDay ?? DEFAULT_CLOSING_DAY;
+    const commitments = await computeVariableBudgetCommitments(tx, householdId, referenceDate, horizonEnd, 'contractuel', closingDay);
+    return commitments.total;
   }
 
   /**
@@ -163,6 +188,11 @@ export class ProjectionService {
         balance: m.balance,
         cumulative_balance: m.cumulativeBalance,
         projected_cash_balance: m.projectedCashBalance,
+        // TXT réf. §M4/§5 — par période : "Situation projetée — engagements connus"
+        // (projected_cash_balance, déjà budget-free) / "Situation prudente — budgets
+        // inclus" / écart = "X DH de budgets encore disponibles sur la période".
+        projected_cash_balance_prudent: m.projectedCashBalancePrudent,
+        prudent_budget_remaining: m.prudentBudgetRemaining,
         planned_transfer_net_treasury_impact: m.plannedTransferNetTreasuryImpact,
         // R6.4 (§9) — jamais rangé dans income_items/expense_items : un transfert reste
         // identifiable comme TRANSFERT, son impact appartient uniquement à la trésorerie pilotée.
@@ -196,14 +226,24 @@ export class ProjectionService {
     };
   }
 
-  /** Contrat API en snake_case explicite (§31), même convention que la correction Lot 5 §5. */
-  private toApi(result: ProjectionResult) {
+  /**
+   * Contrat API en snake_case explicite (§31), même convention que la correction Lot 5 §5.
+   * TXT réf. §M4 — `closing_physical_treasury` reste EXPOSÉ tel quel (alias de compatibilité,
+   * cf. instruction §6) mais désigne désormais "Fin de période — engagements connus" (zéro
+   * budget, cf. computeProjection). `fin_periode_prudente`/`ecart_prudentiel` sont nouveaux :
+   * jamais de `lowPointPrudente*` daté exposé ici (pas d'indicateur métier à date fictive).
+   */
+  private toApi(result: ProjectionResult, prudentBudgetImpact: number) {
+    const finPeriodePrudente = round2(result.closingPhysicalTreasury - prudentBudgetImpact);
     return {
       reference_date: result.referenceDate,
       horizon_end: result.horizonEnd,
 
       opening_physical_treasury: result.openingPhysicalTreasury,
       closing_physical_treasury: result.closingPhysicalTreasury,
+      fin_periode_engagements_connus: result.closingPhysicalTreasury,
+      fin_periode_prudente: finPeriodePrudente,
+      ecart_prudentiel: round2(prudentBudgetImpact),
       physical_low_point: result.physicalLowPoint,
       physical_low_point_date: result.physicalLowPointDate,
 

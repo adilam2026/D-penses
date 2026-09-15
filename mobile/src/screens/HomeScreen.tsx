@@ -184,28 +184,26 @@ export function HomeScreen() {
             </View>
           )}
 
-          {/* Bloc 2 — Situation pilotée aujourd'hui (Maquette 3 §1) : carte héro
-              sombre, montant principal = trésorerie pilotée (comptes inclus dans
-              le pilotage), 2 mini-métriques uniquement (Fin de période / Disponible
-              après engagements — champs déjà fournis, aucun nouveau calcul).
-              Jamais de sparkline fictive : aucune série historique réelle
-              n'existe, l'espace est simplement omis. */}
+          {/* Bloc 2 — Situation (TXT réf. §M4) : carte héro sombre, 3 niveaux
+              réellement distincts — Aujourd'hui (trésorerie pilotée réelle) /
+              Fin de période engagements connus (zéro budget) / Fin de période
+              budgets inclus (prudente). "Disponible après engagements"
+              (free_available) n'est plus un grand indicateur principal ici —
+              le champ reste disponible techniquement (EngagedDetail, etc.),
+              simplement découplé de cette présentation. Jamais de sparkline
+              fictive : aucune série historique réelle n'existe, l'espace est
+              simplement omis. */}
           <View style={styles.hero}>
-            <Text style={styles.heroLabel}>SITUATION PILOTÉE AUJOURD'HUI</Text>
+            <Text style={styles.heroLabel}>AUJOURD'HUI</Text>
             <Text style={styles.heroAmount}>{summary.operational_treasury.toLocaleString('fr-FR')} DH</Text>
             <Text style={styles.heroSubtitle}>Comptes inclus dans votre pilotage financier</Text>
             {!summary.is_complete && (
               <Text style={styles.heroWarning}>⚠ Calcul incomplet — {summary.unknown_commitments_count} montant(s) encore inconnu(s).</Text>
             )}
             <View style={styles.heroMiniRow}>
-              <View style={styles.heroMini}>
-                <Text style={styles.heroMiniLabel}>Fin de période</Text>
-                <Text style={styles.heroMiniValue}>{summary.next_30_days.closing_physical_treasury.toLocaleString('fr-FR')} DH</Text>
-              </View>
-              {/* La ligne "Engagé" (EngagedDetail) n'a plus de rangée dédiée dans le
-                  héro (2 mini-métriques strictement, Maquette 3) : cette carte reste
-                  l'accès à ce détail, cohérent avec ce qu'elle affiche (le disponible
-                  net des engagements) — aucune fonctionnalité supprimée. */}
+              {/* Fin de période — engagements connus : reste l'accès à EngagedDetail
+                  (ce qu'il montre — deadlineItems/variableBudgetItems — correspond
+                  précisément à ce niveau, jamais aux budgets). */}
               <TouchableOpacity
                 style={styles.heroMini}
                 testID="home-engaged-row"
@@ -219,9 +217,18 @@ export function HomeScreen() {
                   })
                 }
               >
-                <Text style={styles.heroMiniLabel}>Disponible après engagements</Text>
-                <Text style={styles.heroMiniValue}>{summary.free_available.toLocaleString('fr-FR')} DH</Text>
+                <Text style={styles.heroMiniLabel}>Fin de période — engagements connus</Text>
+                <Text style={styles.heroMiniValue}>{summary.next_30_days.fin_periode_engagements_connus.toLocaleString('fr-FR')} DH</Text>
               </TouchableOpacity>
+              <View style={styles.heroMini}>
+                <Text style={styles.heroMiniLabel}>Fin de période — budgets inclus</Text>
+                <Text style={styles.heroMiniValue}>{summary.next_30_days.fin_periode_prudente.toLocaleString('fr-FR')} DH</Text>
+                {summary.next_30_days.ecart_prudentiel > 0 && (
+                  <Text style={styles.heroMiniNote} testID="home-ecart-prudentiel">
+                    dont {summary.next_30_days.ecart_prudentiel.toLocaleString('fr-FR')} DH de budgets encore disponibles
+                  </Text>
+                )}
+              </View>
             </View>
           </View>
 
@@ -424,6 +431,7 @@ const styles = StyleSheet.create({
   heroMini: { flex: 1, backgroundColor: 'rgba(255,255,255,0.10)', borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: 'rgba(255,255,255,0.13)' },
   heroMiniLabel: { fontSize: 10, color: colors.heroTextMuted, fontWeight: '700' },
   heroMiniValue: { fontSize: 16, fontWeight: '800', color: colors.textOnPrimary, marginTop: 4 },
+  heroMiniNote: { fontSize: 10, color: colors.heroTextMuted, marginTop: 3 },
 
   // Structure de section (Maquette 3 §7) — titre en casse normale + lien aligné à
   // droite, HORS carte (contrairement à l'ancien bloc englobant) : chaque élément

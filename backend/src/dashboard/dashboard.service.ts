@@ -156,6 +156,12 @@ export class DashboardService {
 
         next_30_days: {
           closing_physical_treasury: next30Days.closing_physical_treasury,
+          // TXT réf. §M4 — mêmes concepts que la carte "Ma situation" de l'Accueil :
+          // engagements connus (zéro budget) / prudente (budgets includeInPrudentProjection
+          // inclus, formule contractuelle) / écart = combien de budget reste disponible.
+          fin_periode_engagements_connus: next30Days.fin_periode_engagements_connus,
+          fin_periode_prudente: next30Days.fin_periode_prudente,
+          ecart_prudentiel: next30Days.ecart_prudentiel,
           closing_free_capacity: next30Days.closing_free_capacity,
           physical_low_point: next30Days.physical_low_point,
           physical_low_point_date: next30Days.physical_low_point_date,

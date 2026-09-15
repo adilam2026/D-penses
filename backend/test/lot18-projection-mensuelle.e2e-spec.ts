@@ -313,11 +313,15 @@ describe('Round 4 — Projection Globale Mensuelle (e2e)', () => {
   });
 
   describe('K — compte non déterminé : opération non perdue silencieusement', () => {
-    it('un budget variable (sans compte propre) reste comptabilisé dans "Tous" et signalé quand filtré', async () => {
+    // TXT réf. §M4 — un budget variable n'entre plus jamais dans expense_items/total_expense
+    // ("pas de budget dans le détail des charges connues") : ce scénario "compte non
+    // déterminé" est désormais couvert par une Deadline SANS defaultAccountId (même
+    // mécanisme UNDETERMINED_ACCOUNT, toujours valide), plutôt qu'un budget variable.
+    it('une échéance sans compte par défaut reste comptabilisée dans "Tous" et signalée quand filtrée', async () => {
       const { auth } = await newHousehold();
       const account = await newAccount(auth, 'Compte K');
       const catExp = await newCategory(auth, 'Courses K');
-      await http.post('/variable-budgets').set(...auth()).send({ categoryId: catExp, referenceAmount: 2000, referencePeriod: 'mois', startDate: '2026-09-01' }).expect(201);
+      await newDeadline(auth, catExp, 'Charge K (compte inconnu)', '2026-09-14', 2000);
 
       const all = await monthly(auth);
       const sepAll = findMonth(all, '2026-09');

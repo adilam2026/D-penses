@@ -5,7 +5,6 @@ import { computePocketCurrentAmount } from './provision.util';
 import {
   BudgetLike,
   MonthMode,
-  ProjectionMode,
   addDaysUTC,
   budgetAmountForWindow,
   computeBudgetPeriodStatus,
@@ -32,6 +31,22 @@ type TxClient = Prisma.TransactionClient;
  * de capacité libre < 0 alors que le physique reste ≥ 0 est une TENSION — la
  * marge de sécurité est déjà nette dans la formule de capacité libre (G.6b), donc
  * "< 0" y équivaut exactement à "point bas < marge_sécurité" (RG-051).
+ *
+ * TXT réf. §M4 — CORRECTION : la trajectoire physique jour-par-jour (donc
+ * `closingPhysicalTreasury`/`physicalLowPoint*`/`freeCapacityLowPoint*`/`timeline`)
+ * ne contient PLUS AUCUN budget variable par défaut — c'est exactement le niveau
+ * "Fin de période — engagements connus" du TXT (revenus prévus, charges
+ * récurrentes, dépenses ponctuelles prévues, échéances certaines, transferts à
+ * impact pilotage — zéro budget de contrôle). Un budget n'est jamais une charge.
+ *
+ * Le niveau "Fin de période — prudente" (= engagements connus − restant non
+ * consommé des budgets `includeInPrudentProjection=true`) est calculé SÉPARÉMENT,
+ * en surcouche au niveau de la PÉRIODE (jamais une date de consommation inventée
+ * au sein d'une période) — voir `computeVariableBudgetCommitments` (treasury.util.ts,
+ * déjà la bonne formule : restant CONTRACTUEL uniquement, jamais le rythme) pour
+ * l'agrégat, et `variableBudgetEvents`/`includePrudentBudgets` ci-dessous pour la
+ * seule consommatrice interne qui a besoin d'une vraie courbe datée : le
+ * Simulateur (ses décisions go/no-go doivent rester prudentes, jamais optimistes).
  */
 
 function toUtcMidnight(date: Date): Date {
@@ -177,24 +192,32 @@ async function consommeSurFenetre(tx: TxClient, variableBudgetId: string, start:
 }
 
 /**
- * Événements VariableBudget (§13) — réutilise EXCLUSIVEMENT le moteur Lot 3
- * (semaines/mois calendaires réels, prorata uniquement aux frontières, RG-098) :
- * un événement par frontière de période (jamais une moyenne journalière). La
- * période courante (déjà nette du réalisé, G.8) est bookée à sa fin réelle ;
- * chaque période future entière ou partielle est bookée à sa propre fin, jusqu'à
- * l'horizon — IF-13 : le réalisé (BudgetExpense passées) n'est jamais reprojeté.
+ * Événements VariableBudget — TXT réf. §M4 : réservé au scénario PRUDENT interne
+ * (Simulateur uniquement, cf. `includePrudentBudgets` sur computeProjection),
+ * jamais injecté dans la trajectoire "engagements connus" par défaut. Deux
+ * verrous TXT-M4, non négociables :
+ *  - seuls les budgets `includeInPrudentProjection=true` participent (avant M4,
+ *    TOUS les budgets contaminaient la courbe, sans filtre — c'était le bug) ;
+ *  - le restant est TOUJOURS la formule contractuelle `max(budgetPériode −
+ *    consommé, 0)` (jamais le rythme réel ni le mode `prudent_max` du foyer, qui
+ *    reste un indicateur de pilotage propre à la fiche budget) — même formule,
+ *    même filtre que `computeVariableBudgetCommitments` (treasury.util.ts),
+ *    pour que "Solde actuel" (détail) et "Fin de période prudente" restent
+ *    cohérents entre eux.
+ *
+ * Réutilise EXCLUSIVEMENT le moteur Lot 3 (semaines/mois calendaires réels,
+ * prorata uniquement aux frontières, RG-098) : un événement par frontière de
+ * période (jamais une moyenne journalière). La période courante (déjà nette du
+ * réalisé, G.8) est bookée à sa fin réelle ; chaque période future entière ou
+ * partielle est bookée à sa propre fin, jusqu'à l'horizon — IF-13 : le réalisé
+ * (BudgetExpense passées) n'est jamais reprojeté. Aucune date de consommation
+ * n'est inventée : cette convention de booking en fin de période existait déjà
+ * avant M4, elle n'est ni créée ni changée par ce lot.
  */
-async function variableBudgetEvents(
-  tx: TxClient,
-  householdId: string,
-  referenceDate: Date,
-  horizonEnd: Date,
-  mode: ProjectionMode,
-  closingDay: number,
-): Promise<RawEvent[]> {
+async function variableBudgetEvents(tx: TxClient, householdId: string, referenceDate: Date, horizonEnd: Date, closingDay: number): Promise<RawEvent[]> {
   const ref = toUtcMidnight(referenceDate);
   const budgets = await tx.variableBudget.findMany({
-    where: { householdId, startDate: { lte: horizonEnd }, OR: [{ endDate: null }, { endDate: { gte: ref } }] },
+    where: { householdId, includeInPrudentProjection: true, startDate: { lte: horizonEnd }, OR: [{ endDate: null }, { endDate: { gte: ref } }] },
     include: { category: true },
   });
 
@@ -203,7 +226,8 @@ async function variableBudgetEvents(
     const budget = toBudgetLike(row, closingDay);
     const currentWindow = getCurrentPeriodWindow(budget, ref);
     const consommeCourant = await consommeSurFenetre(tx, row.id, currentWindow.start, currentWindow.end);
-    const status = computeBudgetPeriodStatus(budget, ref, consommeCourant, mode);
+    // TXT réf. §M4 — formule contractuelle forcée, jamais le mode foyer (cf. doc ci-dessus).
+    const status = computeBudgetPeriodStatus(budget, ref, consommeCourant, 'contractuel');
     const currentEventDate = currentWindow.end.getTime() > horizonEnd.getTime() ? horizonEnd : currentWindow.end;
     if (status.projectionPrudenteRestante > 0) {
       events.push({
@@ -253,6 +277,32 @@ async function variableBudgetEvents(
     }
   }
   return events;
+}
+
+export interface PrudentBudgetEvent {
+  date: Date;
+  amount: number; // signé négatif (impact), déjà arrondi — même convention que RawEvent.physicalImpact
+}
+
+/**
+ * TXT réf. §M4/§5 — expose les mêmes événements prudents que ci-dessus (mêmes
+ * dates de fin de période, même filtre includeInPrudentProjection, même formule
+ * contractuelle), pour bucketing PAR PÉRIODE FINANCIÈRE côté monthly-projection.util.ts
+ * (l'écran Projection affiche "Situation prudente" pour chaque période affichée,
+ * jamais seulement un total agrégé sur tout l'horizon). Jamais une deuxième
+ * implémentation du calcul de restant budgétaire — seule la forme de sortie change.
+ */
+export async function computePrudentBudgetEvents(
+  tx: TxClient,
+  householdId: string,
+  referenceDate: Date,
+  horizonEnd: Date,
+  closingDay: number,
+): Promise<PrudentBudgetEvent[]> {
+  const ref = toUtcMidnight(referenceDate);
+  const end = toUtcMidnight(horizonEnd);
+  const events = await variableBudgetEvents(tx, householdId, ref, end, closingDay);
+  return events.map((e) => ({ date: e.date, amount: e.physicalImpact ?? 0 }));
 }
 
 interface DeadlineCandidate {
@@ -345,6 +395,13 @@ async function deadlineCandidates(
  * n'est jamais comptée deux fois (ni à son ancienne date ni comme "nouvel" événement
  * séparé), et la séquence de consommation de Provision (RG-090) reste correcte car le
  * tri chronologique des Deadline utilise la date EFFECTIVE (déplacée), pas `due_date`.
+ *
+ * `includePrudentBudgets` (TXT réf. §M4, faux par défaut) : par défaut, cette courbe
+ * est intégralement le scénario "engagements connus" (zéro budget). Seul le Simulateur
+ * (simulation.util.ts) passe `true` explicitement, pour que ses décisions go/no-go
+ * restent prudentes — jamais une seconde jauge exposée publiquement sur cette base
+ * (Dashboard/Projection calculent "Fin de période prudente" séparément, en surcouche
+ * de période via `computeVariableBudgetCommitments`, jamais via ce flag).
  */
 export async function computeProjection(
   tx: TxClient,
@@ -354,6 +411,7 @@ export async function computeProjection(
   extraEvents: SimulatedEvent[] = [],
   includeEnvisagedOptions = false,
   dateOverrides?: Map<string, Date>,
+  includePrudentBudgets = false,
 ): Promise<ProjectionResult> {
   const ref = toUtcMidnight(referenceDate);
   const end = toUtcMidnight(horizonEnd);
@@ -364,7 +422,6 @@ export async function computeProjection(
 
   const settings = await tx.householdSettings.findUnique({ where: { householdId } });
   const coussin = settings ? toNumber(settings.securityMarginAmount) : 0;
-  const mode = (settings?.variableBudgetProjectionMode ?? 'prudent_max') as ProjectionMode;
 
   const accounts = await tx.financialAccount.findMany({ where: { householdId, status: 'actif' } });
   const accountOperational = new Map(accounts.map((a) => [a.id, a.includeInOperationalTreasury]));
@@ -582,11 +639,14 @@ export async function computeProjection(
     });
   }
 
-  // ---------- §13 : budgets variables — moteur Lot 3 exact, un événement par frontière de période ----------
+  // ---------- §13 : budgets variables — TXT réf. §M4 : jamais dans "engagements connus" ;
+  // surcouche prudente optionnelle, réservée au Simulateur (cf. doc computeProjection ci-dessus) ----------
   const closingDay = settings?.closingDay ?? DEFAULT_CLOSING_DAY;
-  const budgetEvents = await variableBudgetEvents(tx, householdId, ref, end, mode, closingDay);
-  events.push(...budgetEvents);
-  if (budgetEvents.length > 0) containsEstimates = true;
+  if (includePrudentBudgets) {
+    const budgetEvents = await variableBudgetEvents(tx, householdId, ref, end, closingDay);
+    events.push(...budgetEvents);
+    if (budgetEvents.length > 0) containsEstimates = true;
+  }
 
   // ---------- §22 : optionnelle_envisagée — jamais mélangée à la courbe certaine ----------
   const envisagedPlans = await tx.chargePlan.findMany({

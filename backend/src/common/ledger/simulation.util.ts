@@ -155,9 +155,12 @@ export async function simulatePurchase(
   const operational = account.includeInOperationalTreasury;
   const protectedAccount = await isProtectedSavingsAccount(tx, householdId, input.accountId);
 
-  const baseline = await computeProjection(tx, householdId, ref, horizonEnd, [], includeEnvisaged);
+  // TXT réf. §M4 — le Simulateur décide TOUJOURS sur le scénario prudent (includePrudentBudgets:
+  // true), jamais sur les seuls engagements connus : une décision go/no-go ne doit jamais
+  // reposer sur une vision trop optimiste (budgets includeInPrudentProjection=true inclus).
+  const baseline = await computeProjection(tx, householdId, ref, horizonEnd, [], includeEnvisaged, undefined, true);
   const event = buildExpenseEvent(eventDate, input.amount, operational);
-  const scenario = await computeProjection(tx, householdId, ref, horizonEnd, [event], includeEnvisaged);
+  const scenario = await computeProjection(tx, householdId, ref, horizonEnd, [event], includeEnvisaged, undefined, true);
 
   const after = sliceFrom(scenario, dateKey(eventDate));
 
@@ -273,8 +276,9 @@ export async function simulateGoalContribution(
       ? dates.map((date) => ({ date, kind: 'pocket_movement', label: `${goal.label} — contribution simulée`, physicalImpact: 0, reserveImpact: round2(input.amount) }))
       : []; // sans poche liée virtuelle, aucun effet financier projeté (§12/§16, cohérent avec Lot 7)
 
-  const baseline = await computeProjection(tx, householdId, ref, horizonEnd);
-  const scenario = await computeProjection(tx, householdId, ref, horizonEnd, events);
+  // TXT réf. §M4 — scénario prudent (cf. simulatePurchase ci-dessus).
+  const baseline = await computeProjection(tx, householdId, ref, horizonEnd, [], false, undefined, true);
+  const scenario = await computeProjection(tx, householdId, ref, horizonEnd, events, false, undefined, true);
 
   return {
     baseline: toSlice(baseline),
@@ -316,13 +320,15 @@ export async function computeSavingsCapacity(tx: TxClient, householdId: string, 
   const recurring = input.recurring ?? false;
   const dates = recurring ? monthlyOccurrences(ref, horizonEnd, input.dayOfMonth ?? ref.getUTCDate()) : [input.date ? toUtcMidnight(input.date) : ref];
 
-  const baseline = await computeProjection(tx, householdId, ref, horizonEnd);
+  // TXT réf. §M4 — scénario prudent (cf. simulatePurchase ci-dessus) : la capacité
+  // d'épargne "prudente" ne doit jamais être surestimée par des budgets ignorés.
+  const baseline = await computeProjection(tx, householdId, ref, horizonEnd, [], false, undefined, true);
   const upperBound = round2(Math.max(baseline.openingPhysicalTreasury, 0) + Math.max(-baseline.freeCapacityLowPoint, 0) + 1000);
 
   const feasible = async (amount: number): Promise<boolean> => {
     if (amount <= 0) return true;
     const events: SimulatedEvent[] = dates.map((date) => ({ date, kind: 'pocket_movement', label: 'Contribution simulée', physicalImpact: 0, reserveImpact: round2(amount) }));
-    const scenario = await computeProjection(tx, householdId, ref, horizonEnd, events);
+    const scenario = await computeProjection(tx, householdId, ref, horizonEnd, events, false, undefined, true);
     return scenario.isComplete && scenario.freeCapacityLowPoint >= 0;
   };
 
@@ -339,7 +345,7 @@ export async function computeSavingsCapacity(tx: TxClient, householdId: string, 
   }
 
   const finalScenarioEvents: SimulatedEvent[] = dates.map((date) => ({ date, kind: 'pocket_movement', label: 'Contribution simulée', physicalImpact: 0, reserveImpact: round2(lo) }));
-  const finalScenario = lo > 0 ? await computeProjection(tx, householdId, ref, horizonEnd, finalScenarioEvents) : baseline;
+  const finalScenario = lo > 0 ? await computeProjection(tx, householdId, ref, horizonEnd, finalScenarioEvents, false, undefined, true) : baseline;
 
   return {
     maxAmount: round2(lo),

@@ -92,6 +92,12 @@ export interface DashboardSummary {
   provisionsResume: Array<{ id: string; name: string; currentAmount: number; totalResteAPayer: number; totalUncovered: number }>;
   next_30_days: {
     closing_physical_treasury: number;
+    // TXT réf. §M4 — 3 niveaux réellement distincts : Aujourd'hui (operational_treasury,
+    // ci-dessus) / Fin de période engagements connus (zéro budget) / Fin de période
+    // prudente (engagements connus − restant des budgets includeInPrudentProjection=true).
+    fin_periode_engagements_connus: number;
+    fin_periode_prudente: number;
+    ecart_prudentiel: number;
     closing_free_capacity: number;
     physical_low_point: number;
     physical_low_point_date: string;

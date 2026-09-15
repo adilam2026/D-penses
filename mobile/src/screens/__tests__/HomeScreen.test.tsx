@@ -62,6 +62,9 @@ const EMPTY_SUMMARY = {
   provisionsResume: [],
   next_30_days: {
     closing_physical_treasury: 0,
+    fin_periode_engagements_connus: 0,
+    fin_periode_prudente: 0,
+    ecart_prudentiel: 0,
     closing_free_capacity: 0,
     physical_low_point: 0,
     physical_low_point_date: '2026-09-20',
@@ -101,6 +104,13 @@ describe('Accueil — état configuré (§7-17/§31, Maquette 3)', () => {
     safety_buffer: 10000,
     free_available: 15000,
     patrimoine_liquide_total: 45000,
+    next_30_days: {
+      ...EMPTY_SUMMARY.next_30_days,
+      closing_physical_treasury: 40000,
+      fin_periode_engagements_connus: 40000,
+      fin_periode_prudente: 34000,
+      ecart_prudentiel: 6000,
+    },
     deadlineItems: [
       {
         id: 'd1',
@@ -150,14 +160,18 @@ describe('Accueil — état configuré (§7-17/§31, Maquette 3)', () => {
     ]);
   });
 
-  it('Maquette 3 §1 : le héro affiche la trésorerie pilotée en montant principal et les 2 mini-métriques validées', async () => {
+  it("TXT réf. §M4 : le héro affiche Aujourd'hui + Fin de période (engagements connus / budgets inclus) avec l'écart prudentiel, jamais \"Disponible après engagements\" en indicateur principal", async () => {
     await render(<HomeScreen />);
-    await waitFor(() => expect(screen.getByText("SITUATION PILOTÉE AUJOURD'HUI")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("AUJOURD'HUI")).toBeTruthy());
     expect(screen.getAllByText('45 000 DH').length).toBeGreaterThan(0); // operational_treasury (montant principal du héro)
     expect(screen.getByText('Comptes inclus dans votre pilotage financier')).toBeTruthy();
-    expect(screen.getByText('Fin de période')).toBeTruthy();
-    expect(screen.getByText('Disponible après engagements')).toBeTruthy();
-    expect(screen.getAllByText('15 000 DH').length).toBeGreaterThan(0); // free_available, mini-métrique
+    expect(screen.getByText('Fin de période — engagements connus')).toBeTruthy();
+    expect(screen.getByText('Fin de période — budgets inclus')).toBeTruthy();
+    expect(screen.getAllByText('40 000 DH').length).toBeGreaterThan(0); // fin_periode_engagements_connus
+    expect(screen.getByText('34 000 DH')).toBeTruthy(); // fin_periode_prudente
+    expect(screen.getByText('dont 6 000 DH de budgets encore disponibles')).toBeTruthy();
+    // "Disponible après engagements" n'est plus un grand indicateur principal du héro (§4).
+    expect(screen.queryByText('Disponible après engagements')).toBeNull();
     // "Budgets restants" / "Plans couverts" définitivement supprimés (règle validée).
     expect(screen.queryByText('Budgets restants')).toBeNull();
     expect(screen.queryByText('Plans couverts')).toBeNull();
@@ -170,7 +184,7 @@ describe('Accueil — état configuré (§7-17/§31, Maquette 3)', () => {
     expect(mockNavigate).toHaveBeenCalledWith('AccountDetail', { id: 'acc-cih' });
   });
 
-  it('R6.3 (point B) : la mini-métrique "Disponible après engagements" est cliquable → EngagedDetail avec exactement le montant Home et les composantes de la même source', async () => {
+  it('R6.3 (point B) / TXT réf. §M4 : la mini-métrique "Fin de période — engagements connus" est cliquable → EngagedDetail avec exactement le montant Home et les composantes de la même source', async () => {
     await render(<HomeScreen />);
     await waitFor(() => screen.getByTestId('home-engaged-row'));
     await fireEvent.press(screen.getByTestId('home-engaged-row'));
@@ -217,13 +231,13 @@ describe('Accueil — état configuré (§7-17/§31, Maquette 3)', () => {
 
   it("TXT réf. §M1 : le bouton ☰ n'existe plus sur l'Accueil (redondant avec l'onglet \"Plus\")", async () => {
     await render(<HomeScreen />);
-    await waitFor(() => screen.getByText("SITUATION PILOTÉE AUJOURD'HUI"));
+    await waitFor(() => screen.getByText("AUJOURD'HUI"));
     expect(screen.queryByTestId('hamburger-menu-button')).toBeNull();
   });
 
   it('R6.4 (§5 / test I) : le bloc "Actions à traiter" est absent de l\'accueil', async () => {
     await render(<HomeScreen />);
-    await waitFor(() => screen.getByText("SITUATION PILOTÉE AUJOURD'HUI"));
+    await waitFor(() => screen.getByText("AUJOURD'HUI"));
     expect(screen.queryByText(/action.*à traiter/i)).toBeNull();
   });
 
@@ -356,7 +370,7 @@ describe('Accueil — bloc "Mes budgets" (Lot 3, Maquette 3)', () => {
     mockedApi.listIncomeSources.mockResolvedValue([{ id: 'inc-1', label: 'Salaire' }]);
     await render(<HomeScreen />);
 
-    await waitFor(() => screen.getByText("SITUATION PILOTÉE AUJOURD'HUI"));
+    await waitFor(() => screen.getByText("AUJOURD'HUI"));
     expect(screen.queryByText('Mes budgets')).toBeNull();
   });
 });
@@ -551,7 +565,7 @@ describe('Accueil — bandeau de configuration intelligent (§13)', () => {
     mockedApi.listIncomeSources.mockResolvedValue([{ id: 'inc-1', label: 'Salaire' }]);
     await render(<HomeScreen />);
 
-    await waitFor(() => screen.getByText("SITUATION PILOTÉE AUJOURD'HUI"));
+    await waitFor(() => screen.getByText("AUJOURD'HUI"));
     expect(screen.queryByTestId('config-banner')).toBeNull();
     expect(screen.queryByText('Terminer ma configuration →')).toBeNull();
   });
@@ -573,7 +587,7 @@ describe('Accueil — bandeau de configuration intelligent (§13)', () => {
     mockedApi.getMyHousehold.mockResolvedValue({ id: 'h1', settings: { homeBannerDismissed: true } });
     await render(<HomeScreen />);
 
-    await waitFor(() => screen.getByText("SITUATION PILOTÉE AUJOURD'HUI"));
+    await waitFor(() => screen.getByText("AUJOURD'HUI"));
     expect(screen.queryByTestId('config-banner')).toBeNull();
   });
 
@@ -662,7 +676,7 @@ describe('Accueil — ordre des blocs (R5 clôture Home §2, Maquette 3)', () =>
       }
       return value;
     });
-    const order = ['Mes comptes', "SITUATION PILOTÉE AUJOURD'HUI", 'Mes budgets', 'Mes plans financiers', 'Échéances importantes', 'Projection'];
+    const order = ['Mes comptes', "AUJOURD'HUI", 'Mes budgets', 'Mes plans financiers', 'Échéances importantes', 'Projection'];
     const positions = order.map((title) => {
       const index = text.indexOf(title);
       expect(index).toBeGreaterThan(-1);

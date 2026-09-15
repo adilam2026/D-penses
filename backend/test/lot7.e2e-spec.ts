@@ -216,9 +216,12 @@ describe('Lot 7 — Moteur global de projection & trous de trésorerie (e2e)', (
     await http.post('/expenses').set(...h.auth()).send({ amount: 600, accountId, categoryId: category.body.id, spentDate: wednesday.toISOString() }).expect(201);
 
     const proj = await getProjection(h.auth, { at: isoDate(wednesday), to: isoDate(sunday) });
-    // Solde réel déjà à 19400 (20000-600) — la projection ne doit soustraire QUE le restant (900).
+    // TXT réf. §M4 — un budget n'entre plus jamais dans "engagements connus" : la courbe
+    // physique reste inchangée (19400), jamais 19400-900/1500/2100 ; le restant contractuel
+    // (900, jamais le consommé repris une 2e fois — IF-13) apparaît uniquement en "prudente".
     expect(proj.body.opening_physical_treasury).toBe(19400);
-    expect(proj.body.closing_physical_treasury).toBe(18500); // 19400 - 900, jamais 19400-1500 ni 19400-2100
+    expect(proj.body.closing_physical_treasury).toBe(19400);
+    expect(proj.body.fin_periode_prudente).toBe(18500); // 19400 - 900, jamais 19400-1500 ni 19400-2100
   });
 
   // =========================================================
@@ -231,9 +234,12 @@ describe('Lot 7 — Moteur global de projection & trous de trésorerie (e2e)', (
     await http.post('/variable-budgets').set(...h.auth()).send({ categoryId: category.body.id, referenceAmount: 1400, referencePeriod: 'semaine', startDate: '2020-01-01' }).expect(201);
 
     const proj = await getProjection(h.auth, { at: '2026-09-02', to: '2026-09-21' });
-    // Même fenêtre exacte que Lot 5 TEST C : 1400(courante) + 1400 + 1400 + 200(prorata) = 4400.
+    // TXT réf. §M4 — jamais de budget dans "engagements connus" (courbe physique inchangée).
+    // Même fenêtre exacte que Lot 5 TEST C : 1400(courante) + 1400 + 1400 + 200(prorata) = 4400,
+    // désormais porté par "fin_periode_prudente" — aucune fenêtre glissante ni double intégration.
     expect(proj.body.opening_physical_treasury).toBe(100000);
-    expect(proj.body.closing_physical_treasury).toBe(95600);
+    expect(proj.body.closing_physical_treasury).toBe(100000);
+    expect(proj.body.fin_periode_prudente).toBe(95600);
   });
 
   // =========================================================
@@ -391,9 +397,12 @@ describe('Lot 7 — Moteur global de projection & trous de trésorerie (e2e)', (
     await http.post('/variable-budgets').set(...h.auth()).send({ categoryId: category.body.id, referenceAmount: 3100, referencePeriod: 'mois', startDate: '2020-01-01' }).expect(201);
 
     // Fenêtre couvrant exactement le mois d'octobre complet (31 jours) : doit valoir 3100 pile, jamais 3100×31/30.
+    // TXT réf. §M4 — jamais de budget dans "engagements connus" (courbe physique inchangée) ;
+    // le mois calendaire exact (3100 pile, jamais 3100×31/30) est désormais porté par "fin_periode_prudente".
     const proj = await getProjection(h.auth, { at: '2026-10-01', to: '2026-10-31' });
     expect(proj.body.opening_physical_treasury).toBe(100000);
-    expect(proj.body.closing_physical_treasury).toBe(96900); // 100000 - 3100 exactement, un mois calendaire complet
+    expect(proj.body.closing_physical_treasury).toBe(100000);
+    expect(proj.body.fin_periode_prudente).toBe(96900);
   });
 
   // =========================================================

@@ -54,6 +54,8 @@ function monthBucket(overrides: Partial<api.MonthBucketApi> = {}): api.MonthBuck
     balance: 2000,
     cumulative_balance: 2000,
     projected_cash_balance: 2000,
+    projected_cash_balance_prudent: 2000,
+    prudent_budget_remaining: 0,
     income_items: [
       { entityType: 'income_occurrence', entityId: 'occ1', label: 'Salaire', date: '2026-09-05', amount: 30000, accountId: 'acc1', accountKnown: true, movable: false, realized: false },
     ],
@@ -251,7 +253,7 @@ it('un mois avec situation projetée négative affiche "Déficitaire" en rouge s
   await waitFor(() => screen.getByTestId('month-toggle-2026-11'));
 
   const monthCard = within(screen.getByTestId('month-card-2026-11'));
-  expect(monthCard.getByText('SITUATION PROJETÉE FIN DE MOIS')).toBeTruthy();
+  expect(monthCard.getByText('SITUATION PROJETÉE — ENGAGEMENTS CONNUS')).toBeTruthy();
   expect(monthCard.getByText('-3 000 DH')).toBeTruthy();
   expect(monthCard.getByText('Déficitaire')).toBeTruthy();
   expect(monthCard.getByText(/Balance du mois -5 000 DH/)).toBeTruthy();
@@ -260,6 +262,29 @@ it('un mois avec situation projetée négative affiche "Déficitaire" en rouge s
   await fireEvent.press(screen.getByTestId('month-toggle-2026-11'));
   await waitFor(() => screen.getByText('Pourquoi ce déficit ?'));
   expect(screen.getByText('Dépenses potentiellement décalables : 20 000 DH')).toBeTruthy();
+});
+
+it("TXT réf. §M4/§5 : chaque mois affiche aussi la situation prudente (budgets inclus) et l'écart, jamais mêlée aux charges connues", async () => {
+  mockedApi.getMonthlyProjection.mockResolvedValue(
+    projectionFixture([
+      monthBucket({
+        month: '2026-12',
+        label: 'Décembre 2026',
+        projected_cash_balance: 20000,
+        projected_cash_balance_prudent: 14000,
+        prudent_budget_remaining: 6000,
+      }),
+    ]),
+  );
+  await render(<ProjectionScreen />);
+  await waitFor(() => screen.getByTestId('month-toggle-2026-12'));
+
+  const monthCard = within(screen.getByTestId('month-card-2026-12'));
+  expect(monthCard.getByText('SITUATION PROJETÉE — ENGAGEMENTS CONNUS')).toBeTruthy();
+  expect(monthCard.getByText('20 000 DH')).toBeTruthy();
+  expect(monthCard.getByText('SITUATION PRUDENTE — BUDGETS INCLUS')).toBeTruthy();
+  expect(monthCard.getByText('14 000 DH')).toBeTruthy();
+  expect(monthCard.getByText(/dont 6 000 DH de budgets encore disponibles/)).toBeTruthy();
 });
 
 it('un mois avec une balance mensuelle négative mais une situation projetée positive reste marqué "Positif"', async () => {
@@ -339,7 +364,7 @@ it('R6.1 §14 : la carte résumé distingue "Trésorerie initiale" et "Cumul des
   expect(screen.getByText(/Besoin temporaire de financement/)).toBeTruthy();
   const monthCard = within(screen.getByTestId('month-card-2026-09'));
   expect(monthCard.getByText(/Cumul des flux/)).toBeTruthy();
-  expect(monthCard.getByText('SITUATION PROJETÉE FIN DE MOIS')).toBeTruthy();
+  expect(monthCard.getByText('SITUATION PROJETÉE — ENGAGEMENTS CONNUS')).toBeTruthy();
   expect(monthCard.getByText('22 000 DH')).toBeTruthy();
 });
 

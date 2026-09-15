@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { getAccountBalances, round2, toNumber } from './ledger.util';
-import { computeProjection, ProjectionEventSummary } from './projection.util';
+import { computeProjection, computePrudentBudgetEvents, ProjectionEventSummary } from './projection.util';
 import {
   DEFAULT_CLOSING_DAY,
   financialPeriodKeyOf,
@@ -101,6 +101,15 @@ export interface MonthBucket {
   balance: number;
   cumulativeBalance: number;
   projectedCashBalance: number; // Round 4bis §7 — trésorerie initiale + cumul des flux
+  // TXT réf. §M4/§5 — "Situation prudente — budgets inclus" pour CETTE période :
+  // même cumul que projectedCashBalance, moins l'impact cumulé (jusqu'à cette
+  // période incluse) des budgets includeInPrudentProjection=true. Jamais un budget
+  // dans income_items/expense_items (§5 : "pas de budget dans le détail des
+  // charges connues") — uniquement ces 2 champs agrégés.
+  projectedCashBalancePrudent: number;
+  // Écart = projectedCashBalance - projectedCashBalancePrudent (toujours ≥ 0) —
+  // "X DH de budgets encore disponibles sur la période" (§5).
+  prudentBudgetRemaining: number;
   // R6.2 (§12) — impact net des transferts encore `prevu` sur la trésorerie pilotée
   // ce mois-ci (signé : positif = entrée nette, négatif = sortie nette) — jamais
   // dans balance/cumulativeBalance, uniquement appliqué à projectedCashBalance.
@@ -372,11 +381,19 @@ export async function computeMonthlyProjection(
   const closingDay = settings?.closingDay ?? DEFAULT_CLOSING_DAY;
   const horizonEnd = computeHorizonEnd(ref, horizonMonths, closingDay);
 
-  const [projection, realized, treasuryIds] = await Promise.all([
+  const [projection, realized, treasuryIds, prudentBudgetEvents] = await Promise.all([
     computeProjection(tx, householdId, ref, horizonEnd, [], false, options.dateOverrides),
     realizedItems(tx, householdId, ref, horizonEnd, closingDay),
     treasuryAccountIds(tx, householdId, options.incomeAccountIds, options.expenseAccountIds),
+    // TXT réf. §M4/§5 — "Situation prudente" par période, calculée séparément du
+    // scénario "engagements connus" ci-dessus (jamais mélangée dans son event stream).
+    computePrudentBudgetEvents(tx, householdId, ref, horizonEnd, closingDay),
   ]);
+  const prudentImpactByPeriod = new Map<string, number>();
+  for (const e of prudentBudgetEvents) {
+    const key = monthKey(e.date, closingDay);
+    prudentImpactByPeriod.set(key, round2((prudentImpactByPeriod.get(key) ?? 0) + e.amount));
+  }
   const [treasuryBalances, transferResult] = await Promise.all([
     getAccountBalances(tx, treasuryIds),
     plannedTransferTreasuryImpacts(tx, householdId, ref, horizonEnd, treasuryIds, closingDay),
@@ -399,6 +416,8 @@ export async function computeMonthlyProjection(
       balance: 0,
       cumulativeBalance: 0,
       projectedCashBalance: 0,
+      projectedCashBalancePrudent: 0,
+      prudentBudgetRemaining: 0,
       plannedTransferNetTreasuryImpact: 0,
       plannedTransferItems: [],
       incomeItems: [],
@@ -486,6 +505,10 @@ export async function computeMonthlyProjection(
   const months = Array.from(buckets.values()).sort((a, b) => a.month.localeCompare(b.month));
   let cumulative = 0;
   let cashRunning = openingCashBalance;
+  // TXT réf. §M4/§5 — piste cumulée séparée pour "Situation prudente" : jamais
+  // réinitialisée par période (un budget impacté en mois 3 reste déduit en mois
+  // 4/5/6..., même logique cumulative que cashRunning/projectedCashBalance).
+  let cashRunningPrudent = openingCashBalance;
   let totalIncome = 0;
   let totalExpense = 0;
   let deficitMonthsCount = 0;
@@ -506,6 +529,14 @@ export async function computeMonthlyProjection(
     bucket.plannedTransferItems = transferItems.get(bucket.month) ?? [];
     cashRunning = round2(cashRunning + bucket.balance + bucket.plannedTransferNetTreasuryImpact);
     bucket.projectedCashBalance = cashRunning;
+
+    // TXT réf. §M4/§5 — même cumul, plus l'impact prudent de CETTE période (déjà
+    // exclu de bucket.balance/totalExpense, cf. plus haut : un budget n'entre
+    // jamais dans income_items/expense_items).
+    const prudentImpactThisPeriod = prudentImpactByPeriod.get(bucket.month) ?? 0;
+    cashRunningPrudent = round2(cashRunningPrudent + bucket.balance + bucket.plannedTransferNetTreasuryImpact + prudentImpactThisPeriod);
+    bucket.projectedCashBalancePrudent = cashRunningPrudent;
+    bucket.prudentBudgetRemaining = round2(bucket.projectedCashBalance - bucket.projectedCashBalancePrudent);
 
     totalIncome = round2(totalIncome + bucket.totalIncome);
     totalExpense = round2(totalExpense + bucket.totalExpense);

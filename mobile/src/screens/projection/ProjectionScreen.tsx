@@ -118,13 +118,23 @@ function MonthCard({
           </Text>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
-          <Text style={styles.situationLabel}>SITUATION PROJETÉE FIN DE MOIS</Text>
+          <Text style={styles.situationLabel}>SITUATION PROJETÉE — ENGAGEMENTS CONNUS</Text>
           <Text style={[styles.monthBalance, situationDeficit ? styles.balanceNegative : styles.balancePositive]}>
             {formatDh(month.projected_cash_balance)}
           </Text>
           <Text style={[styles.monthStatus, situationDeficit ? styles.balanceNegative : styles.balancePositive]}>
             {situationDeficit ? 'Déficitaire' : 'Positif'}
           </Text>
+          {/* TXT réf. §M4/§5 — 2e scénario, jamais mélangé au premier : la prudente
+              retranche le restant des budgets includeInPrudentProjection=true, sans
+              jamais entrer dans balance/cumulative_balance/les charges connues. */}
+          <Text style={styles.situationLabelPrudent}>SITUATION PRUDENTE — BUDGETS INCLUS</Text>
+          <Text style={styles.monthBalancePrudent}>{formatDh(month.projected_cash_balance_prudent)}</Text>
+          {month.prudent_budget_remaining > 0 && (
+            <Text style={styles.cumulLine} testID={`month-ecart-prudentiel-${month.month}`}>
+              dont {formatDh(month.prudent_budget_remaining)} de budgets encore disponibles sur la période
+            </Text>
+          )}
           <Text style={styles.cumulLine}>
             Balance du mois {month.balance >= 0 ? '+' : ''}{formatDh(month.balance)}
           </Text>
@@ -433,6 +443,8 @@ const styles = StyleSheet.create({
   situationLabel: { fontSize: 9, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.4 },
   monthBalance: { fontSize: 20, fontWeight: '800', marginTop: 2 },
   monthStatus: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', marginTop: 2 },
+  situationLabelPrudent: { fontSize: 9, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.4, marginTop: spacing.sm },
+  monthBalancePrudent: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginTop: 2 },
   cumulLine: { fontSize: 10, color: colors.textSecondary, marginTop: 2 },
   balancePositive: { color: colors.success },
   balanceNegative: { color: colors.danger },
