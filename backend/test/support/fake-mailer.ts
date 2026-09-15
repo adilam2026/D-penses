@@ -26,3 +26,20 @@ export class FakeMailer {
 export function withFakeMailer(mailer: FakeMailer) {
   return (builder: TestingModuleBuilder) => builder.overrideProvider(MailerService).useValue(mailer);
 }
+
+/**
+ * Corrections UI/UX finales §17 — simule une panne du service d'envoi
+ * d'email (ex. Resend indisponible/mal configuré en prod) : signup() doit
+ * malgré tout créer le compte et répondre sans 500 (AuthService.signup
+ * avale cette erreur, cf. §17), jamais bloquer une inscription valide à
+ * cause d'un tiers externe.
+ */
+export class FailingMailer {
+  async sendOtpEmail(): Promise<void> {
+    throw new Error('Échec envoi email Resend (HTTP 403): domaine non vérifié');
+  }
+}
+
+export function withFailingMailer() {
+  return (builder: TestingModuleBuilder) => builder.overrideProvider(MailerService).useValue(new FailingMailer());
+}

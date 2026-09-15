@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'node:crypto';
 import { PrismaService } from '../common/prisma/prisma.service';
@@ -27,6 +28,8 @@ function generateOtpCode(): string {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly rlsContext: RlsContextService,
@@ -46,22 +49,51 @@ export class AuthService {
    * code envoyé) — seul un email déjà confirmé déclenche ConflictException.
    */
   async signup(dto: SignupDto): Promise<SignupPendingVerification> {
-    const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const email = dto.email;
+    const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing && existing.emailVerifiedAt) {
       throw new ConflictException('Un compte existe déjà avec cet email');
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
-    const user = existing
-      ? await this.prisma.user.update({
-          where: { id: existing.id },
-          data: { passwordHash, firstName: dto.firstName, lastName: dto.lastName },
-        })
-      : await this.prisma.user.create({
-          data: { email: dto.email, passwordHash, firstName: dto.firstName, lastName: dto.lastName },
-        });
+    let user;
+    try {
+      user = existing
+        ? await this.prisma.user.update({
+            where: { id: existing.id },
+            data: { passwordHash, firstName: dto.firstName, lastName: dto.lastName },
+          })
+        : await this.prisma.user.create({
+            data: { email, passwordHash, firstName: dto.firstName, lastName: dto.lastName },
+          });
+    } catch (err) {
+      // Garde-fou concurrence (§17) : deux inscriptions simultanées avec le même
+      // email peuvent toutes deux passer le SELECT ci-dessus avant qu'aucune
+      // n'écrive — la contrainte unique tranche alors côté base. Jamais une 500
+      // opaque pour ce cas, une réponse métier propre comme le conflit normal.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException('Un compte existe déjà avec cet email');
+      }
+      throw err;
+    }
 
-    await this.createAndSendOtp(user.id, user.email);
+    // L'envoi du code de vérification est un effet de bord vers un service tiers
+    // (Resend) — une panne d'envoi (clé absente/invalide, domaine non vérifié,
+    // service indisponible) ne doit jamais faire échouer la création du compte
+    // elle-même : le User et le code OTP sont déjà écrits en base, l'utilisateur
+    // peut toujours redemander l'envoi via "Renvoyer le code" une fois l'email de
+    // nouveau opérationnel. Jamais une 500 pour une inscription qui a réellement
+    // réussi côté données (§17 — bug bloquant : la panne d'un tiers ne doit
+    // jamais se traduire par "Erreur interne du serveur" sur une action réussie).
+    try {
+      await this.createAndSendOtp(user.id, user.email);
+    } catch (err) {
+      this.logger.error(
+        `Échec de l'envoi du code de vérification à ${user.email} (compte créé malgré tout)`,
+        err instanceof Error ? err.stack : String(err),
+      );
+    }
+
     return { requiresEmailVerification: true, email: user.email };
   }
 

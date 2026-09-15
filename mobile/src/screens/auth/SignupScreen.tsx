@@ -4,6 +4,22 @@ import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../auth/AuthContext';
 import { ApiError } from '../../api/client';
 
+/**
+ * Corrections UI/UX finales §17 (bug bloquant) — jamais "Erreur interne du
+ * serveur" affiché tel quel : un 4xx (validation/conflit) porte déjà un
+ * message métier clair côté backend (ex. "Un compte existe déjà avec cet
+ * email", "Adresse email invalide") et est affiché tel quel ; un 5xx est une
+ * vraie panne serveur, jamais montrée brute ; une erreur qui n'atteint même
+ * pas le serveur (fetch échoue avant réponse HTTP) est une erreur réseau.
+ */
+function mapSignupError(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status >= 500) return 'Impossible de créer le compte pour le moment. Réessayez.';
+    return err.message;
+  }
+  return 'Erreur réseau — vérifiez votre connexion et réessayez.';
+}
+
 export function SignupScreen() {
   const { signUp } = useAuth();
   const navigation = useNavigation<any>();
@@ -22,7 +38,7 @@ export function SignupScreen() {
       await signUp(trimmedEmail, password, firstName.trim(), lastName.trim());
       navigation.navigate('VerifyEmail', { email: trimmedEmail });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Inscription impossible');
+      setError(mapSignupError(err));
     } finally {
       setLoading(false);
     }

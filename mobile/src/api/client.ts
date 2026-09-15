@@ -52,7 +52,11 @@ async function rawFetch(path: string, options: { method?: string; body?: unknown
   const text = await res.text();
   const data = text ? JSON.parse(text) : undefined;
   if (!res.ok) {
-    throw new ApiError(res.status, (data && (data.message || data.error)) ?? `Erreur ${res.status}`);
+    // §17 — ValidationPipe renvoie un tableau quand plusieurs champs échouent :
+    // toujours un message unique et lisible ici, jamais un tableau brut affiché tel quel.
+    const raw = data && (data.message ?? data.error);
+    const message = Array.isArray(raw) ? raw[0] : raw;
+    throw new ApiError(res.status, message ?? `Erreur ${res.status}`);
   }
   return data;
 }
