@@ -78,8 +78,15 @@ export class FinancialPlansService {
       include: { deadlines: true, category: true, children: { include: { child: true } }, vehicle: true, housing: true },
     });
     // M7+M8 (guard-rail §4/§14) — "Libellé · Entité", jamais stocké dans cp.label.
+    // Recette finale — "Scolarité T1 · Wael" : childName uniquement si le poste a
+    // EXACTEMENT un enfant lié (jamais un nom inventé pour un poste multi-enfants).
     const labelOf = (cp: (typeof chargePlans)[number]) =>
-      contextualLabel(cp.label, { vehicleName: cp.vehicle?.name, housingName: cp.housing?.name, travelDestination: plan.planType === 'travel' ? plan.destination : undefined });
+      contextualLabel(cp.label, {
+        vehicleName: cp.vehicle?.name,
+        housingName: cp.housing?.name,
+        travelDestination: plan.planType === 'travel' ? plan.destination : undefined,
+        childName: cp.children.length === 1 ? cp.children[0].child.firstName : undefined,
+      });
 
     const certainPlans = chargePlans.filter((cp) => cp.obligationStatus === 'obligatoire' || cp.obligationStatus === 'optionnelle_souscrite');
     const envisagedPlans = chargePlans.filter((cp) => cp.obligationStatus === 'optionnelle_envisagee');

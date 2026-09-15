@@ -338,7 +338,7 @@ async function deadlineCandidates(
     where: { householdId, obligationStatus: { in: scope } },
     // M7+M8 (guard-rail §4/§14) — vehicle/housing/financialPlan chargés ici (même
     // requête batchée, jamais N+1) pour composer "Libellé · Entité" via contextualLabel.
-    include: { deadlines: true, vehicle: true, housing: true, financialPlan: true },
+    include: { deadlines: true, vehicle: true, housing: true, financialPlan: true, children: { include: { child: true } } },
   });
 
   // Lot 9 (§26) : un seul aller-retour SQL pour toutes les Deadline à montant connu,
@@ -359,6 +359,7 @@ async function deadlineCandidates(
       vehicleName: cp.vehicle?.name,
       housingName: cp.housing?.name,
       travelDestination: cp.financialPlan?.planType === 'travel' ? cp.financialPlan.destination : undefined,
+      childName: cp.children.length === 1 ? cp.children[0].child.firstName : undefined,
     });
     for (const d of cp.deadlines) {
       if (d.financialStatus === 'annulee' || d.financialStatus === 'soldee') continue;

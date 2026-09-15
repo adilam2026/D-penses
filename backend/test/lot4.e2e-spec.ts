@@ -222,7 +222,10 @@ describe('Lot 4 — Charges planifiées & FinancialPlan / module scolaire (e2e)'
     const before = await http.get(`/financial-plans/${planId}`).set(...auth()).expect(200);
     const knownBefore = before.body.knownPlanCost;
     expect(before.body.envisagedTotal).toBe(250);
-    expect(before.body.envisagedItems.some((i: { label: string }) => i.label === 'Garderie')).toBe(true);
+    // Recette finale — contextualisation "Libellé · Entité" (guard-rail §4/§14) : un
+    // ChargePlan à exactement 1 enfant lié affiche désormais "Garderie · Ines", jamais
+    // le libellé brut seul (Garderie a ici pour seul enfant Ines, cf. beforeAll).
+    expect(before.body.envisagedItems.some((i: { label: string }) => i.label === 'Garderie · Ines')).toBe(true);
     const garderieCertaine = before.body.deadlinesCertain.some((d: { id: string }) => d.id === deadlines['Garderie']);
     expect(garderieCertaine).toBe(false); // hors portée certaine (RG-106)
 

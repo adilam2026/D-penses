@@ -73,7 +73,7 @@ export class CalendarService {
             { expectedBillingDate: { gte: rangeStart, lte: rangeEnd } },
           ],
         },
-        include: { chargePlan: { include: { vehicle: true, housing: true, financialPlan: true } } },
+        include: { chargePlan: { include: { vehicle: true, housing: true, financialPlan: true, children: { include: { child: true } } } } },
       });
       for (const d of deadlines) {
         // M7+M8 (guard-rail §4/§14) — "Libellé · Entité", jamais stocké dans chargePlan.label.
@@ -81,6 +81,7 @@ export class CalendarService {
           vehicleName: d.chargePlan.vehicle?.name,
           housingName: d.chargePlan.housing?.name,
           travelDestination: d.chargePlan.financialPlan?.planType === 'travel' ? d.chargePlan.financialPlan.destination : undefined,
+          childName: d.chargePlan.children.length === 1 ? d.chargePlan.children[0].child.firstName : undefined,
         });
 
         // Facture attendue (RG-100) — événement distinct de l'échéance, uniquement si non encore reçue.

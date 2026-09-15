@@ -134,11 +134,18 @@ export async function getBudgetExpenseConsumption(
  * chargée. Un ChargePlan n'appartient jamais à plus d'une entité à la fois
  * (vehicleId/housingId mutuellement exclusifs en pratique) : la première trouvée
  * gagne, jamais une double concaténation. `destination` sert le cas Voyage (pas de
- * référentiel dédié, guard-rail §13 — "Hôtel · Voyage Agadir").
+ * référentiel dédié, guard-rail §13 — "Hôtel · Voyage Agadir"). `childName` sert le
+ * cas École (ex. "Scolarité T1 · Wael", guard-rail §14) — fourni par l'appelant
+ * uniquement quand le ChargePlan a EXACTEMENT un enfant lié (jamais un nom inventé
+ * pour un poste multi-enfants, même convention que le reste du fichier).
  */
-export function contextualLabel(label: string, entity: { vehicleName?: string | null; housingName?: string | null; travelDestination?: string | null }): string {
+export function contextualLabel(
+  label: string,
+  entity: { vehicleName?: string | null; housingName?: string | null; travelDestination?: string | null; childName?: string | null },
+): string {
   if (entity.vehicleName) return `${label} · ${entity.vehicleName}`;
   if (entity.housingName) return `${label} · ${entity.housingName}`;
   if (entity.travelDestination) return `${label} · Voyage ${entity.travelDestination}`;
+  if (entity.childName) return `${label} · ${entity.childName}`;
   return label;
 }
