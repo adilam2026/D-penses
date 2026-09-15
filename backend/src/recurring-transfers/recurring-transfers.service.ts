@@ -35,6 +35,7 @@ export class RecurringTransfersService {
           amount: dto.amount,
           recurrenceRule: dto.recurrenceRule,
           recurrenceAnchorDate: new Date(dto.recurrenceAnchorDate),
+          endDate: dto.endDate ? new Date(dto.endDate) : undefined,
           note: dto.note,
         },
       });
@@ -89,9 +90,15 @@ export class RecurringTransfersService {
       }
 
       const existingAnchorIso = existing.recurrenceAnchorDate.toISOString().slice(0, 10);
+      const existingEndIso = existing.endDate ? existing.endDate.toISOString().slice(0, 10) : null;
       const recurrenceChanged =
         (dto.recurrenceRule !== undefined && dto.recurrenceRule !== existing.recurrenceRule) ||
-        (dto.recurrenceAnchorDate !== undefined && dto.recurrenceAnchorDate !== existingAnchorIso);
+        (dto.recurrenceAnchorDate !== undefined && dto.recurrenceAnchorDate !== existingAnchorIso) ||
+        // M5 — un bornage modifié (avancé ou retiré) doit aussi retirer les occurrences
+        // 'prevu' déjà générées au-delà de la nouvelle règle, même patron que
+        // recurrenceRule/recurrenceAnchorDate : la régénération paresseuse les recrée
+        // alignées (jamais au-delà du nouvel endDate).
+        (dto.endDate !== undefined && dto.endDate !== existingEndIso);
 
       const updated = await tx.recurringTransfer.update({
         where: { id },
@@ -102,6 +109,7 @@ export class RecurringTransfersService {
           amount: dto.amount,
           recurrenceRule: dto.recurrenceRule,
           recurrenceAnchorDate: dto.recurrenceAnchorDate ? new Date(dto.recurrenceAnchorDate) : undefined,
+          endDate: dto.endDate === undefined ? undefined : dto.endDate ? new Date(dto.endDate) : null,
           note: dto.note,
           status: dto.status,
         },

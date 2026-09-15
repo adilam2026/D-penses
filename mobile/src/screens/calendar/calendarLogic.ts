@@ -10,11 +10,15 @@ type IconName = keyof typeof Ionicons.glyphMap;
  */
 export interface CalendarEvent {
   date: string;
-  kind: 'revenu_prevu' | 'facture_attendue' | 'echeance' | 'montant_inconnu' | 'echeance_payee';
+  kind: 'revenu_prevu' | 'facture_attendue' | 'echeance' | 'montant_inconnu' | 'echeance_payee' | 'transfert_prevu';
   label: string;
   amount: number | null;
   deadlineId?: string;
   incomeOccurrenceId?: string;
+  // M5 — cible du clic « revenu prévu » (IncomeSource, jamais l'occurrence).
+  incomeSourceId?: string;
+  // M5 — cible du clic « transfert planifié » (RecurringTransfer parent).
+  recurringTransferId?: string;
 }
 
 export const KIND_LABEL: Record<CalendarEvent['kind'], string> = {
@@ -23,6 +27,7 @@ export const KIND_LABEL: Record<CalendarEvent['kind'], string> = {
   echeance: 'À payer',
   montant_inconnu: 'Montant inconnu',
   echeance_payee: 'Payé',
+  transfert_prevu: 'Transfert planifié',
 };
 
 // §9 (recette téléphone réel) : jamais la couleur seule pour distinguer un type
@@ -33,6 +38,7 @@ export const KIND_ICON: Record<CalendarEvent['kind'], IconName> = {
   echeance: 'alert-circle-outline',
   montant_inconnu: 'help-circle-outline',
   echeance_payee: 'checkmark-circle',
+  transfert_prevu: 'swap-horizontal-outline',
 };
 
 export const KIND_COLOR: Record<CalendarEvent['kind'], string> = {
@@ -41,11 +47,12 @@ export const KIND_COLOR: Record<CalendarEvent['kind'], string> = {
   echeance: colors.primary,
   montant_inconnu: colors.danger,
   echeance_payee: colors.textSecondary,
+  transfert_prevu: colors.primary,
 };
 
 // Ordre d'affichage de la légende — dérivé des mêmes constantes que les lignes
 // (source unique, jamais une liste dupliquée qui pourrait diverger).
-export const LEGEND_ORDER: CalendarEvent['kind'][] = ['echeance', 'echeance_payee', 'revenu_prevu', 'montant_inconnu', 'facture_attendue'];
+export const LEGEND_ORDER: CalendarEvent['kind'][] = ['echeance', 'echeance_payee', 'revenu_prevu', 'transfert_prevu', 'montant_inconnu', 'facture_attendue'];
 
 export function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' });

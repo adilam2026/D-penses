@@ -139,7 +139,11 @@ export async function ensureRecurringTransfersUntil(tx: TxClient, householdId: s
 
   const rows: Prisma.AccountTransferCreateManyInput[] = [];
   for (const rt of recurringTransfers) {
-    const dates = occurrenceDatesInRange(rt.recurrenceRule as RecurrenceRule, rt.recurrenceAnchorDate, rt.recurrenceAnchorDate, horizonEnd);
+    // M5 — même plafonnement EXACT que ChargePlan.endDate (ensureChargeDeadlinesUntil) :
+    // jamais de génération au-delà de la fin de vie déclarée, même si l'horizon
+    // demandé par le consommateur va plus loin.
+    const effectiveEnd = rt.endDate && rt.endDate.getTime() < horizonEnd.getTime() ? rt.endDate : horizonEnd;
+    const dates = occurrenceDatesInRange(rt.recurrenceRule as RecurrenceRule, rt.recurrenceAnchorDate, rt.recurrenceAnchorDate, effectiveEnd);
     for (const plannedDate of dates) {
       rows.push({
         householdId,

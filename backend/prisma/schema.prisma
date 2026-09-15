@@ -260,6 +260,10 @@ model User {
   firstName       String    @map("first_name")
   lastName        String    @map("last_name")
   avatarUrl       String?   @map("avatar_url")
+  // M6 — couleur d'identification de l'initiateur (Transactions), jamais imposée à
+  // la saisie : NULL = pas encore choisie, l'affichage retombe sur une couleur
+  // déterministe dérivée de l'id (jamais un plantage, jamais une régression).
+  color           String?   @map("color")
   // NULL = compte créé mais adresse email pas encore confirmée par code OTP —
   // aucun token de session émis avant que ce champ soit renseigné (signup).
   emailVerifiedAt DateTime? @map("email_verified_at")
@@ -672,6 +676,10 @@ model RecurringTransfer {
   recurrenceAnchorDate DateTime                @map("recurrence_anchor_date") @db.Date
   note                 String?
   status               RecurringTransferStatus @default(actif)
+  // M5 — bornage facultatif, même patron que ChargePlan.endDate : NULL = actif jusqu'à
+  // arrêt manuel (comportement historique inchangé), renseigné = ensureRecurringTransfersUntil
+  // ne génère plus aucune occurrence au-delà (jamais une génération infinie en base).
+  endDate              DateTime?               @map("end_date") @db.Date
   createdAt            DateTime                @default(now()) @map("created_at")
   updatedAt            DateTime                @updatedAt @map("updated_at")
 

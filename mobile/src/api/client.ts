@@ -290,6 +290,7 @@ export const createRecurringTransfer = (data: {
   amount: number;
   recurrenceRule: 'hebdomadaire' | 'mensuel' | 'trimestriel' | 'semestriel' | 'annuel';
   recurrenceAnchorDate: string;
+  endDate?: string;
   note?: string;
 }) => apiFetch('/recurring-transfers', { method: 'POST', body: data });
 
@@ -313,6 +314,7 @@ export const updateRecurringTransfer = (
     amount: number;
     recurrenceRule: 'hebdomadaire' | 'mensuel' | 'trimestriel' | 'semestriel' | 'annuel';
     recurrenceAnchorDate: string;
+    endDate: string | null;
     note: string;
     status: 'actif' | 'inactif';
   }>,

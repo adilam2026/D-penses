@@ -39,7 +39,7 @@ export class HouseholdsService {
       const household = await tx.household.findUnique({
         where: { id: householdId },
         include: {
-          memberships: { include: { user: { select: { id: true, email: true, firstName: true, lastName: true } } } },
+          memberships: { include: { user: { select: { id: true, email: true, firstName: true, lastName: true, color: true } } } },
           settings: true,
           children: true,
         },

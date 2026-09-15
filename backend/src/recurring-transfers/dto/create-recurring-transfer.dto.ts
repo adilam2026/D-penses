@@ -32,6 +32,11 @@ export class CreateRecurringTransferDto {
   @IsISO8601()
   recurrenceAnchorDate!: string;
 
+  /** M5 — facultatif, même convention que ChargePlan.endDate : absent = actif jusqu'à arrêt manuel. */
+  @IsOptional()
+  @IsISO8601()
+  endDate?: string;
+
   @IsOptional()
   @IsString()
   note?: string;

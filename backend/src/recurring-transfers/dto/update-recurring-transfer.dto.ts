@@ -38,6 +38,11 @@ export class UpdateRecurringTransferDto {
   @IsISO8601()
   recurrenceAnchorDate?: string;
 
+  /** M5 — même convention que UpdateChargePlanDto.endDate : null efface le bornage. */
+  @IsOptional()
+  @IsISO8601()
+  endDate?: string | null;
+
   @IsOptional()
   @IsString()
   note?: string;

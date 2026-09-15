@@ -19,6 +19,7 @@ interface RecurringTransfer {
   amount: string | number;
   recurrenceRule: string;
   recurrenceAnchorDate: string;
+  endDate: string | null;
   note: string | null;
   status: 'actif' | 'inactif';
 }
@@ -78,6 +79,7 @@ export function RecurringTransferDetailScreen() {
   const [amount, setAmount] = useState('');
   const [recurrenceRule, setRecurrenceRule] = useState('mensuel');
   const [anchorDate, setAnchorDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [togglingStatus, setTogglingStatus] = useState(false);
@@ -104,6 +106,7 @@ export function RecurringTransferDetailScreen() {
       setAmount(String(n(rt.amount)));
       setRecurrenceRule(rt.recurrenceRule);
       setAnchorDate(String(rt.recurrenceAnchorDate).slice(0, 10));
+      setEndDate(rt.endDate ? String(rt.endDate).slice(0, 10) : '');
       setNote(rt.note ?? '');
     } finally {
       setLoading(false);
@@ -150,6 +153,7 @@ export function RecurringTransferDetailScreen() {
         amount: amountValue,
         recurrenceRule: recurrenceRule as any,
         recurrenceAnchorDate: anchorDate,
+        endDate: endDate || null,
         note: note.trim() || undefined,
       });
       await load();
@@ -251,6 +255,14 @@ export function RecurringTransferDetailScreen() {
 
         <DateField label="Prochain transfert" value={anchorDate} onChange={setAnchorDate} />
 
+        <DateField label="Date de fin (facultatif)" value={endDate} onChange={setEndDate} />
+        {endDate ? (
+          <TouchableOpacity testID="recurring-transfer-clear-enddate" onPress={() => setEndDate('')}>
+            <Text style={styles.clearEndDate}>Effacer la date de fin</Text>
+          </TouchableOpacity>
+        ) : null}
+        <Text style={styles.hint}>Sans date de fin, le transfert reste actif jusqu'à arrêt manuel.</Text>
+
         <FormField testID="recurring-transfer-note-input" label="Note (facultatif)" value={note} onChangeText={setNote} onFocus={handleFocus} />
 
         <Text style={styles.hint}>
@@ -338,6 +350,7 @@ const styles = StyleSheet.create({
   inactiveBanner: { backgroundColor: colors.dangerLight, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.lg },
   inactiveBannerText: { color: colors.danger, fontSize: 12, fontWeight: '600' },
   hint: { fontSize: 11, color: colors.textSecondary, marginTop: -6, marginBottom: spacing.sm, fontStyle: 'italic' },
+  clearEndDate: { fontSize: 11, color: colors.primary, fontWeight: '600', marginTop: -6, marginBottom: spacing.sm },
   error: { color: colors.danger, fontSize: 13, marginBottom: spacing.sm },
   button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center' },
   buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 14 },

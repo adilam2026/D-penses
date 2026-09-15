@@ -67,9 +67,13 @@ export function CalendarScreen() {
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.row}
-            disabled={!item.deadlineId}
-            activeOpacity={item.deadlineId ? 0.6 : 1}
-            onPress={() => item.deadlineId && navigation.navigate('DeadlineDetail', { id: item.deadlineId })}
+            disabled={!item.deadlineId && !item.incomeSourceId && !item.recurringTransferId}
+            activeOpacity={item.deadlineId || item.incomeSourceId || item.recurringTransferId ? 0.6 : 1}
+            onPress={() => {
+              if (item.deadlineId) navigation.navigate('DeadlineDetail', { id: item.deadlineId });
+              else if (item.incomeSourceId) navigation.navigate('IncomeSourceDetail', { id: item.incomeSourceId });
+              else if (item.recurringTransferId) navigation.navigate('RecurringTransferDetail', { id: item.recurringTransferId });
+            }}
           >
             <Ionicons name={KIND_ICON[item.kind]} size={20} color={KIND_COLOR[item.kind]} style={styles.rowIcon} />
             <View style={styles.rowBody}>

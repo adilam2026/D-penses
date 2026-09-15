@@ -95,6 +95,20 @@ export function toApiFilters(f: Filters): api.TransactionFilters {
   };
 }
 
+// M6 — couleur d'identification de l'initiateur (bande/fond des lignes Transactions,
+// pastilles du filtre). User.color prime quand renseigné ; sinon repli déterministe
+// (même userId → toujours la même couleur, jamais un plantage sur color=null/undefined,
+// jamais une régression pour les comptes créés avant ce lot).
+const FALLBACK_COLOR_PALETTE = ['#5B8DEF', '#E5896D', '#57B894', '#C77DD4', '#D9A441', '#4FB5C2', '#E06B8B', '#8B95A6'];
+
+export function initiatorColor(userId: string | null | undefined, explicitColor?: string | null): string {
+  if (explicitColor) return explicitColor;
+  if (!userId) return FALLBACK_COLOR_PALETTE[0];
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) hash = (hash * 31 + userId.charCodeAt(i)) >>> 0;
+  return FALLBACK_COLOR_PALETTE[hash % FALLBACK_COLOR_PALETTE.length];
+}
+
 export function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }

@@ -19,6 +19,7 @@ import {
   LedgerEntry,
   formatDate,
   hasActiveFilters,
+  initiatorColor,
   monthKey,
   monthSectionTitle,
   toApiFilters,
@@ -49,7 +50,7 @@ export function TransactionsScreen() {
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [budgets, setBudgets] = useState<{ id: string; category: { name: string } }[]>([]);
   const [plans, setPlans] = useState<{ id: string; label: string }[]>([]);
-  const [members, setMembers] = useState<{ userId: string; name: string }[]>([]);
+  const [members, setMembers] = useState<{ userId: string; name: string; color: string | null }[]>([]);
 
   const load = useCallback(async (filters: Filters) => {
     setLoading(true);
@@ -70,7 +71,9 @@ export function TransactionsScreen() {
       api.listVariableBudgets().then(setBudgets);
       api.listFinancialPlans().then(setPlans);
       api.getMyHousehold().then((h: any) =>
-        setMembers((h.memberships ?? []).map((m: any) => ({ userId: m.user.id, name: `${m.user.firstName} ${m.user.lastName}` }))),
+        setMembers(
+          (h.memberships ?? []).map((m: any) => ({ userId: m.user.id, name: `${m.user.firstName} ${m.user.lastName}`, color: m.user.color ?? null })),
+        ),
       );
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [appliedFilters]),
@@ -87,6 +90,14 @@ export function TransactionsScreen() {
     for (const p of plans) map[p.id] = p.label;
     return map;
   }, [plans]);
+
+  // M6 — couleur par membre (User.color si renseignée, sinon repli déterministe) :
+  // calculée une fois par chargement des membres, jamais recalculée à chaque ligne.
+  const memberColorById = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const m of members) map[m.userId] = initiatorColor(m.userId, m.color);
+    return map;
+  }, [members]);
 
   const sections = useMemo(() => {
     const byMonth = new Map<string, LedgerEntry[]>();
@@ -169,10 +180,15 @@ export function TransactionsScreen() {
           const positive = item.amount >= 0;
           const budgetLabel = item.budgetId ? (budgetLabelById[item.budgetId] ?? 'Budget') : null;
           const planLabel = item.financialPlanId ? (planLabelById[item.financialPlanId] ?? 'Plan') : null;
+          // M6 — bande verticale colorée par initiateur (jamais un simple point) :
+          // memberColorById couvre les membres actuels du foyer, initiatorColor()
+          // reste le repli déterministe (createdByUserId absent, ou membre retiré
+          // du foyer depuis) — jamais un plantage, jamais une régression.
+          const initColor = (item.createdByUserId && memberColorById[item.createdByUserId]) || initiatorColor(item.createdByUserId);
           return (
             <TouchableOpacity
               testID={`transaction-row-${item.kind}-${item.id}`}
-              style={styles.row}
+              style={[styles.row, { borderLeftWidth: 4, borderLeftColor: initColor }]}
               onPress={() => navigation.navigate('TransactionDetail', { kind: item.kind, id: item.id })}
             >
               <View style={styles.rowLeft}>
@@ -270,14 +286,31 @@ export function TransactionsScreen() {
               options={plans.map((p) => ({ value: p.id, label: p.label }))}
             />
 
-            <Select
-              testID="transactions-filter-initiator"
-              label="Initiateur"
-              placeholder="Tout le monde"
-              value={draftFilters.createdByUserId}
-              onChange={(v) => setDraftFilters((f) => ({ ...f, createdByUserId: v }))}
-              options={members.map((m) => ({ value: m.userId, label: m.name }))}
-            />
+            <Text style={styles.pastilleLabel}>Initiateur</Text>
+            <View style={styles.pastilleRow} testID="transactions-filter-initiator">
+              <TouchableOpacity
+                testID="transactions-filter-initiator-all"
+                style={[styles.pastille, draftFilters.createdByUserId === null && styles.pastilleActive]}
+                onPress={() => setDraftFilters((f) => ({ ...f, createdByUserId: null }))}
+              >
+                <Text style={[styles.pastilleText, draftFilters.createdByUserId === null && styles.pastilleTextActive]}>Tout le monde</Text>
+              </TouchableOpacity>
+              {members.map((m) => {
+                const active = draftFilters.createdByUserId === m.userId;
+                const color = memberColorById[m.userId];
+                return (
+                  <TouchableOpacity
+                    key={m.userId}
+                    testID={`transactions-filter-initiator-${m.userId}`}
+                    style={[styles.pastille, { borderColor: color }, active && { backgroundColor: color }]}
+                    onPress={() => setDraftFilters((f) => ({ ...f, createdByUserId: active ? null : m.userId }))}
+                  >
+                    <View style={[styles.pastilleDot, { backgroundColor: color }]} />
+                    <Text style={[styles.pastilleText, active && styles.pastilleTextActive]}>{m.name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.modalButtonSecondary} onPress={resetFilters}>
@@ -367,4 +400,21 @@ const styles = StyleSheet.create({
   modalButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 13 },
   modalButtonSecondary: { paddingHorizontal: 14, paddingVertical: 10, marginRight: 8 },
   modalButtonSecondaryText: { color: colors.textSecondary, fontWeight: '600', fontSize: 13 },
+  pastilleLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', marginBottom: 6 },
+  pastilleRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: spacing.sm },
+  pastille: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderColor: colors.borderStrong,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    marginRight: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  pastilleActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  pastilleDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
+  pastilleText: { fontSize: 12, fontWeight: '600', color: colors.textPrimary },
+  pastilleTextActive: { color: colors.textOnPrimary },
 });

@@ -4,7 +4,7 @@ import { toNumber } from '../common/ledger/ledger.util';
 import { computeHorizon, DASHBOARD_FALLBACK_HORIZON_DAYS } from '../common/ledger/treasury.util';
 import { ensureChargeDeadlinesUntil, ensureIncomeOccurrencesUntil, ensureRecurringTransfersUntil } from '../common/ledger/occurrence-generation.util';
 
-export type CalendarEventKind = 'revenu_prevu' | 'facture_attendue' | 'echeance' | 'montant_inconnu' | 'echeance_payee';
+export type CalendarEventKind = 'revenu_prevu' | 'facture_attendue' | 'echeance' | 'montant_inconnu' | 'echeance_payee' | 'transfert_prevu';
 
 export interface CalendarEvent {
   date: Date;
@@ -13,6 +13,11 @@ export interface CalendarEvent {
   amount: number | null;
   deadlineId?: string;
   incomeOccurrenceId?: string;
+  // M5 — cible du clic « revenu prévu » : id de l'IncomeSource (jamais l'occurrence,
+  // qui n'a pas d'écran de détail propre), même patron que deadlineId côté échéances.
+  incomeSourceId?: string;
+  // M5 — cible du clic « transfert planifié » : id du RecurringTransfer parent.
+  recurringTransferId?: string;
 }
 
 /**
@@ -56,6 +61,7 @@ export class CalendarService {
           label: income.incomeSource.label,
           amount: toNumber(income.plannedAmount),
           incomeOccurrenceId: income.id,
+          incomeSourceId: income.incomeSourceId,
         });
       }
 
@@ -95,6 +101,25 @@ export class CalendarService {
             deadlineId: d.id,
           });
         }
+      }
+
+      // M5 — transferts planifiés (occurrences 'prevu' générées par un RecurringTransfer,
+      // ensureRecurringTransfersUntil déjà appelé ci-dessus) : un transfert ponctuel manuel
+      // est confirmé immédiatement (AccountsService.createTransfer, RG-085) et n'a donc
+      // jamais status='prevu' — recurringTransferId non null suffit à cibler exactement
+      // les occurrences récurrentes, jamais un second filtre redondant.
+      const transfers = await tx.accountTransfer.findMany({
+        where: { householdId, status: 'prevu', recurringTransferId: { not: null }, plannedDate: { gte: rangeStart, lte: rangeEnd } },
+        include: { recurringTransfer: true },
+      });
+      for (const t of transfers) {
+        events.push({
+          date: t.plannedDate,
+          kind: 'transfert_prevu',
+          label: t.recurringTransfer?.label ?? 'Transfert planifié',
+          amount: toNumber(t.amount),
+          recurringTransferId: t.recurringTransferId ?? undefined,
+        });
       }
 
       events.sort((a, b) => a.date.getTime() - b.date.getTime());
