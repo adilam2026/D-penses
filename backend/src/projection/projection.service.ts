@@ -7,6 +7,7 @@ import { computeVariableBudgetCommitments } from '../common/ledger/treasury.util
 import { round2 } from '../common/ledger/ledger.util';
 import { ensureChargeDeadlinesUntil, ensureIncomeOccurrencesUntil, ensureRecurringTransfersUntil } from '../common/ledger/occurrence-generation.util';
 import { DEFAULT_CLOSING_DAY, getFinancialPeriodBounds, getFinancialPeriodOf, shiftFinancialPeriod } from '../common/ledger/financial-period.util';
+import { schoolProjectionMonthlyItems, SchoolProjectionMonthlyItem } from '../common/ledger/school-projection.util';
 
 type TxClient = ReturnType<RlsContextService['getClient']>;
 
@@ -100,7 +101,12 @@ export class ProjectionService {
       await ensureChargeDeadlinesUntil(tx, householdId, horizonEnd);
       await ensureRecurringTransfersUntil(tx, householdId, horizonEnd);
       const result = await computeMonthlyProjection(tx, householdId, referenceDate, months, { incomeAccountIds, expenseAccountIds });
-      return this.toMonthlyApi(result);
+      // M9B §1 — hypothèses "Projeté" (SchoolProjection actives), purement additives :
+      // computeMonthlyProjection ci-dessus reste totalement inchangé, aucune donnée
+      // scolaire projetée n'entre dans son calcul (§8, jamais dans committed_amount/
+      // free_available/engagements connus).
+      const schoolItems = await schoolProjectionMonthlyItems(tx, householdId, referenceDate, new Date(result.horizonEnd), await this.closingDayOf(tx, householdId));
+      return this.toMonthlyApi(result, schoolItems);
     });
   }
 
@@ -130,9 +136,12 @@ export class ProjectionService {
 
       const options = { incomeAccountIds, expenseAccountIds };
       const baseline = await computeMonthlyProjection(tx, householdId, referenceDate, months, options);
+      // Identiques baseline/scénario : `moves` ne déplace que des Deadline réelles,
+      // jamais une SchoolProjection (hors périmètre de la simulation IF-10).
+      const schoolItems = await schoolProjectionMonthlyItems(tx, householdId, referenceDate, horizonEnd, await this.closingDayOf(tx, householdId));
 
       if (moves.length === 0) {
-        const only = this.toMonthlyApi(baseline);
+        const only = this.toMonthlyApi(baseline, schoolItems);
         return { baseline: only, scenario: only };
       }
 
@@ -145,7 +154,7 @@ export class ProjectionService {
       }
       const scenario = await computeMonthlyProjection(tx, householdId, referenceDate, months, { ...options, dateOverrides });
 
-      return { baseline: this.toMonthlyApi(baseline), scenario: this.toMonthlyApi(scenario) };
+      return { baseline: this.toMonthlyApi(baseline, schoolItems), scenario: this.toMonthlyApi(scenario, schoolItems) };
     });
   }
 
@@ -174,13 +183,34 @@ export class ProjectionService {
     return getFinancialPeriodBounds(targetPeriod.year, targetPeriod.monthIndex0, closingDay).end;
   }
 
+  /** M9B §1 — closingDay du foyer, même repli DEFAULT_CLOSING_DAY que monthsHorizonEnd. */
+  private async closingDayOf(tx: TxClient, householdId: string): Promise<number> {
+    const settings = await tx.householdSettings.findUnique({ where: { householdId } });
+    return settings?.closingDay ?? DEFAULT_CLOSING_DAY;
+  }
+
   /** Contrat API en snake_case explicite (§31 Lot 7), étendu Round 4 pour la vue mensuelle. */
-  private toMonthlyApi(result: MonthlyProjectionResult) {
-    return {
-      reference_date: result.referenceDate,
-      horizon_end: result.horizonEnd,
-      horizon_months: result.horizonMonths,
-      months: result.months.map((m) => ({
+  private toMonthlyApi(result: MonthlyProjectionResult, schoolItemsByMonth: Map<string, SchoolProjectionMonthlyItem[]> = new Map()) {
+    // M9B §1 (correction) — les SchoolProjection actives doivent réellement IMPACTER
+    // la projection longue durée, pas seulement s'y afficher (TXT). Piste cumulée
+    // DÉDIÉE, même mécanique que cashRunningPrudent (monthly-projection.util.ts) mais
+    // calculée ici, séparément : part du même solde de trésorerie initial, ajoute
+    // balance+transferts pilotés comme projected_cash_balance, PLUS retranche, période
+    // par période, le total des prévisions scolaires actives (status=projete) dont la
+    // targetDate tombe dans cette période — cumulé (une fois retranchée, reste
+    // retranchée les mois suivants). Autre nature que le budget prudent (§M4 intact,
+    // jamais mélangée à cashRunningPrudent/projectedCashBalancePrudent) : une
+    // SchoolProjection remplacée ne revient JAMAIS ici (schoolProjectionMonthlyItems
+    // ne lit que status=projete, cf. school-projection.util.ts) — la vraie Deadline qui
+    // l'a remplacée est déjà comptée normalement dans projected_cash_balance, jamais
+    // les deux à la fois. Toujours additif : committed_amount/free_available/paiements/
+    // provisions/engagements certains restent calculés exactement comme avant M9.
+    let cashRunningWithForecasts = result.summary.openingCashBalance;
+    const months = result.months.map((m) => {
+      const schoolItems = schoolItemsByMonth.get(m.month) ?? [];
+      const schoolProjectionImpact = round2(-schoolItems.reduce((sum, it) => sum + it.amount, 0));
+      cashRunningWithForecasts = round2(cashRunningWithForecasts + m.balance + m.plannedTransferNetTreasuryImpact + schoolProjectionImpact);
+      return {
         month: m.month,
         label: m.label,
         total_income: m.totalIncome,
@@ -199,6 +229,17 @@ export class ProjectionService {
         planned_transfer_items: m.plannedTransferItems,
         income_items: m.incomeItems,
         expense_items: m.expenseItems,
+        // M9B §1 — hypothèses futures "Projeté" (SchoolProjection actives) : jamais
+        // dans income_items/expense_items, jamais sommées dans total_income/
+        // total_expense/balance/cumulative_balance/projected_cash_balance — une
+        // prévision reste une prévision, jamais un engagement connu.
+        school_projection_items: schoolItems,
+        // M9B §1 (correction) — impact signé de CETTE période (négatif = prévision
+        // scolaire future) et solde cumulé qui en tient compte réellement : "prévisions
+        // long terme" et "solde projeté incluant ces prévisions", distincts de
+        // projected_cash_balance ("engagements connus" seul, inchangé ci-dessus).
+        school_projection_impact: schoolProjectionImpact,
+        projected_cash_balance_with_forecasts: cashRunningWithForecasts,
         movable_expense_total: m.movableExpenseTotal,
         is_complete: m.isComplete,
         unknown_count: m.unknownCount,
@@ -206,7 +247,13 @@ export class ProjectionService {
         contains_estimates: m.containsEstimates,
         excluded_by_filter_count: m.excludedByFilterCount,
         excluded_by_filter_total: m.excludedByFilterTotal,
-      })),
+      };
+    });
+    return {
+      reference_date: result.referenceDate,
+      horizon_end: result.horizonEnd,
+      horizon_months: result.horizonMonths,
+      months,
       summary: {
         total_income: result.summary.totalIncome,
         total_expense: result.summary.totalExpense,

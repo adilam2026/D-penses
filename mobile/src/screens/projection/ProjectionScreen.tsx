@@ -2,7 +2,14 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
-import { MonthBucketApi, MonthlyLineItem, MonthlyProjectionApi, PlannedTransferItem, UNDETERMINED_ACCOUNT } from '../../api/client';
+import {
+  MonthBucketApi,
+  MonthlyLineItem,
+  MonthlyProjectionApi,
+  PlannedTransferItem,
+  SchoolProjectionMonthlyItemApi,
+  UNDETERMINED_ACCOUNT,
+} from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
@@ -73,6 +80,30 @@ function TransferRow({ item }: { item: PlannedTransferItem }) {
 
 const formatShortDate = formatShortDateShared;
 
+/**
+ * M9C — ligne "prévision long terme" (SchoolProjection status=projete), jamais
+ * un engagement certain : contextualisation "{label} · {enfant}" composée ici,
+ * jamais un libellé stocké (§4 M9) — même principe que TransferRow ci-dessus,
+ * jamais mêlée aux revenus/dépenses réels.
+ */
+function SchoolProjectionRow({ item }: { item: SchoolProjectionMonthlyItemApi }) {
+  return (
+    <View style={styles.itemRow}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.itemLabel}>
+          {item.label}
+          {item.childFirstName ? ` · ${item.childFirstName}` : ''}
+        </Text>
+        <View style={styles.itemBadgeRow}>
+          <Text style={styles.itemBadgeForecast}>Projeté</Text>
+          <Text style={styles.itemBadge}>{formatShortDate(item.date)}</Text>
+        </View>
+      </View>
+      <Text style={styles.itemAmount}>{formatDh(item.amount)}</Text>
+    </View>
+  );
+}
+
 function IncomeRow({ item }: { item: MonthlyLineItem }) {
   return (
     <View style={styles.itemRow}>
@@ -135,6 +166,20 @@ function MonthCard({
               dont {formatDh(month.prudent_budget_remaining)} de budgets encore disponibles sur la période
             </Text>
           )}
+          {/* M9C — 3e lecture, jamais un remplacement des 2 scénarios M4 ci-dessus :
+              n'apparaît que si une prévision long terme (SchoolProjection active)
+              impacte réellement ce mois — jamais affichée à vide (school_projection_impact=0). */}
+          {month.school_projection_impact !== 0 && (
+            <>
+              <Text style={styles.situationLabelForecast}>PRÉVISION LONG TERME</Text>
+              <Text style={styles.monthBalanceForecast} testID={`month-forecast-balance-${month.month}`}>
+                {formatDh(month.projected_cash_balance_with_forecasts)}
+              </Text>
+              <Text style={styles.cumulLine} testID={`month-forecast-remaining-${month.month}`}>
+                dont {formatDh(Math.abs(month.school_projection_impact))} de prévisions scolaires
+              </Text>
+            </>
+          )}
           <Text style={styles.cumulLine}>
             Balance du mois {month.balance >= 0 ? '+' : ''}{formatDh(month.balance)}
           </Text>
@@ -194,6 +239,19 @@ function MonthCard({
                 Impact net trésorerie pilotée {month.planned_transfer_net_treasury_impact >= 0 ? '+' : ''}
                 {formatDh(month.planned_transfer_net_treasury_impact)}
               </Text>
+            </>
+          )}
+
+          {month.school_projection_items.length > 0 && (
+            <>
+              {/* M9C — prévisions long terme (hypothèses "Projeté"), jamais rangées dans
+                  Dépenses ci-dessus : leur impact n'appartient qu'à la 3e lecture
+                  (PRÉVISION LONG TERME, déjà affichée dans l'en-tête). */}
+              <Text style={styles.detailSectionTitle}>Prévisions scolaires</Text>
+              {month.school_projection_items.map((it) => (
+                <SchoolProjectionRow key={it.id} item={it} />
+              ))}
+              <Text style={styles.detailTotalLine}>Total prévisions {formatDh(Math.abs(month.school_projection_impact))}</Text>
             </>
           )}
         </View>
@@ -445,6 +503,8 @@ const styles = StyleSheet.create({
   monthStatus: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', marginTop: 2 },
   situationLabelPrudent: { fontSize: 9, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.4, marginTop: spacing.sm },
   monthBalancePrudent: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginTop: 2 },
+  situationLabelForecast: { fontSize: 9, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.4, marginTop: spacing.sm },
+  monthBalanceForecast: { fontSize: 15, fontWeight: '700', color: colors.primary, marginTop: 2 },
   cumulLine: { fontSize: 10, color: colors.textSecondary, marginTop: 2 },
   balancePositive: { color: colors.success },
   balanceNegative: { color: colors.danger },
@@ -465,5 +525,6 @@ const styles = StyleSheet.create({
   itemAmount: { fontSize: 13, fontWeight: '700', color: colors.danger },
   itemAmountPositive: { color: colors.success },
   itemBadgeTransfer: { fontSize: 10, color: colors.primary, backgroundColor: colors.surfaceActive, borderRadius: radius.pill, paddingHorizontal: 6, paddingVertical: 2, marginRight: 4, fontWeight: '700' },
+  itemBadgeForecast: { fontSize: 10, color: colors.primary, backgroundColor: colors.surfaceActive, borderRadius: radius.pill, paddingHorizontal: 6, paddingVertical: 2, marginRight: 4, fontWeight: '700' },
   transferDescription: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
 });

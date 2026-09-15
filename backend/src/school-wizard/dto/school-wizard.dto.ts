@@ -38,6 +38,16 @@ export class SchoolWizardItemDto {
   @IsNumber()
   amount?: number | null;
 
+  /**
+   * M9 §4 — prévision utilisée comme base de préremplissage pour CETTE ligne
+   * (détectée via GET /school-projections/candidates). Si fournie, la prévision
+   * est marquée remplacee (jamais supprimée) dès que la vraie Deadline de cette
+   * ligne est créée — jamais comptée deux fois dans la Projection longue durée.
+   */
+  @IsOptional()
+  @IsUUID()
+  sourceProjectionId?: string;
+
   @IsISO8601()
   dueDate!: string;
 
@@ -90,6 +100,16 @@ export class SchoolWizardDto {
 
   @IsISO8601()
   periodEnd!: string;
+
+  /** M9 — année scolaire structurée "AAAA/AAAA", requise pour activer la projection pluriannuelle. */
+  @IsOptional()
+  @IsString()
+  schoolYear?: string;
+
+  /** M9 — établissement en texte libre (aucun référentiel, cf. rapport M9). */
+  @IsOptional()
+  @IsString()
+  schoolName?: string;
 
   @IsArray()
   @ValidateNested({ each: true })

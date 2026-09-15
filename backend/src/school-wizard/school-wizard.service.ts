@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { SchoolWizardDto } from './dto/school-wizard.dto';
 import { createAlreadyPaidDeadline } from '../common/ledger/already-paid.util';
+import { markSchoolProjectionReplaced } from '../common/ledger/school-projection.util';
 
 /**
  * Assistant « Ajouter les frais scolaires » (§17) — crée en une seule action un
@@ -29,6 +30,8 @@ export class SchoolWizardService {
           planType: 'school',
           periodStart: new Date(dto.periodStart),
           periodEnd: new Date(dto.periodEnd),
+          schoolYear: dto.schoolYear,
+          schoolName: dto.schoolName,
         },
       });
 
@@ -63,18 +66,20 @@ export class SchoolWizardService {
           },
         });
 
+        let createdDeadlineId: string;
         if (item.alreadyPaid) {
           if (item.alreadyPaid.accountId) {
             const account = await tx.financialAccount.findFirst({ where: { id: item.alreadyPaid.accountId, householdId } });
             if (!account) throw new NotFoundException('Compte introuvable dans ce foyer');
           }
-          await createAlreadyPaidDeadline(tx, chargePlan.id, new Date(item.dueDate), userId, {
+          const { deadline } = await createAlreadyPaidDeadline(tx, chargePlan.id, new Date(item.dueDate), userId, {
             amount: item.alreadyPaid.amount,
             paidDate: new Date(item.alreadyPaid.paidDate),
             accountId: item.alreadyPaid.accountId,
           });
+          createdDeadlineId = deadline.id;
         } else {
-          await tx.deadline.create({
+          const deadline = await tx.deadline.create({
             data: {
               chargePlanId: chargePlan.id,
               dueDate: new Date(item.dueDate),
@@ -82,6 +87,12 @@ export class SchoolWizardService {
               amountStatus,
             },
           });
+          createdDeadlineId = deadline.id;
+        }
+
+        // M9 §4 — transformation prévision→réel : jamais les deux comptées à la fois.
+        if (item.sourceProjectionId) {
+          await markSchoolProjectionReplaced(tx, householdId, item.sourceProjectionId, plan.id, createdDeadlineId);
         }
 
         chargePlans.push(chargePlan);

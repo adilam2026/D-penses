@@ -199,6 +199,9 @@ export class FinancialPlansService {
       unknownItems,
       deadlinesCertain,
       refusedChargePlans: refusedPlans.map((cp) => ({ id: cp.id, label: cp.label })), // historique conservé (RG-107)
+      // M9B — liste minimale des postes (id+label), additive : sert au formulaire de
+      // prévision pluriannuelle (un poste par ligne, jamais fusionné).
+      chargePlans: chargePlans.map((cp) => ({ id: cp.id, label: cp.label })),
     };
   }
 

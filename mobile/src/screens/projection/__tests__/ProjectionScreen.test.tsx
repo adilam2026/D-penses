@@ -82,6 +82,11 @@ function monthBucket(overrides: Partial<api.MonthBucketApi> = {}): api.MonthBuck
     excluded_by_filter_total: 0,
     planned_transfer_net_treasury_impact: 0,
     planned_transfer_items: [],
+    // M9C — 3e lecture "PRÉVISION LONG TERME" : à 0/vide par défaut (aucune
+    // SchoolProjection active ce mois), jamais affichée à vide (cf. tests dédiés).
+    school_projection_items: [],
+    school_projection_impact: 0,
+    projected_cash_balance_with_forecasts: 2000,
     ...overrides,
   };
 }
@@ -386,4 +391,72 @@ it('§6/§7 : aide "Balance/cumul/situation projetée" repliée par défaut, dé
   expect(panel.getByText(/Balance du mois/)).toBeTruthy();
   expect(panel.getByText(/Cumul des flux/)).toBeTruthy();
   expect(panel.getByText(/Situation projetée fin de mois/)).toBeTruthy();
+});
+
+/**
+ * M9C — 3e lecture "Prévision long terme" : n'apparaît que si une SchoolProjection
+ * active impacte réellement le mois (school_projection_impact ≠ 0), n'écrase
+ * jamais les 2 scénarios M4 (engagements connus / prudente), et contextualise
+ * chaque ligne "Libellé · Enfant" sans jamais dupliquer le nom dans le libellé.
+ */
+it("M9C : un mois avec une prévision long terme affiche la 3e lecture, sans remplacer les 2 scénarios M4", async () => {
+  mockedApi.getMonthlyProjection.mockResolvedValue(
+    projectionFixture([
+      monthBucket({
+        month: '2027-09',
+        label: 'Septembre 2027',
+        total_income: 0,
+        total_expense: 0,
+        balance: 0,
+        cumulative_balance: 0,
+        projected_cash_balance: 20000,
+        projected_cash_balance_prudent: 18000,
+        prudent_budget_remaining: 2000,
+        school_projection_impact: -23300,
+        projected_cash_balance_with_forecasts: -3300,
+        school_projection_items: [
+          {
+            id: 'sp-1',
+            label: 'Scolarité T1',
+            childId: 'child-wael',
+            childFirstName: 'Wael',
+            date: '2027-09-15',
+            amount: 23300,
+            schoolYear: '2027/2028',
+          },
+        ],
+      }),
+    ]),
+  );
+  await render(<ProjectionScreen />);
+  await waitFor(() => screen.getByTestId('month-toggle-2027-09'));
+
+  const monthCard = within(screen.getByTestId('month-card-2027-09'));
+  // Les 2 scénarios M4 restent affichés, inchangés.
+  expect(monthCard.getByText('SITUATION PROJETÉE — ENGAGEMENTS CONNUS')).toBeTruthy();
+  expect(monthCard.getByText('20 000 DH')).toBeTruthy();
+  expect(monthCard.getByText('SITUATION PRUDENTE — BUDGETS INCLUS')).toBeTruthy();
+  expect(monthCard.getByText('18 000 DH')).toBeTruthy();
+  // 3e lecture, distincte, jamais confondue avec les 2 premières.
+  expect(monthCard.getByText('PRÉVISION LONG TERME')).toBeTruthy();
+  expect(monthCard.getByText('-3 300 DH')).toBeTruthy();
+  expect(monthCard.getByText(/dont 23 300 DH de prévisions scolaires/)).toBeTruthy();
+
+  await fireEvent.press(screen.getByTestId('month-toggle-2027-09'));
+  await waitFor(() => screen.getByText('Prévisions scolaires'));
+  // Contextualisation §4 : "Libellé · Enfant", jamais un libellé stocké dupliqué.
+  expect(screen.getByText('Scolarité T1 · Wael')).toBeTruthy();
+  expect(screen.getByText('Projeté')).toBeTruthy();
+});
+
+it("M9C : un mois sans prévision long terme (impact=0) n'affiche jamais la 3e lecture (pas de surcharge inutile)", async () => {
+  await render(<ProjectionScreen />);
+  await waitFor(() => screen.getByTestId('month-toggle-2026-09'));
+
+  const monthCard = within(screen.getByTestId('month-card-2026-09'));
+  expect(monthCard.queryByText('PRÉVISION LONG TERME')).toBeNull();
+
+  await fireEvent.press(screen.getByTestId('month-toggle-2026-09'));
+  await waitFor(() => screen.getByText('Salaire'));
+  expect(screen.queryByText('Prévisions scolaires')).toBeNull();
 });

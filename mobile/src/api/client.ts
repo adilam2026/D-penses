@@ -517,10 +517,44 @@ export interface SchoolWizardItem {
   childIds?: string[];
   /** R6.2 (§4-9, §8) : poste déjà réglé avant la saisie de ce plan (ex. Uniforme payé en août). */
   alreadyPaid?: { amount: number; paidDate: string; accountId?: string };
+  /** M9B §4 — prévision utilisée comme base de cette ligne : marquée remplacee à la création. */
+  sourceProjectionId?: string;
 }
 
-export const submitSchoolWizard = (data: { label: string; childIds: string[]; periodStart: string; periodEnd: string; items: SchoolWizardItem[] }) =>
-  apiFetch('/school-wizard', { method: 'POST', body: data });
+export const submitSchoolWizard = (data: {
+  label: string;
+  childIds: string[];
+  periodStart: string;
+  periodEnd: string;
+  schoolYear?: string;
+  schoolName?: string;
+  items: SchoolWizardItem[];
+}) => apiFetch('/school-wizard', { method: 'POST', body: data });
+
+// ---------- M9 — prévisions pluriannuelles École ----------
+export interface SchoolProjectionRule {
+  chargePlanId: string;
+  increaseType: 'aucune' | 'fixe' | 'pourcentage';
+  increaseValue?: number;
+}
+
+export const generateSchoolProjections = (
+  financialPlanId: string,
+  data: {
+    years?: 1 | 3 | 5;
+    targetSchoolYear?: string;
+    applyToAllIncreaseType?: 'aucune' | 'fixe' | 'pourcentage';
+    applyToAllIncreaseValue?: number;
+    rules?: SchoolProjectionRule[];
+  },
+) => apiFetch(`/financial-plans/${financialPlanId}/school-projections`, { method: 'POST', body: data });
+
+export const listSchoolProjections = (financialPlanId: string) => apiFetch(`/financial-plans/${financialPlanId}/school-projections`);
+
+export const findSchoolProjectionCandidates = (childId: string, schoolYear: string, schoolName?: string) => {
+  const qs = new URLSearchParams({ childId, schoolYear, ...(schoolName ? { schoolName } : {}) }).toString();
+  return apiFetch(`/school-projections/candidates?${qs}`);
+};
 
 // ---------- Assistant Voyage (§39/40 cadrage V1) ----------
 export interface TravelWizardItem {
@@ -687,6 +721,19 @@ export interface PlannedTransferItem {
   direction: 'sortie_pilotee' | 'entree_pilotee';
 }
 
+// M9B/M9C — hypothèse "Projeté" (SchoolProjection status=projete), jamais un
+// engagement connu : `child.firstName` fourni pour composer "{label} · {enfant}"
+// au rendu, jamais un libellé stocké dupliquant le nom de l'enfant.
+export interface SchoolProjectionMonthlyItemApi {
+  id: string;
+  label: string;
+  childId: string;
+  childFirstName: string;
+  date: string;
+  amount: number;
+  schoolYear: string;
+}
+
 export interface MonthBucketApi {
   month: string;
   label: string;
@@ -711,6 +758,12 @@ export interface MonthBucketApi {
   excluded_by_filter_total: number;
   planned_transfer_net_treasury_impact: number;
   planned_transfer_items: PlannedTransferItem[];
+  // M9B/M9C — "prévisions long terme" (SchoolProjection actives) : 3e lecture,
+  // jamais mélangée à projected_cash_balance/projected_cash_balance_prudent
+  // ci-dessus (une prévision reste une prévision, jamais un engagement certain).
+  school_projection_items: SchoolProjectionMonthlyItemApi[];
+  school_projection_impact: number;
+  projected_cash_balance_with_forecasts: number;
 }
 
 export interface MonthlyProjectionApi {

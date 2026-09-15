@@ -69,6 +69,18 @@ export function FinancialPlansScreen() {
                 </View>
               )}
               {item.remainingDue > 0 && <Text style={styles.cardRemaining}>Reste à financer : {item.remainingDue.toLocaleString('fr-FR')} DH</Text>}
+              {item.planType === 'school' && item.schoolYear && (
+                <TouchableOpacity
+                  testID={`plan-project-${item.id}`}
+                  style={styles.projectButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    navigation.navigate('SchoolProjection', { financialPlanId: item.id });
+                  }}
+                >
+                  <Text style={styles.projectButtonText}>📈 Projeter les années suivantes</Text>
+                </TouchableOpacity>
+              )}
             </TouchableOpacity>
           );
         }}
@@ -101,4 +113,13 @@ const styles = StyleSheet.create({
   planTrackPaid: { height: '100%', backgroundColor: colors.success },
   planTrackProv: { height: '100%', backgroundColor: '#7089DF' },
   cardRemaining: { fontSize: 11, color: colors.textSecondary, marginTop: spacing.xs },
+  projectButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.surfaceActive,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    marginTop: spacing.sm,
+  },
+  projectButtonText: { fontSize: 11, fontWeight: '700', color: colors.textPrimary },
 });

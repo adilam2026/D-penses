@@ -27,6 +27,7 @@ import { ChildCostsScreen } from '../screens/children/ChildCostsScreen';
 import { FinancialPlansScreen } from '../screens/financial-plans/FinancialPlansScreen';
 import { FinancialPlanDetailScreen } from '../screens/financial-plans/FinancialPlanDetailScreen';
 import { ConfirmDeadlineScreen } from '../screens/financial-plans/ConfirmDeadlineScreen';
+import { SchoolProjectionScreen } from '../screens/financial-plans/SchoolProjectionScreen';
 import { SchoolWizardScreen } from '../screens/school-wizard/SchoolWizardScreen';
 import { TravelWizardScreen } from '../screens/travel-wizard/TravelWizardScreen';
 import { CreatePocketScreen } from '../screens/savings/CreatePocketScreen';
@@ -136,6 +137,7 @@ export function RootNavigator() {
       <Stack.Screen name="FinancialPlans" component={FinancialPlansScreen} options={{ headerShown: !isWeb, title: 'Plans financiers' }} />
       <Stack.Screen name="FinancialPlanDetail" component={FinancialPlanDetailScreen} options={{ headerShown: !isWeb, title: 'Plan financier' }} />
       <Stack.Screen name="ConfirmDeadline" component={ConfirmDeadlineScreen} options={{ headerShown: true, title: 'Confirmer la facture', presentation: 'modal' }} />
+      <Stack.Screen name="SchoolProjection" component={SchoolProjectionScreen} options={{ headerShown: true, title: 'Projection pluriannuelle' }} />
       <Stack.Screen name="SchoolWizard" component={SchoolWizardScreen} options={{ presentation: 'modal' }} />
       <Stack.Screen name="TravelWizard" component={TravelWizardScreen} options={{ presentation: 'modal' }} />
       <Stack.Screen name="CreatePocket" component={CreatePocketScreen} options={{ headerShown: true, title: 'Nouvelle enveloppe', presentation: 'modal' }} />

@@ -31,7 +31,20 @@ interface Account {
  */
 type Frequency = 'ponctuel' | 'hebdomadaire' | 'mensuel' | 'trimestriel' | 'semestriel' | 'annuel';
 
+/** M9 — année scolaire structurée "AAAA/AAAA", même format que le backend. */
+const SCHOOL_YEAR_PATTERN = /^\d{4}\/\d{4}$/;
+
+interface SchoolProjectionCandidate {
+  id: string;
+  label: string;
+  computedAmount: number | string;
+  targetDate: string;
+  child: { firstName: string } | null;
+}
+
 interface TermState {
+  /** M9B §4 — prévision utilisée comme base de CE trimestre, si appliquée. */
+  sourceProjectionId?: string;
   amount: string;
   autoFilled: boolean;
   dueDate: string;
@@ -67,6 +80,8 @@ interface PosteState {
   dueDate: string;
   terms: [TermState, TermState, TermState];
   alreadyPaid: AlreadyPaidState;
+  /** M9B §4 — prévision utilisée comme base de ce poste (flat, hors trimestriel). */
+  sourceProjectionId?: string;
 }
 
 interface ExtraItem {
@@ -74,6 +89,7 @@ interface ExtraItem {
   amount: string;
   dueDate: string;
   alreadyPaid: AlreadyPaidState;
+  sourceProjectionId?: string;
 }
 
 interface BuiltItem {
@@ -83,6 +99,7 @@ interface BuiltItem {
   obligationStatus?: string;
   recurrenceRule?: Exclude<Frequency, 'ponctuel' | 'trimestriel'>;
   alreadyPaid?: { amount: number; paidDate: string; accountId?: string };
+  sourceProjectionId?: string;
 }
 
 function todayIso(): string {
@@ -182,6 +199,94 @@ export function SchoolWizardScreen() {
   const [reinscription, setReinscription] = useState<PosteState>(newPoste(todayIso()));
   const [autres, setAutres] = useState<ExtraItem[]>([]);
 
+  // M9B §4 — détection des prévisions existantes pour (enfant(s), année scolaire,
+  // établissement) : jamais une vraie Deadline créée à l'avance, uniquement une
+  // proposition de préremplissage que l'utilisateur ajuste puis valide.
+  const [candidates, setCandidates] = useState<SchoolProjectionCandidate[]>([]);
+  const [candidatesApplied, setCandidatesApplied] = useState(false);
+  const [candidatesDismissed, setCandidatesDismissed] = useState(false);
+
+  useEffect(() => {
+    setCandidatesApplied(false);
+    setCandidatesDismissed(false);
+    if (selectedChildIds.length === 0 || !SCHOOL_YEAR_PATTERN.test(schoolYear)) {
+      setCandidates([]);
+      return;
+    }
+    let cancelled = false;
+    Promise.all(selectedChildIds.map((childId) => api.findSchoolProjectionCandidates(childId, schoolYear, schoolName.trim() || undefined)))
+      .then((results) => {
+        if (!cancelled) setCandidates((results as SchoolProjectionCandidate[][]).flat());
+      })
+      .catch(() => {
+        if (!cancelled) setCandidates([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedChildIds.join(','), schoolYear, schoolName]);
+
+  /**
+   * M9B §4 — préremplit chaque poste dont le libellé correspond exactement à une
+   * prévision candidate (même convention de labels que pushPoste : "Scolarité T1"
+   * pour un trimestre, sinon le libellé exact du poste). sourceProjectionId est
+   * conservé sur la ligne préremplie — à la validation, la prévision source sera
+   * marquée remplacee côté backend (jamais comptée deux fois, jamais supprimée).
+   */
+  function applyCandidates() {
+    const byLabel = new Map(candidates.map((c) => [c.label, c]));
+    const term = (labelSuffix: string): SchoolProjectionCandidate | undefined => byLabel.get(`Scolarité ${labelSuffix}`);
+
+    const scolariteCandidates: [SchoolProjectionCandidate | undefined, SchoolProjectionCandidate | undefined, SchoolProjectionCandidate | undefined] = [
+      term('T1'),
+      term('T2'),
+      term('T3'),
+    ];
+    if (scolariteCandidates.some(Boolean)) {
+      setScolarite((s) => ({
+        ...s,
+        included: true,
+        frequency: 'trimestriel',
+        terms: s.terms.map((t, i) => {
+          const c = scolariteCandidates[i];
+          if (!c) return t;
+          return { ...t, amount: String(Number(c.computedAmount)), dueDate: c.targetDate.slice(0, 10), autoFilled: false, sourceProjectionId: c.id };
+        }) as [TermState, TermState, TermState],
+      }));
+    }
+
+    function applyFlat(label: string, setPoste: React.Dispatch<React.SetStateAction<PosteState>>) {
+      const c = byLabel.get(label);
+      if (!c) return;
+      setPoste((p) => ({ ...p, included: true, unknown: false, amount: String(Number(c.computedAmount)), dueDate: c.targetDate.slice(0, 10), sourceProjectionId: c.id }));
+    }
+    applyFlat('Restauration', setRestauration);
+    applyFlat('Garderie', setGarderie as any);
+    applyFlat('Uniforme', setUniforme);
+    applyFlat('Fournitures', setFournitures);
+    applyFlat('Assurance', setAssurance);
+    applyFlat('Sorties', setSorties);
+    applyFlat('Réinscription', setReinscription);
+
+    const knownLabels = new Set(['Restauration', 'Garderie', 'Uniforme', 'Fournitures', 'Assurance', 'Sorties', 'Réinscription']);
+    const extraCandidates = candidates.filter((c) => !c.label.startsWith('Scolarité ') && !knownLabels.has(c.label));
+    if (extraCandidates.length > 0) {
+      setAutres((prev) => [
+        ...prev,
+        ...extraCandidates.map((c) => ({
+          label: c.label,
+          amount: String(Number(c.computedAmount)),
+          dueDate: c.targetDate.slice(0, 10),
+          alreadyPaid: newAlreadyPaid(),
+          sourceProjectionId: c.id,
+        })),
+      ]);
+    }
+
+    setCandidatesApplied(true);
+  }
+
   const loadChildren = useCallback(async () => {
     setLoadingChildren(true);
     try {
@@ -268,6 +373,7 @@ export function SchoolWizardScreen() {
                   accountId: term.alreadyPaid.accountId ?? undefined,
                 }
               : undefined,
+            sourceProjectionId: term.sourceProjectionId,
           });
         });
       } else {
@@ -289,6 +395,7 @@ export function SchoolWizardScreen() {
                 accountId: poste.alreadyPaid.accountId ?? undefined,
               }
             : undefined,
+          sourceProjectionId: poste.sourceProjectionId,
         });
       }
     }
@@ -315,6 +422,7 @@ export function SchoolWizardScreen() {
               accountId: extra.alreadyPaid.accountId ?? undefined,
             }
           : undefined,
+        sourceProjectionId: extra.sourceProjectionId,
       });
     }
     return items;
@@ -334,6 +442,11 @@ export function SchoolWizardScreen() {
         childIds: selectedChildIds,
         periodStart: `${schoolYear.slice(0, 4)}-09-01`,
         periodEnd: `${schoolYear.slice(5, 9) || String(Number(schoolYear.slice(0, 4)) + 1)}-06-30`,
+        // M9 — année scolaire structurée + établissement, nécessaires pour que ce
+        // plan devienne projetable ("Projeter les années suivantes") et détectable
+        // comme cible de préremplissage par un futur plan (§4).
+        schoolYear: SCHOOL_YEAR_PATTERN.test(schoolYear) ? schoolYear : undefined,
+        schoolName: schoolName.trim() || undefined,
         items: buildItems(),
       });
       // §15 : ouvrir directement le plan créé, jamais un écran générique.
@@ -402,6 +515,33 @@ export function SchoolWizardScreen() {
 
             <Text style={styles.sectionLabel}>Année scolaire</Text>
             <TextInput style={styles.input} value={schoolYear} onChangeText={setSchoolYear} placeholder="2026/2027" onFocus={handleFocus} />
+
+            {candidates.length > 0 && !candidatesDismissed && !candidatesApplied && (
+              <View style={styles.candidatesBanner} testID="school-projection-candidates-banner">
+                <Text style={styles.candidatesTitle}>
+                  {candidates.length} prévision{candidates.length > 1 ? 's' : ''} disponible{candidates.length > 1 ? 's' : ''} pour {schoolYear}
+                </Text>
+                {candidates.map((c) => (
+                  <Text key={c.id} style={styles.candidatesLine}>
+                    {c.label}
+                    {c.child?.firstName ? ` · ${c.child.firstName}` : ''} — {Number(c.computedAmount).toLocaleString('fr-FR')} DH
+                  </Text>
+                ))}
+                <View style={styles.row}>
+                  <TouchableOpacity testID="school-projection-candidates-apply" style={styles.navButtonPrimary} onPress={applyCandidates}>
+                    <Text style={styles.navButtonPrimaryText}>Utiliser cette prévision comme base</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.navButton} onPress={() => setCandidatesDismissed(true)}>
+                    <Text style={styles.navButtonText}>Ignorer</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+            {candidatesApplied && (
+              <Text style={styles.hint} testID="school-projection-candidates-applied">
+                Prévisions appliquées — ajustez les montants/dates ci-dessous avant de valider.
+              </Text>
+            )}
 
             <Text style={styles.sectionLabel}>Durée des trimestres (mois)</Text>
             <Text style={styles.hint}>Par défaut 4/3/3 — ajustez si votre établissement fonctionne autrement. Sert au calcul automatique T2/T3.</Text>
@@ -853,6 +993,14 @@ const styles = StyleSheet.create({
   sectionLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm, marginTop: 12 },
   hint: { fontSize: 11, color: colors.textSecondary, marginBottom: spacing.sm, fontStyle: 'italic' },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  candidatesBanner: {
+    backgroundColor: colors.surfaceActive,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  candidatesTitle: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginBottom: 4 },
+  candidatesLine: { fontSize: 12, color: colors.textSecondary, marginBottom: 2 },
   toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   toggleLabel: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, flex: 1, marginRight: spacing.sm },
   input: {

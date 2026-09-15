@@ -20,6 +20,9 @@ export interface FinancialPlan {
   label: string;
   planType: 'school' | 'travel' | 'other';
   destination: string | null;
+  // M9 — année scolaire structurée : conditionne l'affichage de "Projeter les
+  // années suivantes" (jamais affiché tant que le plan n'en a pas une).
+  schoolYear?: string | null;
   knownPlanCost: number;
   paidAmount: number;
   provisionCoverage: number;

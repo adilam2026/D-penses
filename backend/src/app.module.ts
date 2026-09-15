@@ -28,6 +28,7 @@ import { GoalsModule } from './goals/goals.module';
 import { ProjectionModule } from './projection/projection.module';
 import { SimulationModule } from './simulation/simulation.module';
 import { RecurringTransfersModule } from './recurring-transfers/recurring-transfers.module';
+import { SchoolProjectionsModule } from './school-projections/school-projections.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -58,6 +59,7 @@ import { AppController } from './app.controller';
     ProjectionModule,
     SimulationModule,
     RecurringTransfersModule,
+    SchoolProjectionsModule,
   ],
   controllers: [AppController],
   providers: [
