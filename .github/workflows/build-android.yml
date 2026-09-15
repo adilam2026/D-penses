@@ -64,8 +64,14 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - uses: android-actions/setup-android@v3
-
+      # android-actions/setup-android@v3 retiré (panne CI amont) : son
+      # comportement par défaut tente d'installer le paquet SDK legacy "tools",
+      # retiré du dépôt Google (sdkmanager échoue avec "Failed to find package
+      # 'tools'", exit 1) — sans rapport avec le code de l'app. Le runner
+      # ubuntu-latest embarque déjà un SDK Android fonctionnel (ANDROID_HOME/
+      # ANDROID_SDK_ROOT déjà positionnés, cmdline-tools déjà sur le PATH),
+      # suffisant pour prebuild + Gradle ; l'étape suivante accepte les
+      # licences sur CE SDK préinstallé.
       - name: Accepter les licences du SDK Android
         run: yes | sdkmanager --licenses > /dev/null || true
 
