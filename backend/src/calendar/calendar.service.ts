@@ -68,6 +68,11 @@ export class CalendarService {
       const deadlines = await tx.deadline.findMany({
         where: {
           chargePlan: { householdId },
+          // Corrections UI/UX (point 8) — une échéance annulée (plan supprimé,
+          // poste retiré, correction manuelle...) ne doit plus jamais réapparaître
+          // au Calendrier comme si elle était encore due : même exclusion déjà
+          // appliquée partout ailleurs (projection.util.ts, treasury.util.ts).
+          financialStatus: { not: 'annulee' },
           OR: [
             { dueDate: { gte: rangeStart, lte: rangeEnd } },
             { expectedBillingDate: { gte: rangeStart, lte: rangeEnd } },

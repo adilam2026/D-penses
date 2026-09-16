@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsIn, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsBoolean, IsIn, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, MinLength, ValidateNested } from 'class-validator';
 
 const OBLIGATION_VALUES = ['obligatoire', 'optionnelle_envisagee', 'optionnelle_souscrite', 'optionnelle_refusee'] as const;
 const RECURRENCE_VALUES = ['hebdomadaire', 'mensuel', 'trimestriel', 'semestriel', 'annuel', 'ponctuel'] as const;
@@ -115,4 +115,13 @@ export class SchoolWizardDto {
   @ValidateNested({ each: true })
   @Type(() => SchoolWizardItemDto)
   items!: SchoolWizardItemDto[];
+
+  /**
+   * Corrections UI/UX (point 3) — l'utilisateur a explicitement confirmé
+   * vouloir créer un second plan malgré l'avertissement anti-doublon (409
+   * sinon). Absent/false par défaut : jamais un second plan silencieux.
+   */
+  @IsOptional()
+  @IsBoolean()
+  confirmDuplicate?: boolean;
 }

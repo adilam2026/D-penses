@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { SchoolWizardDto } from './dto/school-wizard.dto';
 import { createAlreadyPaidDeadline } from '../common/ledger/already-paid.util';
 import { markSchoolProjectionReplaced } from '../common/ledger/school-projection.util';
+import { findDuplicateSchoolPlan } from '../common/ledger/plan-wizard.util';
 
 /**
  * Assistant « Ajouter les frais scolaires » (§17) — crée en une seule action un
@@ -20,8 +21,22 @@ export class SchoolWizardService {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
 
-      const childCount = await tx.child.count({ where: { id: { in: dto.childIds }, householdId } });
-      if (childCount !== dto.childIds.length) throw new NotFoundException('Un ou plusieurs enfants sont introuvables dans ce foyer');
+      const children = await tx.child.findMany({ where: { id: { in: dto.childIds }, householdId } });
+      if (children.length !== dto.childIds.length) throw new NotFoundException('Un ou plusieurs enfants sont introuvables dans ce foyer');
+
+      // Corrections UI/UX (point 3) — garde-fou anti-doublon : jamais un second
+      // plan École silencieux pour le(s) même(s) enfant(s) + même année scolaire.
+      if (!dto.confirmDuplicate) {
+        const duplicate = await findDuplicateSchoolPlan(tx, householdId, { childIds: dto.childIds, schoolYear: dto.schoolYear });
+        if (duplicate) {
+          const names = children.map((c) => c.firstName).join(', ');
+          throw new ConflictException({
+            statusCode: 409,
+            message: `Un plan scolaire existe déjà pour ${names} — ${dto.schoolYear}.`,
+            existingPlanId: duplicate.id,
+          });
+        }
+      }
 
       const plan = await tx.financialPlan.create({
         data: {

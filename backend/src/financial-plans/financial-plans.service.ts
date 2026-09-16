@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { contextualLabel, getDeadlineBalance, toNumber } from '../common/ledger/ledger.util';
 import { engagementNonCouvert } from '../common/ledger/provision.util';
@@ -280,12 +280,24 @@ export class FinancialPlansService {
   }
 
   /**
-   * Suppression sûre (R5 §2) : bloquée dès qu'un paiement réel existe sous ce plan
-   * (via n'importe quelle Deadline d'un de ses ChargePlan) — jamais un DELETE qui
-   * ferait disparaître un historique financier réel. Sans paiement, la suppression
-   * est autorisée : les ChargePlan/Deadline ne sont JAMAIS supprimés par cascade
-   * (FK financial_plan_id en ON DELETE SET NULL, cf. migration lot4) — ils restent
-   * intacts, seulement détachés de ce plan.
+   * Corrections UI/UX (point 1, bug doublons) — suppression désormais TOUJOURS
+   * possible, mais jamais destructrice pour un historique réel. L'ancien
+   * comportement (`financial_plan_id` en ON DELETE SET NULL) laissait les
+   * ChargePlan/Deadline actifs, seulement détachés du plan : ils continuaient à
+   * apparaître dans Calendrier/Projection comme des obligations bien réelles —
+   * c'est exactement ce qui produisait les doublons après suppression+recréation
+   * d'un plan (ex. Dina). Nouvelle règle, par ChargePlan du plan :
+   *  - AUCUN Payment sur aucune de ses Deadline → rien à préserver, le
+   *    ChargePlan est supprimé pour de bon (cascade Prisma sur ses Deadline/
+   *    ChargePlanChild/SchoolProjection liées) : aucune trace orpheline.
+   *  - AU MOINS UN Payment → le ChargePlan et ses Deadline déjà payées restent
+   *    intacts (historique financier réel, jamais touché) ; seules ses Deadline
+   *    SANS aucun Payment (obligations futures pas encore honorées) sont
+   *    annulées (financial_status=annulee, jamais supprimées — même convention
+   *    que Deadline.cancel) puis le ChargePlan est détaché du plan (rattaché à
+   *    aucun autre plan, consultable comme reliquat historique autonome).
+   * Le FinancialPlan lui-même est ensuite toujours supprimé (cascade Prisma sur
+   * FinancialPlanBeneficiary/SchoolProjection.sourceFinancialPlan).
    */
   async remove(userId: string, householdId: string, id: string) {
     return this.rlsContext.run(userId, householdId, async () => {
@@ -293,11 +305,28 @@ export class FinancialPlansService {
       const plan = await tx.financialPlan.findFirst({ where: { id, householdId } });
       if (!plan) throw new NotFoundException('FinancialPlan introuvable');
 
-      const paymentCount = await tx.payment.count({ where: { deadline: { chargePlan: { financialPlanId: id } } } });
-      if (paymentCount > 0) {
-        throw new BadRequestException(
-          'Ce plan a des paiements enregistrés — suppression impossible pour préserver l\'historique financier.',
-        );
+      const chargePlans = await tx.chargePlan.findMany({
+        where: { financialPlanId: id },
+        include: { deadlines: { include: { payments: true } } },
+      });
+
+      for (const cp of chargePlans) {
+        const hasAnyPayment = cp.deadlines.some((d) => d.payments.length > 0);
+
+        if (!hasAnyPayment) {
+          // Rien à préserver : suppression complète (cascade Deadline/enfants/prévisions).
+          await tx.chargePlan.delete({ where: { id: cp.id } });
+          continue;
+        }
+
+        // Historique réel présent : on ne touche qu'aux échéances SANS paiement.
+        const openDeadlineIds = cp.deadlines
+          .filter((d) => d.payments.length === 0 && d.financialStatus !== 'annulee')
+          .map((d) => d.id);
+        if (openDeadlineIds.length > 0) {
+          await tx.deadline.updateMany({ where: { id: { in: openDeadlineIds } }, data: { financialStatus: 'annulee' } });
+        }
+        await tx.chargePlan.update({ where: { id: cp.id }, data: { financialPlanId: null } });
       }
 
       await tx.financialPlan.delete({ where: { id } });

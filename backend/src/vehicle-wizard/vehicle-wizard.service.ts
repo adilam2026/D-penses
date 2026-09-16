@@ -1,7 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { VehicleWizardDto } from './dto/vehicle-wizard.dto';
-import { createWizardPoste, openEndedPeriod } from '../common/ledger/plan-wizard.util';
+import { createWizardPoste, findDuplicateEntityPlan, openEndedPeriod } from '../common/ledger/plan-wizard.util';
 
 /**
  * Assistant « Plan Voiture » (M7) — crée en une seule transaction un
@@ -26,6 +26,19 @@ export class VehicleWizardService {
         vehicle = await tx.vehicle.create({ data: { householdId, name: dto.vehicleName } });
       } else {
         throw new BadRequestException('vehicleId ou vehicleName requis');
+      }
+
+      // Corrections UI/UX (point 3) — un véhicule EXISTANT sélectionné (jamais un
+      // véhicule tout juste créé par nom) peut déjà avoir un plan actif.
+      if (dto.vehicleId && !dto.confirmDuplicate) {
+        const duplicate = await findDuplicateEntityPlan(tx, householdId, { planType: 'vehicle', vehicleId: dto.vehicleId });
+        if (duplicate) {
+          throw new ConflictException({
+            statusCode: 409,
+            message: `Un plan existe déjà pour ${vehicle.name}.`,
+            existingPlanId: duplicate.id,
+          });
+        }
       }
 
       const { periodStart, periodEnd } = openEndedPeriod();

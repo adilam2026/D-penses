@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsIn, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsBoolean, IsIn, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, MinLength, ValidateNested } from 'class-validator';
 
 const RECURRENCE_VALUES = ['ponctuel', 'hebdomadaire', 'mensuel', 'trimestriel', 'semestriel', 'annuel'] as const;
 
@@ -40,4 +40,9 @@ export class HousingWizardDto {
   @ValidateNested({ each: true })
   @Type(() => HousingWizardItemDto)
   items!: HousingWizardItemDto[];
+
+  /** Corrections UI/UX (point 3) — même garde-fou anti-doublon que l'école. */
+  @IsOptional()
+  @IsBoolean()
+  confirmDuplicate?: boolean;
 }

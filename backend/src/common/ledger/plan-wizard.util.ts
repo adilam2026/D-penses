@@ -84,3 +84,51 @@ export function openEndedPeriod(): { periodStart: Date; periodEnd: Date } {
   periodEnd.setUTCFullYear(periodEnd.getUTCFullYear() + 50);
   return { periodStart, periodEnd };
 }
+
+/**
+ * Corrections UI/UX — garde-fou anti-doublon (point 3) : un plan École
+ * équivalent (même(s) enfant(s), même année scolaire) existe-t-il déjà ?
+ * Ne bloque JAMAIS la création — signale seulement (l'appelant décide via
+ * dto.confirmDuplicate) : un second plan volontaire (redoublement compté à
+ * part, correction manuelle...) reste toujours possible. Sans schoolYear
+ * fourni, aucune identité fiable à comparer : jamais de faux positif.
+ */
+export async function findDuplicateSchoolPlan(
+  tx: TxClient,
+  householdId: string,
+  params: { childIds: string[]; schoolYear?: string },
+) {
+  if (!params.schoolYear || params.childIds.length === 0) return null;
+  return tx.financialPlan.findFirst({
+    where: {
+      householdId,
+      planType: 'school',
+      schoolYear: params.schoolYear,
+      beneficiaries: { some: { childId: { in: params.childIds } } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
+/**
+ * Même principe que findDuplicateSchoolPlan, pour les plans Voiture/Maison :
+ * l'identité est le véhicule/logement lui-même (vehicleId/housingId d'un
+ * véhicule/logement EXISTANT sélectionné, jamais lors d'une création par nom
+ * — dans ce cas aucun plan ne peut déjà exister pour une entité qui vient
+ * d'être créée).
+ */
+export async function findDuplicateEntityPlan(
+  tx: TxClient,
+  householdId: string,
+  criteria: { planType: 'vehicle'; vehicleId: string } | { planType: 'housing'; housingId: string },
+) {
+  return tx.financialPlan.findFirst({
+    where: {
+      householdId,
+      planType: criteria.planType,
+      vehicleId: criteria.planType === 'vehicle' ? criteria.vehicleId : undefined,
+      housingId: criteria.planType === 'housing' ? criteria.housingId : undefined,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+}

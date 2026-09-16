@@ -82,10 +82,10 @@ describe('R5 §2/§3 — PATCH/DELETE/duplicate /financial-plans/:id (e2e)', () 
     await http.get(`/financial-plans/${plan.body.id}`).set(...auth()).expect(404);
   });
 
-  it('Supprimer : bloqué (400) dès qu\'un paiement existe sous ce plan — jamais un DELETE qui efface l\'historique', async () => {
+  it("Supprimer : autorisé même avec un paiement existant — la Deadline/Payment payée reste intacte, le ChargePlan est détaché (jamais un blocage 400)", async () => {
     const { auth } = await newHousehold();
-    const account = await createAccount(auth, 'Compte suppr bloqué', 5000);
-    const cat = await createCategory(auth, 'École suppr bloquée');
+    const account = await createAccount(auth, 'Compte suppr avec historique', 5000);
+    const cat = await createCategory(auth, 'École suppr avec historique');
     const plan = await http
       .post('/financial-plans')
       .set(...auth())
@@ -102,15 +102,20 @@ describe('R5 §2/§3 — PATCH/DELETE/duplicate /financial-plans/:id (e2e)', () 
       .send({ dueDate: '2026-09-30', amountCurrent: 1000, amountStatus: 'confirme' })
       .expect(201);
     await http.post(`/deadlines/${d.body.id}/payments`).set(...auth()).send({ amount: 1000, accountId: account }).expect(201);
+    await http.post(`/deadlines/${d.body.id}/close`).set(...auth()).expect(201);
 
-    await http.delete(`/financial-plans/${plan.body.id}`).set(...auth()).expect(400);
+    await http.delete(`/financial-plans/${plan.body.id}`).set(...auth()).expect(200);
+    await http.get(`/financial-plans/${plan.body.id}`).set(...auth()).expect(404);
 
-    // Jamais silencieusement perdu : le plan et son historique existent toujours.
-    const still = await http.get(`/financial-plans/${plan.body.id}`).set(...auth()).expect(200);
-    expect(still.body.label).toBe('Plan avec historique');
+    // Le ChargePlan et sa Deadline payée survivent intacts, détachés du plan supprimé.
+    const stillCp = await http.get(`/charge-plans/${cp.body.id}`).set(...auth()).expect(200);
+    expect(stillCp.body.financialPlanId).toBeNull();
+    const stillDeadline = await http.get(`/deadlines/${d.body.id}`).set(...auth()).expect(200);
+    expect(stillDeadline.body.financialStatus).toBe('soldee');
+    expect(stillDeadline.body.resteAPayer).toBe(0);
   });
 
-  it("Supprimer : les ChargePlan détachés (financial_plan_id=null) survivent — aucune Deadline/Payment n'est jamais supprimée", async () => {
+  it("Supprimer : sans aucun paiement, le ChargePlan est supprimé pour de bon (jamais un orphelin actif qui referait doublon)", async () => {
     const { auth } = await newHousehold();
     const cat = await createCategory(auth, 'École détachement');
     const plan = await http
@@ -131,8 +136,7 @@ describe('R5 §2/§3 — PATCH/DELETE/duplicate /financial-plans/:id (e2e)', () 
 
     await http.delete(`/financial-plans/${plan.body.id}`).set(...auth()).expect(200);
 
-    const stillCp = await http.get(`/charge-plans/${cp.body.id}`).set(...auth()).expect(200);
-    expect(stillCp.body.financialPlanId).toBeNull();
+    await http.get(`/charge-plans/${cp.body.id}`).set(...auth()).expect(404);
   });
 
   it('Dupliquer : sélection explicite d\'un autre enfant bénéficiaire, jamais celui de l\'original', async () => {
