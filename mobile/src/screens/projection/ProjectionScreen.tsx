@@ -139,35 +139,40 @@ function MonthCard({
   onOpenDetail: (item: MonthlyLineItem) => void;
 }) {
   const deficit = month.balance < 0;
-  const situationDeficit = month.projected_cash_balance < 0;
+  const situationDeficitPrudent = month.projected_cash_balance_prudent < 0;
 
   return (
     <View style={styles.monthCard} testID={`month-card-${month.month}`}>
       <TouchableOpacity style={styles.monthHeader} onPress={onToggle} testID={`month-toggle-${month.month}`}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.monthTitle}>{monthLabel(month)}</Text>
+        <View style={styles.monthTitleCol}>
+          <Text style={styles.monthTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+            {monthLabel(month)}
+          </Text>
           <Text style={styles.monthMeta}>
             Revenus {formatDh(month.total_income)} · Dépenses {formatDh(month.total_expense)}
           </Text>
         </View>
-        <View style={{ alignItems: 'flex-end' }}>
-          <Text style={styles.situationLabel}>SITUATION PROJETÉE — ENGAGEMENTS CONNUS</Text>
-          <Text style={[styles.monthBalance, situationDeficit ? styles.balanceNegative : styles.balancePositive]}>
-            {formatDh(month.projected_cash_balance)}
+        <View style={styles.monthFiguresCol}>
+          {/* Corrections UI/UX §17bis — la SOLDE PRÉVU (engagements + budgets, prudent)
+              est désormais l'indicateur PRINCIPAL de chaque mois : c'est le chiffre le
+              plus prudent/complet, jamais les engagements connus seuls. */}
+          <Text style={styles.situationLabel}>SOLDE PRÉVU — ENGAGEMENTS + BUDGETS</Text>
+          <Text style={[styles.monthBalance, situationDeficitPrudent ? styles.balanceNegative : styles.balancePositive]}>
+            {formatDh(month.projected_cash_balance_prudent)}
           </Text>
-          <Text style={[styles.monthStatus, situationDeficit ? styles.balanceNegative : styles.balancePositive]}>
-            {situationDeficit ? 'Déficitaire' : 'Positif'}
+          <Text style={[styles.monthStatus, situationDeficitPrudent ? styles.balanceNegative : styles.balancePositive]}>
+            {situationDeficitPrudent ? 'Déficitaire' : 'Positif'}
           </Text>
-          {/* TXT réf. §M4/§5 — 2e scénario, jamais mélangé au premier : la prudente
-              retranche le restant des budgets includeInPrudentProjection=true, sans
-              jamais entrer dans balance/cumulative_balance/les charges connues. */}
-          <Text style={styles.situationLabelPrudent}>SITUATION PRUDENTE — BUDGETS INCLUS</Text>
-          <Text style={styles.monthBalancePrudent}>{formatDh(month.projected_cash_balance_prudent)}</Text>
           {month.prudent_budget_remaining > 0 && (
             <Text style={styles.cumulLine} testID={`month-ecart-prudentiel-${month.month}`}>
               dont {formatDh(month.prudent_budget_remaining)} de budgets encore disponibles sur la période
             </Text>
           )}
+          {/* Engagements connus seuls — désormais secondaire, discret, jamais coloré :
+              même donnée qu'avant (month.projected_cash_balance), seulement moins mise
+              en avant visuellement que le solde prudent ci-dessus. */}
+          <Text style={styles.situationLabelSecondary}>Engagements connus seuls</Text>
+          <Text style={styles.monthBalanceSecondary}>{formatDh(month.projected_cash_balance)}</Text>
           {/* M9C — 3e lecture, jamais un remplacement des 2 scénarios M4 ci-dessus :
               n'apparaît que si une prévision long terme (SchoolProjection active)
               impacte réellement ce mois — jamais affichée à vide (school_projection_impact=0). */}
@@ -513,13 +518,18 @@ const styles = StyleSheet.create({
     ...elevation.card,
   },
   monthHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  // Corrections UI/UX §17bis — le mois+année ne doit jamais se couper sur
+  // plusieurs lignes : colonne de titre à largeur garantie (jamais écrasée à
+  // 0 par la colonne de chiffres en face, dont les libellés sont plus longs).
+  monthTitleCol: { flexShrink: 1, flexGrow: 1, marginRight: spacing.sm, minWidth: 90 },
+  monthFiguresCol: { alignItems: 'flex-end', maxWidth: '62%' },
   monthTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
   monthMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 4 },
-  situationLabel: { fontSize: 9, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.4 },
+  situationLabel: { fontSize: 9, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.4, textAlign: 'right' },
   monthBalance: { fontSize: 20, fontWeight: '800', marginTop: 2 },
   monthStatus: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', marginTop: 2 },
-  situationLabelPrudent: { fontSize: 9, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.4, marginTop: spacing.sm },
-  monthBalancePrudent: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginTop: 2 },
+  situationLabelSecondary: { fontSize: 9, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.4, marginTop: spacing.sm, textAlign: 'right' },
+  monthBalanceSecondary: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginTop: 2 },
   situationLabelForecast: { fontSize: 9, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.4, marginTop: spacing.sm },
   monthBalanceForecast: { fontSize: 15, fontWeight: '700', color: colors.primary, marginTop: 2 },
   cumulLine: { fontSize: 10, color: colors.textSecondary, marginTop: 2 },
