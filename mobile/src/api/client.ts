@@ -288,6 +288,9 @@ export const createChargePlan = (data: {
   categoryId?: string;
   recurrenceRule?: string;
   recurrenceAnchorDate?: string;
+  // Corrections consolidées §8 — compte d'imputation par défaut, préremplissage
+  // uniquement au moment du paiement (jamais imposé).
+  defaultAccountId?: string;
   childIds?: string[];
   // R6.4 (§2) — "+ Ajouter une échéance" à un plan existant : un nouveau
   // ChargePlan ponctuel (generationMode calendrier_manuel, financialPlanId

@@ -9,7 +9,13 @@ import { Select } from '../../ui/Select';
 import { DateField } from '../../ui/DateField';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
 import { TEMPORAL_STATUS_LABEL, temporalStatus, temporalStatusColor } from '../../ui/temporalStatus';
-import { AMOUNT_STATUS_OPTIONS, Account, Deadline, Payment, Provision, STATUS_LABEL, formatDate, n, todayIso } from './deadlineDetailLogic';
+import { AMOUNT_STATUS_OPTIONS, Account, Deadline as BaseDeadline, Payment, Provision, STATUS_LABEL, formatDate, n, todayIso } from './deadlineDetailLogic';
+
+// Corrections consolidées §8 — compte d'imputation par défaut du ChargePlan,
+// UNIQUEMENT un préremplissage au moment du paiement (jamais imposé) :
+// extension LOCALE (jamais dans deadlineDetailLogic.ts, partagé avec le
+// portail Web protégé WEB-V4.4A — aucune modification de ce fichier partagé).
+type Deadline = BaseDeadline & { chargePlan: BaseDeadline['chargePlan'] & { defaultAccountId?: string | null } };
 
 /**
  * Détail d'une échéance — parcours de paiement UNIQUE de l'app (R6 clôture §5) :
@@ -79,7 +85,9 @@ export function DeadlineDetailScreen() {
       } else {
         setProvision(null);
         setFundingSource('compte');
-        setPayAccountId((current) => current ?? accountList[0]?.id ?? null);
+        // Corrections consolidées §8 — préremplit le compte d'imputation par
+        // défaut de la charge si défini, jamais imposé (le Select reste modifiable).
+        setPayAccountId((current) => current ?? d.chargePlan.defaultAccountId ?? accountList[0]?.id ?? null);
       }
     } finally {
       setLoading(false);

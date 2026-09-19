@@ -20,7 +20,7 @@ jest.mock('@react-navigation/native', () => ({
 
 jest.mock('../../../api/client', () => {
   const actual = jest.requireActual('../../../api/client');
-  return { ...actual, listCategories: jest.fn(), createChargePlan: jest.fn(), createDeadline: jest.fn() };
+  return { ...actual, listCategories: jest.fn(), listAccounts: jest.fn(), createChargePlan: jest.fn(), createDeadline: jest.fn() };
 });
 
 const mockedApi = api as jest.Mocked<typeof api>;
@@ -31,6 +31,7 @@ beforeEach(() => {
     { id: 'cat1', name: 'Logement', kind: 'expense' },
     { id: 'cat2', name: 'Loisirs', kind: 'expense' },
   ]);
+  mockedApi.listAccounts.mockResolvedValue([{ id: 'acc1', name: 'Compte SG' }]);
 });
 
 it('catégorie via sélecteur compact (jamais des chips permanentes)', async () => {
@@ -84,4 +85,30 @@ it('R6.2 §1 : la même date pilote la première échéance ET l\'ancre de récu
   await waitFor(() => expect(mockedApi.createChargePlan).toHaveBeenCalled());
   const [payload] = mockedApi.createChargePlan.mock.calls[0];
   expect(payload.recurrenceAnchorDate).toBe(payload.startDate);
+});
+
+// Corrections consolidées §8 — le compte d'imputation par défaut est facultatif
+// et sert uniquement de préremplissage au paiement, jamais imposé à la création.
+it('corrections consolidées §8 — permet de choisir un compte d\'imputation par défaut (facultatif)', async () => {
+  mockedApi.listAccounts.mockResolvedValue([
+    { id: 'acc1', name: 'Compte SG' },
+    { id: 'acc2', name: 'Compte BP' },
+  ]);
+  mockedApi.createChargePlan.mockResolvedValue({ id: 'cp1' });
+  mockedApi.createDeadline.mockResolvedValue({ id: 'd1' });
+  await render(<CreateChargeScreen />);
+  await waitFor(() => screen.getByTestId('charge-default-account-select'));
+
+  await fireEvent.press(screen.getByTestId('charge-default-account-select'));
+  await waitFor(() => screen.getByTestId('charge-default-account-select-option-acc2'));
+  await fireEvent.press(screen.getByTestId('charge-default-account-select-option-acc2'));
+
+  await fireEvent.changeText(screen.getByPlaceholderText('Ex. Internet, Loyer, École'), 'Loyer');
+  await fireEvent.press(screen.getByText('Confirmé'));
+  await fireEvent.changeText(screen.getByPlaceholderText('Montant (DH)'), '4500');
+  await fireEvent.press(screen.getByTestId('create-charge-submit'));
+
+  await waitFor(() =>
+    expect(mockedApi.createChargePlan).toHaveBeenCalledWith(expect.objectContaining({ defaultAccountId: 'acc2' })),
+  );
 });

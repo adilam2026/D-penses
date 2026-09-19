@@ -16,6 +16,11 @@ interface Category {
   kind: 'income' | 'expense' | 'both';
 }
 
+interface Account {
+  id: string;
+  name: string;
+}
+
 const RECURRENCE_VALUES = ['hebdomadaire', 'mensuel', 'trimestriel', 'semestriel', 'annuel', 'ponctuel'] as const;
 const STATUS_LABEL: Record<string, string> = { inconnu: 'Montant inconnu', estime: 'Estimé', confirme: 'Confirmé' };
 
@@ -34,6 +39,7 @@ export function CreateChargeScreen() {
   const bottomInset = useBottomInset();
   const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [categories, setCategories] = useState<Category[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
 
   const [label, setLabel] = useState('');
   const [recurrence, setRecurrence] = useState('mensuel');
@@ -41,12 +47,16 @@ export function CreateChargeScreen() {
   const [amount, setAmount] = useState('');
   const [amountStatus, setAmountStatus] = useState<'estime' | 'confirme' | 'inconnu'>('estime');
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  // Corrections consolidées §8 — compte d'imputation par défaut : sert
+  // UNIQUEMENT de préremplissage au moment du paiement (jamais imposé).
+  const [defaultAccountId, setDefaultAccountId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       api.listCategories().then((list: Category[]) => setCategories(list.filter((c) => c.kind === 'expense' || c.kind === 'both')));
+      api.listAccounts().then((list: Array<{ id: string; name: string }>) => setAccounts(list));
     }, []),
   );
 
@@ -71,6 +81,7 @@ export function CreateChargeScreen() {
         // future — jamais un jour du mois demandé séparément.
         recurrenceAnchorDate: recurrence === 'ponctuel' ? undefined : dueDate,
         categoryId: categoryId ?? undefined,
+        defaultAccountId: defaultAccountId ?? undefined,
       });
       await api.createDeadline(plan.id, {
         dueDate,
@@ -129,6 +140,17 @@ export function CreateChargeScreen() {
             value={categoryId}
             options={categories.map((c) => ({ value: c.id, label: c.name }))}
             onChange={setCategoryId}
+          />
+        )}
+
+        {accounts.length > 0 && (
+          <Select
+            testID="charge-default-account-select"
+            label="Compte d'imputation par défaut (facultatif)"
+            placeholder="Aucun compte par défaut"
+            value={defaultAccountId ?? ''}
+            onChange={(v) => setDefaultAccountId(v || null)}
+            options={[{ value: '', label: 'Aucun compte par défaut' }, ...accounts.map((a) => ({ value: a.id, label: a.name }))]}
           />
         )}
 
