@@ -37,6 +37,7 @@ jest.mock('../../../api/client', () => {
     getChargePlan: jest.fn(),
     listChargePlanDeadlines: jest.fn(),
     listCategories: jest.fn(),
+    listAccounts: jest.fn(),
     updateChargePlan: jest.fn(),
     deleteChargePlan: jest.fn(),
   };
@@ -60,6 +61,7 @@ beforeEach(() => {
   mockedApi.getChargePlan.mockResolvedValue(PLAN);
   mockedApi.listChargePlanDeadlines.mockResolvedValue([]);
   mockedApi.listCategories.mockResolvedValue([]);
+  mockedApi.listAccounts.mockResolvedValue([{ id: 'acc1', name: 'Compte SG' }]);
 });
 
 it('modifie le libellé et la fréquence de la charge', async () => {
@@ -126,6 +128,27 @@ it('R6.2 §1/§3 : modifie la prochaine échéance et, optionnellement, le monta
       'cp1',
       expect.objectContaining({ recurrenceAnchorDate: '2026-10-27', amountStatus: 'confirme', amountCurrent: 349 }),
     ),
+  );
+});
+
+// Corrections consolidées §8 — compte d'imputation par défaut, modifiable
+// depuis la fiche de la charge, jamais imposé (préremplissage au paiement seul).
+it('corrections consolidées §8 — modifie le compte d\'imputation par défaut de la charge', async () => {
+  mockedApi.listAccounts.mockResolvedValue([
+    { id: 'acc1', name: 'Compte SG' },
+    { id: 'acc2', name: 'Compte BP' },
+  ]);
+  mockedApi.updateChargePlan.mockResolvedValue({ ...PLAN, defaultAccountId: 'acc2' });
+  await render(<ChargePlanDetailScreen />);
+  await waitFor(() => screen.getByTestId('chargeplan-default-account-select'));
+
+  await fireEvent.press(screen.getByTestId('chargeplan-default-account-select'));
+  await waitFor(() => screen.getByTestId('chargeplan-default-account-select-option-acc2'));
+  await fireEvent.press(screen.getByTestId('chargeplan-default-account-select-option-acc2'));
+  await fireEvent.press(screen.getByTestId('chargeplan-save'));
+
+  await waitFor(() =>
+    expect(mockedApi.updateChargePlan).toHaveBeenCalledWith('cp1', expect.objectContaining({ defaultAccountId: 'acc2' })),
   );
 });
 

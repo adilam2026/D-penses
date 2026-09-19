@@ -27,6 +27,14 @@ interface ChargePlan {
   status: 'actif' | 'inactif';
   obligationStatus: ObligationStatus;
   financialPlanId: string | null;
+  // Corrections consolidées §8 — compte d'imputation par défaut, préremplissage
+  // uniquement au moment du paiement (jamais imposé, cf. DeadlineDetailScreen).
+  defaultAccountId?: string | null;
+}
+
+interface Account {
+  id: string;
+  name: string;
 }
 
 const OBLIGATION_STATUS_OPTIONS: { value: ObligationStatus; label: string }[] = [
@@ -82,6 +90,7 @@ export function ChargePlanDetailScreen() {
   const [plan, setPlan] = useState<ChargePlan | null>(null);
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [label, setLabel] = useState('');
@@ -101,6 +110,9 @@ export function ChargePlanDetailScreen() {
   const [editAmount, setEditAmount] = useState(false);
   const [amountStatus, setAmountStatus] = useState<'estime' | 'confirme' | 'inconnu'>('estime');
   const [amount, setAmount] = useState('');
+  // Corrections consolidées §8 — compte d'imputation par défaut : sert
+  // UNIQUEMENT de préremplissage au moment du paiement (jamais imposé).
+  const [defaultAccountId, setDefaultAccountId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [togglingStatus, setTogglingStatus] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -109,15 +121,22 @@ export function ChargePlanDetailScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [p, d, categoryList] = await Promise.all([api.getChargePlan(id), api.listChargePlanDeadlines(id), api.listCategories()]);
+      const [p, d, categoryList, accountList] = await Promise.all([
+        api.getChargePlan(id),
+        api.listChargePlanDeadlines(id),
+        api.listCategories(),
+        api.listAccounts(),
+      ]);
       setPlan(p);
       setDeadlines(d);
       setCategories((categoryList as Category[]).filter((c) => c.kind === 'expense' || c.kind === 'both'));
+      setAccounts(accountList as Account[]);
       setLabel(p.label);
       setCategoryId(p.categoryId);
       setObligationStatus(p.obligationStatus);
       setRecurrenceRule(p.recurrenceRule ?? 'ponctuel');
       setAnchorDate(p.recurrenceAnchorDate ? String(p.recurrenceAnchorDate).slice(0, 10) : '');
+      setDefaultAccountId(p.defaultAccountId ?? null);
       setEditAmount(false);
       setAmountStatus('estime');
       setAmount('');
@@ -154,6 +173,7 @@ export function ChargePlanDetailScreen() {
         obligationStatus,
         recurrenceRule: recurrenceRule === 'ponctuel' ? undefined : recurrenceRule,
         recurrenceAnchorDate: recurrenceRule === 'ponctuel' ? null : anchorDate,
+        defaultAccountId,
         ...(editAmount
           ? { amountStatus, amountCurrent: amountStatus !== 'inconnu' ? Number(amount.replace(',', '.')) : undefined }
           : {}),
@@ -256,6 +276,22 @@ export function ChargePlanDetailScreen() {
         />
 
         {recurrenceRule !== 'ponctuel' && <DateField label="Prochaine échéance" value={anchorDate} onChange={setAnchorDate} />}
+
+        {accounts.length > 0 && (
+          <>
+            <Select
+              testID="chargeplan-default-account-select"
+              label="Compte d'imputation par défaut (facultatif)"
+              placeholder="Aucun compte par défaut"
+              value={defaultAccountId ?? ''}
+              onChange={(v) => setDefaultAccountId(v || null)}
+              options={[{ value: '', label: 'Aucun compte par défaut' }, ...accounts.map((a) => ({ value: a.id, label: a.name }))]}
+            />
+            <Text style={styles.amountHint}>
+              Sert uniquement à préremplir le compte au moment du paiement — jamais imposé, toujours modifiable à ce moment-là.
+            </Text>
+          </>
+        )}
 
         <View style={styles.toggleRow}>
           <Text style={styles.toggleLabel}>Modifier le montant des prochaines échéances</Text>
