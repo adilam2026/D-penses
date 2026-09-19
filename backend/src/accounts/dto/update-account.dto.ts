@@ -30,4 +30,22 @@ export class UpdateAccountDto {
   @IsOptional()
   @IsBoolean()
   includeInOperationalTreasury?: boolean;
+
+  /**
+   * Corrections consolidées §5 — solde masqué par défaut à l'ouverture de
+   * l'app, mémorisé compte par compte. Purement visuel, jamais lu par un
+   * moteur financier.
+   */
+  @IsOptional()
+  @IsBoolean()
+  hideBalanceByDefault?: boolean;
+
+  /**
+   * Corrections consolidées §6 — visibilité sur l'accueil, INDÉPENDANTE de
+   * includeInOperationalTreasury : un compte peut être piloté et absent de
+   * "Mes comptes" (Accueil), ou hors pilotage et quand même affiché.
+   */
+  @IsOptional()
+  @IsBoolean()
+  showOnHome?: boolean;
 }

@@ -14,6 +14,11 @@ export interface Account {
   name: string;
   soldeCourant: number;
   includeInOperationalTreasury: boolean;
+  // Corrections consolidées §5/§6 — préférences purement visuelles, INDÉPENDANTES
+  // de includeInOperationalTreasury (pilotage) : optionnelles pour ne jamais
+  // casser un appelant existant (ex. HomeScreen.web.tsx) qui ne les lit pas.
+  hideBalanceByDefault?: boolean;
+  showOnHome?: boolean;
 }
 
 export interface DeadlineItem {

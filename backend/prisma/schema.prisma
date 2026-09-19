@@ -603,6 +603,12 @@ model FinancialAccount {
   status                       AccountStatus @default(actif)
   includeInOperationalTreasury Boolean       @default(true) @map("include_in_operational_treasury")
   isProtected                  Boolean       @default(false) @map("is_protected")
+  // Corrections consolidées §5/§6 — préférences d'affichage PUREMENT visuelles,
+  // volontairement indépendantes de includeInOperationalTreasury (pilotage) :
+  // un compte peut être piloté et masqué sur l'accueil, ou hors pilotage et
+  // affiché — jamais l'une déduite de l'autre.
+  hideBalanceByDefault         Boolean       @default(false) @map("hide_balance_by_default")
+  showOnHome                   Boolean       @default(true) @map("show_on_home")
   // Compte pré-rempli en priorité dans la saisie rapide (§14 Lot 2) — un seul compte
   // favori par foyer, imposé en base (cf. index unique partiel dans la migration).
   isFavorite                   Boolean       @default(false) @map("is_favorite")

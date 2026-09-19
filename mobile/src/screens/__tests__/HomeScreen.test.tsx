@@ -35,6 +35,7 @@ jest.mock('../../api/client', () => {
     listIncomeSources: jest.fn(),
     getMyHousehold: jest.fn(),
     updateHouseholdSettings: jest.fn(),
+    listTransactions: jest.fn(),
   };
 });
 
@@ -82,6 +83,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockedApi.listIncomeSources.mockResolvedValue([]);
   mockedApi.getMyHousehold.mockResolvedValue({ id: 'h1', settings: { homeBannerDismissed: false } });
+  mockedApi.listTransactions.mockResolvedValue([]);
 });
 
 describe('Accueil — état vide (§19)', () => {
@@ -223,11 +225,25 @@ describe('Accueil — état configuré (§7-17/§31, Maquette 3)', () => {
     expect(mockNavigate).toHaveBeenCalledWith('FinancialPlanDetail', { id: 'p1' });
   });
 
-  it('le bloc Projection est cliquable → Projection', async () => {
+  it('corrections consolidées §2 — bloc "Dernières transactions" : une ligne est cliquable → TransactionDetail, "Voir toutes" → Transactions', async () => {
+    mockedApi.listTransactions.mockResolvedValue([
+      { kind: 'payment', id: 'pay-1', occurredAt: '2026-09-10', amount: -500, accountName: 'CIH', label: 'Loyer', displayKind: 'paiement' },
+    ]);
     await render(<HomeScreen />);
-    await waitFor(() => screen.getByTestId('home-projection-card'));
-    await fireEvent.press(screen.getByTestId('home-projection-card'));
-    expect(mockNavigate).toHaveBeenCalledWith('Projection');
+    await waitFor(() => screen.getByText('Dernières transactions'));
+
+    await fireEvent.press(screen.getByTestId('home-transaction-payment-pay-1'));
+    expect(mockNavigate).toHaveBeenCalledWith('TransactionDetail', { kind: 'payment', id: 'pay-1' });
+
+    await fireEvent.press(screen.getByTestId('home-transactions-see-all'));
+    expect(mockNavigate).toHaveBeenCalledWith('Transactions');
+  });
+
+  it('corrections consolidées §2 — sans transaction réelle, affiche un état vide explicite', async () => {
+    mockedApi.listTransactions.mockResolvedValue([]);
+    await render(<HomeScreen />);
+    await waitFor(() => screen.getByText('Dernières transactions'));
+    expect(screen.getByText("Aucune transaction enregistrée pour l'instant.")).toBeTruthy();
   });
 
   it('R6.4 (§5 / test I) : le bloc "Actions à traiter" est absent de l\'accueil', async () => {
@@ -236,10 +252,13 @@ describe('Accueil — état configuré (§7-17/§31, Maquette 3)', () => {
     expect(screen.queryByText(/action.*à traiter/i)).toBeNull();
   });
 
-  it('R6.1 §10 / R6.3 point D (dernier cadrage Home) : "Mes comptes" affiche le badge "Hors pilotage", "Patrimoine total" en secondaire (jamais de ligne "Trésorerie pilotée" doublon du héro), et un montant masqué avec bascule œil sur un compte exclu', async () => {
+  it('R6.1 §10 / R6.3 point D (dernier cadrage Home), mis à jour par les corrections consolidées §4/§5 : "Mes comptes" affiche le badge "Hors pilotage", "Patrimoine total" en secondaire (jamais de ligne "Trésorerie pilotée" doublon du héro), et le masquage par défaut suit désormais hideBalanceByDefault (compte par compte), PAS includeInOperationalTreasury', async () => {
     mockedApi.listAccounts.mockResolvedValue([
       { id: 'acc-cih', name: 'CIH', soldeCourant: 15000, includeInOperationalTreasury: true },
-      { id: 'acc-livret', name: 'Livret bloqué', soldeCourant: 30000, includeInOperationalTreasury: false },
+      // Corrections consolidées §4/§5/§6 — un compte hors pilotage masqué par
+      // défaut : les 2 préférences sont réglées indépendamment (§6 démontrée
+      // par un test dédié ci-dessous, showOnHome).
+      { id: 'acc-livret', name: 'Livret bloqué', soldeCourant: 30000, includeInOperationalTreasury: false, hideBalanceByDefault: true },
     ]);
     await render(<HomeScreen />);
     await waitFor(() => screen.getByText('CIH'));
@@ -252,12 +271,39 @@ describe('Accueil — état configuré (§7-17/§31, Maquette 3)', () => {
     expect(screen.getByText('Patrimoine total (avec hors pilotage)')).toBeTruthy();
     expect(screen.getByText('Hors pilotage')).toBeTruthy();
 
-    // Maquette 3 §2 — masqué par défaut, bascule via l'icône œil (état UI local).
+    // Corrections consolidées §4/§5 — masqué par défaut (hideBalanceByDefault),
+    // bascule via l'icône œil (état UI local, temporaire).
     expect(screen.getByText('•••••• DH')).toBeTruthy();
     expect(screen.queryByText('30 000 DH')).toBeNull();
     await fireEvent.press(screen.getByTestId('account-reveal-acc-livret'));
     expect(screen.getByText('30 000 DH')).toBeTruthy();
     expect(screen.queryByText('•••••• DH')).toBeNull();
+  });
+
+  it('corrections consolidées §4 — l\'œil est disponible sur CHAQUE compte (pas seulement les comptes hors pilotage) et fonctionne dans les 2 sens', async () => {
+    mockedApi.listAccounts.mockResolvedValue([
+      { id: 'acc-cih', name: 'CIH', soldeCourant: 15000, includeInOperationalTreasury: true, hideBalanceByDefault: false },
+    ]);
+    await render(<HomeScreen />);
+    await waitFor(() => screen.getByText('CIH'));
+
+    // Visible par défaut (hideBalanceByDefault=false) : l'œil permet quand même de masquer temporairement.
+    expect(screen.getByText('15 000 DH')).toBeTruthy();
+    expect(screen.getByTestId('account-reveal-acc-cih')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('account-reveal-acc-cih'));
+    expect(screen.getByText('•••••• DH')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('account-reveal-acc-cih'));
+    expect(screen.getByText('15 000 DH')).toBeTruthy();
+  });
+
+  it('corrections consolidées §6 — showOnHome=false retire le compte de "Mes comptes" (Accueil), indépendamment du pilotage', async () => {
+    mockedApi.listAccounts.mockResolvedValue([
+      { id: 'acc-cih', name: 'CIH', soldeCourant: 15000, includeInOperationalTreasury: true, showOnHome: true },
+      { id: 'acc-masque', name: 'Compte masqué accueil', soldeCourant: 5000, includeInOperationalTreasury: true, showOnHome: false },
+    ]);
+    await render(<HomeScreen />);
+    await waitFor(() => screen.getByText('CIH'));
+    expect(screen.queryByText('Compte masqué accueil')).toBeNull();
   });
 });
 
@@ -381,7 +427,7 @@ describe('Accueil — bloc "Mes budgets" (Lot 3, Maquette 3)', () => {
     await render(<HomeScreen />);
 
     await waitFor(() => screen.getByText('Échéances importantes'));
-    await fireEvent.press(screen.getByText('Voir toutes'));
+    await fireEvent.press(screen.getByTestId('home-deadlines-see-all'));
     expect(mockNavigate).toHaveBeenCalledWith('Calendrier');
     expect(mockNavigate).not.toHaveBeenCalledWith('Charges');
   });
@@ -646,10 +692,11 @@ describe('Accueil — bandeau de configuration intelligent (§13)', () => {
 });
 
 /**
- * Corrections UI/UX finales §1 — ordre des blocs validé : Situation pilotée
- * aujourd'hui (premier bloc fonctionnel après le titre) → Mes comptes → Mes
- * budgets → Mes plans financiers → Échéances importantes → Projection, avec
- * les titres de section en casse normale.
+ * Corrections UI/UX finales §1, mises à jour par les corrections consolidées
+ * §2 — ordre des blocs validé : Situation pilotée aujourd'hui (premier bloc
+ * fonctionnel après le titre) → Mes comptes → Mes budgets → Mes plans
+ * financiers → Échéances importantes → Dernières transactions (remplace
+ * l'ancien bloc Projection), avec les titres de section en casse normale.
  */
 // Corrections UI/UX finales §7 — le menu ☰ n'est plus un onglet de la barre
 // basse : un bouton dédié en haut à gauche de l'écran racine ouvre HamburgerMenu.
@@ -664,7 +711,7 @@ it('le bouton ☰ en haut à gauche navigue vers HamburgerMenu', async () => {
 });
 
 describe('Accueil — ordre des blocs (corrections UI/UX finales §1)', () => {
-  it("les 6 blocs apparaissent dans l'arbre rendu dans l'ordre validé : Situation pilotée → Comptes → Budgets → Plans → Échéances → Projection", async () => {
+  it("les 6 blocs apparaissent dans l'arbre rendu dans l'ordre validé : Situation pilotée → Comptes → Budgets → Plans → Échéances → Dernières transactions", async () => {
     mockedApi.getDashboardSummary.mockResolvedValue({
       ...EMPTY_SUMMARY,
       budgetsResume: [budgetFixture({ id: 'b1' })],
@@ -698,7 +745,7 @@ describe('Accueil — ordre des blocs (corrections UI/UX finales §1)', () => {
     });
     mockedApi.listAccounts.mockResolvedValue([{ id: 'acc-1', name: 'Compte SG', soldeCourant: 1000 }]);
     const { toJSON } = await render(<HomeScreen />);
-    await waitFor(() => screen.getByTestId('home-projection-card'));
+    await waitFor(() => screen.getByText('Dernières transactions'));
 
     // react-test-renderer JSON contient des références circulaires (_owner/return) :
     // un JSON.stringify direct échoue, donc on les élague explicitement ici (jamais
@@ -711,7 +758,7 @@ describe('Accueil — ordre des blocs (corrections UI/UX finales §1)', () => {
       }
       return value;
     });
-    const order = ["AUJOURD'HUI", 'Mes comptes', 'Mes budgets', 'Mes plans financiers', 'Échéances importantes', 'Projection'];
+    const order = ["AUJOURD'HUI", 'Mes comptes', 'Mes budgets', 'Mes plans financiers', 'Échéances importantes', 'Dernières transactions'];
     const positions = order.map((title) => {
       const index = text.indexOf(title);
       expect(index).toBeGreaterThan(-1);

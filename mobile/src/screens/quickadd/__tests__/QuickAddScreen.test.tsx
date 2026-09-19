@@ -22,7 +22,7 @@ jest.mock('../../../ui/DateField', () => {
 
 const mockNavigate = jest.fn();
 const mockGoBack = jest.fn();
-let mockRouteParams: { mode?: string } = {};
+let mockRouteParams: { mode?: string; accountId?: string } = {};
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({ navigate: mockNavigate, goBack: mockGoBack }),
   useRoute: () => ({ params: mockRouteParams }),
@@ -75,6 +75,21 @@ async function selectCategory(categoryId: string) {
 }
 
 // R6 finition UX/UI §2 — au-delà de 4 types actifs, sélecteur compact plutôt qu'un mur de chips.
+// Corrections consolidées §7 — arrivée depuis "AJOUTER UNE TRANSACTION" sur la
+// fiche compte : préremplit ce compte, sans jamais l'imposer (Select modifiable).
+it('corrections consolidées §7 — accountId en paramètre de route préremplit le compte, en priorité sur le compte favori', async () => {
+  mockRouteParams = { mode: 'depense', accountId: 'acc-2' };
+  mockedApi.listAccounts.mockResolvedValue([
+    { id: 'acc-1', name: 'Compte SG' },
+    { id: 'acc-2', name: 'Compte BP' },
+  ]);
+  mockedApi.getQuickAddDefaultAccount.mockResolvedValue({ accountId: 'acc-1' });
+  mockedApi.listCategoryTypes.mockResolvedValue([]);
+  await renderScreen();
+
+  await waitFor(() => expect(screen.getByText('Compte BP')).toBeTruthy());
+});
+
 describe('QuickAddScreen — Type en sélecteur compact au-delà de 4 choix', () => {
   it('plus de 4 types actifs → Select au lieu des chips', async () => {
     mockedApi.listCategoryTypes.mockResolvedValue([

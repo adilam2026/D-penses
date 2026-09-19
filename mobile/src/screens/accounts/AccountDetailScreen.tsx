@@ -20,9 +20,15 @@ import { ChoiceSheet } from '../../ui/ChoiceSheet';
 import { FormField } from '../../ui/FormField';
 import { Select } from '../../ui/Select';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
-import { Account, Reconciliation, n } from './accountDetailLogic';
+import { Account as BaseAccount, Reconciliation, n } from './accountDetailLogic';
 import { AccountType, TYPE_LABEL } from './accountsLogic';
 import { KIND_LABEL, LedgerEntry, formatDate, groupByMonth, initiatorColor } from '../transactions/transactionsLogic';
+
+// Corrections consolidées §5/§6 — préférences purement visuelles, INDÉPENDANTES
+// de includeInOperationalTreasury (pilotage) : extension LOCALE (jamais dans
+// accountDetailLogic.ts, partagé avec le portail Web protégé WEB-V4.4A —
+// aucune modification de ce fichier partagé).
+type Account = BaseAccount & { hideBalanceByDefault?: boolean; showOnHome?: boolean };
 
 /**
  * Détail d'un compte (corrections UI/UX finales §4) — vue PRINCIPALE : nom +
@@ -71,6 +77,10 @@ export function AccountDetailScreen() {
   const [editName, setEditName] = useState('');
   const [editType, setEditType] = useState<AccountType>('courant');
   const [editIncludeInPilotage, setEditIncludeInPilotage] = useState(true);
+  // Corrections consolidées §5/§6 — préférences indépendantes du pilotage :
+  // masquage du solde par défaut à l'ouverture, visibilité sur l'Accueil.
+  const [editHideBalanceByDefault, setEditHideBalanceByDefault] = useState(false);
+  const [editShowOnHome, setEditShowOnHome] = useState(true);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [archiveError, setArchiveError] = useState<string | null>(null);
@@ -164,6 +174,8 @@ export function AccountDetailScreen() {
     setEditName(account.name);
     setEditType(account.type as AccountType);
     setEditIncludeInPilotage(account.includeInOperationalTreasury);
+    setEditHideBalanceByDefault(account.hideBalanceByDefault ?? false);
+    setEditShowOnHome(account.showOnHome ?? true);
     setEditError(null);
     setEditOpen(true);
   }
@@ -176,7 +188,13 @@ export function AccountDetailScreen() {
     setEditSaving(true);
     setEditError(null);
     try {
-      await api.updateAccount(accountId, { name: editName.trim(), type: editType, includeInOperationalTreasury: editIncludeInPilotage });
+      await api.updateAccount(accountId, {
+        name: editName.trim(),
+        type: editType,
+        includeInOperationalTreasury: editIncludeInPilotage,
+        hideBalanceByDefault: editHideBalanceByDefault,
+        showOnHome: editShowOnHome,
+      });
       setEditOpen(false);
       await load();
     } catch (err) {
@@ -263,6 +281,15 @@ export function AccountDetailScreen() {
                 </TouchableOpacity>
               )}
               {archiveError && <Text style={styles.error}>{archiveError}</Text>}
+              {account.status === 'actif' && (
+                <TouchableOpacity
+                  testID="account-add-transaction"
+                  style={styles.addTransactionButton}
+                  onPress={() => navigation.navigate('QuickAdd', { mode: 'depense', accountId: account.id })}
+                >
+                  <Text style={styles.addTransactionButtonText}>+ Ajouter une transaction</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             {account.reservedByEnvelopes > 0 && (
@@ -359,6 +386,26 @@ export function AccountDetailScreen() {
                 </Text>
               </View>
               <Switch testID="account-edit-pilotage-switch" value={editIncludeInPilotage} onValueChange={setEditIncludeInPilotage} />
+            </View>
+            {/* Corrections consolidées §5 — masquage du solde par défaut à l'ouverture,
+                purement visuel, indépendant du pilotage ci-dessus. */}
+            <View style={styles.pilotageRow}>
+              <View style={{ flex: 1, marginRight: spacing.sm }}>
+                <Text style={styles.pilotageLabel}>Affichage du solde à l'ouverture</Text>
+                <Text style={styles.pilotageHelp}>
+                  Si masqué, le solde de ce compte est caché par défaut (révélable à tout moment avec l'œil), sans effet sur les calculs.
+                </Text>
+              </View>
+              <Switch testID="account-edit-hide-balance-switch" value={editHideBalanceByDefault} onValueChange={setEditHideBalanceByDefault} />
+            </View>
+            {/* Corrections consolidées §6 — visibilité sur l'Accueil, indépendante du
+                pilotage et du masquage du solde ci-dessus. */}
+            <View style={styles.pilotageRow}>
+              <View style={{ flex: 1, marginRight: spacing.sm }}>
+                <Text style={styles.pilotageLabel}>Afficher ce compte sur l'accueil</Text>
+                <Text style={styles.pilotageHelp}>Si désactivé, ce compte n'apparaît plus dans "Mes comptes" en Accueil, mais reste inchangé partout ailleurs.</Text>
+              </View>
+              <Switch testID="account-edit-show-on-home-switch" value={editShowOnHome} onValueChange={setEditShowOnHome} />
             </View>
             {editError && <Text style={styles.error}>{editError}</Text>}
             <View style={styles.modalActions}>
@@ -549,6 +596,8 @@ const styles = StyleSheet.create({
   menuButtonText: { fontSize: 18, fontWeight: '700', color: colors.textSecondary },
   reactivateButton: { backgroundColor: colors.primary, borderRadius: radius.sm, paddingVertical: 10, alignItems: 'center', marginTop: 12 },
   reactivateButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 13 },
+  addTransactionButton: { backgroundColor: colors.surfaceActive, borderRadius: radius.sm, paddingVertical: 10, alignItems: 'center', marginTop: 12 },
+  addTransactionButtonText: { color: colors.textPrimary, fontWeight: '600', fontSize: 13 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)', alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   modalCard: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.xl, width: '100%' },
   modalTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.md },

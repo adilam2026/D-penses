@@ -164,14 +164,26 @@ export const getAccount = (
   includeInOperationalTreasury: boolean;
   soldeCourant: number;
   reservedByEnvelopes: number;
+  // Corrections consolidées §5/§6 — préférences indépendantes du pilotage.
+  hideBalanceByDefault?: boolean;
+  showOnHome?: boolean;
 }> => apiFetch(`/accounts/${accountId}`);
 
 // R5 clôture §2 — Modifier / Archiver (jamais de suppression physique).
 // R6.1 §8 — includeInOperationalTreasury bascule le pilotage (trésorerie/disponible
 // libre/projection) sans jamais toucher au solde ni à l'historique du compte.
+// Corrections consolidées §5/§6 — hideBalanceByDefault / showOnHome, purement
+// visuelles, INDÉPENDANTES de includeInOperationalTreasury.
 export const updateAccount = (
   id: string,
-  data: { name?: string; type?: string; status?: 'actif' | 'archive'; includeInOperationalTreasury?: boolean },
+  data: {
+    name?: string;
+    type?: string;
+    status?: 'actif' | 'archive';
+    includeInOperationalTreasury?: boolean;
+    hideBalanceByDefault?: boolean;
+    showOnHome?: boolean;
+  },
 ) => apiFetch(`/accounts/${id}`, { method: 'PATCH', body: data });
 
 /** `includeArchived` réservé à l'écran de gestion des comptes — les sélecteurs de nouvelle transaction n'appellent jamais ce paramètre. */

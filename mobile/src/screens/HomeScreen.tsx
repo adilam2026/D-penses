@@ -15,16 +15,16 @@ import {
   Account,
   DashboardSummary,
   PLAN_TYPE_ICON,
-  PROJECTION_STATUS_COLOR,
-  PROJECTION_STATUS_LABEL,
   essentialPrerequisitesMet,
-  formatLongDate,
   isFullyEmpty,
   isPartiallyConfigured,
   prioritizeBudgets,
   prioritizePlans,
   urgencyColor,
 } from './homeLogic';
+// Corrections consolidées §2 — réutilise EXACTEMENT le même type/libellés que
+// l'écran Transactions (jamais une seconde définition parallèle de KIND_LABEL).
+import { KIND_LABEL, LedgerEntry } from './transactions/transactionsLogic';
 
 /**
  * Accueil = cockpit (Vague 3 §7-17, passe visuelle Maquette 3). 2 appels API au
@@ -38,28 +38,32 @@ export function HomeScreen() {
   const topInset = useTopInset();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [recentTransactions, setRecentTransactions] = useState<LedgerEntry[]>([]);
   const [incomeSourcesCount, setIncomeSourcesCount] = useState(0);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [dismissChoiceOpen, setDismissChoiceOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  // Maquette 3 §2 — masquage local du montant des comptes hors pilotage, état UI
-  // pur (jamais persisté, jamais une règle backend) : réinitialisé à chaque
-  // chargement d'écran, comme n'importe quel état d'affichage éphémère.
-  const [revealedAccountIds, setRevealedAccountIds] = useState<Record<string, boolean>>({});
+  // Corrections consolidées §4 — état local pur (jamais persisté ici : la
+  // préférence par défaut, elle, vit côté backend sur le compte, cf. §5), un
+  // override manuel TEMPORAIRE par compte (true = forcer visible, false =
+  // forcer masqué), réinitialisé à chaque chargement d'écran comme avant.
+  const [visibilityOverride, setVisibilityOverride] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, a, incomeSources, household] = await Promise.all([
+      const [s, a, incomeSources, household, transactions] = await Promise.all([
         api.getDashboardSummary(),
         api.listAccounts(),
         api.listIncomeSources(),
         api.getMyHousehold(),
+        api.listTransactions({ limit: 4 }),
       ]);
       setSummary(s);
       setAccounts(a);
       setIncomeSourcesCount(incomeSources.length);
       setBannerDismissed(!!household?.settings?.homeBannerDismissed);
+      setRecentTransactions(transactions);
     } finally {
       setLoading(false);
     }
@@ -93,8 +97,14 @@ export function HomeScreen() {
   // essentiels sont satisfaits, et jamais après un "Ne plus afficher" explicite.
   const showConfigBanner = partiallyConfigured && !essentialPrerequisitesMet(accounts, incomeSourcesCount) && !bannerDismissed;
   const upcomingDeadlines = summary.topDeadlines;
-  const topPlans = prioritizePlans(summary.financialPlansResume).slice(0, 3);
+  // Corrections consolidées §3 — jusqu'à 6 plans sur l'accueil (au lieu de 3),
+  // au-delà uniquement via "Voir tous" ; grille 2 colonnes inchangée.
+  const topPlans = prioritizePlans(summary.financialPlansResume).slice(0, 6);
   const topBudgets = prioritizeBudgets(summary.budgetsResume).slice(0, 3);
+  // Corrections consolidées §6 — showOnHome filtre "Mes comptes" (Accueil
+  // uniquement), INDÉPENDANT du pilotage : absent/true par défaut (comptes
+  // créés avant cette préférence, jamais masqués silencieusement).
+  const homeAccounts = accounts.filter((a) => a.showOnHome !== false);
 
   return (
     <ScrollView
@@ -194,7 +204,7 @@ export function HomeScreen() {
           {/* Bloc 2 — Mes comptes (Maquette 3 §2) : cartes colorées compactes,
               montant masqué par défaut pour un compte hors pilotage (icône
               œil, état purement local). */}
-          {accounts.length > 0 && (
+          {homeAccounts.length > 0 && (
             <View style={styles.sec}>
               <View style={styles.sectionHead}>
                 <Text style={styles.sectionTitle}>Mes comptes</Text>
@@ -203,8 +213,14 @@ export function HomeScreen() {
                 </TouchableOpacity>
               </View>
               <View style={styles.grid2}>
-                {accounts.slice(0, 4).map((a, i) => {
-                  const masked = !a.includeInOperationalTreasury && !revealedAccountIds[a.id];
+                {homeAccounts.slice(0, 4).map((a, i) => {
+                  // Corrections consolidées §4/§5 — solde masqué par défaut = préférence
+                  // du compte (hideBalanceByDefault), jamais déduite du pilotage ;
+                  // l'œil reste un override TEMPORAIRE (jamais persisté) disponible sur
+                  // CHAQUE compte, dans les deux sens (afficher ↔ masquer).
+                  const defaultHidden = a.hideBalanceByDefault ?? false;
+                  const override = visibilityOverride[a.id];
+                  const masked = override !== undefined ? !override : defaultHidden;
                   return (
                     <TouchableOpacity
                       key={a.id}
@@ -215,14 +231,12 @@ export function HomeScreen() {
                         <Text style={styles.accountCardName} numberOfLines={1}>
                           {a.name}
                         </Text>
-                        {!a.includeInOperationalTreasury && (
-                          <TouchableOpacity
-                            testID={`account-reveal-${a.id}`}
-                            onPress={() => setRevealedAccountIds((prev) => ({ ...prev, [a.id]: !prev[a.id] }))}
-                          >
-                            <Ionicons name={masked ? 'eye-outline' : 'eye-off-outline'} size={16} color="#fff" />
-                          </TouchableOpacity>
-                        )}
+                        <TouchableOpacity
+                          testID={`account-reveal-${a.id}`}
+                          onPress={() => setVisibilityOverride((prev) => ({ ...prev, [a.id]: masked }))}
+                        >
+                          <Ionicons name={masked ? 'eye-outline' : 'eye-off-outline'} size={16} color="#fff" />
+                        </TouchableOpacity>
                       </View>
                       <Text style={styles.accountCardAmount}>{masked ? '•••••• DH' : `${a.soldeCourant.toLocaleString('fr-FR')} DH`}</Text>
                       <Text style={styles.accountCardStatus}>{a.includeInOperationalTreasury ? 'Piloté' : 'Hors pilotage'}</Text>
@@ -340,7 +354,7 @@ export function HomeScreen() {
                 <Text style={styles.sectionTitle}>Échéances importantes</Text>
                 {/* Corrections UI/UX finales §9 — "Voir toutes" ouvre le calendrier
                     des échéances, jamais l'écran de création de charge récurrente. */}
-                <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Calendrier')}>
+                <TouchableOpacity testID="home-deadlines-see-all" onPress={() => navigation.getParent()?.navigate('Calendrier')}>
                   <Text style={styles.sectionLink}>Voir toutes</Text>
                 </TouchableOpacity>
               </View>
@@ -366,40 +380,48 @@ export function HomeScreen() {
             </View>
           )}
 
-          {/* Bloc 6 — Projection : contenu/calculs inchangés (next_30_days déjà
-              fourni par le Dashboard/moteur Projection), seul le style de titre est
-              aligné sur les autres sections. */}
+          {/* Bloc 6 — Dernières transactions (corrections consolidées §2) : remplace
+              l'ancien bloc Projection en bas d'accueil. Aperçu rapide de l'activité
+              RÉELLEMENT enregistrée — réutilise directement le registre unifié
+              (ledger_entry, déjà "réel uniquement" par construction : jamais une
+              échéance prévue non payée, un budget ou une projection). Max 4 lignes,
+              déjà triées côté backend (occurred_at DESC). */}
           <View style={styles.sec}>
             <View style={styles.sectionHead}>
-              <Text style={styles.sectionTitle}>Projection</Text>
+              <Text style={styles.sectionTitle}>Dernières transactions</Text>
+              <TouchableOpacity testID="home-transactions-see-all" onPress={() => navigation.getParent()?.navigate('Transactions')}>
+                <Text style={styles.sectionLink}>Voir toutes</Text>
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity testID="home-projection-card" style={styles.projectionCard} onPress={() => navigation.getParent()?.navigate('Projection')}>
-              <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>Trésorerie prévue</Text>
-                <Text style={styles.breakdownValue}>{summary.next_30_days.closing_physical_treasury.toLocaleString('fr-FR')} DH</Text>
-              </View>
-              <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>Disponible libre prévu</Text>
-                <Text style={styles.breakdownValue}>{summary.next_30_days.closing_free_capacity.toLocaleString('fr-FR')} DH</Text>
-              </View>
-              <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>Point bas</Text>
-                <Text style={styles.breakdownValue}>
-                  {summary.next_30_days.physical_low_point.toLocaleString('fr-FR')} DH le {formatLongDate(summary.next_30_days.physical_low_point_date)}
-                </Text>
-              </View>
-              <Text style={[styles.projectionStatus, { color: PROJECTION_STATUS_COLOR[summary.next_30_days.status] }]}>
-                {PROJECTION_STATUS_LABEL[summary.next_30_days.status]}
-              </Text>
-              {summary.next_30_days.status === 'DEFICIT_PHYSIQUE' && summary.next_30_days.first_negative_date && (
-                <Text style={styles.heroWarning}>
-                  Risque de déficit le {formatLongDate(summary.next_30_days.first_negative_date)}
-                  {summary.next_30_days.deficit_at_first_negative !== null
-                    ? ` (${summary.next_30_days.deficit_at_first_negative.toLocaleString('fr-FR')} DH)`
-                    : ''}
-                </Text>
-              )}
-            </TouchableOpacity>
+            {recentTransactions.length === 0 ? (
+              <Text style={styles.emptyText}>Aucune transaction enregistrée pour l'instant.</Text>
+            ) : (
+              recentTransactions.map((t) => {
+                const positive = t.amount >= 0;
+                const date = new Date(t.occurredAt);
+                return (
+                  <TouchableOpacity
+                    key={`${t.kind}-${t.id}`}
+                    testID={`home-transaction-${t.kind}-${t.id}`}
+                    style={styles.timelineItem}
+                    onPress={() => navigation.getParent()?.navigate('TransactionDetail', { kind: t.kind, id: t.id })}
+                  >
+                    <View style={{ flexShrink: 1, marginRight: spacing.sm }}>
+                      <Text style={styles.timelineLabel} numberOfLines={1}>
+                        {t.label ?? KIND_LABEL[t.displayKind] ?? t.displayKind}
+                      </Text>
+                      <Text style={styles.transactionMeta} numberOfLines={1}>
+                        {date.toLocaleDateString('fr-FR')} · {t.accountName}
+                      </Text>
+                    </View>
+                    <Text style={[styles.timelineAmount, positive ? styles.amountPositive : styles.amountNegative]}>
+                      {positive ? '+' : ''}
+                      {t.amount.toLocaleString('fr-FR')} DH
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })
+            )}
           </View>
         </>
       )}
@@ -482,9 +504,7 @@ const styles = StyleSheet.create({
   budgetRemaining: { fontSize: 11, color: colors.textSecondary, marginTop: spacing.xs },
   rythmeAlertBadge: { fontSize: 11, fontWeight: '700', color: colors.warning, marginTop: spacing.xs },
 
-  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.xs },
-  breakdownLabel: { fontSize: 12, color: colors.textSecondary },
-  breakdownValue: { fontSize: 12, color: colors.textPrimary, fontWeight: '600' },
+  emptyText: { fontSize: 12, color: colors.textSecondary, fontStyle: 'italic' },
 
   datePill: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md },
   datePillDay: { fontSize: 14, fontWeight: '900', color: '#fff', lineHeight: 16 },
@@ -506,6 +526,9 @@ const styles = StyleSheet.create({
   timelineLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
   coveredBadge: { fontSize: 10, color: colors.success, fontWeight: '700', marginTop: 2 },
   timelineAmount: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
+  transactionMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  amountPositive: { color: colors.success },
+  amountNegative: { color: colors.danger },
 
   planCard: {
     width: '48%',
@@ -525,14 +548,4 @@ const styles = StyleSheet.create({
   planTrackPaid: { height: '100%', backgroundColor: colors.success },
   planTrackProv: { height: '100%', backgroundColor: '#7089DF' },
   planRemaining: { fontSize: 10, color: colors.textSecondary, marginTop: spacing.xs },
-
-  projectionCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    ...elevation.card,
-  },
-  projectionStatus: { fontSize: 12, fontWeight: '800', marginTop: spacing.sm },
 });

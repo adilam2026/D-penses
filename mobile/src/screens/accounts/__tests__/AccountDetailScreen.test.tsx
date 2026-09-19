@@ -109,6 +109,8 @@ it('Modifier enregistre le nom et le type via updateAccount', async () => {
       name: 'Compte renommé',
       type: 'epargne',
       includeInOperationalTreasury: true,
+      hideBalanceByDefault: false,
+      showOnHome: true,
     }),
   );
 });
@@ -131,8 +133,49 @@ it('Modifier permet de désactiver le pilotage du compte', async () => {
       name: 'Compte principal',
       type: 'courant',
       includeInOperationalTreasury: false,
+      hideBalanceByDefault: false,
+      showOnHome: true,
     }),
   );
+});
+
+it('corrections consolidées §5/§6 — Modifier permet de régler indépendamment le masquage du solde et la visibilité sur l\'accueil', async () => {
+  mockedApi.getAccount.mockResolvedValue(ACTIVE_ACCOUNT);
+  mockedApi.updateAccount.mockResolvedValue({ ...ACTIVE_ACCOUNT, hideBalanceByDefault: true, showOnHome: false });
+  await render(<AccountDetailScreen />);
+  await waitFor(() => expect(screen.getByTestId('account-menu-button')).toBeTruthy());
+  await fireEvent.press(screen.getByTestId('account-menu-button'));
+  await waitFor(() => expect(screen.getByTestId('account-menu-option-modifier')).toBeTruthy());
+  await fireEvent.press(screen.getByTestId('account-menu-option-modifier'));
+
+  await waitFor(() => expect(screen.getByTestId('account-edit-form')).toBeTruthy());
+  await fireEvent(screen.getByTestId('account-edit-hide-balance-switch'), 'valueChange', true);
+  await fireEvent(screen.getByTestId('account-edit-show-on-home-switch'), 'valueChange', false);
+  await fireEvent.press(screen.getByTestId('account-edit-save'));
+
+  await waitFor(() =>
+    // Le pilotage (includeInOperationalTreasury) reste inchangé : les 3 notions
+    // sont indépendantes, jamais l'une ne modifie l'autre.
+    expect(mockedApi.updateAccount).toHaveBeenCalledWith('acc1', {
+      name: 'Compte principal',
+      type: 'courant',
+      includeInOperationalTreasury: true,
+      hideBalanceByDefault: true,
+      showOnHome: false,
+    }),
+  );
+});
+
+it('corrections consolidées §7 — "+ Ajouter une transaction" navigue vers QuickAdd en préremplissant ce compte', async () => {
+  const navigate = jest.fn();
+  jest.spyOn(require('@react-navigation/native'), 'useNavigation').mockReturnValue({ navigate });
+  mockedApi.getAccount.mockResolvedValue(ACTIVE_ACCOUNT);
+  await render(<AccountDetailScreen />);
+  await waitFor(() => expect(screen.getByTestId('account-add-transaction')).toBeTruthy());
+
+  await fireEvent.press(screen.getByTestId('account-add-transaction'));
+
+  expect(navigate).toHaveBeenCalledWith('QuickAdd', { mode: 'depense', accountId: 'acc1' });
 });
 
 it('affiche le badge "Hors pilotage" pour un compte exclu', async () => {

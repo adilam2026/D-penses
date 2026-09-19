@@ -149,7 +149,10 @@ export function QuickAddScreen() {
         api.listOpenDeadlines(),
       ]);
       setAccounts(accountList);
-      setAccountId(quickDefault.accountId ?? (accountList[0]?.id ?? null));
+      // Corrections consolidées §7 — arrivée depuis "AJOUTER UNE TRANSACTION" sur la
+      // fiche compte : préremplit ce compte (jamais imposé, le Select reste modifiable).
+      const presetAccountId = route.params?.accountId as string | undefined;
+      setAccountId(presetAccountId ?? quickDefault.accountId ?? (accountList[0]?.id ?? null));
       setCategories(categoryList);
       setOpenDeadlines(deadlines);
       return accountList;
