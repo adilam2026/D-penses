@@ -230,7 +230,7 @@ export function ChargePlanDetailScreen() {
   function onRetire() {
     Alert.alert(
       'Retirer ce poste du plan ?',
-      "L'historique de paiement est intégralement conservé. Les échéances futures encore ouvertes sans paiement seront annulées. Le poste sera retiré du plan et sa récurrence arrêtée.",
+      "Tout paiement déjà enregistré reste intégralement conservé, même partiel. Les échéances encore ouvertes (y compris leur reliquat non payé) seront annulées et ne resteront plus dues. Le poste sera retiré du plan et sa récurrence arrêtée.",
       [
         { text: 'Annuler', style: 'cancel' },
         {

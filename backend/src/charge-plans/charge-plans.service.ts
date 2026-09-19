@@ -238,18 +238,24 @@ export class ChargePlansService {
    * son contrat (DELETE reste inchangé : refuse toujours dès qu'un historique
    * existe). Réservée aux ChargePlan rattachés à un FinancialPlan.
    *
-   * Sémantique volontairement identique QUE le poste ait ou non un historique
-   * de paiement (choix le plus simple/cohérent — un seul bouton, un seul
-   * comportement prévisible, jamais deux résultats différents selon un état
-   * caché de l'utilisateur) : reprend exactement le traitement déjà appliqué
-   * par financial-plans.service.ts remove() à CHAQUE poste d'un plan supprimé,
-   * ici rendu appelable indépendamment sur un seul poste.
+   * Révision — annule TOUTES les échéances encore ouvertes (ouverte OU
+   * partiellement_payee), qu'elles aient ou non déjà un paiement partiel :
+   * - une échéance SANS aucun paiement est annulée intégralement ;
+   * - une échéance PARTIELLEMENT payée (ex. 400 payés sur 1000) est annulée
+   *   elle aussi (financialStatus → annulee) — le(s) Payment déjà enregistré(s)
+   *   ne sont JAMAIS supprimés ni modifiés, seul le reliquat encore dû cesse
+   *   d'exister comme dette future ; même règle métier que
+   *   POST /deadlines/:id/cancel (point 14.2), qui autorise déjà l'annulation
+   *   d'une échéance partiellement payée pour exactement cette raison —
+   *   retire() applique donc ce même traitement à CHAQUE échéance ouverte du
+   *   poste, jamais une exception pour les partiellement payées ;
+   * - une échéance déjà 'soldee' (payée intégralement, clôturée) reste hors
+   *   de cette opération : son reliquat est nul, rien à annuler, son
+   *   historique de paiement reste tel quel.
+   * Une fois annulée, une échéance est exclue de Calendrier et Projection au
+   * même titre que n'importe quelle échéance annulée (calendar.service.ts,
+   * monthly-projection.util.ts — filtres déjà en place, inchangés ici).
    *
-   * - Les paiements déjà enregistrés ne sont JAMAIS touchés.
-   * - Seules les échéances encore OUVERTES et SANS AUCUN paiement sont
-   *   annulées (financialStatus → annulee) — une échéance partiellement payée
-   *   reste intacte, à traiter individuellement via POST /deadlines/:id/cancel
-   *   si nécessaire (point 14.2), jamais annulée en masse ici.
    * - status → inactif : plus aucune nouvelle échéance générée pour ce poste.
    * - financialPlanId → null : détaché du plan, mais le ChargePlan lui-même
    *   n'est jamais supprimé, quel que soit son historique.
@@ -264,9 +270,8 @@ export class ChargePlansService {
 
       const openDeadlines = await tx.deadline.findMany({
         where: { chargePlanId: id, financialStatus: { in: ['ouverte', 'partiellement_payee'] } },
-        include: { payments: true },
       });
-      const cancellableIds = openDeadlines.filter((d) => d.payments.length === 0).map((d) => d.id);
+      const cancellableIds = openDeadlines.map((d) => d.id);
       if (cancellableIds.length > 0) {
         await tx.deadline.updateMany({ where: { id: { in: cancellableIds } }, data: { financialStatus: 'annulee' } });
       }
