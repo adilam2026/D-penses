@@ -105,6 +105,13 @@ export const createInvite = () => apiFetch('/households/invites', { method: 'POS
 
 export const joinHousehold = (code: string) => apiFetch('/households/join', { method: 'POST', body: { code } });
 
+// Corrections consolidées §17 — "Changer de foyer" (memberships EXISTANTS, jamais une
+// invitation) est un concept distinct de "Rejoindre un foyer" (joinHousehold ci-dessus).
+export const listHouseholdMemberships = () => apiFetch('/households/memberships');
+
+export const switchActiveHousehold = (householdId: string) =>
+  apiFetch('/households/switch-active', { method: 'POST', body: { householdId } });
+
 // ---------- Comptes (Lot 1) ----------
 // Mini-lot T2 Transactions — includeArchived pour le filtre "Compte" du registre
 // (une transaction historique doit rester filtrable même si son compte est
@@ -776,6 +783,16 @@ export interface MonthlyLineItem {
   category?: 'obligatoire' | 'flexible' | 'projet';
   movable: boolean;
   realized: boolean; // Round 4bis §1 — true = mouvement réel déjà survenu, false = encore prévu
+  // Corrections consolidées §11 — déjà renvoyé par le backend (MonthlyLineItem),
+  // simplement absent de ce type mobile jusqu'ici : sert au groupement par plan.
+  financialPlanId?: string | null;
+}
+
+// Corrections consolidées §10 — un budget compté dans prudent_budget_remaining.
+export interface BudgetLineItemApi {
+  budget_id: string;
+  label: string;
+  amount: number;
 }
 
 // R6.4 (§6-§9) — un transfert récurrent reste un TRANSFERT, jamais rangé dans
@@ -818,6 +835,8 @@ export interface MonthBucketApi {
   // et l'écart correspondant ("X DH de budgets encore disponibles sur la période").
   projected_cash_balance_prudent: number;
   prudent_budget_remaining: number;
+  // Corrections consolidées §10 — détail des budgets comptés dans prudent_budget_remaining.
+  budget_items: BudgetLineItemApi[];
   income_items: MonthlyLineItem[];
   expense_items: MonthlyLineItem[];
   movable_expense_total: number;

@@ -145,12 +145,31 @@ export function DeadlineDetailScreen() {
         return;
       }
     }
+    // Corrections consolidées §2 — RG-014 (backend) ne clôture jamais une échéance
+    // automatiquement : c'est le mobile qui orchestre l'action explicite de clôture
+    // dès que le montant saisi couvre le reste à payer ACTUEL (pas le montant
+    // d'origine de l'échéance) — jamais de reliquat fantôme en Projection/Calendrier.
+    const currentResteAPayer = deadline ? n(deadline.resteAPayer) : null;
+    // Corrections consolidées §2bis — garde-fou en profondeur : le bouton est déjà
+    // désactivé en cas de trop-payé (isOverpayment ci-dessus), mais on revalide ici
+    // au cas où l'état aurait changé entre le rendu et l'appel (jamais de confiance
+    // aveugle dans un state React capturé plus tôt) ; le backend refuse aussi (RG-015bis).
+    if (currentResteAPayer !== null && value > currentResteAPayer) {
+      setError(
+        `Montant supérieur au reste à payer : ${currentResteAPayer.toLocaleString('fr-FR')} DH restent dus sur cette échéance.`,
+      );
+      return;
+    }
+    const shouldClose = currentResteAPayer !== null && value >= currentResteAPayer;
     setPaying(true);
     try {
       if (fundingSource === 'provision' && provision) {
         await api.payDeadlineWithProvision(id, { amount: value, accountId: payAccountId, provisionId: provision.id, paidDate: todayIso() });
       } else {
         await api.createPayment(id, { amount: value, accountId: payAccountId, paidDate: todayIso() });
+      }
+      if (shouldClose) {
+        await api.closeDeadline(id);
       }
       setPayAmount('');
       await load();
@@ -205,7 +224,16 @@ export function DeadlineDetailScreen() {
   const payAccount = accounts.find((a) => a.id === payAccountId) ?? null;
   const showRecap = isOpen && accounts.length > 0 && !!payAccount && !!payValue && payValue > 0;
   const soldeApres = payAccount ? payAccount.soldeCourant - payValue : null;
+  // Corrections consolidées §2bis — un montant qui dépasse le reste à payer ACTUEL est
+  // bloqué explicitement : jamais masqué par le clamp à 0 de resteApresOperation
+  // ci-dessous, qui aurait sinon affiché à tort "paiement total, aucun reliquat".
+  const isOverpayment = showRecap && resteAPayer !== null && payValue > resteAPayer;
   const resteApresOperation = resteAPayer !== null ? Math.max(0, Math.round((resteAPayer - payValue) * 100) / 100) : null;
+  // Corrections consolidées §2 — le libellé de l'action reflète ce qui va réellement
+  // se produire : un montant qui couvre EXACTEMENT le reste à payer ACTUEL clôture
+  // l'échéance (paiement + close() explicite), jamais une simple "confirmation" ambiguë.
+  const willClosePayment = showRecap && !isOverpayment && resteApresOperation === 0;
+  const payButtonLabel = !showRecap || isOverpayment ? 'CONFIRMER LE PAIEMENT' : willClosePayment ? "PAYÉ — CLÔTURER L'ÉCHÉANCE" : 'ENREGISTRER LE PAIEMENT PARTIEL';
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -302,7 +330,16 @@ export function DeadlineDetailScreen() {
               onFocus={handleFocus}
             />
 
-            {showRecap && (
+            {isOverpayment && (
+              <View style={styles.overpaymentCard} testID="payment-overpayment-error">
+                <Text style={styles.overpaymentText}>
+                  Montant supérieur au reste à payer : {resteAPayer!.toLocaleString('fr-FR')} DH restent dus sur cette échéance. Réduisez le
+                  montant, ou saisissez exactement {resteAPayer!.toLocaleString('fr-FR')} DH pour payer et clôturer.
+                </Text>
+              </View>
+            )}
+
+            {showRecap && !isOverpayment && (
               <View style={styles.recapCard} testID="payment-recap">
                 <Text style={styles.recapTitle}>RÉCAPITULATIF</Text>
                 <View style={styles.recapRow}>
@@ -330,13 +367,25 @@ export function DeadlineDetailScreen() {
                   </Text>
                 </View>
                 {resteApresOperation !== null && resteApresOperation > 0 && (
-                  <Text style={styles.recapPartialNote}>Paiement partiel — il restera {resteApresOperation.toLocaleString('fr-FR')} DH à payer.</Text>
+                  <Text style={styles.recapPartialNote} testID="payment-recap-partial-note">
+                    Paiement partiel — il restera {resteApresOperation.toLocaleString('fr-FR')} DH à payer.
+                  </Text>
+                )}
+                {resteApresOperation === 0 && (
+                  <Text style={styles.recapFullNote} testID="payment-recap-full-note">
+                    Paiement total — cette échéance pourra être clôturée, aucun reliquat.
+                  </Text>
                 )}
               </View>
             )}
 
-            <TouchableOpacity style={styles.buttonConfirm} onPress={onPay} disabled={paying || !showRecap}>
-              {paying ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonConfirmText}>CONFIRMER LE PAIEMENT</Text>}
+            <TouchableOpacity
+              testID="deadline-pay-button"
+              style={styles.buttonConfirm}
+              onPress={onPay}
+              disabled={paying || !showRecap || isOverpayment}
+            >
+              {paying ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonConfirmText}>{payButtonLabel}</Text>}
             </TouchableOpacity>
           </View>
         )}
@@ -436,6 +485,8 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.sm },
   noAccountCard: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.lg, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border },
   noAccountText: { fontSize: 13, color: colors.textPrimary, marginBottom: spacing.md },
+  overpaymentCard: { backgroundColor: colors.dangerLight, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.xs, marginBottom: spacing.md },
+  overpaymentText: { fontSize: 12, color: colors.danger, fontWeight: '600' },
   help: { fontSize: 11, color: colors.textSecondary, marginBottom: spacing.sm, fontStyle: 'italic' },
   segment: { flexDirection: 'row', backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: 4, marginBottom: spacing.sm },
   segmentItem: { flex: 1, paddingVertical: 10, paddingHorizontal: 4, borderRadius: radius.sm, alignItems: 'center' },
@@ -453,6 +504,7 @@ const styles = StyleSheet.create({
   recapValueNegative: { color: colors.danger },
   recapValueWarning: { color: colors.warning },
   recapPartialNote: { fontSize: 11, color: colors.warning, fontWeight: '600', marginTop: spacing.sm, fontStyle: 'italic' },
+  recapFullNote: { fontSize: 11, color: colors.success, fontWeight: '600', marginTop: spacing.sm, fontStyle: 'italic' },
   buttonConfirm: { backgroundColor: colors.success, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
   buttonConfirmText: { color: colors.textOnPrimary, fontWeight: '700', fontSize: 14, letterSpacing: 0.3 },
   paymentRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },

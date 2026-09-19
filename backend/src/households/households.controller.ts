@@ -5,6 +5,7 @@ import { AuthService } from '../auth/auth.service';
 import { CreateHouseholdDto } from './dto/create-household.dto';
 import { CreateInviteDto } from './dto/create-invite.dto';
 import { JoinHouseholdDto } from './dto/join-household.dto';
+import { SwitchActiveHouseholdDto } from './dto/switch-active-household.dto';
 import { UpdateHouseholdSettingsDto } from './dto/update-household-settings.dto';
 import { SkipOnboardingStepDto } from './dto/skip-onboarding-step.dto';
 import { ResetFinancialDataDto } from './dto/reset-financial-data.dto';
@@ -39,7 +40,24 @@ export class HouseholdsController {
 
   @Post('join')
   async join(@Body() dto: JoinHouseholdDto, @CurrentUser() user: AuthenticatedUser, @Req() req: Request) {
-    const household = await this.households.join(user.sub, user.householdId, dto.code);
+    const household = await this.households.join(user.sub, dto.code);
+    const tokens = await this.auth.reissueForHousehold(user.sub, household.id, req.headers['user-agent']);
+    return { household, ...tokens };
+  }
+
+  /** Corrections consolidées §17 — liste des foyers déjà membres, pour le sélecteur « Changer de foyer ». */
+  @Get('memberships')
+  listMemberships(@CurrentUser() user: AuthenticatedUser) {
+    return this.households.listMemberships(user.sub);
+  }
+
+  /**
+   * Corrections consolidées §17 — « Changer de foyer actif » parmi les memberships
+   * EXISTANTS, jamais une invitation (cf. join() ci-dessus, concept distinct).
+   */
+  @Post('switch-active')
+  async switchActive(@Body() dto: SwitchActiveHouseholdDto, @CurrentUser() user: AuthenticatedUser, @Req() req: Request) {
+    const household = await this.households.switchActive(user.sub, dto.householdId);
     const tokens = await this.auth.reissueForHousehold(user.sub, household.id, req.headers['user-agent']);
     return { household, ...tokens };
   }

@@ -16,11 +16,23 @@ import { useTopInset } from '../../ui/useTopInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
 import { MultiSelect } from '../../ui/MultiSelect';
-import { CATEGORY_LABEL, formatDh, formatShortDate as formatShortDateShared } from './projectionLogic';
+import {
+  CATEGORY_LABEL,
+  formatDh,
+  formatShortDate as formatShortDateShared,
+  groupItemsByPlan,
+  PLAN_GROUP_LABEL,
+  PLAN_GROUP_ORDER,
+} from './projectionLogic';
 
 interface Account {
   id: string;
   name: string;
+}
+
+interface FinancialPlanRef {
+  id: string;
+  planType: string;
 }
 
 const HORIZONS = [3, 6, 12, 24, 36, 60] as const;
@@ -82,6 +94,18 @@ function TransferRow({ item }: { item: PlannedTransferItem }) {
 
 const formatShortDate = formatShortDateShared;
 
+// Corrections consolidées §10 — ligne d'un budget compté dans "dont X DH de
+// budgets encore disponibles sur la période" : jamais mêlée aux dépenses
+// (import { BudgetLineItemApi } depuis client.ts, réutilisé tel quel).
+function BudgetRow({ item }: { item: { budget_id: string; label: string; amount: number } }) {
+  return (
+    <View style={styles.itemRow}>
+      <Text style={styles.itemLabel}>{item.label}</Text>
+      <Text style={styles.itemAmount}>{formatDh(item.amount)}</Text>
+    </View>
+  );
+}
+
 /**
  * M9C — ligne "prévision long terme" (SchoolProjection status=projete), jamais
  * un engagement certain : contextualisation "{label} · {enfant}" composée ici,
@@ -132,11 +156,13 @@ function MonthCard({
   expanded,
   onToggle,
   onOpenDetail,
+  planTypeById,
 }: {
   month: MonthBucketApi;
   expanded: boolean;
   onToggle: () => void;
   onOpenDetail: (item: MonthlyLineItem) => void;
+  planTypeById: Map<string, string>;
 }) {
   const deficit = month.balance < 0;
   const situationDeficitPrudent = month.projected_cash_balance_prudent < 0;
@@ -229,9 +255,41 @@ function MonthCard({
           {month.expense_items.length === 0 ? (
             <Text style={styles.emptyText}>Aucune dépense prévue ce mois-ci.</Text>
           ) : (
-            month.expense_items.map((item) => <ExpenseRow key={item.entityId + item.date} item={item} onOpenDetail={onOpenDetail} />)
+            // Corrections consolidées §11 — groupé par plan financier (Scolarité/
+            // Voiture/Voyage/Logement/Autres), partition stricte : chaque dépense
+            // apparaît dans EXACTEMENT un groupe, jamais deux.
+            PLAN_GROUP_ORDER.map((groupKey) => {
+              const groupItems = groupItemsByPlan(month.expense_items, planTypeById)[groupKey];
+              if (groupItems.length === 0) return null;
+              return (
+                <View key={groupKey} testID={`plan-group-${month.month}-${groupKey}`}>
+                  <Text style={styles.planGroupTitle}>{PLAN_GROUP_LABEL[groupKey]}</Text>
+                  {groupItems.map((item) => (
+                    <ExpenseRow key={item.entityId + item.date} item={item} onOpenDetail={onOpenDetail} />
+                  ))}
+                </View>
+              );
+            })
           )}
           <Text style={styles.detailTotalLine}>Total dépenses {formatDh(month.total_expense)}</Text>
+
+          {/* Corrections consolidées §3 — le moteur de calcul n'est jamais modifié :
+              budget_items/prudent_budget_remaining restent cumulatifs depuis le début
+              de l'horizon par design. Seul le libellé change ici, pour ne jamais laisser
+              croire qu'il ne s'agit que des budgets de CE mois — ce sont les montants
+              encore comptés dans la projection prudente à cette date précise. Le total
+              affiché doit toujours égaler exactement "dont X DH de budgets encore
+              disponibles" (en-tête ci-dessus) — jamais mêlé aux dépenses. */}
+          <Text style={styles.detailSectionTitle}>BUDGETS PRIS EN COMPTE</Text>
+          <Text style={styles.detailSectionSubtitle}>Montants encore pris en compte dans la projection à cette date</Text>
+          {month.budget_items.length === 0 ? (
+            <Text style={styles.emptyText}>Aucun budget compté dans le calcul prudent de ce mois.</Text>
+          ) : (
+            month.budget_items.map((item, index) => <BudgetRow key={`${item.budget_id}-${index}`} item={item} />)
+          )}
+          <Text style={styles.detailTotalLine} testID={`month-total-budgets-${month.month}`}>
+            Total budgets pris en compte {formatDh(month.prudent_budget_remaining)}
+          </Text>
 
           {month.planned_transfer_items.length > 0 && (
             <>
@@ -285,6 +343,9 @@ export function ProjectionScreen() {
 
   const [horizonMonths, setHorizonMonths] = useState<number>(DEFAULT_HORIZON);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  // Corrections consolidées §11 — id→planType, construit une seule fois par
+  // chargement pour grouper le détail mensuel par plan (jamais recalculé par carte).
+  const [planTypeById, setPlanTypeById] = useState<Map<string, string>>(new Map());
   const [incomeAccountIds, setIncomeAccountIds] = useState<string[] | null>(null); // null = "Tous"
   const [expenseAccountIds, setExpenseAccountIds] = useState<string[] | null>(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -297,11 +358,13 @@ export function ProjectionScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [accs, body] = await Promise.all([
+      const [accs, plans, body] = await Promise.all([
         api.listAccounts(),
+        api.listFinancialPlans(),
         api.getMonthlyProjection({ horizonMonths, incomeAccountIds, expenseAccountIds }),
       ]);
       setAccounts(accs);
+      setPlanTypeById(new Map((plans as FinancialPlanRef[]).map((p) => [p.id, p.planType])));
       setData(body);
     } finally {
       setLoading(false);
@@ -447,6 +510,7 @@ export function ProjectionScreen() {
           expanded={!!expandedMonths[m.month]}
           onToggle={() => setExpandedMonths((prev) => ({ ...prev, [m.month]: !prev[m.month] }))}
           onOpenDetail={onOpenDetail}
+          planTypeById={planTypeById}
         />
       ))}
     </ScrollView>
@@ -540,6 +604,8 @@ const styles = StyleSheet.create({
   deficitTitle: { fontSize: 12, fontWeight: '700', color: colors.danger },
   deficitText: { fontSize: 12, color: colors.danger, marginTop: 4 },
   detailSectionTitle: { fontSize: 12, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.sm, marginBottom: 4 },
+  detailSectionSubtitle: { fontSize: 10, color: colors.textSecondary, fontStyle: 'italic', marginBottom: 4 },
+  planGroupTitle: { fontSize: 11, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', marginTop: 6, marginBottom: 2 },
   detailTotalLine: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', marginTop: 4, textAlign: 'right' },
   emptyText: { fontSize: 12, color: colors.textSecondary, fontStyle: 'italic' },
   itemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 },

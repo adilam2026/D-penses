@@ -279,6 +279,15 @@ model User {
   // NULL = compte créé mais adresse email pas encore confirmée par code OTP —
   // aucun token de session émis avant que ce champ soit renseigné (signup).
   emailVerifiedAt DateTime? @map("email_verified_at")
+  // Corrections consolidées §16 — foyer ACTIF explicite, persistant entre
+  // connexions/rafraîchissements de token (auth.service.ts#activeHouseholdId).
+  // NULL = jamais switché depuis un second foyer : repli sur le membership le
+  // plus ancien (comportement historique inchangé pour tout utilisateur qui
+  // n'a jamais utilisé "Rejoindre un foyer" en étant déjà dans un foyer).
+  // onDelete SetNull : si le foyer référencé disparaissait un jour, jamais un
+  // utilisateur bloqué — simple repli sur l'ancien calcul.
+  activeHouseholdId String?    @map("active_household_id")
+  activeHousehold   Household? @relation(fields: [activeHouseholdId], references: [id], onDelete: SetNull)
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
@@ -286,7 +295,9 @@ model User {
   sessions                   Session[]
   emailOtps                  EmailOtp[]
   createdInvites             HouseholdInvite[]          @relation("InviteCreatedBy")
-  redeemedInvite             HouseholdInvite?           @relation("InviteRedeemedBy")
+  // §16 — liste (plus une relation 1-1) : un utilisateur peut redeem plusieurs
+  // invitations différentes au fil des changements de foyer actif.
+  redeemedInvites            HouseholdInvite[]          @relation("InviteRedeemedBy")
   ownedAccounts              FinancialAccount[]
   incomeSourcesAsBeneficiary IncomeSource[]
   confirmedIncomeOccurrences IncomeOccurrence[]
@@ -311,6 +322,11 @@ model Household {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   memberships        HouseholdMembership[]
+  // Corrections consolidées §16 — utilisateurs pour qui CE foyer est le foyer
+  // actif courant (User.activeHouseholdId) — jamais confondu avec `memberships`
+  // (appartenance) : un utilisateur peut être membre d'un foyer sans qu'il soit
+  // son foyer actif (cas d'un foyer quitté après un switch).
+  usersWithThisActive User[]
   children           Child[]
   categories         Category[]
   settings           HouseholdSettings?
@@ -526,7 +542,10 @@ model HouseholdInvite {
   createdById String        @map("created_by_id")
   expiresAt   DateTime      @map("expires_at")
   usedAt      DateTime?     @map("used_at")
-  usedById    String?       @unique @map("used_by_id")
+  // §16 — plus @unique : un utilisateur peut désormais rejoindre plusieurs foyers dans
+  // le temps (changement de foyer actif), donc redeem plusieurs invitations différentes ;
+  // seule l'invitation elle-même (une ligne) reste à usage unique via `usedAt`.
+  usedById    String?       @map("used_by_id")
   createdAt   DateTime      @default(now()) @map("created_at")
 
   household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)

@@ -47,6 +47,7 @@ import { RecurringTransfersScreen } from '../screens/recurring-transfers/Recurri
 import { RecurringTransferDetailScreen } from '../screens/recurring-transfers/RecurringTransferDetailScreen';
 import { HamburgerMenuScreen } from '../screens/HamburgerMenuScreen';
 import { HouseholdMembersScreen } from '../screens/household/HouseholdMembersScreen';
+import { JoinHouseholdScreen } from '../screens/household/JoinHouseholdScreen';
 import { CategoriesScreen } from '../screens/settings/CategoriesScreen';
 import { CategoryTypesScreen } from '../screens/settings/CategoryTypesScreen';
 import { PreferencesScreen } from '../screens/settings/PreferencesScreen';
@@ -107,6 +108,7 @@ export function RootNavigator() {
       <Stack.Screen name="Tabs" component={RootTabs} />
       <Stack.Screen name="HamburgerMenu" component={HamburgerMenuScreen} />
       <Stack.Screen name="HouseholdMembers" component={HouseholdMembersScreen} options={{ headerShown: true, title: 'Membres du foyer' }} />
+      <Stack.Screen name="JoinHousehold" component={JoinHouseholdScreen} options={{ headerShown: true, title: 'Mes foyers' }} />
       <Stack.Screen name="Categories" component={CategoriesScreen} options={{ headerShown: true, title: 'Catégories' }} />
       <Stack.Screen name="CategoryTypes" component={CategoryTypesScreen} options={{ headerShown: true, title: 'Types de dépenses' }} />
       <Stack.Screen name="Preferences" component={PreferencesScreen} options={{ headerShown: true, title: 'Préférences' }} />

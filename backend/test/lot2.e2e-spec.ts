@@ -147,6 +147,50 @@ describe('Lot 2 — Revenus & charges de base (e2e)', () => {
     await http.post(`/deadlines/${deadline2}/close`).set(...auth()).send({}).expect(400); // reste_a_payer > 0
   });
 
+  // ---------- TEST 6bis — garde-fou anti trop-payé (corrections consolidées §2bis) ----------
+  it("TEST 6bis — un paiement standard qui dépasse le reste à payer actuel est refusé par le backend (contournement mobile impossible)", async () => {
+    const accountId = await createAccount('Compte Trop-payé', 50000);
+    const { deadlineId } = await createChargePlanAndDeadline({ dueDate: '2026-12-10', amountCurrent: 200 });
+
+    // reste dû = 200, paiement direct de 250 → refusé, jamais enregistré.
+    const rejected = await http
+      .post(`/deadlines/${deadlineId}/payments`)
+      .set(...auth())
+      .send({ amount: 250, accountId })
+      .expect(400);
+    expect(rejected.body.message).toContain('200');
+
+    // Aucun Payment n'a été créé par la tentative refusée : le reste est toujours 200.
+    const stillOpen = await http.get(`/deadlines/${deadlineId}`).set(...auth()).expect(200);
+    expect(Number(stillOpen.body.resteAPayer)).toBe(200);
+    const payments = await http.get(`/deadlines/${deadlineId}/payments`).set(...auth()).expect(200);
+    expect(payments.body).toHaveLength(0);
+
+    // Un premier paiement partiel de 100 (reste 200 → 100) reste accepté normalement.
+    await http.post(`/deadlines/${deadlineId}/payments`).set(...auth()).send({ amount: 100, accountId }).expect(201);
+    // Puis un second paiement de 150 (reste actuel = 100) est désormais refusé — jamais le
+    // montant ORIGINAL de l'échéance (200) utilisé comme plafond, toujours le reste ACTUEL.
+    const rejected2 = await http
+      .post(`/deadlines/${deadlineId}/payments`)
+      .set(...auth())
+      .send({ amount: 150, accountId })
+      .expect(400);
+    expect(rejected2.body.message).toContain('100');
+
+    // Un paiement de exactement 100 (le reste actuel) est accepté et amène reste à 0.
+    const exact = await http.post(`/deadlines/${deadlineId}/payments`).set(...auth()).send({ amount: 100, accountId }).expect(201);
+    expect(Number(exact.body.deadline.resteAPayer)).toBe(0);
+
+    // Un remboursement n'est JAMAIS plafonné par cette garde (RG métier existante, TEST 7 —
+    // il fait au contraire remonter reste_a_payer, ce n'est pas un trop-payé).
+    const refund = await http
+      .post(`/deadlines/${deadlineId}/payments`)
+      .set(...auth())
+      .send({ amount: 5000, accountId, type: 'remboursement' })
+      .expect(201);
+    expect(Number(refund.body.deadline.resteAPayer)).toBe(5000);
+  });
+
   // ---------- TEST 7 — remboursement ----------
   it('TEST 7 — un remboursement augmente le compte et fait remonter reste_a_payer', async () => {
     const accountId = await createAccount('Compte Remboursement', 0);

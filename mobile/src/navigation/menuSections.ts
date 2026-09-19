@@ -21,6 +21,11 @@ export const HAMBURGER_SECTIONS: { title: string; items: MenuItem[] }[] = [
       { label: 'Comptes', icon: 'card-outline', route: 'Accounts' },
       { label: 'Membres du foyer', icon: 'people-circle-outline', route: 'HouseholdMembers' },
       { label: 'Enfants', icon: 'people-outline', route: 'Children' },
+      // Corrections consolidées §16/§17 — atteignable à tout moment, pas
+      // seulement au premier onboarding (HouseholdSetupScreen reste réservé à
+      // ce cas-là) : change de foyer actif parmi les memberships existants ET
+      // permet d'en rejoindre un nouveau via invitation, sur le même écran.
+      { label: 'Mes foyers', icon: 'enter-outline', route: 'JoinHousehold' },
     ],
   },
   {

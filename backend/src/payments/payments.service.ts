@@ -48,6 +48,25 @@ export class PaymentsService {
       if (type !== 'ajustement' && dto.direction) {
         throw new BadRequestException('direction est réservé aux paiements de type ajustement (RG-015)');
       }
+
+      // Corrections consolidées §2bis — un paiement STANDARD ne peut jamais dépasser le
+      // reste à payer ACTUEL (avant cette écriture) : jamais de trop-payé silencieux créé
+      // par contournement du mobile (appel API direct). Exclu de type=remboursement (RG
+      // métier existante, TEST 7 lot2 : un remboursement fait au contraire REMONTER
+      // reste_a_payer, c'est son rôle) et de type=ajustement (correction dédiée, cf.
+      // PaymentsService.correct — jamais réémise ici avec un plafond qui la casserait).
+      // Si le reste est encore inconnu (montant non confirmé), aucun plafond calculable —
+      // jamais bloqué sur une donnée qu'on n'a pas.
+      if (type === 'paiement') {
+        const currentBalance = await getDeadlineBalance(tx, deadlineId);
+        const currentResteAPayer = currentBalance?.resteAPayer ?? null;
+        if (currentResteAPayer !== null && dto.amount > currentResteAPayer) {
+          throw new BadRequestException(
+            `Montant supérieur au reste à payer : ${currentResteAPayer} DH restent dus sur cette échéance — réduisez le montant ou utilisez « Payé / clôturer l'échéance » pour le montant exact.`,
+          );
+        }
+      }
+
       const fundingSource = dto.fundingSource ?? 'compte';
 
       if (fundingSource === 'provision') {

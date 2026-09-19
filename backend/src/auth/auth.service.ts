@@ -242,9 +242,23 @@ export class AuthService {
 
   // Recherche du foyer actif de l'utilisateur — nécessite le contexte RLS
   // (policy hm_self_visibility, cf. migration Lot 0) même sans household_id connu.
+  // Corrections consolidées §16 — priorité à User.activeHouseholdId (persisté
+  // explicitement par HouseholdsService.join() lors d'un changement de foyer),
+  // UNIQUEMENT si un membership valide existe encore pour ce foyer (jamais un
+  // foyer fantôme si la ligne a été retirée entre-temps) ; repli sur le
+  // membership le plus ancien — comportement historique inchangé pour tout
+  // utilisateur qui n'a jamais changé de foyer actif.
   private async activeHouseholdId(userId: string): Promise<string | null> {
     return this.rlsContext.run(userId, null, async () => {
-      const membership = await this.rlsContext.getClient().householdMembership.findFirst({
+      const tx = this.rlsContext.getClient();
+      const user = await tx.user.findUnique({ where: { id: userId }, select: { activeHouseholdId: true } });
+      if (user?.activeHouseholdId) {
+        const activeMembership = await tx.householdMembership.findUnique({
+          where: { householdId_userId: { householdId: user.activeHouseholdId, userId } },
+        });
+        if (activeMembership) return user.activeHouseholdId;
+      }
+      const membership = await tx.householdMembership.findFirst({
         where: { userId },
         orderBy: { joinedAt: 'asc' },
       });

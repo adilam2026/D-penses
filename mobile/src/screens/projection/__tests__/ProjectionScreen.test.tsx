@@ -37,6 +37,7 @@ jest.mock('../../../api/client', () => {
   return {
     ...actual,
     listAccounts: jest.fn(),
+    listFinancialPlans: jest.fn(),
     getMonthlyProjection: jest.fn(),
     simulateMonthlyProjection: jest.fn(),
     updateDeadline: jest.fn(),
@@ -61,6 +62,7 @@ function monthBucket(overrides: Partial<api.MonthBucketApi> = {}): api.MonthBuck
     projected_cash_balance: 2000,
     projected_cash_balance_prudent: 2000,
     prudent_budget_remaining: 0,
+    budget_items: [],
     income_items: [
       { entityType: 'income_occurrence', entityId: 'occ1', label: 'Salaire', date: '2026-09-05', amount: 30000, accountId: 'acc1', accountKnown: true, movable: false, realized: false },
     ],
@@ -124,6 +126,7 @@ function projectionFixture(months: api.MonthBucketApi[]): api.MonthlyProjectionA
 beforeEach(() => {
   jest.clearAllMocks();
   mockedApi.listAccounts.mockResolvedValue(ACCOUNTS);
+  mockedApi.listFinancialPlans.mockResolvedValue([]);
   mockedApi.getMonthlyProjection.mockResolvedValue(projectionFixture([monthBucket()]));
 });
 
@@ -466,4 +469,122 @@ it("M9C : un mois sans prévision long terme (impact=0) n'affiche jamais la 3e l
   await fireEvent.press(screen.getByTestId('month-toggle-2026-09'));
   await waitFor(() => screen.getByText('Salaire'));
   expect(screen.queryByText('Prévisions scolaires')).toBeNull();
+});
+
+// Corrections consolidées §10 — bloc BUDGETS listant les budgets comptés dans
+// "dont X DH de budgets encore disponibles sur la période", avec un total qui
+// doit toujours égaler ce même montant (Σ budget_items === prudent_budget_remaining).
+it('corrections consolidées §10 — le bloc BUDGETS liste les budgets comptés et son total égale "dont X DH de budgets encore disponibles"', async () => {
+  mockedApi.getMonthlyProjection.mockResolvedValue(
+    projectionFixture([
+      monthBucket({
+        prudent_budget_remaining: 450,
+        budget_items: [
+          { budget_id: 'b1', label: 'Alimentation (période courante)', amount: 300 },
+          { budget_id: 'b2', label: 'Loisirs (période courante)', amount: 150 },
+        ],
+      }),
+    ]),
+  );
+  await render(<ProjectionScreen />);
+  await waitFor(() => screen.getByTestId('month-toggle-2026-09'));
+  await fireEvent.press(screen.getByTestId('month-toggle-2026-09'));
+
+  // Corrections consolidées §3 — libellé clarifié (jamais "budgets de ce mois
+  // seulement") : le moteur de calcul cumulatif depuis le début de l'horizon
+  // n'est pas modifié, seul le texte l'explicite désormais.
+  await waitFor(() => screen.getByText('BUDGETS PRIS EN COMPTE'));
+  expect(screen.getByText('Montants encore pris en compte dans la projection à cette date')).toBeTruthy();
+  expect(screen.getByText('Alimentation (période courante)')).toBeTruthy();
+  expect(screen.getByText('Loisirs (période courante)')).toBeTruthy();
+  expect(screen.getByTestId('month-total-budgets-2026-09')).toHaveTextContent('Total budgets pris en compte 450 DH');
+});
+
+it('corrections consolidées §10 — état vide explicite quand aucun budget n\'est compté ce mois', async () => {
+  await render(<ProjectionScreen />);
+  await waitFor(() => screen.getByTestId('month-toggle-2026-09'));
+  await fireEvent.press(screen.getByTestId('month-toggle-2026-09'));
+
+  await waitFor(() => screen.getByText('BUDGETS PRIS EN COMPTE'));
+  expect(screen.getByText('Aucun budget compté dans le calcul prudent de ce mois.')).toBeTruthy();
+});
+
+// Corrections consolidées §11 — détail des dépenses groupé par plan financier
+// (Scolarité/Voiture/Voyage/Logement/Autres), partition stricte : jamais un
+// même item dans deux blocs.
+it('corrections consolidées §11 — les dépenses du détail mensuel sont groupées par plan financier, sans doublon', async () => {
+  mockedApi.listFinancialPlans.mockResolvedValue([
+    { id: 'plan-school', planType: 'school' },
+    { id: 'plan-travel', planType: 'travel' },
+  ]);
+  mockedApi.getMonthlyProjection.mockResolvedValue(
+    projectionFixture([
+      monthBucket({
+        total_expense: 3000,
+        expense_items: [
+          {
+            entityType: 'deadline',
+            entityId: 'dl-school',
+            label: 'Scolarité T1',
+            date: '2026-09-10',
+            amount: 1000,
+            accountId: 'acc1',
+            accountKnown: true,
+            movable: false,
+            realized: false,
+            financialPlanId: 'plan-school',
+          },
+          {
+            entityType: 'deadline',
+            entityId: 'dl-travel',
+            label: 'Vol aller-retour',
+            date: '2026-09-12',
+            amount: 1500,
+            accountId: 'acc1',
+            accountKnown: true,
+            movable: false,
+            realized: false,
+            financialPlanId: 'plan-travel',
+          },
+          {
+            entityType: 'deadline',
+            entityId: 'dl-loose',
+            label: 'Internet',
+            date: '2026-09-15',
+            amount: 500,
+            accountId: 'acc1',
+            accountKnown: true,
+            movable: true,
+            realized: false,
+            financialPlanId: null,
+          },
+        ],
+      }),
+    ]),
+  );
+  await render(<ProjectionScreen />);
+  await waitFor(() => screen.getByTestId('month-toggle-2026-09'));
+  await fireEvent.press(screen.getByTestId('month-toggle-2026-09'));
+
+  await waitFor(() => screen.getByTestId('plan-group-2026-09-school'));
+  const schoolGroup = within(screen.getByTestId('plan-group-2026-09-school'));
+  expect(schoolGroup.getByText('Scolarité')).toBeTruthy();
+  expect(schoolGroup.getByText('Scolarité T1')).toBeTruthy();
+
+  const travelGroup = within(screen.getByTestId('plan-group-2026-09-travel'));
+  expect(travelGroup.getByText('Voyage')).toBeTruthy();
+  expect(travelGroup.getByText('Vol aller-retour')).toBeTruthy();
+
+  const otherGroup = within(screen.getByTestId('plan-group-2026-09-other'));
+  expect(otherGroup.getByText('Autres')).toBeTruthy();
+  expect(otherGroup.getByText('Internet')).toBeTruthy();
+
+  // Jamais de groupe Voiture/Logement affiché quand aucune dépense n'y appartient (§4 vide).
+  expect(screen.queryByTestId('plan-group-2026-09-vehicle')).toBeNull();
+  expect(screen.queryByTestId('plan-group-2026-09-housing')).toBeNull();
+
+  // Chaque libellé n'apparaît qu'une seule fois à l'écran (jamais dans 2 blocs).
+  expect(screen.getAllByText('Scolarité T1')).toHaveLength(1);
+  expect(screen.getAllByText('Vol aller-retour')).toHaveLength(1);
+  expect(screen.getAllByText('Internet')).toHaveLength(1);
 });

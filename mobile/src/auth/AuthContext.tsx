@@ -12,6 +12,8 @@ interface AuthState {
   signOut: () => Promise<void>;
   createHousehold: (name: string) => Promise<void>;
   joinHousehold: (code: string) => Promise<void>;
+  /** Corrections consolidées §17 — bascule vers un membership EXISTANT, jamais via invitation. */
+  switchActiveHousehold: (householdId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
@@ -82,9 +84,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setStatus('signedIn');
   }, []);
 
+  const switchActiveHousehold = useCallback(async (householdId: string) => {
+    const res = await api.switchActiveHousehold(householdId);
+    await api.setTokens(res);
+    setHouseholdId(res.household.id);
+    setStatus('signedIn');
+  }, []);
+
   const value = useMemo(
-    () => ({ status, householdId, signIn, signUp, verifyEmail, signOut, createHousehold, joinHousehold }),
-    [status, householdId, signIn, signUp, verifyEmail, signOut, createHousehold, joinHousehold],
+    () => ({ status, householdId, signIn, signUp, verifyEmail, signOut, createHousehold, joinHousehold, switchActiveHousehold }),
+    [status, householdId, signIn, signUp, verifyEmail, signOut, createHousehold, joinHousehold, switchActiveHousehold],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

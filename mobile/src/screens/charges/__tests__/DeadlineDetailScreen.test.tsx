@@ -94,8 +94,13 @@ it('affiche le récapitulatif (solde actuel/après, reste à payer) avant confir
   expect(screen.getByText('4 000 DH')).toBeTruthy(); // solde après paiement
   expect(screen.getByText('0 DH')).toBeTruthy(); // reste à payer après opération
 
-  await fireEvent.press(screen.getByText('CONFIRMER LE PAIEMENT'));
+  // Corrections consolidées §2 — un montant qui couvre le reste actuel propose
+  // explicitement de clôturer, jamais un simple "confirmer" ambigu.
+  await waitFor(() => expect(screen.getByText("PAYÉ — CLÔTURER L'ÉCHÉANCE")).toBeTruthy());
+  await fireEvent.press(screen.getByTestId('deadline-pay-button'));
   await waitFor(() => expect(mockedApi.createPayment).toHaveBeenCalledWith('dl1', { amount: 1000, accountId: 'acc1', paidDate: expect.any(String) }));
+  // Paiement total → l'app appelle EXPLICITEMENT close(), jamais une clôture implicite backend.
+  await waitFor(() => expect(mockedApi.closeDeadline).toHaveBeenCalledWith('dl1'));
 });
 
 // Corrections UI/UX finales §3 — le bloc "Confirmer la facture" (montant réel
@@ -128,6 +133,108 @@ it('paiement partiel : affiche explicitement le reste à payer après opération
   await waitFor(() => expect(screen.getByTestId('payment-recap')).toBeTruthy());
   expect(screen.getByText('600 DH')).toBeTruthy(); // reste à payer après opération
   expect(screen.getByText(/Paiement partiel — il restera 600 DH à payer/)).toBeTruthy();
+  // Corrections consolidées §2 — un montant inférieur au reste actuel reste une
+  // action "paiement partiel" explicite, jamais assimilée à une clôture.
+  expect(screen.getByText('ENREGISTRER LE PAIEMENT PARTIEL')).toBeTruthy();
+
+  mockedApi.createPayment.mockResolvedValue({} as any);
+  await fireEvent.press(screen.getByTestId('deadline-pay-button'));
+  await waitFor(() => expect(mockedApi.createPayment).toHaveBeenCalledWith('dl1', { amount: 400, accountId: 'acc1', paidDate: expect.any(String) }));
+  // Paiement partiel → jamais d'appel à close() : l'échéance reste ouverte (RG-014).
+  expect(mockedApi.closeDeadline).not.toHaveBeenCalled();
+});
+
+/**
+ * Corrections consolidées §2 — orchestration explicite paiement partiel/total
+ * (backend RG-014 ne clôture jamais seul) : Cas 1/2/3 imposés par la revue de
+ * cohérence fonctionnelle.
+ */
+describe('Corrections consolidées §2 — orchestration paiement partiel/total (Cas 1/2/3)', () => {
+  it('Cas 1 : prévu 200, paiement 100 → paiement enregistré, reste 100, échéance toujours ouverte (jamais de close())', async () => {
+    mockedApi.getDeadline.mockResolvedValue({ ...DEADLINE, amountCurrent: 200, resteAPayer: 200 });
+    mockedApi.createPayment.mockResolvedValue({} as any);
+    await render(<DeadlineDetailScreen />);
+
+    await waitFor(() => expect(screen.getByTestId('deadline-pay-account-select')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('deadline-pay-account-select'));
+    await waitFor(() => expect(screen.getByTestId('deadline-pay-account-select-option-acc1')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('deadline-pay-account-select-option-acc1'));
+    await fireEvent.changeText(screen.getByTestId('deadline-pay-amount-input'), '100');
+
+    await waitFor(() => expect(screen.getByText('ENREGISTRER LE PAIEMENT PARTIEL')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('deadline-pay-button'));
+
+    await waitFor(() => expect(mockedApi.createPayment).toHaveBeenCalledWith('dl1', { amount: 100, accountId: 'acc1', paidDate: expect.any(String) }));
+    expect(mockedApi.closeDeadline).not.toHaveBeenCalled();
+  });
+
+  it("Cas 2 : même échéance, second paiement de 100 (reste 100 → 0) → paiement enregistré ET close() appelé explicitement", async () => {
+    // Après le premier paiement partiel (Cas 1), le reste à payer réel est désormais 100.
+    mockedApi.getDeadline.mockResolvedValue({ ...DEADLINE, amountCurrent: 200, resteAPayer: 100, financialStatus: 'partiellement_payee' });
+    mockedApi.createPayment.mockResolvedValue({} as any);
+    mockedApi.closeDeadline.mockResolvedValue({} as any);
+    await render(<DeadlineDetailScreen />);
+
+    await waitFor(() => expect(screen.getByTestId('deadline-pay-account-select')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('deadline-pay-account-select'));
+    await waitFor(() => expect(screen.getByTestId('deadline-pay-account-select-option-acc1')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('deadline-pay-account-select-option-acc1'));
+    await fireEvent.changeText(screen.getByTestId('deadline-pay-amount-input'), '100');
+
+    await waitFor(() => expect(screen.getByText("PAYÉ — CLÔTURER L'ÉCHÉANCE")).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('deadline-pay-button'));
+
+    await waitFor(() => expect(mockedApi.createPayment).toHaveBeenCalledWith('dl1', { amount: 100, accountId: 'acc1', paidDate: expect.any(String) }));
+    await waitFor(() => expect(mockedApi.closeDeadline).toHaveBeenCalledWith('dl1'));
+    // L'ordre compte : le paiement est créé AVANT la clôture explicite.
+    const paymentCallOrder = mockedApi.createPayment.mock.invocationCallOrder[0];
+    const closeCallOrder = mockedApi.closeDeadline.mock.invocationCallOrder[0];
+    expect(paymentCallOrder).toBeLessThan(closeCallOrder);
+  });
+
+  it('Cas 3 : prévu 200, paiement direct de 200 → paiement enregistré ET close() appelé explicitement', async () => {
+    mockedApi.getDeadline.mockResolvedValue({ ...DEADLINE, amountCurrent: 200, resteAPayer: 200 });
+    mockedApi.createPayment.mockResolvedValue({} as any);
+    mockedApi.closeDeadline.mockResolvedValue({} as any);
+    await render(<DeadlineDetailScreen />);
+
+    await waitFor(() => expect(screen.getByTestId('deadline-pay-account-select')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('deadline-pay-account-select'));
+    await waitFor(() => expect(screen.getByTestId('deadline-pay-account-select-option-acc1')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('deadline-pay-account-select-option-acc1'));
+    await fireEvent.changeText(screen.getByTestId('deadline-pay-amount-input'), '200');
+
+    await waitFor(() => expect(screen.getByText("PAYÉ — CLÔTURER L'ÉCHÉANCE")).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('deadline-pay-button'));
+
+    await waitFor(() => expect(mockedApi.createPayment).toHaveBeenCalledWith('dl1', { amount: 200, accountId: 'acc1', paidDate: expect.any(String) }));
+    await waitFor(() => expect(mockedApi.closeDeadline).toHaveBeenCalledWith('dl1'));
+  });
+
+  it("Cas 4 (corrections §2bis) : prévu/reste 200, montant saisi 250 (> reste) → validation bloquée, message clair, aucun appel API", async () => {
+    mockedApi.getDeadline.mockResolvedValue({ ...DEADLINE, amountCurrent: 200, resteAPayer: 200 });
+    await render(<DeadlineDetailScreen />);
+
+    await waitFor(() => expect(screen.getByTestId('deadline-pay-account-select')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('deadline-pay-account-select'));
+    await waitFor(() => expect(screen.getByTestId('deadline-pay-account-select-option-acc1')).toBeTruthy());
+    await fireEvent.press(screen.getByTestId('deadline-pay-account-select-option-acc1'));
+    await fireEvent.changeText(screen.getByTestId('deadline-pay-amount-input'), '250');
+
+    // Jamais le récapitulatif normal (qui aurait masqué le trop-payé derrière un
+    // "reste 0" via clamp) — un message d'erreur explicite avec le reste maximal à la place.
+    await waitFor(() => expect(screen.getByTestId('payment-overpayment-error')).toBeTruthy());
+    expect(screen.queryByTestId('payment-recap')).toBeNull();
+    expect(screen.getByText(/restent dus sur cette échéance/)).toBeTruthy();
+
+    // Le bouton de confirmation est désactivé — aucun paiement ne peut être déclenché.
+    const button = screen.getByTestId('deadline-pay-button');
+    expect(button.props.accessibilityState?.disabled ?? button.props.disabled).toBeTruthy();
+    fireEvent.press(button);
+
+    expect(mockedApi.createPayment).not.toHaveBeenCalled();
+    expect(mockedApi.closeDeadline).not.toHaveBeenCalled();
+  });
 });
 
 it('le bouton CONFIRMER LE PAIEMENT est désactivé tant qu\'aucun montant n\'est saisi', async () => {

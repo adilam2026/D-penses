@@ -74,15 +74,29 @@ export class HouseholdsService {
   }
 
   /**
-   * Rejoindre un foyer via un code d'invitation. RG-001 : un utilisateur n'a
-   * qu'un seul foyer actif en V1 — refuse si l'utilisateur en a déjà un.
+   * Rejoindre un foyer via un code d'invitation — ajoute un NOUVEAU membership.
+   * RG-001 : un seul foyer ACTIF à la fois (jamais deux contextes RLS
+   * simultanés) — cette contrainte reste intacte. Corrections consolidées §16 :
+   * un utilisateur déjà rattaché à un foyer peut désormais en rejoindre un
+   * AUTRE (changement de foyer actif), au lieu d'être bloqué en permanence sur
+   * son tout premier foyer. L'ancien membership n'est JAMAIS supprimé ni son
+   * foyer touché — seul le foyer ACTIF (User.activeHouseholdId) change,
+   * données jamais mélangées (RLS reste scopée à un seul householdId par
+   * requête, celui du token).
+   * Corrections consolidées §17 : PAS de garde « unique membre » ici — un
+   * ancien garde-fou reposait sur la prémisse erronée que rejoindre un autre
+   * foyer équivaudrait à « quitter » le foyer actuel ; or le membership
+   * existant n'est jamais supprimé, l'utilisateur reste administrateur de son
+   * foyer d'origine et peut y revenir à tout moment via switchActive() —
+   * aucune donnée ni aucun accès n'est jamais perdu, donc rien à bloquer.
+   * "Rejoindre" (ce endpoint) crée un NOUVEAU membership via invitation ;
+   * "Changer de foyer" (switchActive ci-dessous) choisit parmi les memberships
+   * EXISTANTS, sans invitation — les deux concepts ne sont jamais mélangés.
    */
-  async join(userId: string, currentHouseholdId: string | null, code: string) {
-    if (currentHouseholdId) {
-      throw new ConflictException('Ce compte est déjà rattaché à un foyer (un seul foyer actif en V1)');
-    }
+  async join(userId: string, code: string) {
     return this.rlsContext.run(userId, null, async () => {
       const tx = this.rlsContext.getClient();
+
       const invite = await tx.householdInvite.findFirst({
         where: { code, usedAt: null, expiresAt: { gt: new Date() } },
       });
@@ -111,7 +125,61 @@ export class HouseholdsService {
         data: { householdId: invite.householdId, userId, role: invite.role },
       });
 
+      // §16 — persiste le NOUVEAU foyer comme actif : sans ceci, le prochain
+      // /auth/refresh (activeHouseholdId, rotation automatique côté mobile)
+      // retomberait silencieusement sur le membership le plus ancien.
+      await tx.user.update({ where: { id: userId }, data: { activeHouseholdId: invite.householdId } });
+
       return tx.household.findUniqueOrThrow({ where: { id: invite.householdId } });
+    });
+  }
+
+  /**
+   * Corrections consolidées §17 — liste tous les foyers dont l'utilisateur est
+   * déjà membre (memberships EXISTANTS, jamais une invitation), avec le foyer
+   * actif marqué — alimente un sélecteur « Changer de foyer » côté mobile.
+   * Contexte RLS null : hm_self_visibility expose déjà toutes MES lignes de
+   * membership, quel que soit le foyer actif de la requête.
+   */
+  async listMemberships(userId: string) {
+    return this.rlsContext.run(userId, null, async () => {
+      const tx = this.rlsContext.getClient();
+      const [user, memberships] = await Promise.all([
+        tx.user.findUniqueOrThrow({ where: { id: userId }, select: { activeHouseholdId: true } }),
+        tx.householdMembership.findMany({
+          where: { userId },
+          include: { household: { select: { id: true, name: true } } },
+          orderBy: { joinedAt: 'asc' },
+        }),
+      ]);
+      return memberships.map((m) => ({
+        householdId: m.householdId,
+        name: m.household.name,
+        role: m.role,
+        isActive: m.householdId === user.activeHouseholdId,
+      }));
+    });
+  }
+
+  /**
+   * Corrections consolidées §17 — « Changer de foyer actif » : choisit parmi
+   * les memberships EXISTANTS de l'utilisateur, JAMAIS via un code
+   * d'invitation — concept distinct de join() (qui crée un nouveau
+   * membership). Aucune donnée déplacée ni supprimée : seul le pointeur
+   * User.activeHouseholdId change, persisté pour survivre au prochain
+   * /auth/refresh (cf. AuthService#activeHouseholdId).
+   */
+  async switchActive(userId: string, householdId: string) {
+    return this.rlsContext.run(userId, null, async () => {
+      const tx = this.rlsContext.getClient();
+      const membership = await tx.householdMembership.findUnique({
+        where: { householdId_userId: { householdId, userId } },
+      });
+      if (!membership) {
+        throw new NotFoundException("Vous n'êtes pas membre de ce foyer");
+      }
+      await tx.user.update({ where: { id: userId }, data: { activeHouseholdId: householdId } });
+      return tx.household.findUniqueOrThrow({ where: { id: householdId } });
     });
   }
 

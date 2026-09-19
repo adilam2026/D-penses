@@ -279,12 +279,15 @@ describe('Lot 0 — Socle (e2e)', () => {
       .send({ code: 'CODE_INEXISTANT' })
       .expect(404);
 
-    // Un membre déjà rattaché à un foyer ne peut pas en rejoindre un second (RG-001)
+    // Un code d'invitation déjà consommé (ici par Adil lui-même au test 3) reste refusé,
+    // qu'importe le foyer actuel de l'appelant — ceci teste l'unicité de l'invitation, pas
+    // une restriction de changement de foyer (cf. lot55-household-switch.e2e-spec.ts pour la
+    // couverture dédiée du changement de foyer actif — corrections consolidées §16).
     await http
       .post('/households/join')
       .set('Authorization', `Bearer ${adilAccessToken}`)
       .send({ code: inviteCode })
-      .expect(409);
+      .expect(404);
 
     // Contrainte d'unicité base : (household_id, user_id) — vérifiée indirectement ci-dessus,
     // et directement ici en tentant un doublon au niveau base (contrainte Prisma @@unique).
