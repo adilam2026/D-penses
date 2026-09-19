@@ -61,14 +61,41 @@ async function rawFetch(path: string, options: { method?: string; body?: unknown
   return data;
 }
 
+// Corrections consolidées §1 — le refresh token est à usage unique côté backend
+// (rotation : l'ancien est révoqué dès qu'un nouveau est émis, auth.service.ts
+// AuthService.refresh). Sans verrou, plusieurs requêtes en 401 en même temps
+// déclenchaient chacune leur propre POST /auth/refresh avec le MÊME refresh
+// token lu avant que le premier appel ne le remplace — le premier réussissait,
+// tous les suivants recevaient "Session invalide ou révoquée" (déjà révoqué).
+// refreshPromise sérialise : un seul refresh en vol à la fois, toutes les
+// requêtes en 401 concurrentes attendent la MÊME promesse et rejouent ensuite
+// avec le nouveau token ; si ce refresh unique échoue, l'échec est partagé par
+// tous les appelants (jamais de déconnexion déclenchée par un doublon).
+let refreshPromise: Promise<{ accessToken: string; refreshToken: string }> | null = null;
+
+function refreshTokens(): Promise<{ accessToken: string; refreshToken: string }> {
+  if (!refreshPromise) {
+    const tokenAtStart = refreshToken;
+    refreshPromise = (async () => {
+      try {
+        const tokens = await rawFetch('/auth/refresh', { method: 'POST', body: { refreshToken: tokenAtStart }, withAuth: false });
+        await setTokens(tokens);
+        return tokens;
+      } finally {
+        refreshPromise = null;
+      }
+    })();
+  }
+  return refreshPromise;
+}
+
 /** Rejoue une requête après un rafraîchissement de token en cas de 401 (access token expiré). */
 async function apiFetch(path: string, options: { method?: string; body?: unknown; withAuth?: boolean } = {}) {
   try {
     return await rawFetch(path, options);
   } catch (err) {
     if (err instanceof ApiError && err.status === 401 && options.withAuth !== false && refreshToken) {
-      const tokens = await rawFetch('/auth/refresh', { method: 'POST', body: { refreshToken }, withAuth: false });
-      await setTokens(tokens);
+      await refreshTokens();
       return rawFetch(path, options);
     }
     throw err;
