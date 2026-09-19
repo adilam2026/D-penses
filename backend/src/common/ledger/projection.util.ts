@@ -282,6 +282,10 @@ async function variableBudgetEvents(tx: TxClient, householdId: string, reference
 export interface PrudentBudgetEvent {
   date: Date;
   amount: number; // signé négatif (impact), déjà arrondi — même convention que RawEvent.physicalImpact
+  // Corrections consolidées §10 — id/label du VariableBudget source, pour lister
+  // (jamais recalculer) les budgets réellement comptés dans le prudent d'un mois.
+  id: string;
+  label: string;
 }
 
 /**
@@ -302,7 +306,7 @@ export async function computePrudentBudgetEvents(
   const ref = toUtcMidnight(referenceDate);
   const end = toUtcMidnight(horizonEnd);
   const events = await variableBudgetEvents(tx, householdId, ref, end, closingDay);
-  return events.map((e) => ({ date: e.date, amount: e.physicalImpact ?? 0 }));
+  return events.map((e) => ({ date: e.date, amount: e.physicalImpact ?? 0, id: e.entityId ?? '', label: e.label }));
 }
 
 interface DeadlineCandidate {

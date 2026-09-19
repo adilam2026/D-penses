@@ -223,6 +223,9 @@ export class ProjectionService {
         // inclus" / écart = "X DH de budgets encore disponibles sur la période".
         projected_cash_balance_prudent: m.projectedCashBalancePrudent,
         prudent_budget_remaining: m.prudentBudgetRemaining,
+        // Corrections consolidées §10 — détail listant les budgets réellement
+        // comptés dans prudent_budget_remaining ci-dessus (Σ amount === prudent_budget_remaining).
+        budget_items: m.budgetItems.map((b) => ({ budget_id: b.budgetId, label: b.label, amount: b.amount })),
         planned_transfer_net_treasury_impact: m.plannedTransferNetTreasuryImpact,
         // R6.4 (§9) — jamais rangé dans income_items/expense_items : un transfert reste
         // identifiable comme TRANSFERT, son impact appartient uniquement à la trésorerie pilotée.

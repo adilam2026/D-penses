@@ -93,6 +93,15 @@ export interface PlannedTransferItem {
   direction: 'sortie_pilotee' | 'entree_pilotee';
 }
 
+// Corrections consolidées §10 — un budget compté dans le calcul prudent d'une
+// période, listé (jamais recalculé) à partir de PrudentBudgetEvent : amount
+// toujours positif (montant restant prudent de CE budget pour SA période).
+export interface BudgetLineItem {
+  budgetId: string;
+  label: string;
+  amount: number;
+}
+
 export interface MonthBucket {
   month: string; // "2026-11"
   label: string; // "Novembre 2026"
@@ -110,6 +119,11 @@ export interface MonthBucket {
   // Écart = projectedCashBalance - projectedCashBalancePrudent (toujours ≥ 0) —
   // "X DH de budgets encore disponibles sur la période" (§5).
   prudentBudgetRemaining: number;
+  // Corrections consolidées §10 — détail des budgets réellement comptés dans
+  // prudentBudgetRemaining CE mois (cumul depuis le début de l'horizon, même
+  // logique cumulative que prudentBudgetRemaining lui-même — cf. commentaire
+  // ci-dessus) : Σ budgetItems[].amount === prudentBudgetRemaining, toujours.
+  budgetItems: BudgetLineItem[];
   // R6.2 (§12) — impact net des transferts encore `prevu` sur la trésorerie pilotée
   // ce mois-ci (signé : positif = entrée nette, négatif = sortie nette) — jamais
   // dans balance/cumulativeBalance, uniquement appliqué à projectedCashBalance.
@@ -390,9 +404,15 @@ export async function computeMonthlyProjection(
     computePrudentBudgetEvents(tx, householdId, ref, horizonEnd, closingDay),
   ]);
   const prudentImpactByPeriod = new Map<string, number>();
+  // Corrections consolidées §10 — même regroupement par période que ci-dessus,
+  // mais gardant le détail par budget (id/label/montant) au lieu du seul total.
+  const budgetItemsByPeriod = new Map<string, BudgetLineItem[]>();
   for (const e of prudentBudgetEvents) {
     const key = monthKey(e.date, closingDay);
     prudentImpactByPeriod.set(key, round2((prudentImpactByPeriod.get(key) ?? 0) + e.amount));
+    const list = budgetItemsByPeriod.get(key) ?? [];
+    list.push({ budgetId: e.id, label: e.label, amount: round2(Math.abs(e.amount)) });
+    budgetItemsByPeriod.set(key, list);
   }
   const [treasuryBalances, transferResult] = await Promise.all([
     getAccountBalances(tx, treasuryIds),
@@ -418,6 +438,7 @@ export async function computeMonthlyProjection(
       projectedCashBalance: 0,
       projectedCashBalancePrudent: 0,
       prudentBudgetRemaining: 0,
+      budgetItems: [],
       plannedTransferNetTreasuryImpact: 0,
       plannedTransferItems: [],
       incomeItems: [],
@@ -518,6 +539,9 @@ export async function computeMonthlyProjection(
   let inCashDeficitStreak = false;
   let maxFinancingNeed = 0;
   let firstPositiveCashBalanceMonth: string | null = null;
+  // Corrections consolidées §10 — liste cumulative des budgets déjà comptés
+  // (même cumul, jamais réinitialisé, que cashRunningPrudent ci-dessous).
+  const cumulativeBudgetItems: BudgetLineItem[] = [];
 
   for (const bucket of months) {
     bucket.balance = round2(bucket.totalIncome - bucket.totalExpense);
@@ -537,6 +561,13 @@ export async function computeMonthlyProjection(
     cashRunningPrudent = round2(cashRunningPrudent + bucket.balance + bucket.plannedTransferNetTreasuryImpact + prudentImpactThisPeriod);
     bucket.projectedCashBalancePrudent = cashRunningPrudent;
     bucket.prudentBudgetRemaining = round2(bucket.projectedCashBalance - bucket.projectedCashBalancePrudent);
+
+    // Corrections consolidées §10 — même cumul que ci-dessus (jamais réinitialisé
+    // par période) : le détail affiché pour ce mois inclut aussi les budgets déjà
+    // comptés lors de périodes antérieures, garantissant Σ budgetItems === prudentBudgetRemaining.
+    const newItemsThisPeriod = budgetItemsByPeriod.get(bucket.month) ?? [];
+    cumulativeBudgetItems.push(...newItemsThisPeriod);
+    bucket.budgetItems = [...cumulativeBudgetItems];
 
     totalIncome = round2(totalIncome + bucket.totalIncome);
     totalExpense = round2(totalExpense + bucket.totalExpense);
