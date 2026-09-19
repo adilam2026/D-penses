@@ -20,10 +20,10 @@ import {
   KIND_LABEL,
   LedgerEntry,
   formatDate,
+  groupByMonthAndPlan,
   hasActiveFilters,
   initiatorColor,
-  monthKey,
-  monthSectionTitle,
+  isPlanHeaderRow,
   toApiFilters,
 } from './transactionsLogic';
 
@@ -102,17 +102,11 @@ export function TransactionsScreen() {
     return map;
   }, [members]);
 
-  const sections = useMemo(() => {
-    const byMonth = new Map<string, LedgerEntry[]>();
-    for (const e of entries) {
-      const key = monthKey(e.occurredAt);
-      if (!byMonth.has(key)) byMonth.set(key, []);
-      byMonth.get(key)!.push(e);
-    }
-    return Array.from(byMonth.entries())
-      .sort((a, b) => (a[0] < b[0] ? 1 : -1))
-      .map(([key, data]) => ({ title: monthSectionTitle(key), data }));
-  }, [entries]);
+  // Corrections consolidées §12/§13 — groupé par mois PUIS par plan financier
+  // (bucket "Autres" pour les transactions sans plan), tri intra-jour
+  // alphabétique par libellé : moteur unique (transactionsLogic.ts), jamais un
+  // second calcul ici.
+  const sections = useMemo(() => groupByMonthAndPlan(entries, planLabelById), [entries, planLabelById]);
 
   function openFilters() {
     setDraftFilters(appliedFilters);
@@ -159,7 +153,7 @@ export function TransactionsScreen() {
 
       <SectionList
         sections={sections}
-        keyExtractor={(e) => `${e.kind}-${e.id}`}
+        keyExtractor={(row) => (isPlanHeaderRow(row) ? row.key : `${row.kind}-${row.id}`)}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={() => load(appliedFilters)} />}
         renderSectionHeader={({ section }) => <Text style={styles.sectionHeader}>{section.title}</Text>}
         ListEmptyComponent={
@@ -183,6 +177,13 @@ export function TransactionsScreen() {
           ) : null
         }
         renderItem={({ item }) => {
+          if (isPlanHeaderRow(item)) {
+            return (
+              <Text style={styles.planGroupHeader} testID={`transactions-plan-header-${item.key}`}>
+                {item.label}
+              </Text>
+            );
+          }
           const positive = item.amount >= 0;
           const budgetLabel = item.budgetId ? (budgetLabelById[item.budgetId] ?? 'Budget') : null;
           const planLabel = item.financialPlanId ? (planLabelById[item.financialPlanId] ?? 'Plan') : null;
@@ -359,6 +360,15 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginTop: spacing.md,
     marginBottom: spacing.sm,
+  },
+  // Corrections consolidées §12 — sous-en-tête (plan financier) au sein d'un
+  // mois, visuellement plus discret que le titre de mois ci-dessus.
+  planGroupHeader: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
+    marginBottom: 4,
   },
   emptyState: { alignItems: 'center', marginTop: 48, paddingHorizontal: spacing.xl },
   emptyTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' },

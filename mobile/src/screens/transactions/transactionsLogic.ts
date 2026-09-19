@@ -134,4 +134,69 @@ export function groupByMonth(entries: LedgerEntry[]): { title: string; data: Led
     .map(([key, data]) => ({ title: monthSectionTitle(key), data }));
 }
 
+// Corrections consolidées §13 — tri principal inchangé (plus récent d'abord),
+// départage explicite pour les entrées du MÊME jour (jamais un ordre implicite
+// d'insertion/id) : alphabétique par libellé, jamais par kind/montant.
+export function sortLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
+  return [...entries].sort((a, b) => {
+    const dayA = a.occurredAt.slice(0, 10);
+    const dayB = b.occurredAt.slice(0, 10);
+    if (dayA !== dayB) return dayA < dayB ? 1 : -1;
+    return (a.label ?? '').localeCompare(b.label ?? '', 'fr-FR', { sensitivity: 'base' });
+  });
+}
+
+// Corrections consolidées §12 — ligne spéciale (jamais une vraie transaction)
+// marquant le début d'un sous-groupe par plan financier au sein d'un mois.
+export interface PlanHeaderRow {
+  kind: '__plan_header__';
+  key: string;
+  label: string;
+}
+
+export type TransactionListRow = PlanHeaderRow | LedgerEntry;
+
+export function isPlanHeaderRow(row: TransactionListRow): row is PlanHeaderRow {
+  return row.kind === '__plan_header__';
+}
+
+/**
+ * Corrections consolidées §12 — regroupement par mois (comme groupByMonth),
+ * PUIS par plan financier au sein de chaque mois (bucket "Autres" pour les
+ * transactions sans financialPlanId, toujours en dernier) — jamais une seconde
+ * règle de tri parallèle (réutilise sortLedgerEntries, §13). Chaque transaction
+ * apparaît dans EXACTEMENT un sous-groupe, jamais deux (partition stricte par
+ * financialPlanId). Un composant SectionList reste à PLAT : les en-têtes de
+ * plan sont des lignes spéciales injectées dans `data`, jamais une liste imbriquée.
+ */
+export function groupByMonthAndPlan(entries: LedgerEntry[], planLabelById: Record<string, string>): { title: string; data: TransactionListRow[] }[] {
+  const sorted = sortLedgerEntries(entries);
+  const byMonth = new Map<string, LedgerEntry[]>();
+  for (const e of sorted) {
+    const key = monthKey(e.occurredAt);
+    if (!byMonth.has(key)) byMonth.set(key, []);
+    byMonth.get(key)!.push(e);
+  }
+  const NONE = '__none__';
+  return Array.from(byMonth.entries())
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    .map(([monthKeyValue, monthEntries]) => {
+      const byPlan = new Map<string, LedgerEntry[]>();
+      for (const e of monthEntries) {
+        const planKey = e.financialPlanId ?? NONE;
+        if (!byPlan.has(planKey)) byPlan.set(planKey, []);
+        byPlan.get(planKey)!.push(e);
+      }
+      const planKeys = Array.from(byPlan.keys()).filter((k) => k !== NONE);
+      const orderedKeys = byPlan.has(NONE) ? [...planKeys, NONE] : planKeys;
+      const data: TransactionListRow[] = [];
+      for (const planKey of orderedKeys) {
+        const label = planKey === NONE ? 'Autres' : (planLabelById[planKey] ?? 'Plan');
+        data.push({ kind: '__plan_header__', key: `${monthKeyValue}-${planKey}`, label });
+        data.push(...byPlan.get(planKey)!);
+      }
+      return { title: monthSectionTitle(monthKeyValue), data };
+    });
+}
+
 export const DEFAULT_LIST_LIMIT = 200;

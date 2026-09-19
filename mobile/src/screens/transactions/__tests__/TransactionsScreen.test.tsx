@@ -233,6 +233,49 @@ describe('TransactionsScreen — mini-lot T2', () => {
     expect(screen.getByText('août 2026')).toBeTruthy();
   });
 
+  // Corrections consolidées §12 — sous-groupe par plan financier au sein d'un
+  // mois, jamais une même transaction dans deux blocs.
+  it('corrections consolidées §12 — sous-groupe par plan financier au sein d\'un mois, avec bucket "Autres" pour les non-liées', async () => {
+    mockedApi.listFinancialPlans.mockResolvedValue([{ id: 'plan-1', label: 'École 2026' }]);
+    mockedApi.listTransactions.mockResolvedValue([
+      { kind: 'payment', displayKind: 'paiement', id: 'a', occurredAt: '2026-09-05T00:00:00.000Z', amount: -1000, accountName: 'Cpt', label: 'Scolarité T1', categoryName: null, categoryTypeName: null, categorySubtypeName: null, financialPlanId: 'plan-1' },
+      { kind: 'income', displayKind: 'revenu', id: 'b', occurredAt: '2026-09-10T00:00:00.000Z', amount: 3000, accountName: 'Cpt', label: 'Salaire', categoryName: null, categoryTypeName: null, categorySubtypeName: null, financialPlanId: null },
+    ]);
+
+    await render(<TransactionsScreen />);
+    // "École 2026" apparaît 2 fois : le sous-en-tête de groupe ET le badge inline
+    // sur la ligne (2 signaux redondants, jamais un conflit — cf. attachRow existant).
+    await waitFor(() => expect(screen.getAllByText('École 2026').length).toBeGreaterThan(0));
+    expect(screen.getByText('Autres')).toBeTruthy();
+    expect(screen.getByText('Scolarité T1')).toBeTruthy();
+    expect(screen.getByText('Salaire')).toBeTruthy();
+    // Chaque transaction n'apparaît qu'une fois (jamais dans deux sous-groupes).
+    expect(screen.getAllByText('Scolarité T1')).toHaveLength(1);
+    expect(screen.getAllByText('Salaire')).toHaveLength(1);
+  });
+
+  // Corrections consolidées §13 — pour des entrées du MÊME jour, départage
+  // alphabétique par libellé ; le tri principal (plus récent d'abord) reste
+  // inchangé pour des jours différents.
+  it('corrections consolidées §13 — même jour : départage alphabétique par libellé, jamais l\'ordre d\'insertion', async () => {
+    mockedApi.listTransactions.mockResolvedValue([
+      { kind: 'adhoc_expense', displayKind: 'dépense', id: 'z', occurredAt: '2026-09-10T08:00:00.000Z', amount: -20, accountName: 'Cpt', label: 'Zoo', categoryName: null, categoryTypeName: null, categorySubtypeName: null },
+      { kind: 'adhoc_expense', displayKind: 'dépense', id: 'a', occurredAt: '2026-09-10T18:00:00.000Z', amount: -10, accountName: 'Cpt', label: 'Alimentation', categoryName: null, categoryTypeName: null, categorySubtypeName: null },
+      { kind: 'adhoc_expense', displayKind: 'dépense', id: 'm', occurredAt: '2026-09-10T12:00:00.000Z', amount: -15, accountName: 'Cpt', label: 'Médecin', categoryName: null, categoryTypeName: null, categorySubtypeName: null },
+    ]);
+
+    await render(<TransactionsScreen />);
+    await waitFor(() => expect(screen.getByTestId('transaction-row-adhoc_expense-a')).toBeTruthy());
+    // getAllByTestId retourne les éléments dans l'ordre de rendu réel : Alimentation
+    // (18h) avant Médecin (12h) avant Zoo (8h) — ordre alphabétique, jamais l'heure.
+    const rows = screen.getAllByTestId(/^transaction-row-/);
+    expect(rows.map((r) => r.props.testID)).toEqual([
+      'transaction-row-adhoc_expense-a',
+      'transaction-row-adhoc_expense-m',
+      'transaction-row-adhoc_expense-z',
+    ]);
+  });
+
   it("l'initiateur n'est affiché que lorsque createdByName est présent", async () => {
     mockedApi.listTransactions.mockResolvedValue([
       { kind: 'income', displayKind: 'revenu', id: 'a', occurredAt: '2026-09-15T00:00:00.000Z', amount: 100, accountName: 'Cpt', label: 'Salaire A', categoryName: null, categoryTypeName: null, categorySubtypeName: null, createdByUserId: 'u1', createdByName: 'Adulte1 T' },
@@ -255,8 +298,9 @@ describe('TransactionsScreen — mini-lot T2', () => {
 
     await render(<TransactionsScreen />);
     await waitFor(() => expect(screen.getByText('Alimentation')).toBeTruthy());
-    // plan-deleted n'existe plus dans listFinancialPlans() → fallback générique, jamais inventé.
-    expect(screen.getByText('Plan')).toBeTruthy();
+    // plan-deleted n'existe plus dans listFinancialPlans() → fallback générique, jamais inventé
+    // (affiché à la fois par le sous-en-tête de groupe §12 et le badge inline sur la ligne).
+    expect(screen.getAllByText('Plan').length).toBeGreaterThan(0);
   });
 
   it('état vide distinct : filtres actifs sans résultat ≠ aucune transaction du tout', async () => {
