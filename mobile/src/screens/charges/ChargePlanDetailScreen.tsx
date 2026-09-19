@@ -116,6 +116,8 @@ export function ChargePlanDetailScreen() {
   const [saving, setSaving] = useState(false);
   const [togglingStatus, setTogglingStatus] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Corrections consolidées §14.1 — "Retirer du plan", distinct de "Supprimer".
+  const [retiring, setRetiring] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -220,6 +222,35 @@ export function ChargePlanDetailScreen() {
         },
       },
     ]);
+  }
+
+  // Corrections consolidées §14.1 — "Retirer du plan" : jamais une suppression.
+  // L'historique payé est intégralement conservé, seules les échéances futures
+  // sans paiement sont annulées, et le poste est détaché du plan.
+  function onRetire() {
+    Alert.alert(
+      'Retirer ce poste du plan ?',
+      "L'historique de paiement est intégralement conservé. Les échéances futures encore ouvertes sans paiement seront annulées. Le poste sera retiré du plan et sa récurrence arrêtée.",
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Retirer du plan',
+          style: 'destructive',
+          onPress: async () => {
+            setError(null);
+            setRetiring(true);
+            try {
+              await api.retireChargePlan(id);
+              navigation.goBack();
+            } catch (err) {
+              setError(err instanceof api.ApiError ? err.message : 'Retrait impossible');
+            } finally {
+              setRetiring(false);
+            }
+          },
+        },
+      ],
+    );
   }
 
   if (loading && !plan) {
@@ -338,6 +369,14 @@ export function ChargePlanDetailScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Corrections consolidées §14.1 — action distincte de "Supprimer", visible
+            uniquement pour un poste rattaché à un plan financier. */}
+        {plan.financialPlanId && (
+          <TouchableOpacity style={styles.buttonRetire} onPress={onRetire} disabled={retiring} testID="chargeplan-retire">
+            {retiring ? <ActivityIndicator color={colors.textPrimary} /> : <Text style={styles.buttonRetireText}>Retirer du plan</Text>}
+          </TouchableOpacity>
+        )}
+
         <Text style={styles.sectionTitle}>Échéances</Text>
         {deadlines.length === 0 ? (
           <Text style={styles.empty}>Aucune échéance pour l'instant.</Text>
@@ -382,6 +421,8 @@ const styles = StyleSheet.create({
   buttonSecondaryText: { color: colors.textPrimary, fontWeight: '600', fontSize: 13 },
   buttonDanger: { flex: 1, backgroundColor: colors.dangerLight, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center' },
   buttonDangerText: { color: colors.danger, fontWeight: '600', fontSize: 13 },
+  buttonRetire: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center', marginTop: spacing.sm },
+  buttonRetireText: { color: colors.textPrimary, fontWeight: '600', fontSize: 13 },
   sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.xl, marginBottom: spacing.sm },
   empty: { color: colors.textSecondary, fontSize: 13 },
   deadlineRow: {

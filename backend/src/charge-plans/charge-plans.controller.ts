@@ -36,6 +36,15 @@ export class ChargePlansController {
     return this.chargePlans.remove(user.sub, user.householdId!, id);
   }
 
+  /**
+   * Corrections consolidées (point 14.1) — action métier explicite et distincte
+   * de DELETE : jamais un détournement du contrat de suppression existant.
+   */
+  @Post(':id/retire')
+  retire(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.chargePlans.retire(user.sub, user.householdId!, id);
+  }
+
   @Post(':id/deadlines')
   createDeadline(@Param('id') id: string, @Body() dto: CreateDeadlineDto, @CurrentUser() user: AuthenticatedUser) {
     return this.chargePlans.createDeadline(user.sub, user.householdId!, id, dto);

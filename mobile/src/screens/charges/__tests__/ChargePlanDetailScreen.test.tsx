@@ -40,6 +40,7 @@ jest.mock('../../../api/client', () => {
     listAccounts: jest.fn(),
     updateChargePlan: jest.fn(),
     deleteChargePlan: jest.fn(),
+    retireChargePlan: jest.fn(),
   };
 });
 
@@ -150,6 +151,30 @@ it('corrections consolidées §8 — modifie le compte d\'imputation par défaut
   await waitFor(() =>
     expect(mockedApi.updateChargePlan).toHaveBeenCalledWith('cp1', expect.objectContaining({ defaultAccountId: 'acc2' })),
   );
+});
+
+// Corrections consolidées §14.1 — "Retirer du plan", distinct de "Supprimer" :
+// visible uniquement pour un poste rattaché à un plan financier.
+it('"Retirer du plan" n\'apparaît PAS pour un poste hors plan financier', async () => {
+  await render(<ChargePlanDetailScreen />);
+  await waitFor(() => screen.getByTestId('chargeplan-save'));
+
+  expect(screen.queryByTestId('chargeplan-retire')).toBeNull();
+});
+
+it('"Retirer du plan" demande confirmation puis appelle retireChargePlan et revient en arrière', async () => {
+  mockedApi.getChargePlan.mockResolvedValue({ ...PLAN, financialPlanId: 'plan1' });
+  mockedApi.retireChargePlan.mockResolvedValue({ ...PLAN, status: 'inactif', financialPlanId: null, cancelledDeadlinesCount: 1 });
+  await render(<ChargePlanDetailScreen />);
+  await waitFor(() => screen.getByTestId('chargeplan-retire'));
+
+  await fireEvent.press(screen.getByTestId('chargeplan-retire'));
+  expect(Alert.alert).toHaveBeenCalled();
+  const [, , buttons] = (Alert.alert as jest.Mock).mock.calls[0];
+  await buttons[1].onPress();
+
+  await waitFor(() => expect(mockedApi.retireChargePlan).toHaveBeenCalledWith('cp1'));
+  expect(mockGoBack).toHaveBeenCalled();
 });
 
 it('taper une échéance navigue vers DeadlineDetail', async () => {

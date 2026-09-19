@@ -232,6 +232,50 @@ export class ChargePlansService {
     });
   }
 
+  /**
+   * Corrections consolidées (point 14.1) — "Retirer du plan" : action métier
+   * EXPLICITE et distincte de remove() ci-dessus, jamais un contournement de
+   * son contrat (DELETE reste inchangé : refuse toujours dès qu'un historique
+   * existe). Réservée aux ChargePlan rattachés à un FinancialPlan.
+   *
+   * Sémantique volontairement identique QUE le poste ait ou non un historique
+   * de paiement (choix le plus simple/cohérent — un seul bouton, un seul
+   * comportement prévisible, jamais deux résultats différents selon un état
+   * caché de l'utilisateur) : reprend exactement le traitement déjà appliqué
+   * par financial-plans.service.ts remove() à CHAQUE poste d'un plan supprimé,
+   * ici rendu appelable indépendamment sur un seul poste.
+   *
+   * - Les paiements déjà enregistrés ne sont JAMAIS touchés.
+   * - Seules les échéances encore OUVERTES et SANS AUCUN paiement sont
+   *   annulées (financialStatus → annulee) — une échéance partiellement payée
+   *   reste intacte, à traiter individuellement via POST /deadlines/:id/cancel
+   *   si nécessaire (point 14.2), jamais annulée en masse ici.
+   * - status → inactif : plus aucune nouvelle échéance générée pour ce poste.
+   * - financialPlanId → null : détaché du plan, mais le ChargePlan lui-même
+   *   n'est jamais supprimé, quel que soit son historique.
+   */
+  async retire(userId: string, householdId: string, id: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const chargePlan = await this.assertOwned(tx, id, householdId);
+      if (!chargePlan.financialPlanId) {
+        throw new BadRequestException("Ce poste n'appartient à aucun plan financier — rien à retirer");
+      }
+
+      const openDeadlines = await tx.deadline.findMany({
+        where: { chargePlanId: id, financialStatus: { in: ['ouverte', 'partiellement_payee'] } },
+        include: { payments: true },
+      });
+      const cancellableIds = openDeadlines.filter((d) => d.payments.length === 0).map((d) => d.id);
+      if (cancellableIds.length > 0) {
+        await tx.deadline.updateMany({ where: { id: { in: cancellableIds } }, data: { financialStatus: 'annulee' } });
+      }
+
+      const updated = await tx.chargePlan.update({ where: { id }, data: { status: 'inactif', financialPlanId: null } });
+      return { ...updated, cancelledDeadlinesCount: cancellableIds.length };
+    });
+  }
+
   async findOne(userId: string, householdId: string, id: string) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();

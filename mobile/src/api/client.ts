@@ -538,6 +538,15 @@ export const updateChargePlan = (
 /** Recette post-Vague 3 (§4) — refusé (409) si un historique de paiement existe ; désactiver (status=inactif) à la place. */
 export const deleteChargePlan = (id: string) => apiFetch(`/charge-plans/${id}`, { method: 'DELETE' });
 
+/**
+ * Corrections consolidées (point 14.1) — "Retirer du plan" : action explicite
+ * et distincte de deleteChargePlan ci-dessus. Réservée aux postes rattachés à
+ * un plan financier. Jamais de suppression : historique payé conservé, seules
+ * les échéances futures sans paiement sont annulées, le poste est détaché du
+ * plan et sa récurrence arrêtée.
+ */
+export const retireChargePlan = (id: string) => apiFetch(`/charge-plans/${id}/retire`, { method: 'POST' });
+
 export const updateDeadline = (
   id: string,
   data: { dueDate?: string; expectedBillingDate?: string; billingDate?: string; amountCurrent?: number; amountStatus?: string },
