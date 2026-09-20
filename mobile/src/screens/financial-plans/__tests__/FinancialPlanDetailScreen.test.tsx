@@ -130,11 +130,24 @@ it("n'affiche plus les échéances individuelles directement dans le Plan financ
   expect(screen.queryByTestId('deadline-row-d2')).toBeNull();
 });
 
-it('"Voir les échéances" navigue vers ChargePlanDetail (réutilise l\'écran existant, aucun nouveau moteur)', async () => {
+// Correction UX (Plan financier trop chargé) — aucun bouton d'action exposé
+// directement sur la carte du poste ; tapper la carte ELLE-MÊME navigue vers
+// ChargePlanDetail (réutilise l'écran existant, aucun nouveau moteur).
+it('la carte du poste ne contient aucun bouton d\'action (Modifier/Ajouter/Retirer/Voir les échéances)', async () => {
   await render(<FinancialPlanDetailScreen />);
-  await waitFor(() => screen.getByTestId('poste-view-deadlines-cp-t1'));
+  await waitFor(() => screen.getByTestId('poste-cp-t1'));
 
-  await fireEvent.press(screen.getByTestId('poste-view-deadlines-cp-t1'));
+  expect(screen.queryByTestId('poste-edit-cp-t1')).toBeNull();
+  expect(screen.queryByTestId('poste-view-deadlines-cp-t1')).toBeNull();
+  expect(screen.queryByTestId('poste-add-deadline-cp-t1')).toBeNull();
+  expect(screen.queryByTestId('poste-retire-cp-t1')).toBeNull();
+});
+
+it('taper la carte du poste navigue vers ChargePlanDetail (toutes les actions y sont déjà)', async () => {
+  await render(<FinancialPlanDetailScreen />);
+  await waitFor(() => screen.getByTestId('poste-cp-t1'));
+
+  await fireEvent.press(screen.getByTestId('poste-cp-t1'));
 
   expect(mockNavigate).toHaveBeenCalledWith('ChargePlanDetail', { id: 'cp-t1' });
 });
@@ -443,36 +456,11 @@ it('point 6b — le modal "Ajouter un poste" porte une largeur 100% sur le Scrol
   expect(flatStyle.some((s: any) => s && s.width === '100%')).toBe(true);
 });
 
-// Point 7 (révision) — "Modifier le plan" affiche une liste de POSTES (pas
-// une répétition d'échéances) : chaque poste expose Modifier le poste /
-// Voir les échéances / Ajouter une échéance / Retirer du plan, réutilisant
-// ChargePlanDetailScreen (jamais un nouveau moteur métier).
-it('point 7 — "Modifier le poste" navigue vers ChargePlanDetail avec le chargePlanId', async () => {
-  await render(<FinancialPlanDetailScreen />);
-  await waitFor(() => screen.getByTestId('poste-edit-cp-t1'));
-
-  await fireEvent.press(screen.getByTestId('poste-edit-cp-t1'));
-
-  expect(mockNavigate).toHaveBeenCalledWith('ChargePlanDetail', { id: 'cp-t1' });
-});
-
-it('point 7 — "Ajouter une échéance" navigue vers ChargePlanDetail avec openAddDeadline pour ouvrir directement le formulaire', async () => {
-  await render(<FinancialPlanDetailScreen />);
-  await waitFor(() => screen.getByTestId('poste-add-deadline-cp-t1'));
-
-  await fireEvent.press(screen.getByTestId('poste-add-deadline-cp-t1'));
-
-  expect(mockNavigate).toHaveBeenCalledWith('ChargePlanDetail', { id: 'cp-t1', openAddDeadline: true });
-});
-
-it('point 7 — "Retirer du plan" (action du poste) navigue vers ChargePlanDetail, où le retrait déjà existant s\'applique (aucun moteur dupliqué)', async () => {
-  await render(<FinancialPlanDetailScreen />);
-  await waitFor(() => screen.getByTestId('poste-retire-cp-t1'));
-
-  await fireEvent.press(screen.getByTestId('poste-retire-cp-t1'));
-
-  expect(mockNavigate).toHaveBeenCalledWith('ChargePlanDetail', { id: 'cp-t1' });
-});
+// Point 7 (révision) — "Modifier le plan" affiche une liste SIMPLE de
+// POSTES : aucune action (Modifier/Voir les échéances/Ajouter une échéance/
+// Retirer du plan) n'est exposée directement ici — toutes vivent dans
+// ChargePlanDetailScreen (jamais un nouveau moteur métier), atteint en
+// tapant la carte du poste elle-même (cf. tests plus haut).
 
 // IMPORTANT (exigence explicite) — un poste récurrent avec plusieurs
 // échéances ouvertes simultanément doit apparaître UNE SEULE FOIS comme
@@ -517,7 +505,7 @@ it('point 7 — un poste avec plusieurs échéances ouvertes apparaît UNE SEULE
 // plusieurs années), l'écran Plan financier doit rester une SEULE carte
 // résumé — jamais une liste de dizaines de lignes. Exemple exact demandé :
 // "Eau · Villa Almaz" avec 23 échéances mensuelles ouvertes.
-it("point 7 — poste avec 23 échéances ouvertes : une seule carte, seule la prochaine échéance est affichée, compteur exact, accès via \"Voir les échéances\", aucun doublon", async () => {
+it("point 7 — poste avec 23 échéances ouvertes : une seule carte compacte, aucun bouton, seule la prochaine échéance est affichée, compteur exact, clic → ChargePlanDetail, aucun doublon", async () => {
   // 23 échéances mensuelles consécutives, à partir du 01 oct. 2026 (la plus proche en premier).
   const deadlinesCertain = Array.from({ length: 23 }, (_, i) => {
     const monthIndex0 = 9 + i; // octobre 2026 = mois index 9 (0=janvier)
@@ -560,8 +548,12 @@ it("point 7 — poste avec 23 échéances ouvertes : une seule carte, seule la p
   // Aucune échéance individuelle listée directement dans le Plan financier.
   expect(screen.queryByTestId('pay-deadline-d-eau-0')).toBeNull();
   expect(screen.queryByTestId('deadline-row-d-eau-0')).toBeNull();
-  // Accès à toutes les échéances via "Voir les échéances" (réutilise ChargePlanDetailScreen).
-  expect(screen.getByTestId('poste-view-deadlines-cp-eau')).toBeTruthy();
-  await fireEvent.press(screen.getByTestId('poste-view-deadlines-cp-eau'));
+  // Aucun bouton d'action exposé directement sur la carte, même avec 23 échéances.
+  expect(screen.queryByTestId('poste-edit-cp-eau')).toBeNull();
+  expect(screen.queryByTestId('poste-view-deadlines-cp-eau')).toBeNull();
+  expect(screen.queryByTestId('poste-add-deadline-cp-eau')).toBeNull();
+  expect(screen.queryByTestId('poste-retire-cp-eau')).toBeNull();
+  // Taper la carte elle-même donne accès à toutes les échéances (réutilise ChargePlanDetailScreen).
+  await fireEvent.press(screen.getByTestId('poste-cp-eau'));
   expect(mockNavigate).toHaveBeenCalledWith('ChargePlanDetail', { id: 'cp-eau' });
 });

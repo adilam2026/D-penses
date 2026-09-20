@@ -444,10 +444,18 @@ export function FinancialPlanDetailScreen() {
         groupDeadlinesByChargePlan(detail.deadlinesCertain).map((g) => {
           const openCount = g.deadlines.filter((d) => d.financialStatus === 'ouverte' || d.financialStatus === 'partiellement_payee').length;
           return (
-            // Point 7 (révision) — un poste (récurrent ou non) apparaît ICI
-            // UNE SEULE FOIS, quel que soit son nombre d'échéances ouvertes,
-            // jamais une carte par échéance.
-            <View key={g.chargePlanId} style={styles.posteCard} testID={`poste-${g.chargePlanId}`}>
+            // Correction UX (Plan financier trop chargé) — 1 poste = 1 carte
+            // RÉSUMÉ, entièrement tappable, SANS aucune action exposée ici
+            // (Modifier/Voir les échéances/Ajouter une échéance/Retirer du
+            // plan sont toutes déjà dans ChargePlanDetailScreen, jamais
+            // réimplémentées) : hiérarchie simple Plan → poste → échéance,
+            // jamais toutes les actions sur l'écran principal.
+            <TouchableOpacity
+              key={g.chargePlanId}
+              style={styles.posteCard}
+              testID={`poste-${g.chargePlanId}`}
+              onPress={() => navigation.navigate('ChargePlanDetail', { id: g.chargePlanId })}
+            >
               <Text style={styles.posteLabel}>{g.chargePlanLabel}</Text>
               <Text style={styles.posteMeta}>
                 {g.categoryName ? `${g.categoryName} · ` : ''}
@@ -460,30 +468,7 @@ export function FinancialPlanDetailScreen() {
                   : 'Aucune échéance ouverte'}
               </Text>
               <Text style={styles.posteAmount}>{g.totalResteAPayer.toLocaleString('fr-FR')} DH restants sur ce poste</Text>
-
-              {/* Correction (Plan financier — affichage des postes) : 1 poste = 1 carte
-                  RÉSUMÉ, jamais la liste de ses échéances (un poste récurrent peut en
-                  compter des dizaines). Le détail (historique, Payer, Annuler) reste
-                  entièrement dans ChargePlanDetailScreen — jamais réimplémenté ici,
-                  seulement un lien "Voir les échéances →" vers cet écran existant. */}
-              <View style={styles.posteActionsRow}>
-                <TouchableOpacity testID={`poste-edit-${g.chargePlanId}`} onPress={() => navigation.navigate('ChargePlanDetail', { id: g.chargePlanId })}>
-                  <Text style={styles.editPosteLink}>Modifier le poste →</Text>
-                </TouchableOpacity>
-                <TouchableOpacity testID={`poste-view-deadlines-${g.chargePlanId}`} onPress={() => navigation.navigate('ChargePlanDetail', { id: g.chargePlanId })}>
-                  <Text style={styles.editPosteLink}>Voir les échéances →</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  testID={`poste-add-deadline-${g.chargePlanId}`}
-                  onPress={() => navigation.navigate('ChargePlanDetail', { id: g.chargePlanId, openAddDeadline: true })}
-                >
-                  <Text style={styles.editPosteLink}>Ajouter une échéance →</Text>
-                </TouchableOpacity>
-                <TouchableOpacity testID={`poste-retire-${g.chargePlanId}`} onPress={() => navigation.navigate('ChargePlanDetail', { id: g.chargePlanId })}>
-                  <Text style={styles.editPosteLink}>Retirer du plan →</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+            </TouchableOpacity>
           );
         })
       )}
@@ -767,7 +752,6 @@ const styles = StyleSheet.create({
   posteLabel: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
   posteMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
   posteAmount: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginTop: 4 },
-  posteActionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: spacing.sm, marginBottom: spacing.sm },
   optionTotal: { fontSize: 11, color: colors.textSecondary, marginTop: 4, marginBottom: 4, fontStyle: 'italic' },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   menuButton: { paddingHorizontal: 10, paddingVertical: 4 },
