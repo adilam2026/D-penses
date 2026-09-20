@@ -30,7 +30,7 @@ const mockedApi = api as jest.Mocked<typeof api>;
 const EVENTS = [
   { date: '2026-09-10', kind: 'echeance' as const, label: 'Jardinier', amount: 600, deadlineId: 'd1' },
   { date: '2026-09-15', kind: 'echeance_payee' as const, label: 'Internet', amount: 299, deadlineId: 'd2' },
-  { date: '2026-09-26', kind: 'revenu_prevu' as const, label: 'Salaire', amount: 8000 },
+  { date: '2026-09-26', kind: 'revenu_prevu' as const, label: 'Salaire', amount: 8000, incomeOccurrenceId: 'occ1', incomeSourceId: 'src1' },
 ];
 
 beforeEach(() => {
@@ -71,16 +71,24 @@ it('groupe les événements par mois (en-têtes de section)', async () => {
   expect(screen.getByText(/SEPTEMBRE 2026/)).toBeTruthy();
 });
 
-it('taper une échéance navigue vers DeadlineDetail, un revenu prévu (sans deadlineId) ne navigue pas', async () => {
+it('taper une échéance navigue vers DeadlineDetail', async () => {
   await render(<CalendarScreen />);
   await waitFor(() => screen.getByText('Jardinier'));
 
   await fireEvent.press(screen.getByText('Jardinier'));
   expect(mockNavigate).toHaveBeenCalledWith('DeadlineDetail', { id: 'd1' });
+});
 
-  mockNavigate.mockClear();
+// Correction UX (Calendrier — occurrence de revenu) : le clic ouvre la fiche
+// de CETTE occurrence précise (incomeOccurrenceId), jamais la source
+// récurrente entière (IncomeSourceDetail, incomeSourceId).
+it('taper un revenu prévu navigue vers IncomeOccurrenceDetail avec incomeOccurrenceId, jamais IncomeSourceDetail', async () => {
+  await render(<CalendarScreen />);
+  await waitFor(() => screen.getByText('Salaire'));
+
   await fireEvent.press(screen.getByText('Salaire'));
-  expect(mockNavigate).not.toHaveBeenCalled();
+  expect(mockNavigate).toHaveBeenCalledWith('IncomeOccurrenceDetail', { id: 'occ1' });
+  expect(mockNavigate).not.toHaveBeenCalledWith('IncomeSourceDetail', expect.anything());
 });
 
 // Point 5A — même date : ordre alphabétique du libellé, jamais l'ordre reçu de l'API.

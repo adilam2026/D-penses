@@ -14,8 +14,10 @@ export interface CalendarEvent {
   label: string;
   amount: number | null;
   deadlineId?: string;
+  // Correction UX (Calendrier — occurrence de revenu) — cible du clic « revenu
+  // prévu » : l'OCCURRENCE précise, jamais la source récurrente entière (M5
+  // inversé : gérer la source reste réservé à Gestion Revenus).
   incomeOccurrenceId?: string;
-  // M5 — cible du clic « revenu prévu » (IncomeSource, jamais l'occurrence).
   incomeSourceId?: string;
   // M5 — cible du clic « transfert planifié » (RecurringTransfer parent).
   recurringTransferId?: string;

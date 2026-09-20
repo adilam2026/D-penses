@@ -12,6 +12,7 @@ import { AccountDetailScreen } from '../screens/accounts/AccountDetailScreen';
 import { QuickCreateAccountScreen } from '../screens/accounts/QuickCreateAccountScreen';
 import { IncomeScreen } from '../screens/income/IncomeScreen';
 import { IncomeSourceDetailScreen } from '../screens/income/IncomeSourceDetailScreen';
+import { IncomeOccurrenceDetailScreen } from '../screens/income/IncomeOccurrenceDetailScreen';
 import { CreateIncomeScreen } from '../screens/income/CreateIncomeScreen';
 import { ChargesScreen } from '../screens/charges/ChargesScreen';
 import { CreateChargeScreen } from '../screens/charges/CreateChargeScreen';
@@ -127,6 +128,7 @@ export function RootNavigator() {
       />
       <Stack.Screen name="Income" component={IncomeScreen} options={{ headerShown: true, title: 'Revenus' }} />
       <Stack.Screen name="IncomeSourceDetail" component={IncomeSourceDetailScreen} options={{ headerShown: true, title: 'Revenu' }} />
+      <Stack.Screen name="IncomeOccurrenceDetail" component={IncomeOccurrenceDetailScreen} options={{ headerShown: true, title: 'Revenu prévu' }} />
       <Stack.Screen name="CreateIncome" component={CreateIncomeScreen} options={{ headerShown: true, title: 'Nouveau revenu', presentation: 'modal' }} />
       <Stack.Screen name="Charges" component={ChargesScreen} options={{ headerShown: !isWeb, title: 'Charges prévisionnelles' }} />
       <Stack.Screen name="CreateCharge" component={CreateChargeScreen} options={{ headerShown: true, title: 'Nouvelle charge', presentation: 'modal' }} />

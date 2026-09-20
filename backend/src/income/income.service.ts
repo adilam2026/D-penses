@@ -161,6 +161,25 @@ export class IncomeService {
   }
 
   /**
+   * Correction UX (Calendrier — occurrence de revenu) : fiche d'UNE occurrence
+   * précise, jamais la source récurrente entière (label/fréquence/prochain
+   * versement/arrêt/suppression restent uniquement dans IncomeSourceDetail).
+   * incomeSource.label inclus (additif, même requête) : une IncomeOccurrence
+   * n'a pas de libellé propre, seul son affichage en a besoin.
+   */
+  async findOneOccurrence(userId: string, householdId: string, id: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const occurrence = await tx.incomeOccurrence.findFirst({
+        where: { id, incomeSource: { householdId } },
+        include: { incomeSource: { select: { id: true, label: true } } },
+      });
+      if (!occurrence) throw new NotFoundException('Occurrence de revenu introuvable');
+      return occurrence;
+    });
+  }
+
+  /**
    * « Salaire reçu » — seul point d'entrée qui fait passer prévu → reçu.
    * Le compte cible est obligatoire (RG-014bis) : celui déjà pré-rempli, ou
    * fourni explicitement si l'utilisateur l'a changé.

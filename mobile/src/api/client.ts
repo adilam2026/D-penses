@@ -272,6 +272,22 @@ export const createIncomeOccurrence = (sourceId: string, data: { usualDate: stri
 
 export const listIncomeOccurrences = (sourceId: string) => apiFetch(`/income-sources/${sourceId}/occurrences`);
 
+// Correction UX (Calendrier — occurrence de revenu) : fiche d'UNE occurrence
+// précise (jamais la source récurrente entière), incomeSource.label inclus
+// (additif, même requête côté backend).
+export const getIncomeOccurrence = (
+  occurrenceId: string,
+): Promise<{
+  id: string;
+  usualDate: string;
+  plannedAmount: number | string;
+  actualAmount: number | string | null;
+  actualDate: string | null;
+  status: 'prevu' | 'recu';
+  accountId: string | null;
+  incomeSource: { id: string; label: string };
+}> => apiFetch(`/income-occurrences/${occurrenceId}`);
+
 export const confirmIncomeOccurrence = (
   occurrenceId: string,
   data: { actualAmount: number; actualDate?: string; accountId?: string },

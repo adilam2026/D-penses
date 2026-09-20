@@ -59,6 +59,11 @@ export class IncomeSourcesController {
 export class IncomeOccurrencesController {
   constructor(private readonly income: IncomeService) {}
 
+  @Get(':id')
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.income.findOneOccurrence(user.sub, user.householdId!, id);
+  }
+
   @Post(':id/confirm')
   confirm(@Param('id') id: string, @Body() dto: ConfirmIncomeOccurrenceDto, @CurrentUser() user: AuthenticatedUser) {
     return this.income.confirmOccurrence(user.sub, user.householdId!, id, dto);

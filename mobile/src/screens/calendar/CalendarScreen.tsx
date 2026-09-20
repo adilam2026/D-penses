@@ -160,11 +160,13 @@ function EventRow({ event, navigation }: { event: CalendarEvent; navigation: any
   return (
     <TouchableOpacity
       style={styles.row}
-      disabled={!event.deadlineId && !event.incomeSourceId && !event.recurringTransferId}
-      activeOpacity={event.deadlineId || event.incomeSourceId || event.recurringTransferId ? 0.6 : 1}
+      disabled={!event.deadlineId && !event.incomeOccurrenceId && !event.recurringTransferId}
+      activeOpacity={event.deadlineId || event.incomeOccurrenceId || event.recurringTransferId ? 0.6 : 1}
       onPress={() => {
         if (event.deadlineId) navigation.navigate('DeadlineDetail', { id: event.deadlineId });
-        else if (event.incomeSourceId) navigation.navigate('IncomeSourceDetail', { id: event.incomeSourceId });
+        // Correction UX (Calendrier — occurrence de revenu) : ouvre la fiche de
+        // CETTE occurrence précise, jamais la source récurrente entière.
+        else if (event.incomeOccurrenceId) navigation.navigate('IncomeOccurrenceDetail', { id: event.incomeOccurrenceId });
         else if (event.recurringTransferId) navigation.navigate('RecurringTransferDetail', { id: event.recurringTransferId });
       }}
     >
