@@ -545,6 +545,11 @@ it("point 7 — poste avec 23 échéances ouvertes : une seule carte compacte, a
   expect(screen.queryByText(/01 déc\. 2026/)).toBeNull();
   // Compteur exact.
   expect(screen.getByText(/23 échéances ouvertes/)).toBeTruthy();
+  // Correction (montant ambigu) : le montant affiché est celui de LA SEULE
+  // prochaine échéance (1 000 DH), jamais la somme des 23 échéances ouvertes
+  // (23 000 DH, qui donnait l'impression trompeuse d'un total dû d'un coup).
+  expect(screen.getByText('1 000 DH restants sur cette échéance')).toBeTruthy();
+  expect(screen.queryByText(/23 000 DH/)).toBeNull();
   // Aucune échéance individuelle listée directement dans le Plan financier.
   expect(screen.queryByTestId('pay-deadline-d-eau-0')).toBeNull();
   expect(screen.queryByTestId('deadline-row-d-eau-0')).toBeNull();
