@@ -236,6 +236,19 @@ export function prioritizeBudgets(budgets: BudgetResume[]): BudgetResume[] {
 //  3) puis reste à financer décroissant ;
 //  4) puis taux de couverture croissant (le moins couvert = le plus urgent) ;
 //  5) tie-breaker stable par id (jamais l'ordre de création/réponse API).
+// Correction (point 9, révision) — l'Accueil doit afficher les plans
+// financiers triés par ordre alphabétique du libellé (insensible à la
+// casse/accents), puis prendre les 6 premiers — jamais une priorisation par
+// urgence/retard : même règle et même ordre que "Voir tous"
+// (FinancialPlansScreen.tsx), pour que les deux écrans montrent la même
+// sélection cohérente sur un foyer avec plus de 6 plans.
+export function sortPlansAlphabetically(plans: FinancialPlanResume[]): FinancialPlanResume[] {
+  return [...plans].sort((a, b) => a.label.localeCompare(b.label, 'fr', { sensitivity: 'base' }));
+}
+
+// Conservée pour HomeScreen.web.tsx (portail Web v4, périmètre séparé et en
+// standby) — plus utilisée par le mobile depuis la correction ci-dessus,
+// jamais supprimée pour ne pas casser cet appelant.
 export function prioritizePlans(plans: FinancialPlanResume[]): FinancialPlanResume[] {
   return [...plans].sort((a, b) => {
     if (a.hasOverdue !== b.hasOverdue) return a.hasOverdue ? -1 : 1;

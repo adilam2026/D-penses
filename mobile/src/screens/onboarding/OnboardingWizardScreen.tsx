@@ -63,7 +63,7 @@ const STEPS: StepDef[] = [
   {
     key: 'charges',
     title: 'Charges',
-    help: 'Vos charges récurrentes — loyer, abonnements, factures.',
+    help: 'Vos charges prévisionnelles — loyer, abonnements, factures.',
     route: 'Charges',
     actionLabel: 'Ajouter une charge',
     actionLabelAgain: 'Ajouter une autre charge',

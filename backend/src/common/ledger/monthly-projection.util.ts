@@ -123,7 +123,20 @@ export interface MonthBucket {
   // prudentBudgetRemaining CE mois (cumul depuis le début de l'horizon, même
   // logique cumulative que prudentBudgetRemaining lui-même — cf. commentaire
   // ci-dessus) : Σ budgetItems[].amount === prudentBudgetRemaining, toujours.
+  // JAMAIS retiré du moteur (sert au calcul de projectedCashBalancePrudent /
+  // prudentBudgetRemaining) — uniquement l'AFFICHAGE mensuel doit éviter de
+  // montrer chaque occurrence intermédiaire (cf. budgetItemsThisPeriod ci-dessous).
   budgetItems: BudgetLineItem[];
+  // Correction (point 1, projection budgets) — SOUS-ENSEMBLE de budgetItems :
+  // uniquement les budgets dont l'occurrence tombe DANS ce mois précis (jamais
+  // les occurrences des mois antérieurs déjà comptées dans le cumul ci-dessus).
+  // Destiné à l'affichage du détail mensuel (une seule ligne par budget pertinent
+  // pour la période consultée), jamais au calcul financier (qui reste sur le
+  // cumul budgetItems/prudentBudgetRemaining, inchangé).
+  budgetItemsThisPeriod: BudgetLineItem[];
+  // Σ budgetItemsThisPeriod[].amount — total affiché "pour ce mois", distinct de
+  // prudentBudgetRemaining (cumul depuis le début de l'horizon).
+  budgetTotalThisPeriod: number;
   // R6.2 (§12) — impact net des transferts encore `prevu` sur la trésorerie pilotée
   // ce mois-ci (signé : positif = entrée nette, négatif = sortie nette) — jamais
   // dans balance/cumulativeBalance, uniquement appliqué à projectedCashBalance.
@@ -439,6 +452,8 @@ export async function computeMonthlyProjection(
       projectedCashBalancePrudent: 0,
       prudentBudgetRemaining: 0,
       budgetItems: [],
+      budgetItemsThisPeriod: [],
+      budgetTotalThisPeriod: 0,
       plannedTransferNetTreasuryImpact: 0,
       plannedTransferItems: [],
       incomeItems: [],
@@ -568,6 +583,8 @@ export async function computeMonthlyProjection(
     const newItemsThisPeriod = budgetItemsByPeriod.get(bucket.month) ?? [];
     cumulativeBudgetItems.push(...newItemsThisPeriod);
     bucket.budgetItems = [...cumulativeBudgetItems];
+    bucket.budgetItemsThisPeriod = newItemsThisPeriod;
+    bucket.budgetTotalThisPeriod = round2(newItemsThisPeriod.reduce((sum, b) => sum + b.amount, 0));
 
     totalIncome = round2(totalIncome + bucket.totalIncome);
     totalExpense = round2(totalExpense + bucket.totalExpense);

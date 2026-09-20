@@ -46,6 +46,11 @@ type CoverageStatus = 'couverte' | 'partielle' | 'non_couverte' | 'sans_objet';
 
 interface DeadlineRow {
   id: string;
+  // Point 7 — cible du poste (ChargePlan) sous-jacent, déjà renvoyé par le
+  // backend (spread de la Deadline) : permet de regrouper l'affichage par
+  // poste (un poste récurrent apparaît UNE SEULE FOIS, jamais une carte par
+  // échéance) et de naviguer vers "Modifier le poste" (ChargePlanDetail).
+  chargePlanId: string;
   dueDate: string;
   chargePlanLabel: string;
   amountCurrent: string | number | null;
@@ -60,6 +65,12 @@ interface DeadlineRow {
   // ≠ ponctuel) : sert à afficher "Mensuel" etc. à côté de l'échéance, jamais
   // à créer une carte "poste" séparée (le poste reste unique, cf. affichage).
   recurrenceRule?: 'hebdomadaire' | 'mensuel' | 'trimestriel' | 'semestriel' | 'annuel' | 'ponctuel' | null;
+  // Point 7 (révision) — additifs côté backend (déjà chargés pour labelOf,
+  // jamais une seconde requête) : affichés une seule fois sur l'en-tête du
+  // poste, jamais répétés échéance par échéance.
+  categoryName?: string | null;
+  defaultAccountId?: string | null;
+  status?: 'actif' | 'inactif';
 }
 
 const STATUS_MARK: Record<DeadlineRow['financialStatus'], string> = {
@@ -99,6 +110,51 @@ function formatShortDate(iso: string) {
   return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+// Point 7 (révision) — "Modifier le plan" doit afficher une liste de POSTES,
+// jamais une répétition d'échéances : un poste récurrent avec plusieurs
+// échéances ouvertes simultanément apparaît ICI une seule fois (regroupement
+// par chargePlanId), ses échéances restant listées dessous son en-tête.
+// Jamais un second calcul métier — uniquement un regroupement d'affichage
+// des mêmes lignes déjà renvoyées par le backend (deadlinesCertain).
+interface ChargePlanGroup {
+  chargePlanId: string;
+  chargePlanLabel: string;
+  categoryName: string | null;
+  defaultAccountId: string | null;
+  status: 'actif' | 'inactif';
+  recurrenceRule: DeadlineRow['recurrenceRule'];
+  deadlines: DeadlineRow[];
+  totalResteAPayer: number;
+  nextDueDate: string | null;
+}
+
+function groupDeadlinesByChargePlan(rows: DeadlineRow[]): ChargePlanGroup[] {
+  const byPlan = new Map<string, DeadlineRow[]>();
+  for (const d of rows) {
+    if (!byPlan.has(d.chargePlanId)) byPlan.set(d.chargePlanId, []);
+    byPlan.get(d.chargePlanId)!.push(d);
+  }
+  const groups: ChargePlanGroup[] = Array.from(byPlan.entries()).map(([chargePlanId, deadlines]) => {
+    const sorted = deadlines.slice().sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1));
+    const first = sorted[0];
+    const openOnes = sorted.filter((d) => d.financialStatus === 'ouverte' || d.financialStatus === 'partiellement_payee');
+    return {
+      chargePlanId,
+      chargePlanLabel: first.chargePlanLabel,
+      categoryName: first.categoryName ?? null,
+      defaultAccountId: first.defaultAccountId ?? null,
+      status: first.status ?? 'actif',
+      recurrenceRule: first.recurrenceRule,
+      deadlines: sorted,
+      totalResteAPayer: openOnes.reduce((sum, d) => sum + (d.resteAPayer !== null ? Number(d.resteAPayer) : 0), 0),
+      nextDueDate: openOnes.length > 0 ? openOnes[0].dueDate : null,
+    };
+  });
+  // Un poste apparaît UNE SEULE FOIS, ordre alphabétique du libellé (même
+  // convention que le reste de l'app, insensible casse/accents).
+  return groups.sort((a, b) => a.chargePlanLabel.localeCompare(b.chargePlanLabel, 'fr', { sensitivity: 'base' }));
+}
+
 interface UnknownItem {
   chargePlanId: string;
   label: string;
@@ -116,7 +172,7 @@ interface FinancialPlanDetail {
   label: string;
   periodStart: string;
   periodEnd: string;
-  planType: 'school' | 'travel' | 'other';
+  planType: 'school' | 'travel' | 'vehicle' | 'housing' | 'subscriptions' | 'other';
   knownPlanCost: number;
   paidAmount: number;
   remainingDue: number;
@@ -188,6 +244,15 @@ export function FinancialPlanDetailScreen() {
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
+  // Point 7 (révision) — "Annuler" une échéance future directement depuis la
+  // gestion du plan, sans devoir naviguer vers DeadlineDetail : réutilise
+  // exactement api.cancelDeadline() (aucun nouveau moteur métier). Le backend
+  // refuse déjà une échéance soldée (historique payé jamais modifiable) —
+  // ce garde-fou n'est jamais dupliqué ici, seul isOpen conditionne l'affichage
+  // du bouton pour éviter une erreur évitable.
+  const [cancellingDeadlineId, setCancellingDeadlineId] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -209,6 +274,33 @@ export function FinancialPlanDetailScreen() {
       load();
     }, [load]),
   );
+
+  // Point 7 (révision) — "Annuler" directe sur une échéance future, visible
+  // depuis la gestion du plan (jamais besoin de deviner un second parcours
+  // via DeadlineDetail). Réutilise api.cancelDeadline() tel quel : le backend
+  // porte déjà les garde-fous (une échéance soldée est refusée, l'historique
+  // payé n'est jamais modifié) — non dupliqués ici.
+  function onCancelDeadline(deadlineId: string) {
+    Alert.alert('Annuler cette échéance ?', "Cette échéance future sera annulée et ne restera plus due. Aucun paiement déjà enregistré n'est affecté.", [
+      { text: 'Ne pas annuler', style: 'cancel' },
+      {
+        text: 'Annuler l\'échéance',
+        style: 'destructive',
+        onPress: async () => {
+          setCancelError(null);
+          setCancellingDeadlineId(deadlineId);
+          try {
+            await api.cancelDeadline(deadlineId);
+            await load();
+          } catch (err) {
+            setCancelError(err instanceof api.ApiError ? err.message : "Impossible d'annuler cette échéance");
+          } finally {
+            setCancellingDeadlineId(null);
+          }
+        },
+      },
+    ]);
+  }
 
   const loadChildren = useCallback(async () => {
     setChildren(await api.listChildren());
@@ -411,56 +503,112 @@ export function FinancialPlanDetailScreen() {
         </View>
       )}
 
-      <Text style={styles.sectionTitle}>Échéances</Text>
+      <Text style={styles.sectionTitle}>Postes</Text>
       {detail.deadlinesCertain.length === 0 ? (
         <Text style={styles.empty}>Aucune échéance certaine pour l'instant.</Text>
       ) : (
-        detail.deadlinesCertain.map((d) => {
-          const isOpen = d.financialStatus === 'ouverte' || d.financialStatus === 'partiellement_payee';
-          const resteAPayerNum = d.resteAPayer !== null ? Number(d.resteAPayer) : 0;
-          const couverturePct = d.coverageStatus !== 'sans_objet' && resteAPayerNum > 0 ? Math.round((d.coverageAffectee / resteAPayerNum) * 100) : null;
+        groupDeadlinesByChargePlan(detail.deadlinesCertain).map((g) => {
+          const openCount = g.deadlines.filter((d) => d.financialStatus === 'ouverte' || d.financialStatus === 'partiellement_payee').length;
           return (
-            <TouchableOpacity
-              key={d.id}
-              style={styles.row}
-              onPress={() => navigation.navigate(d.amountStatus !== 'confirme' ? 'ConfirmDeadline' : 'DeadlineDetail', { id: d.id })}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.rowLabel}>
-                  {COVERAGE_ICON[d.coverageStatus]} {d.chargePlanLabel} · {formatShortDate(d.dueDate)}
-                </Text>
-                <Text style={styles.rowMeta}>
-                  {STATUS_MARK[d.financialStatus]} {STATUS_LABEL[d.financialStatus]} ·{' '}
-                  {d.amountStatus === 'confirme' ? 'Montant confirmé' : d.amountStatus === 'estime' ? 'Estimé — appuyer pour confirmer' : 'Montant inconnu'}
-                  {/* Point 14.3 — un poste récurrent reste identifiable ("Mensuel"),
-                      jamais affiché comme un poste séparé par occurrence : une
-                      seule ligne par échéance, comme toutes les autres. */}
-                  {d.recurrenceRule && d.recurrenceRule !== 'ponctuel' ? ` · ${PERIODICITY_LABEL[d.recurrenceRule]}` : ''}
-                </Text>
-                {/* §10 — Couverture (réservé) et Paiement (réglé) : deux informations
-                    toujours affichées séparément, jamais fusionnées en une seule. */}
-                {couverturePct !== null && (
-                  <Text style={styles.rowCoverage}>
-                    Couverture : {couverturePct}% ({COVERAGE_LABEL[d.coverageStatus]}) · Paiement : {STATUS_LABEL[d.financialStatus]}
-                  </Text>
-                )}
+            // Point 7 (révision) — un poste (récurrent ou non) apparaît ICI
+            // UNE SEULE FOIS, quel que soit son nombre d'échéances ouvertes,
+            // jamais une carte par échéance.
+            <View key={g.chargePlanId} style={styles.posteCard} testID={`poste-${g.chargePlanId}`}>
+              <Text style={styles.posteLabel}>{g.chargePlanLabel}</Text>
+              <Text style={styles.posteMeta}>
+                {g.categoryName ? `${g.categoryName} · ` : ''}
+                {g.recurrenceRule && g.recurrenceRule !== 'ponctuel' ? PERIODICITY_LABEL[g.recurrenceRule] : 'Ponctuel'}
+                {g.status === 'inactif' ? ' · Récurrence arrêtée' : ''}
+              </Text>
+              <Text style={styles.posteMeta}>
+                {g.nextDueDate
+                  ? `Prochaine échéance : ${formatShortDate(g.nextDueDate)}${openCount > 1 ? ` (${openCount} échéances ouvertes)` : ''}`
+                  : 'Aucune échéance ouverte'}
+              </Text>
+              <Text style={styles.posteAmount}>{g.totalResteAPayer.toLocaleString('fr-FR')} DH restants sur ce poste</Text>
+
+              {/* Point 7 — actions du poste, jamais réimplémentées : navigation vers
+                  ChargePlanDetailScreen (édition/ajout d'échéance/retrait déjà en
+                  place là-bas, garde-fous "échéance déjà payée" inchangés). */}
+              <View style={styles.posteActionsRow}>
+                <TouchableOpacity testID={`poste-edit-${g.chargePlanId}`} onPress={() => navigation.navigate('ChargePlanDetail', { id: g.chargePlanId })}>
+                  <Text style={styles.editPosteLink}>Modifier le poste →</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  testID={`poste-add-deadline-${g.chargePlanId}`}
+                  onPress={() => navigation.navigate('ChargePlanDetail', { id: g.chargePlanId, openAddDeadline: true })}
+                >
+                  <Text style={styles.editPosteLink}>Ajouter une échéance →</Text>
+                </TouchableOpacity>
+                <TouchableOpacity testID={`poste-retire-${g.chargePlanId}`} onPress={() => navigation.navigate('ChargePlanDetail', { id: g.chargePlanId })}>
+                  <Text style={styles.editPosteLink}>Retirer du plan →</Text>
+                </TouchableOpacity>
               </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.rowAmount}>{d.resteAPayer !== null ? `${resteAPayerNum.toLocaleString('fr-FR')} DH restants` : '—'}</Text>
-                {isOpen && (
+
+              {/* Échéances de CE poste (historique payé visible, jamais modifiable ici
+                  — DeadlineDetailScreen porte déjà cette règle) : comportement de tap
+                  inchangé (Payer/Confirmer), seulement imbriqué sous l'en-tête du poste. */}
+              {g.deadlines.map((d) => {
+                const isOpen = d.financialStatus === 'ouverte' || d.financialStatus === 'partiellement_payee';
+                const resteAPayerNum = d.resteAPayer !== null ? Number(d.resteAPayer) : 0;
+                const couverturePct = d.coverageStatus !== 'sans_objet' && resteAPayerNum > 0 ? Math.round((d.coverageAffectee / resteAPayerNum) * 100) : null;
+                return (
                   <TouchableOpacity
-                    testID={`pay-deadline-${d.id}`}
-                    style={styles.payButton}
-                    onPress={() => navigation.navigate('DeadlineDetail', { id: d.id })}
+                    key={d.id}
+                    testID={`deadline-row-${d.id}`}
+                    style={styles.deadlineSubRow}
+                    onPress={() => navigation.navigate(d.amountStatus !== 'confirme' ? 'ConfirmDeadline' : 'DeadlineDetail', { id: d.id })}
                   >
-                    <Text style={styles.payButtonText}>Payer</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.rowLabel}>
+                        {COVERAGE_ICON[d.coverageStatus]} {formatShortDate(d.dueDate)}
+                      </Text>
+                      <Text style={styles.rowMeta}>
+                        {STATUS_MARK[d.financialStatus]} {STATUS_LABEL[d.financialStatus]} ·{' '}
+                        {d.amountStatus === 'confirme' ? 'Montant confirmé' : d.amountStatus === 'estime' ? 'Estimé — appuyer pour confirmer' : 'Montant inconnu'}
+                      </Text>
+                      {couverturePct !== null && (
+                        <Text style={styles.rowCoverage}>
+                          Couverture : {couverturePct}% ({COVERAGE_LABEL[d.coverageStatus]}) · Paiement : {STATUS_LABEL[d.financialStatus]}
+                        </Text>
+                      )}
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={styles.rowAmount}>{d.resteAPayer !== null ? `${resteAPayerNum.toLocaleString('fr-FR')} DH restants` : '—'}</Text>
+                      {isOpen && (
+                        <View style={styles.deadlineActionsRow}>
+                          <TouchableOpacity
+                            testID={`pay-deadline-${d.id}`}
+                            style={styles.payButton}
+                            onPress={() => navigation.navigate('DeadlineDetail', { id: d.id })}
+                          >
+                            <Text style={styles.payButtonText}>Payer</Text>
+                          </TouchableOpacity>
+                          {/* Point 7 (révision) — "Annuler" une échéance future, directe
+                              (pas de second parcours à deviner), réutilise api.cancelDeadline(). */}
+                          <TouchableOpacity
+                            testID={`cancel-deadline-${d.id}`}
+                            style={styles.cancelDeadlineButton}
+                            disabled={cancellingDeadlineId === d.id}
+                            onPress={() => onCancelDeadline(d.id)}
+                          >
+                            {cancellingDeadlineId === d.id ? (
+                              <ActivityIndicator size="small" color={colors.danger} />
+                            ) : (
+                              <Text style={styles.cancelDeadlineButtonText}>Annuler</Text>
+                            )}
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
                   </TouchableOpacity>
-                )}
-              </View>
-            </TouchableOpacity>
+                );
+              })}
+            </View>
           );
         })
       )}
+      {cancelError ? <Text style={styles.error}>{cancelError}</Text> : null}
 
       <Text style={styles.sectionTitle}>Options envisagées</Text>
       {detail.envisagedItems.length === 0 ? (
@@ -490,6 +638,12 @@ export function FinancialPlanDetailScreen() {
           <TouchableOpacity key={i.deadlineId} style={styles.rowSimple} onPress={() => navigation.navigate('ConfirmDeadline', { id: i.deadlineId })}>
             <Text style={styles.rowLabel}>{i.label}</Text>
             <Text style={styles.rowMeta}>À confirmer</Text>
+            <TouchableOpacity
+              testID={`edit-charge-plan-${i.chargePlanId}`}
+              onPress={() => navigation.navigate('ChargePlanDetail', { id: i.chargePlanId })}
+            >
+              <Text style={styles.editPosteLink}>Modifier le poste →</Text>
+            </TouchableOpacity>
           </TouchableOpacity>
         ))
       )}
@@ -509,7 +663,11 @@ export function FinancialPlanDetailScreen() {
 
       <Modal visible={addOpen} transparent animationType="fade" onRequestClose={() => setAddOpen(false)}>
         <View style={styles.modalOverlay}>
-          <ScrollView contentContainerStyle={styles.modalCard} testID="plan-add-deadline-form">
+          {/* Point 6b — style sur le ScrollView lui-même (pas seulement son
+              contentContainerStyle) : sinon la largeur 100% de modalCard se
+              résout contre un ScrollView sans largeur propre (parent en
+              alignItems:'center'), et la carte se réduit au shrink-to-fit. */}
+          <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalCard} testID="plan-add-deadline-form">
             <Text style={styles.modalTitle}>Ajouter un poste</Text>
             <TextInput style={styles.modalInput} value={addLabel} onChangeText={setAddLabel} placeholder="Libellé" testID="plan-add-deadline-label" />
             {categories.length > 0 && (
@@ -554,7 +712,11 @@ export function FinancialPlanDetailScreen() {
               // plan (endDate=periodEnd imposé côté backend, garde-fou 14.3).
               <Text style={styles.help}>Se termine automatiquement à la fin du plan : {formatShortDate(detail.periodEnd)}</Text>
             )}
-            {children.length > 0 && (
+            {/* Point 6a — uniquement pour un plan scolaire (seul type dont les
+                postes sont réellement rattachables à un enfant côté backend,
+                cf. school-wizard.service.ts) : jamais sur Voiture/Maison/
+                Abonnements, et basé sur planType, jamais sur le libellé. */}
+            {detail.planType === 'school' && children.length > 0 && (
               <MultiSelect
                 testID="plan-add-deadline-children"
                 label="Enfant(s) bénéficiaire(s)"
@@ -715,14 +877,53 @@ const styles = StyleSheet.create({
   rowMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
   rowCoverage: { fontSize: 10, color: colors.textSecondary, marginTop: 2, fontStyle: 'italic' },
   rowAmount: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
+  editPosteLink: { fontSize: 11, fontWeight: '600', color: colors.primary, marginTop: 6 },
+  // Point 7 (révision) — carte "poste" (un poste = une carte, jamais une par
+  // échéance) : mêmes tokens de surface que `row`, en conteneur englobant.
+  posteCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  posteLabel: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  posteMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  posteAmount: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginTop: 4 },
+  posteActionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: spacing.sm, marginBottom: spacing.sm },
+  deadlineSubRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+    marginTop: spacing.xs,
+  },
   payButton: { backgroundColor: colors.primary, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 5, marginTop: 6 },
   payButtonText: { color: colors.textOnPrimary, fontSize: 11, fontWeight: '600' },
+  deadlineActionsRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cancelDeadlineButton: {
+    backgroundColor: colors.dangerLight,
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    marginTop: 6,
+    minWidth: 60,
+    alignItems: 'center',
+  },
+  cancelDeadlineButtonText: { color: colors.danger, fontSize: 11, fontWeight: '600' },
   optionTotal: { fontSize: 11, color: colors.textSecondary, marginTop: 4, marginBottom: 4, fontStyle: 'italic' },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   menuButton: { paddingHorizontal: 10, paddingVertical: 4 },
   menuButtonText: { fontSize: 18, fontWeight: '700', color: colors.textSecondary },
   error: { color: colors.danger, fontSize: 12, marginTop: 8, marginBottom: 4 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)', alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
+  // Point 6b — largeur propre portée par le ScrollView (jamais seulement par
+  // son contentContainerStyle), pour que la carte occupe bien toute la
+  // largeur disponible sous le parent en alignItems:'center'.
+  modalScroll: { width: '100%', alignSelf: 'stretch' },
   modalCard: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.xl, width: '100%' },
   modalTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.md },
   modalSubLabel: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginTop: 4, marginBottom: 6 },

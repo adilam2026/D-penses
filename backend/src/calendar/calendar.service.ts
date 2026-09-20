@@ -18,6 +18,16 @@ export interface CalendarEvent {
   incomeSourceId?: string;
   // M5 — cible du clic « transfert planifié » : id du RecurringTransfer parent.
   recurringTransferId?: string;
+  // Point 5 — vue "Par catégorie / plan financier" (mobile) : uniquement pour
+  // les événements liés à une Deadline. financialPlanId prime (le libellé du
+  // FinancialPlan, ex. "Voiture · Opel Astra", est déjà composé/stocké tel
+  // quel au moment de sa création — jamais recomposé ici), sinon la catégorie
+  // du poste, sinon aucun regroupement (le mobile applique alors "Autres").
+  // Additif uniquement : ne change ni le tri ni la portée des événements déjà
+  // renvoyés — même liste, mêmes champs existants, jamais dupliquée.
+  financialPlanId?: string | null;
+  categoryId?: string | null;
+  categoryName?: string | null;
 }
 
 /**
@@ -78,7 +88,9 @@ export class CalendarService {
             { expectedBillingDate: { gte: rangeStart, lte: rangeEnd } },
           ],
         },
-        include: { chargePlan: { include: { vehicle: true, housing: true, financialPlan: true, children: { include: { child: true } } } } },
+        include: {
+          chargePlan: { include: { vehicle: true, housing: true, financialPlan: true, category: true, children: { include: { child: true } } } },
+        },
       });
       for (const d of deadlines) {
         // M7+M8 (guard-rail §4/§14) — "Libellé · Entité", jamais stocké dans chargePlan.label.
@@ -88,6 +100,9 @@ export class CalendarService {
           travelDestination: d.chargePlan.financialPlan?.planType === 'travel' ? d.chargePlan.financialPlan.destination : undefined,
           childName: d.chargePlan.children.length === 1 ? d.chargePlan.children[0].child.firstName : undefined,
         });
+        const financialPlanId = d.chargePlan.financialPlanId;
+        const categoryId = d.chargePlan.categoryId;
+        const categoryName = d.chargePlan.category?.name ?? null;
 
         // Facture attendue (RG-100) — événement distinct de l'échéance, uniquement si non encore reçue.
         if (d.expectedBillingDate && d.expectedBillingDate >= rangeStart && d.expectedBillingDate <= rangeEnd && d.billingDate === null) {
@@ -97,6 +112,9 @@ export class CalendarService {
             label: `${label} — facture attendue`,
             amount: null,
             deadlineId: d.id,
+            financialPlanId,
+            categoryId,
+            categoryName,
           });
         }
 
@@ -112,6 +130,9 @@ export class CalendarService {
             label,
             amount: d.amountCurrent === null ? null : toNumber(d.amountCurrent),
             deadlineId: d.id,
+            financialPlanId,
+            categoryId,
+            categoryName,
           });
         }
       }

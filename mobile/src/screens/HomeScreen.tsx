@@ -19,7 +19,7 @@ import {
   isFullyEmpty,
   isPartiallyConfigured,
   prioritizeBudgets,
-  prioritizePlans,
+  sortPlansAlphabetically,
   urgencyColor,
 } from './homeLogic';
 // Corrections consolidées §2 — réutilise EXACTEMENT le même type/libellés que
@@ -97,9 +97,11 @@ export function HomeScreen() {
   // essentiels sont satisfaits, et jamais après un "Ne plus afficher" explicite.
   const showConfigBanner = partiallyConfigured && !essentialPrerequisitesMet(accounts, incomeSourcesCount) && !bannerDismissed;
   const upcomingDeadlines = summary.topDeadlines;
-  // Corrections consolidées §3 — jusqu'à 6 plans sur l'accueil (au lieu de 3),
-  // au-delà uniquement via "Voir tous" ; grille 2 colonnes inchangée.
-  const topPlans = prioritizePlans(summary.financialPlansResume).slice(0, 6);
+  // Corrections consolidées §3, révisé point 9 — jusqu'à 6 plans sur l'accueil
+  // (au-delà uniquement via "Voir tous"), triés par ordre alphabétique du
+  // libellé PUIS les 6 premiers — jamais une priorisation par urgence/retard,
+  // même règle que "Voir tous" (FinancialPlansScreen.tsx).
+  const topPlans = sortPlansAlphabetically(summary.financialPlansResume).slice(0, 6);
   const topBudgets = prioritizeBudgets(summary.budgetsResume).slice(0, 3);
   // Corrections consolidées §6 — showOnHome filtre "Mes comptes" (Accueil
   // uniquement), INDÉPENDANT du pilotage : absent/true par défaut (comptes
@@ -389,7 +391,13 @@ export function HomeScreen() {
           <View style={styles.sec}>
             <View style={styles.sectionHead}>
               <Text style={styles.sectionTitle}>Dernières transactions</Text>
-              <TouchableOpacity testID="home-transactions-see-all" onPress={() => navigation.getParent()?.navigate('Transactions')}>
+              {/* Correction (point 3) — bug getParent() : 'Transactions' est un
+                  Tab.Screen SIBLING de 'Accueil' dans le même Tab.Navigator
+                  (RootTabs), jamais un Stack.Screen — getParent() renvoie le
+                  Stack racine, qui n'a aucune route 'Transactions', donc
+                  l'ancien appel était un no-op silencieux. navigate() direct,
+                  même correctif déjà appliqué ailleurs (getParent-navigation-fix). */}
+              <TouchableOpacity testID="home-transactions-see-all" onPress={() => navigation.navigate('Transactions')}>
                 <Text style={styles.sectionLink}>Voir toutes</Text>
               </TouchableOpacity>
             </View>

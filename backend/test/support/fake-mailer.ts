@@ -1,5 +1,5 @@
 import { TestingModuleBuilder } from '@nestjs/testing';
-import { MailerService } from '../../src/auth/mailer.service';
+import { MailerService, EmailDeliveryError } from '../../src/auth/mailer.service';
 
 /**
  * Remplace le MailerService réel dans les tests e2e : capture le code OTP
@@ -28,15 +28,16 @@ export function withFakeMailer(mailer: FakeMailer) {
 }
 
 /**
- * Corrections UI/UX finales §17 — simule une panne du service d'envoi
- * d'email (ex. Resend indisponible/mal configuré en prod) : signup() doit
- * malgré tout créer le compte et répondre sans 500 (AuthService.signup
- * avale cette erreur, cf. §17), jamais bloquer une inscription valide à
- * cause d'un tiers externe.
+ * Point 2 (révision) — simule une panne RÉELLE du provider (ex. Resend
+ * configuré mais domaine non vérifié) : lève EmailDeliveryError, exactement
+ * comme MailerService le ferait dans ce cas. Le compte/le code OTP sont
+ * malgré tout créés en base (createAndSendOtp les persiste AVANT d'appeler
+ * le mailer), mais la réponse HTTP doit refléter l'échec réel (503), jamais
+ * un faux succès qui laisserait croire à un email envoyé.
  */
 export class FailingMailer {
   async sendOtpEmail(): Promise<void> {
-    throw new Error('Échec envoi email Resend (HTTP 403): domaine non vérifié');
+    throw new EmailDeliveryError('Échec envoi email Resend (HTTP 403): domaine non vérifié');
   }
 }
 

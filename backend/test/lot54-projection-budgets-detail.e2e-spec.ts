@@ -112,6 +112,43 @@ describe('Corrections consolidées §10 — budget_items du détail mensuel (e2e
     expect(sum2).toBe(month2.prudent_budget_remaining);
   });
 
+  it("correction (point 1, projection budgets) — budget_items_this_period n'affiche qu'une seule occurrence par mois, jamais le cumul, même quand budget_items grandit", async () => {
+    const { auth } = await newHousehold();
+    await newAccount(auth, 10000);
+    const catId = await newCategory(auth, 'Alimentation');
+    await newBudget(auth, catId, 6000);
+
+    const body = await monthly(auth, 3);
+    const month1 = findMonth(body, '2026-09');
+    const month2 = findMonth(body, '2026-10');
+    const month3 = findMonth(body, '2026-11');
+
+    // AFFICHAGE : une seule occurrence pertinente par mois, jamais le cumul des mois précédents.
+    expect(month1.budget_items_this_period).toHaveLength(1);
+    expect(month1.budget_items_this_period[0].amount).toBe(6000);
+    expect(month1.budget_total_this_period).toBe(6000);
+
+    expect(month2.budget_items_this_period).toHaveLength(1);
+    expect(month2.budget_items_this_period[0].amount).toBe(6000);
+    expect(month2.budget_total_this_period).toBe(6000);
+
+    expect(month3.budget_items_this_period).toHaveLength(1);
+    expect(month3.budget_total_this_period).toBe(6000);
+
+    // CALCUL : le moteur cumulé (budget_items/prudent_budget_remaining) reste
+    // intact et continue de croître — jamais supprimé du calcul financier.
+    expect(month1.budget_items).toHaveLength(1);
+    expect(month2.budget_items).toHaveLength(2);
+    expect(month3.budget_items).toHaveLength(3);
+    expect(month1.prudent_budget_remaining).toBe(6000);
+    expect(month2.prudent_budget_remaining).toBe(12000);
+    expect(month3.prudent_budget_remaining).toBe(18000);
+
+    // Cohérence : Σ budget_items_this_period sur tous les mois === cumul final.
+    const totalAcrossMonths = [month1, month2, month3].reduce((s: number, m: any) => s + m.budget_total_this_period, 0);
+    expect(totalAcrossMonths).toBe(month3.prudent_budget_remaining);
+  });
+
   it('includeInPrudentProjection=false → jamais listé dans budget_items', async () => {
     const { auth } = await newHousehold();
     await newAccount(auth, 10000);

@@ -14,7 +14,11 @@ jest.mock('../../ui/useTopInset', () => ({ useTopInset: () => 16 }));
 const mockNavigate = jest.fn();
 const mockGetParent = jest.fn(() => ({ navigate: mockNavigate }));
 jest.mock('@react-navigation/native', () => ({
-  useNavigation: () => ({ getParent: mockGetParent }),
+  // Point 3 — 'Transactions' est un Tab.Screen SIBLING de 'Accueil' (jamais
+  // atteignable via getParent(), qui renvoie le Stack racine) : navigate()
+  // direct désormais utilisé pour ce bouton, d'où l'ajout ici (même mockNavigate,
+  // partagé avec getParent().navigate pour les autres routes du Stack racine).
+  useNavigation: () => ({ getParent: mockGetParent, navigate: mockNavigate }),
   useFocusEffect: (cb: () => void) => {
     const React = require('react');
     React.useEffect(cb, []);
@@ -443,42 +447,44 @@ describe('Accueil — bloc "Mes budgets" (Lot 3, Maquette 3)', () => {
   });
 });
 
-/** Correctif post-Vague 3 (point 1) — la priorité de "Mes plans" doit intégrer
- * l'urgence d'échéance (nextDeadlineDate/hasOverdue), jamais seulement le montant :
- * un plan avec une échéance très proche ne doit jamais être masqué par un plan
- * moins urgent uniquement parce que son reste à financer est supérieur. */
-describe('Accueil — priorité des plans intègre l\'échéance (correctif post-Vague 3)', () => {
+/** Correction (point 9, révision) — "Mes plans financiers" sur l'Accueil doit
+ * être trié par ordre alphabétique du libellé PUIS limité aux 6 premiers,
+ * JAMAIS par urgence/retard (nextDeadlineDate/hasOverdue) : même règle que
+ * "Voir tous" (FinancialPlansScreen), pour que les deux écrans montrent la
+ * même sélection cohérente. Remplace l'ancien correctif "priorité par
+ * échéance" (explicitement rejeté par le besoin utilisateur réel). */
+describe('Accueil — "Mes plans financiers" trié par ordre alphabétique, jamais par urgence (point 9)', () => {
   function iso(daysFromNow: number): string {
     return new Date(Date.now() + daysFromNow * 86400000).toISOString().slice(0, 10);
   }
 
-  it("un plan avec une échéance proche passe avant un plan au reste à financer bien plus élevé mais sans échéance proche", async () => {
+  it("un plan alphabétiquement antérieur passe avant un plan en retard/urgent alphabétiquement postérieur", async () => {
     mockedApi.getDashboardSummary.mockResolvedValue({
       ...EMPTY_SUMMARY,
       financialPlansResume: [
         {
-          id: 'plan-loin',
-          label: 'Voyage lointain',
+          id: 'plan-zoo',
+          label: 'Zoo — voyage urgent',
           planType: 'travel' as const,
           knownPlanCost: 60000,
           paidAmount: 0,
           remainingDue: 50000,
           provisionCoverage: 5000,
           tauxCouverture: 10,
-          nextDeadlineDate: iso(60),
-          hasOverdue: false,
+          nextDeadlineDate: iso(-5),
+          hasOverdue: true, // urgent, mais ne doit plus jamais primer sur l'alphabet
           completude: 'complet',
         },
         {
-          id: 'plan-proche',
-          label: 'École échéance demain',
-          planType: 'school' as const,
-          knownPlanCost: 1000,
+          id: 'plan-abonnements',
+          label: 'Abonnements',
+          planType: 'subscriptions' as const,
+          knownPlanCost: 100,
           paidAmount: 0,
-          remainingDue: 500,
-          provisionCoverage: 500,
+          remainingDue: 50,
+          provisionCoverage: 50,
           tauxCouverture: 50,
-          nextDeadlineDate: iso(1),
+          nextDeadlineDate: null,
           hasOverdue: false,
           completude: 'complet',
         },
@@ -487,49 +493,53 @@ describe('Accueil — priorité des plans intègre l\'échéance (correctif post
     mockedApi.listAccounts.mockResolvedValue([]);
     await render(<HomeScreen />);
 
-    await waitFor(() => screen.getByTestId('home-plan-plan-proche'));
+    await waitFor(() => screen.getByTestId('home-plan-plan-abonnements'));
     const cards = screen.getAllByTestId(/^home-plan-/);
-    expect(cards.map((c) => c.props.testID)).toEqual(['home-plan-plan-proche', 'home-plan-plan-loin']);
+    expect(cards.map((c) => c.props.testID)).toEqual(['home-plan-plan-abonnements', 'home-plan-plan-zoo']);
   });
 
-  it('un plan en retard passe toujours avant un plan non en retard, même avec une échéance plus proche sur ce dernier', async () => {
+  it('tri alphabétique insensible à la casse/accents, puis les 6 premiers seulement (au-delà : "Voir tous")', async () => {
+    const label = (id: string, label: string) => ({
+      id,
+      label,
+      planType: 'other' as const,
+      knownPlanCost: 100,
+      paidAmount: 0,
+      remainingDue: 100,
+      provisionCoverage: 0,
+      tauxCouverture: 0,
+      nextDeadlineDate: null,
+      hasOverdue: false,
+      completude: 'complet' as const,
+    });
     mockedApi.getDashboardSummary.mockResolvedValue({
       ...EMPTY_SUMMARY,
       financialPlansResume: [
-        {
-          id: 'plan-a-venir',
-          label: 'À venir',
-          planType: 'other' as const,
-          knownPlanCost: 100000,
-          paidAmount: 0,
-          remainingDue: 100000,
-          provisionCoverage: 0,
-          tauxCouverture: 0,
-          nextDeadlineDate: iso(1),
-          hasOverdue: false,
-          completude: 'complet',
-        },
-        {
-          id: 'plan-retard',
-          label: 'En retard',
-          planType: 'other' as const,
-          knownPlanCost: 100,
-          paidAmount: 0,
-          remainingDue: 100,
-          provisionCoverage: 50,
-          tauxCouverture: 50,
-          nextDeadlineDate: iso(-5),
-          hasOverdue: true,
-          completude: 'complet',
-        },
+        label('p-zoo', 'Zoo'),
+        label('p-ecole', 'école'),
+        label('p-banane', 'Banane'),
+        label('p-abricot', 'Abricot'),
+        label('p-elephant', 'Éléphant'),
+        label('p-dromadaire', 'Dromadaire'),
+        label('p-citron', 'Citron'),
+        label('p-figue', 'Figue'),
       ],
     });
     mockedApi.listAccounts.mockResolvedValue([]);
     await render(<HomeScreen />);
 
-    await waitFor(() => screen.getByTestId('home-plan-plan-retard'));
+    await waitFor(() => screen.getByTestId('home-plan-p-abricot'));
     const cards = screen.getAllByTestId(/^home-plan-/);
-    expect(cards.map((c) => c.props.testID)).toEqual(['home-plan-plan-retard', 'home-plan-plan-a-venir']);
+    // Abricot, Banane, Citron, Dromadaire, école, Éléphant — 6 premiers alphabétiques
+    // (accents/casse insensibles), Figue et Zoo exclus (au-delà des 6, "Voir tous" seulement).
+    expect(cards.map((c) => c.props.testID)).toEqual([
+      'home-plan-p-abricot',
+      'home-plan-p-banane',
+      'home-plan-p-citron',
+      'home-plan-p-dromadaire',
+      'home-plan-p-ecole',
+      'home-plan-p-elephant',
+    ]);
   });
 });
 

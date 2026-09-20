@@ -10,6 +10,7 @@ function entry(overrides: Partial<LedgerEntry> & Pick<LedgerEntry, 'id' | 'occur
     displayKind: 'depense',
     amount: -10,
     accountName: 'Compte',
+    categoryId: null,
     categoryName: null,
     categoryTypeName: null,
     categorySubtypeName: null,
@@ -86,6 +87,41 @@ describe('§12 — groupByMonthAndPlan', () => {
 
     const headers = sections[0].data.filter(isPlanHeaderRow).map((r) => r.label);
     expect(headers).toEqual(['École 2026']);
+  });
+
+  // Point 3 (révision) — niveau 2 : FinancialPlan si présent, SINON catégorie,
+  // SINON "Autres". Auparavant, une transaction sans plan tombait directement
+  // dans "Autres" même si elle avait une catégorie — jamais utilisée comme repli.
+  it('utilise la catégorie comme repli quand aucun plan n\'est rattaché (jamais "Autres" prématurément)', () => {
+    const entries = [
+      entry({ id: 'ecole', occurredAt: '2026-09-05T00:00:00.000Z', label: 'Scolarité T1', financialPlanId: 'plan-school' }),
+      entry({ id: 'courses1', occurredAt: '2026-09-08T00:00:00.000Z', label: 'Carrefour', categoryId: 'cat-alim', categoryName: 'Alimentation' }),
+      entry({ id: 'courses2', occurredAt: '2026-09-09T00:00:00.000Z', label: 'Boucherie', categoryId: 'cat-alim', categoryName: 'Alimentation' }),
+      entry({ id: 'salaire', occurredAt: '2026-09-10T00:00:00.000Z', label: 'Salaire' }), // ni plan ni catégorie
+    ];
+
+    const sections = groupByMonthAndPlan(entries, { 'plan-school': 'École 2026' });
+
+    const rows = sections[0].data;
+
+    // Partition stricte : chaque transaction listée une seule fois, sous le bon groupe.
+    const idsByGroup: Record<string, string[]> = {};
+    let currentGroup = '';
+    for (const row of rows) {
+      if (isPlanHeaderRow(row)) {
+        currentGroup = row.label;
+        idsByGroup[currentGroup] = [];
+      } else {
+        idsByGroup[currentGroup].push(row.id);
+      }
+    }
+    expect(idsByGroup['École 2026']).toEqual(['ecole']);
+    // Les 2 courses partagent la MÊME catégorie → un seul groupe "Alimentation", jamais dupliqué.
+    expect(idsByGroup['Alimentation']).toEqual(['courses2', 'courses1']);
+    expect(idsByGroup['Autres']).toEqual(['salaire']);
+    // Ordre des groupes = première apparition dans le tri par date décroissante
+    // (Alimentation le 09-09, École le 09-05) — "Autres" toujours en dernier.
+    expect(Object.keys(idsByGroup)).toEqual(['Alimentation', 'École 2026', 'Autres']);
   });
 
   it('mois différents produisent des sections distinctes, plus récent en premier', () => {

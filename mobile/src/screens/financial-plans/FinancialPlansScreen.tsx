@@ -20,7 +20,11 @@ export function FinancialPlansScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setPlans(await api.listFinancialPlans());
+      const all = await api.listFinancialPlans();
+      // Point 9 — ordre alphabétique croissant, insensible à la casse et aux
+      // accents (jamais l'ordre de création/réponse API) ; localeCompare('fr',
+      // {sensitivity:'base'}) ignore casse ET accents (é/e, À/a...).
+      setPlans([...all].sort((a, b) => a.label.localeCompare(b.label, 'fr', { sensitivity: 'base' })));
     } finally {
       setLoading(false);
     }

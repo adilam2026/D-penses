@@ -67,3 +67,42 @@ it('choisir "Voiture" navigue vers VehicleWizard', async () => {
 
   expect(mockNavigate).toHaveBeenCalledWith('VehicleWizard');
 });
+
+function plan(label: string, id: string) {
+  return {
+    id,
+    label,
+    planType: 'other' as const,
+    destination: null,
+    knownPlanCost: 0,
+    paidAmount: 0,
+    provisionCoverage: 0,
+    remainingDue: 0,
+    completude: 'complet' as const,
+    deadlinesCertain: [],
+  };
+}
+
+// Point 9 — ordre alphabétique croissant, insensible à la casse et aux
+// accents, jamais l'ordre de création/réponse API.
+it('point 9 — affiche les plans par ordre alphabétique croissant, insensible à la casse et aux accents', async () => {
+  mockedApi.listFinancialPlans.mockResolvedValue([
+    plan('Voiture · Opel Astra', 'p1'),
+    plan('abonnements', 'p2'), // minuscule : doit se classer comme "Abonnements"
+    plan('École 2026/2027 — EFI', 'p3'), // accent : doit se classer comme "Ecole..."
+    plan('Maison · Villa Almaz', 'p4'),
+    plan('Voiture · Audi Q5', 'p5'),
+  ]);
+
+  await render(<FinancialPlansScreen />);
+  await waitFor(() => screen.getByText(/abonnements/));
+
+  const titles = screen.getAllByText(/abonnements|École|Maison|Voiture/).map((n) => n.props.children.join(''));
+  expect(titles).toEqual([
+    '📁 abonnements',
+    '📁 École 2026/2027 — EFI',
+    '📁 Maison · Villa Almaz',
+    '📁 Voiture · Audi Q5',
+    '📁 Voiture · Opel Astra',
+  ]);
+});

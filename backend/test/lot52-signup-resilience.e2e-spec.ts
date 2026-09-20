@@ -72,8 +72,13 @@ describe('Lot 52 — Résilience création de compte (e2e)', () => {
     expect(champManquant.body.statusCode).toBe(400);
   });
 
-  // ---------- Panne du service d'email (root cause du bug prod) ----------
-  describe('panne du service d\'envoi d\'email (Resend indisponible/mal configuré)', () => {
+  // ---------- Panne RÉELLE du service d'email (point 2, révision) ----------
+  // Corrige un comportement rejeté : l'ancienne version répondait 200/201
+  // ("faux succès") même quand Resend refusait réellement l'envoi, laissant
+  // l'utilisateur croire à tort qu'un email était en route. Le compte et le
+  // code OTP restent créés en base (rien à rejouer), mais la réponse HTTP
+  // doit désormais refléter fidèlement l'échec réel du provider.
+  describe('panne RÉELLE du provider (Resend configuré mais qui refuse l\'envoi — domaine non vérifié, clé invalide, service indisponible)', () => {
     let appFailing: INestApplication;
     let httpFailing: request.Agent;
     let prismaFailing: PrismaService;
@@ -88,15 +93,49 @@ describe('Lot 52 — Résilience création de compte (e2e)', () => {
       await appFailing.close();
     });
 
-    it("l'inscription réussit malgré tout (jamais 500) même si l'envoi du code échoue — le compte est créé, consultable via Renvoyer le code plus tard", async () => {
+    it("l'inscription renvoie une erreur contrôlée (503, jamais un 201 trompeur) si l'envoi échoue réellement — le compte et le code OTP sont malgré tout créés en base (rien à rejouer)", async () => {
       const email = `mailfail+${run}@example.com`;
-      const res = await httpFailing.post('/auth/signup').send({ email, password: 'password123', firstName: 'Test', lastName: 'User' }).expect(201);
-      expect(res.body).toEqual({ requiresEmailVerification: true, email });
+      const res = await httpFailing.post('/auth/signup').send({ email, password: 'password123', firstName: 'Test', lastName: 'User' }).expect(503);
+      expect(res.body.statusCode).toBe(503);
+      expect(res.body.message).toMatch(/Renvoyer le code/);
 
+      // Distinction explicite : le compte ET le code OTP existent bien en base
+      // (« OTP créé ») même si l'email n'a jamais été réellement accepté par
+      // le provider (« email envoyé » — c'est justement ce qui a échoué).
       const user = await prismaFailing.user.findUniqueOrThrow({ where: { email } });
       expect(user.firstName).toBe('Test');
       const otp = await prismaFailing.emailOtp.findFirst({ where: { userId: user.id }, orderBy: { createdAt: 'desc' } });
-      expect(otp).not.toBeNull(); // le code est bien généré/stocké malgré l'échec d'envoi
+      expect(otp).not.toBeNull();
+    });
+
+    // "Renvoyer le code" doit avoir EXACTEMENT la même garantie que signup()
+    // ci-dessus : un nouveau code est généré/persisté (l'ancien invalidé)
+    // AVANT la tentative d'envoi, mais si le provider refuse réellement,
+    // la réponse HTTP doit le signaler (503), jamais un 200 trompeur.
+    it('"Renvoyer le code" renvoie une erreur contrôlée (503) si l\'envoi échoue réellement — un nouveau code est malgré tout généré, l\'ancien invalidé', async () => {
+      const email = `resendfail+${run}@example.com`;
+      await httpFailing.post('/auth/signup').send({ email, password: 'password123', firstName: 'Test', lastName: 'User' }).expect(503);
+      const user = await prismaFailing.user.findUniqueOrThrow({ where: { email } });
+      const firstOtp = await prismaFailing.emailOtp.findFirstOrThrow({ where: { userId: user.id }, orderBy: { createdAt: 'desc' } });
+
+      const res = await httpFailing.post('/auth/resend-email-otp').send({ email }).expect(503);
+      expect(res.body.statusCode).toBe(503);
+
+      // L'ancien code est invalidé (consommé) et un nouveau, distinct, est généré
+      // malgré l'échec d'envoi signalé à l'appelant.
+      const firstOtpAfter = await prismaFailing.emailOtp.findUniqueOrThrow({ where: { id: firstOtp.id } });
+      expect(firstOtpAfter.consumedAt).not.toBeNull();
+      const liveOtp = await prismaFailing.emailOtp.findFirstOrThrow({ where: { userId: user.id, consumedAt: null }, orderBy: { createdAt: 'desc' } });
+      expect(liveOtp.id).not.toBe(firstOtp.id);
     });
   });
+
+  // ---------- RESEND_API_KEY absent (dev local/CI/tests) : jamais bloquant ----------
+  // Cas distinct de la panne réelle ci-dessus : quand le provider n'est même
+  // pas configuré (comme dans CET environnement de test, cf. .env sans
+  // RESEND_API_KEY), MailerService journalise le code au lieu de tenter un
+  // envoi — signup()/resendEmailOtp() doivent rester des succès normaux
+  // (200/201), exactement le comportement déjà prouvé par les tests
+  // "utilisateur complètement neuf" ci-dessus (FakeMailer = même contrat que
+  // le mode "non configuré" : jamais d'exception).
 });

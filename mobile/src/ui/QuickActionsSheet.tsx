@@ -23,7 +23,7 @@ const ACTIONS: QuickAction[] = [
   { key: 'depense', label: 'Dépense', description: 'Une dépense réelle', icon: 'remove-circle-outline' },
   { key: 'revenu', label: 'Revenu', description: 'Un revenu reçu', icon: 'add-circle-outline' },
   { key: 'transfert', label: 'Transfert', description: 'Entre deux comptes', icon: 'swap-horizontal-outline' },
-  { key: 'charge', label: 'Charge récurrente', description: 'Un engagement régulier', icon: 'receipt-outline' },
+  { key: 'charge', label: 'Charge prévisionnelle', description: 'Un engagement régulier', icon: 'receipt-outline' },
   { key: 'budget', label: 'Budget', description: 'Un seuil de contrôle', icon: 'pie-chart-outline' },
   { key: 'plan', label: 'Plan', description: 'École, voyage...', icon: 'folder-outline' },
 ];

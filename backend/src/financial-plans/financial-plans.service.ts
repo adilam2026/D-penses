@@ -166,6 +166,13 @@ export class FinancialPlansService {
           // sont multiples (déjà le cas ici — une ligne par échéance, jamais
           // par poste).
           recurrenceRule: cp.recurrenceRule,
+          // Point 7 (révision) — additifs, déjà chargés ci-dessus pour labelOf
+          // (cp.category/cp.defaultAccountId/cp.status), jamais une seconde
+          // requête : le mobile regroupe ces échéances par poste et affiche
+          // ces champs UNE SEULE FOIS sur l'en-tête du poste.
+          categoryName: cp.category?.name ?? null,
+          defaultAccountId: cp.defaultAccountId ?? null,
+          status: cp.status,
           resteAPayer,
           coverageAffectee: round2(coverageAffectee),
           engagementNonCouvert: round2(engagementNonCouvertAmount),

@@ -1,11 +1,19 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'node:crypto';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { TokenService } from './token.service';
-import { MailerService } from './mailer.service';
+import { MailerService, EmailDeliveryError } from './mailer.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 
@@ -78,21 +86,12 @@ export class AuthService {
     }
 
     // L'envoi du code de vérification est un effet de bord vers un service tiers
-    // (Resend) — une panne d'envoi (clé absente/invalide, domaine non vérifié,
-    // service indisponible) ne doit jamais faire échouer la création du compte
-    // elle-même : le User et le code OTP sont déjà écrits en base, l'utilisateur
-    // peut toujours redemander l'envoi via "Renvoyer le code" une fois l'email de
-    // nouveau opérationnel. Jamais une 500 pour une inscription qui a réellement
-    // réussi côté données (§17 — bug bloquant : la panne d'un tiers ne doit
-    // jamais se traduire par "Erreur interne du serveur" sur une action réussie).
-    try {
-      await this.createAndSendOtp(user.id, user.email);
-    } catch (err) {
-      this.logger.error(
-        `Échec de l'envoi du code de vérification à ${user.email} (compte créé malgré tout)`,
-        err instanceof Error ? err.stack : String(err),
-      );
-    }
+    // (Resend). Correction (point 2, révision) : le compte reste créé en base
+    // même si l'envoi échoue réellement (rien à rejouer), mais la réponse HTTP
+    // reflète désormais fidèlement cet échec (503 via createAndSendOtp
+    // ci-dessous) — jamais un succès trompeur qui laisserait croire à un email
+    // envoyé alors qu'il ne l'a pas été.
+    await this.createAndSendOtp(user.id, user.email);
 
     return { requiresEmailVerification: true, email: user.email };
   }
@@ -161,7 +160,17 @@ export class AuthService {
     return this.issueTokens(user.id, null, userAgent);
   }
 
-  /** « Renvoyer le code » (§8) — jamais pour un compte déjà confirmé (celui-ci se connecte normalement). */
+  /**
+   * « Renvoyer le code » (§8) — jamais pour un compte déjà confirmé (celui-ci se
+   * connecte normalement).
+   *
+   * Correction (point 2, révision) — un nouveau code est toujours généré/persisté
+   * AVANT toute tentative d'envoi (jamais perdu même si l'envoi échoue). Si le
+   * mailer échoue réellement (provider configuré mais qui refuse l'envoi),
+   * createAndSendOtp() traduit cela en 503 explicite — jamais un 200 trompeur
+   * qui ferait croire à un email envoyé alors qu'il ne l'a pas été. Même
+   * garantie que signup() (même méthode partagée, jamais dupliquée).
+   */
   async resendEmailOtp(email: string): Promise<{ email: string }> {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) throw new NotFoundException('Aucun compte ne correspond à cet email');
@@ -172,6 +181,24 @@ export class AuthService {
     return { email: user.email };
   }
 
+  /**
+   * Génère et persiste toujours le code OTP (jamais protégé par le try/catch
+   * ci-dessous : une vraie panne base de données doit rester une 500 visible,
+   * jamais masquée) — le code créé en base est donc TOUJOURS indépendant du
+   * succès de l'envoi (distinction explicite demandée : « OTP créé » ≠
+   * « email réellement accepté par le provider »).
+   *
+   * Correction (point 2, révision) — l'ancienne version avalait TOUTE panne
+   * mailer, y compris un vrai refus du provider (Resend : domaine non
+   * vérifié, clé invalide, service indisponible), et renvoyait malgré tout un
+   * succès HTTP : l'utilisateur croyait le code envoyé alors qu'il ne l'était
+   * pas, sans aucun moyen de le savoir. Seul le cas RESEND_API_KEY absent
+   * (dev local/CI/tests, cf. MailerService) reste un no-op silencieux — un
+   * EmailDeliveryError (provider réellement configuré mais qui refuse
+   * l'envoi) est désormais traduit en erreur HTTP contrôlée et compréhensible
+   * (503), jamais masquée comme un faux succès. Le code reste néanmoins
+   * consultable/réessayable via "Renvoyer le code" (rien n'est perdu).
+   */
   private async createAndSendOtp(userId: string, email: string): Promise<void> {
     // Une seule ligne "vivante" à la fois : un nouveau code invalide silencieusement
     // les précédents plutôt que de laisser plusieurs codes simultanément valides.
@@ -182,7 +209,21 @@ export class AuthService {
     await this.prisma.emailOtp.create({
       data: { userId, codeHash, expiresAt: new Date(Date.now() + OTP_TTL_MS) },
     });
-    await this.mailer.sendOtpEmail(email, code);
+
+    try {
+      await this.mailer.sendOtpEmail(email, code);
+    } catch (err) {
+      if (err instanceof EmailDeliveryError) {
+        this.logger.error(
+          `Échec RÉEL de l'envoi du code de vérification à ${email} (code créé en base, consultable via "Renvoyer le code")`,
+          err.stack,
+        );
+        throw new ServiceUnavailableException(
+          "Votre compte est créé, mais l'email de vérification n'a pas pu être envoyé pour le moment (service d'emailing indisponible). Réessayez dans quelques instants avec « Renvoyer le code ».",
+        );
+      }
+      throw err;
+    }
   }
 
   async login(dto: LoginDto, userAgent?: string): Promise<AuthTokens> {

@@ -5,14 +5,34 @@ import { Ionicons } from '@expo/vector-icons';
 import * as api from '../../api/client';
 import { useTopInset } from '../../ui/useTopInset';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
-import { CalendarEvent, KIND_COLOR, KIND_ICON, KIND_LABEL, LEGEND_ORDER, formatDayMonth, groupEventsByMonth } from './calendarLogic';
+import {
+  CalendarEvent,
+  KIND_COLOR,
+  KIND_ICON,
+  KIND_LABEL,
+  LEGEND_ORDER,
+  formatDayMonth,
+  groupEventsByMonth,
+  groupEventsByMonthThenCategory,
+} from './calendarLogic';
+
+type ViewMode = 'date' | 'category';
+
+// Point 5B — item plat pour la vue "Par catégorie / plan" : un en-tête de
+// groupe suivi de ses événements, aplati pour rester dans le même SectionList
+// (même virtualisation/perf que la vue "Par date", jamais un second composant
+// de liste). Discriminant `__type` uniquement consommé par renderItem ci-dessous.
+type CategoryFlatItem = { __type: 'groupHeader'; label: string } | { __type: 'event'; event: CalendarEvent };
 
 /**
  * Calendrier financier (§14/§15, corrections UI/UX finales §8) — vue dérivée
  * (IncomeOccurrence + Deadline), jamais une source de données persistée.
  * Facture attendue et échéance restent deux événements distincts pour une
- * seule Deadline métier. Liste groupée par mois (jamais une seconde règle de
- * tri : groupEventsByMonth reste la seule source de regroupement).
+ * seule Deadline métier.
+ *
+ * Point 5 — deux représentations des MÊMES événements (jamais dupliqués/
+ * recalculés) : "Par date" (Mois → Date, tri alphabétique à date égale) ou
+ * "Par catégorie / plan financier" (Mois → Catégorie/Plan → opérations).
  */
 export function CalendarScreen() {
   const navigation = useNavigation<any>();
@@ -20,8 +40,19 @@ export function CalendarScreen() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [legendOpen, setLegendOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('date');
+  const [financialPlanLabelById, setFinancialPlanLabelById] = useState<Map<string, string>>(new Map());
 
-  const sections = useMemo(() => groupEventsByMonth(events), [events]);
+  const dateSections = useMemo(() => groupEventsByMonth(events), [events]);
+  const categorySections = useMemo(() => {
+    return groupEventsByMonthThenCategory(events, financialPlanLabelById).map((month) => ({
+      title: month.title,
+      data: month.groups.flatMap((g): CategoryFlatItem[] => [
+        { __type: 'groupHeader', label: g.label },
+        ...g.events.map((event): CategoryFlatItem => ({ __type: 'event', event })),
+      ]),
+    }));
+  }, [events, financialPlanLabelById]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -33,8 +64,12 @@ export function CalendarScreen() {
       // demande donc explicitement une fenêtre de 90 jours, cohérente avec l'écran
       // Projection.
       const to = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
-      const res = await api.getCalendar({ to });
+      const [res, plans] = await Promise.all([api.getCalendar({ to }), api.listFinancialPlans()]);
       setEvents(res.events);
+      // Point 5B — réutilise GET /financial-plans déjà utilisé ailleurs (Plans
+      // financiers/Projection), jamais un second endpoint : le libellé du plan
+      // (ex. "Voiture · Opel Astra") est déjà composé/stocké tel quel côté API.
+      setFinancialPlanLabelById(new Map(plans.map((p: { id: string; label: string }) => [p.id, p.label])));
     } finally {
       setLoading(false);
     }
@@ -71,35 +106,77 @@ export function CalendarScreen() {
         </View>
       )}
 
-      <SectionList
-        sections={sections}
-        keyExtractor={(e, i) => `${e.kind}-${e.date}-${i}`}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
-        renderSectionHeader={({ section }) => <Text style={styles.sectionHeader}>{section.title}</Text>}
-        ListEmptyComponent={!loading ? <Text style={styles.empty}>Aucun événement dans les prochains jours.</Text> : null}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.row}
-            disabled={!item.deadlineId && !item.incomeSourceId && !item.recurringTransferId}
-            activeOpacity={item.deadlineId || item.incomeSourceId || item.recurringTransferId ? 0.6 : 1}
-            onPress={() => {
-              if (item.deadlineId) navigation.navigate('DeadlineDetail', { id: item.deadlineId });
-              else if (item.incomeSourceId) navigation.navigate('IncomeSourceDetail', { id: item.incomeSourceId });
-              else if (item.recurringTransferId) navigation.navigate('RecurringTransferDetail', { id: item.recurringTransferId });
-            }}
-          >
-            <Ionicons name={KIND_ICON[item.kind]} size={20} color={KIND_COLOR[item.kind]} style={styles.rowIcon} />
-            <View style={styles.rowBody}>
-              <Text style={styles.rowLabel}>{item.label}</Text>
-              <Text style={[styles.rowMeta, { color: KIND_COLOR[item.kind] }]}>
-                {formatDayMonth(item.date)} · {KIND_LABEL[item.kind]}
-              </Text>
-            </View>
-            {item.amount !== null && <Text style={styles.rowAmount}>{item.amount.toLocaleString('fr-FR')} DH</Text>}
-          </TouchableOpacity>
-        )}
-      />
+      {/* Point 5B — contrôle simple pour basculer entre les deux représentations
+          des mêmes échéances, jamais deux jeux de données distincts. */}
+      <View style={styles.viewModeRow} testID="calendar-view-mode-toggle">
+        <TouchableOpacity
+          testID="calendar-view-mode-date"
+          style={[styles.viewModeButton, viewMode === 'date' && styles.viewModeButtonActive]}
+          onPress={() => setViewMode('date')}
+        >
+          <Text style={[styles.viewModeButtonText, viewMode === 'date' && styles.viewModeButtonTextActive]}>Par date</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          testID="calendar-view-mode-category"
+          style={[styles.viewModeButton, viewMode === 'category' && styles.viewModeButtonActive]}
+          onPress={() => setViewMode('category')}
+        >
+          <Text style={[styles.viewModeButtonText, viewMode === 'category' && styles.viewModeButtonTextActive]}>Par catégorie / plan</Text>
+        </TouchableOpacity>
+      </View>
+
+      {viewMode === 'date' ? (
+        <SectionList
+          sections={dateSections}
+          keyExtractor={(e, i) => `${e.kind}-${e.date}-${i}`}
+          refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
+          renderSectionHeader={({ section }) => <Text style={styles.sectionHeader}>{section.title}</Text>}
+          ListEmptyComponent={!loading ? <Text style={styles.empty}>Aucun événement dans les prochains jours.</Text> : null}
+          renderItem={({ item }) => <EventRow event={item} navigation={navigation} />}
+        />
+      ) : (
+        <SectionList
+          testID="calendar-category-list"
+          sections={categorySections}
+          keyExtractor={(item, i) => (item.__type === 'groupHeader' ? `group-${item.label}-${i}` : `${item.event.kind}-${item.event.date}-${i}`)}
+          refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
+          renderSectionHeader={({ section }) => <Text style={styles.sectionHeader}>{section.title}</Text>}
+          ListEmptyComponent={!loading ? <Text style={styles.empty}>Aucun événement dans les prochains jours.</Text> : null}
+          renderItem={({ item }) =>
+            item.__type === 'groupHeader' ? (
+              <Text style={styles.categoryGroupTitle}>{item.label}</Text>
+            ) : (
+              <EventRow event={item.event} navigation={navigation} />
+            )
+          }
+        />
+      )}
     </View>
+  );
+}
+
+/** Module-level (jamais une closure imbriquée) — ligne d'événement, partagée entre les 2 modes d'affichage. */
+function EventRow({ event, navigation }: { event: CalendarEvent; navigation: any }) {
+  return (
+    <TouchableOpacity
+      style={styles.row}
+      disabled={!event.deadlineId && !event.incomeSourceId && !event.recurringTransferId}
+      activeOpacity={event.deadlineId || event.incomeSourceId || event.recurringTransferId ? 0.6 : 1}
+      onPress={() => {
+        if (event.deadlineId) navigation.navigate('DeadlineDetail', { id: event.deadlineId });
+        else if (event.incomeSourceId) navigation.navigate('IncomeSourceDetail', { id: event.incomeSourceId });
+        else if (event.recurringTransferId) navigation.navigate('RecurringTransferDetail', { id: event.recurringTransferId });
+      }}
+    >
+      <Ionicons name={KIND_ICON[event.kind]} size={20} color={KIND_COLOR[event.kind]} style={styles.rowIcon} />
+      <View style={styles.rowBody}>
+        <Text style={styles.rowLabel}>{event.label}</Text>
+        <Text style={[styles.rowMeta, { color: KIND_COLOR[event.kind] }]}>
+          {formatDayMonth(event.date)} · {KIND_LABEL[event.kind]}
+        </Text>
+      </View>
+      {event.amount !== null && <Text style={styles.rowAmount}>{event.amount.toLocaleString('fr-FR')} DH</Text>}
+    </TouchableOpacity>
   );
 }
 
@@ -130,6 +207,24 @@ const styles = StyleSheet.create({
   },
   legendItem: { flexDirection: 'row', alignItems: 'center', marginRight: spacing.md, marginBottom: 4 },
   legendItemText: { fontSize: 11, color: colors.textPrimary, marginLeft: 4 },
+  viewModeRow: { flexDirection: 'row', backgroundColor: colors.surfaceSecondary, borderRadius: radius.pill, padding: 3, marginBottom: spacing.md },
+  viewModeButton: { flex: 1, paddingVertical: 8, borderRadius: radius.pill, alignItems: 'center' },
+  viewModeButtonActive: { backgroundColor: colors.surface, ...elevation.card },
+  viewModeButtonText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
+  viewModeButtonTextActive: { color: colors.textPrimary },
+  categoryGroupTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+  },
   empty: { color: colors.textSecondary, textAlign: 'center', marginTop: 24 },
   row: {
     flexDirection: 'row',

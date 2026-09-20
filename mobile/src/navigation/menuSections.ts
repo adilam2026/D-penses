@@ -32,7 +32,7 @@ export const HAMBURGER_SECTIONS: { title: string; items: MenuItem[] }[] = [
     title: 'Mes finances',
     items: [
       { label: 'Revenus réguliers', icon: 'trending-up-outline', route: 'Income' },
-      { label: 'Charges récurrentes', icon: 'receipt-outline', route: 'Charges' },
+      { label: 'Charges prévisionnelles', icon: 'receipt-outline', route: 'Charges' },
       { label: 'Budgets', icon: 'pie-chart-outline', route: 'Budgets' },
       { label: 'Objectifs', icon: 'flag-outline', route: 'Goals' },
       { label: 'Transferts récurrents', icon: 'swap-horizontal-outline', route: 'RecurringTransfers' },

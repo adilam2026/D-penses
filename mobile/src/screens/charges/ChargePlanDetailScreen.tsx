@@ -4,6 +4,7 @@ import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, S
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { Select } from '../../ui/Select';
+import { MultiSelect } from '../../ui/MultiSelect';
 import { FormField } from '../../ui/FormField';
 import { DateField } from '../../ui/DateField';
 import { frequencyOptions } from '../../ui/frequency';
@@ -30,11 +31,23 @@ interface ChargePlan {
   // Corrections consolidées §8 — compte d'imputation par défaut, préremplissage
   // uniquement au moment du paiement (jamais imposé, cf. DeadlineDetailScreen).
   defaultAccountId?: string | null;
+  // Point 7 — bénéficiaires additifs (jamais réservés à la création) et le
+  // planType du FinancialPlan rattaché : sert UNIQUEMENT à décider si
+  // "Enfant(s) bénéficiaire(s)" a un sens pour ce poste (même règle que
+  // "Ajouter un poste", point 6a : uniquement un plan scolaire).
+  children?: { childId: string }[];
+  financialPlan?: { planType: string } | null;
 }
 
 interface Account {
   id: string;
   name: string;
+}
+
+interface Child {
+  id: string;
+  firstName: string;
+  lastName: string;
 }
 
 const OBLIGATION_STATUS_OPTIONS: { value: ObligationStatus; label: string }[] = [
@@ -91,6 +104,7 @@ export function ChargePlanDetailScreen() {
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [children, setChildren] = useState<Child[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [label, setLabel] = useState('');
@@ -113,6 +127,10 @@ export function ChargePlanDetailScreen() {
   // Corrections consolidées §8 — compte d'imputation par défaut : sert
   // UNIQUEMENT de préremplissage au moment du paiement (jamais imposé).
   const [defaultAccountId, setDefaultAccountId] = useState<string | null>(null);
+  // Point 7 — bénéficiaires : uniquement affiché/éditable pour un poste
+  // rattaché à un plan scolaire (planType='school'), même règle que "Ajouter
+  // un poste" (point 6a) — jamais basé sur le libellé du plan.
+  const [childIds, setChildIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [togglingStatus, setTogglingStatus] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -120,25 +138,40 @@ export function ChargePlanDetailScreen() {
   const [retiring, setRetiring] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Point 7 (révision A) — "Ajouter une échéance" à un poste EXISTANT, jamais
+  // possible avant depuis cet écran (seule la création d'un tout nouveau poste
+  // existait, depuis FinancialPlanDetailScreen). Réutilise exactement
+  // api.createDeadline(chargePlanId, ...), déjà utilisé ailleurs — aucun
+  // nouveau moteur métier.
+  const [addDeadlineOpen, setAddDeadlineOpen] = useState(false);
+  const [addDueDate, setAddDueDate] = useState('');
+  const [addAmountStatus, setAddAmountStatus] = useState<'estime' | 'confirme' | 'inconnu'>('estime');
+  const [addAmount, setAddAmount] = useState('');
+  const [addingDeadline, setAddingDeadline] = useState(false);
+  const [addDeadlineError, setAddDeadlineError] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [p, d, categoryList, accountList] = await Promise.all([
+      const [p, d, categoryList, accountList, childList] = await Promise.all([
         api.getChargePlan(id),
         api.listChargePlanDeadlines(id),
         api.listCategories(),
         api.listAccounts(),
+        api.listChildren(),
       ]);
       setPlan(p);
       setDeadlines(d);
       setCategories((categoryList as Category[]).filter((c) => c.kind === 'expense' || c.kind === 'both'));
       setAccounts(accountList as Account[]);
+      setChildren(childList as Child[]);
       setLabel(p.label);
       setCategoryId(p.categoryId);
       setObligationStatus(p.obligationStatus);
       setRecurrenceRule(p.recurrenceRule ?? 'ponctuel');
       setAnchorDate(p.recurrenceAnchorDate ? String(p.recurrenceAnchorDate).slice(0, 10) : '');
       setDefaultAccountId(p.defaultAccountId ?? null);
+      setChildIds(((p.children ?? []) as { childId: string }[]).map((c) => c.childId));
       setEditAmount(false);
       setAmountStatus('estime');
       setAmount('');
@@ -160,7 +193,7 @@ export function ChargePlanDetailScreen() {
       return;
     }
     if (recurrenceRule !== 'ponctuel' && !anchorDate) {
-      setError('La prochaine échéance est requise pour une charge récurrente');
+      setError('La prochaine échéance est requise pour une charge prévisionnelle');
       return;
     }
     if (editAmount && amountStatus !== 'inconnu' && (!amount.trim() || Number(amount.replace(',', '.')) <= 0)) {
@@ -179,6 +212,10 @@ export function ChargePlanDetailScreen() {
         ...(editAmount
           ? { amountStatus, amountCurrent: amountStatus !== 'inconnu' ? Number(amount.replace(',', '.')) : undefined }
           : {}),
+        // Point 7 — n'envoie childIds QUE lorsque le champ est affiché (plan
+        // scolaire) : jamais d'écrasement silencieux des bénéficiaires d'un
+        // poste où ce champ n'a pas de sens (Voiture/Maison/Abonnements).
+        ...(plan?.financialPlan?.planType === 'school' ? { childIds } : {}),
       });
       await load();
     } catch (err) {
@@ -251,6 +288,49 @@ export function ChargePlanDetailScreen() {
         },
       ],
     );
+  }
+
+  // Point 7 (révision A) — ouverture automatique quand on arrive depuis l'action
+  // "Ajouter une échéance →" d'un poste sur FinancialPlanDetailScreen (route
+  // param openAddDeadline). Ne consomme le param qu'une fois pour éviter de
+  // rouvrir le formulaire à chaque retour en focus sur cet écran.
+  useFocusEffect(
+    useCallback(() => {
+      if (route.params?.openAddDeadline) {
+        setAddDeadlineOpen(true);
+        navigation.setParams({ openAddDeadline: undefined });
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [route.params?.openAddDeadline]),
+  );
+
+  async function onAddDeadline() {
+    setAddDeadlineError(null);
+    if (!addDueDate) {
+      setAddDeadlineError("La date d'échéance est requise");
+      return;
+    }
+    if (addAmountStatus !== 'inconnu' && (!addAmount.trim() || Number(addAmount.replace(',', '.')) <= 0)) {
+      setAddDeadlineError('Montant invalide');
+      return;
+    }
+    setAddingDeadline(true);
+    try {
+      await api.createDeadline(id, {
+        dueDate: addDueDate,
+        amountStatus: addAmountStatus,
+        ...(addAmountStatus !== 'inconnu' ? { amountCurrent: Number(addAmount.replace(',', '.')) } : {}),
+      });
+      setAddDeadlineOpen(false);
+      setAddDueDate('');
+      setAddAmountStatus('estime');
+      setAddAmount('');
+      await load();
+    } catch (err) {
+      setAddDeadlineError(err instanceof api.ApiError ? err.message : "Impossible d'ajouter l'échéance");
+    } finally {
+      setAddingDeadline(false);
+    }
   }
 
   if (loading && !plan) {
@@ -351,6 +431,19 @@ export function ChargePlanDetailScreen() {
           </>
         )}
 
+        {/* Point 7 — uniquement pour un poste rattaché à un plan scolaire
+            (même règle que "Ajouter un poste", point 6a) : jamais pour
+            Voiture/Maison/Abonnements, basé sur planType, jamais le libellé. */}
+        {plan.financialPlan?.planType === 'school' && children.length > 0 && (
+          <MultiSelect
+            testID="chargeplan-children"
+            label="Enfant(s) bénéficiaire(s)"
+            value={childIds}
+            onChange={setChildIds}
+            options={children.map((c) => ({ value: c.id, label: `${c.firstName} ${c.lastName}` }))}
+          />
+        )}
+
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <TouchableOpacity style={styles.button} onPress={onSave} disabled={saving} testID="chargeplan-save">
           {saving ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Enregistrer</Text>}
@@ -377,7 +470,45 @@ export function ChargePlanDetailScreen() {
           </TouchableOpacity>
         )}
 
-        <Text style={styles.sectionTitle}>Échéances</Text>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Échéances</Text>
+          <TouchableOpacity testID="chargeplan-add-deadline-toggle" onPress={() => setAddDeadlineOpen((v) => !v)}>
+            <Text style={styles.addDeadlineToggle}>{addDeadlineOpen ? 'Annuler' : '+ Ajouter une échéance'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {addDeadlineOpen && (
+          <View style={styles.addDeadlineBox}>
+            <DateField label="Date d'échéance" value={addDueDate} onChange={setAddDueDate} />
+            <View style={styles.segment}>
+              {(['estime', 'confirme', 'inconnu'] as const).map((s) => (
+                <TouchableOpacity
+                  key={s}
+                  testID={`chargeplan-add-deadline-amount-status-${s}`}
+                  style={[styles.segmentItem, addAmountStatus === s && styles.segmentActive]}
+                  onPress={() => setAddAmountStatus(s)}
+                >
+                  <Text style={[styles.segmentText, addAmountStatus === s && styles.segmentTextActive]}>{AMOUNT_STATUS_LABEL[s]}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {addAmountStatus !== 'inconnu' && (
+              <FormField
+                testID="chargeplan-add-deadline-amount"
+                placeholder="Montant (DH)"
+                keyboardType="decimal-pad"
+                value={addAmount}
+                onChangeText={setAddAmount}
+                onFocus={handleFocus}
+              />
+            )}
+            {addDeadlineError ? <Text style={styles.error}>{addDeadlineError}</Text> : null}
+            <TouchableOpacity style={styles.button} onPress={onAddDeadline} disabled={addingDeadline} testID="chargeplan-add-deadline-save">
+              {addingDeadline ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Ajouter l'échéance</Text>}
+            </TouchableOpacity>
+          </View>
+        )}
+
         {deadlines.length === 0 ? (
           <Text style={styles.empty}>Aucune échéance pour l'instant.</Text>
         ) : (
@@ -424,6 +555,9 @@ const styles = StyleSheet.create({
   buttonRetire: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center', marginTop: spacing.sm },
   buttonRetireText: { color: colors.textPrimary, fontWeight: '600', fontSize: 13 },
   sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.xl, marginBottom: spacing.sm },
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.xl },
+  addDeadlineToggle: { color: colors.primary, fontWeight: '600', fontSize: 13 },
+  addDeadlineBox: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.md },
   empty: { color: colors.textSecondary, fontSize: 13 },
   deadlineRow: {
     flexDirection: 'row',

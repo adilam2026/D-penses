@@ -16,6 +16,9 @@ export interface LedgerEntry {
   amount: number;
   accountName: string;
   label: string | null;
+  // Point 3 — déjà renvoyé par le backend (transactions.service.ts), utilisé
+  // désormais comme repli de regroupement (Plan → Catégorie → "Autres").
+  categoryId: string | null;
   categoryName: string | null;
   categoryTypeName: string | null;
   categorySubtypeName: string | null;
@@ -160,14 +163,32 @@ export function isPlanHeaderRow(row: TransactionListRow): row is PlanHeaderRow {
   return row.kind === '__plan_header__';
 }
 
+// Point 3 (révision) — niveau 2 du regroupement : plan financier si présent,
+// SINON catégorie, SINON "Autres" (jamais un bucket "Autres" prématuré qui
+// ignorerait la catégorie disponible). Clé stable (id), jamais le libellé
+// affiché (deux catégories pourraient en théorie partager un nom).
+const NONE_GROUP = '__none__';
+function groupKeyOf(e: LedgerEntry): string {
+  if (e.financialPlanId) return `plan:${e.financialPlanId}`;
+  if (e.categoryId) return `cat:${e.categoryId}`;
+  return NONE_GROUP;
+}
+function groupLabelOf(e: LedgerEntry, planLabelById: Record<string, string>): string {
+  if (e.financialPlanId) return planLabelById[e.financialPlanId] ?? 'Plan';
+  if (e.categoryId) return e.categoryName ?? 'Catégorie';
+  return 'Autres';
+}
+
 /**
- * Corrections consolidées §12 — regroupement par mois (comme groupByMonth),
- * PUIS par plan financier au sein de chaque mois (bucket "Autres" pour les
- * transactions sans financialPlanId, toujours en dernier) — jamais une seconde
- * règle de tri parallèle (réutilise sortLedgerEntries, §13). Chaque transaction
- * apparaît dans EXACTEMENT un sous-groupe, jamais deux (partition stricte par
- * financialPlanId). Un composant SectionList reste à PLAT : les en-têtes de
- * plan sont des lignes spéciales injectées dans `data`, jamais une liste imbriquée.
+ * Corrections consolidées §12, révision point 3 — regroupement par mois
+ * (comme groupByMonth), PUIS par plan financier si présent, SINON catégorie,
+ * SINON "Autres" (toujours en dernier) — jamais une seconde règle de tri
+ * parallèle (réutilise sortLedgerEntries, §13, pour l'ordre intra-groupe :
+ * date décroissante, égalité tranchée par libellé alphabétique). Chaque
+ * transaction apparaît dans EXACTEMENT un sous-groupe, jamais deux (partition
+ * stricte par groupKeyOf). Un composant SectionList reste à PLAT : les
+ * en-têtes de groupe sont des lignes spéciales injectées dans `data`, jamais
+ * une liste imbriquée.
  */
 export function groupByMonthAndPlan(entries: LedgerEntry[], planLabelById: Record<string, string>): { title: string; data: TransactionListRow[] }[] {
   const sorted = sortLedgerEntries(entries);
@@ -177,23 +198,23 @@ export function groupByMonthAndPlan(entries: LedgerEntry[], planLabelById: Recor
     if (!byMonth.has(key)) byMonth.set(key, []);
     byMonth.get(key)!.push(e);
   }
-  const NONE = '__none__';
   return Array.from(byMonth.entries())
     .sort((a, b) => (a[0] < b[0] ? 1 : -1))
     .map(([monthKeyValue, monthEntries]) => {
-      const byPlan = new Map<string, LedgerEntry[]>();
+      const byGroup = new Map<string, LedgerEntry[]>();
       for (const e of monthEntries) {
-        const planKey = e.financialPlanId ?? NONE;
-        if (!byPlan.has(planKey)) byPlan.set(planKey, []);
-        byPlan.get(planKey)!.push(e);
+        const key = groupKeyOf(e);
+        if (!byGroup.has(key)) byGroup.set(key, []);
+        byGroup.get(key)!.push(e);
       }
-      const planKeys = Array.from(byPlan.keys()).filter((k) => k !== NONE);
-      const orderedKeys = byPlan.has(NONE) ? [...planKeys, NONE] : planKeys;
+      const groupKeys = Array.from(byGroup.keys()).filter((k) => k !== NONE_GROUP);
+      const orderedKeys = byGroup.has(NONE_GROUP) ? [...groupKeys, NONE_GROUP] : groupKeys;
       const data: TransactionListRow[] = [];
-      for (const planKey of orderedKeys) {
-        const label = planKey === NONE ? 'Autres' : (planLabelById[planKey] ?? 'Plan');
-        data.push({ kind: '__plan_header__', key: `${monthKeyValue}-${planKey}`, label });
-        data.push(...byPlan.get(planKey)!);
+      for (const key of orderedKeys) {
+        const groupEntries = byGroup.get(key)!;
+        const label = key === NONE_GROUP ? 'Autres' : groupLabelOf(groupEntries[0], planLabelById);
+        data.push({ kind: '__plan_header__', key: `${monthKeyValue}-${key}`, label });
+        data.push(...groupEntries);
       }
       return { title: monthSectionTitle(monthKeyValue), data };
     });

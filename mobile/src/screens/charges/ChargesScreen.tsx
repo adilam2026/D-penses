@@ -97,10 +97,10 @@ export function ChargesScreen() {
     >
       {/* Passe visuelle V3 (Maquette 3) — en-tête cohérent avec la charte Home. */}
       <Text style={styles.pageTitle}>Charges</Text>
-      <Text style={styles.intro}>Vos dépenses récurrentes (loyer, internet, école...), anticipées automatiquement.</Text>
+      <Text style={styles.intro}>Vos dépenses prévisionnelles (loyer, internet, école...), anticipées automatiquement.</Text>
 
       <View style={styles.headerRow}>
-        <Text style={styles.sectionTitle}>CHARGES RÉCURRENTES</Text>
+        <Text style={styles.sectionTitle}>CHARGES PRÉVISIONNELLES</Text>
         <TouchableOpacity testID="add-charge-button" onPress={() => navigation.navigate('CreateCharge')}>
           <Text style={styles.addLink}>+ Ajouter une charge</Text>
         </TouchableOpacity>
@@ -109,7 +109,7 @@ export function ChargesScreen() {
       {loading && plans.length === 0 ? (
         <ActivityIndicator />
       ) : active.length === 0 ? (
-        <Text style={styles.empty}>Aucune charge récurrente. Ajoutez-en une ci-dessus.</Text>
+        <Text style={styles.empty}>Aucune charge prévisionnelle. Ajoutez-en une ci-dessus.</Text>
       ) : (
         active.map(renderRow)
       )}

@@ -918,7 +918,7 @@ function PosteEditor({
             />
           )}
           <DateField value={poste.dueDate} onChange={(dueDate) => onChange({ ...poste, dueDate })} />
-          {poste.frequency === 'mensuel' && <Text style={styles.hint}>Les échéances suivantes seront générées automatiquement (même moteur que les charges récurrentes).</Text>}
+          {poste.frequency === 'mensuel' && <Text style={styles.hint}>Les échéances suivantes seront générées automatiquement (même moteur que les charges prévisionnelles).</Text>}
           <AlreadyPaidEditor
             testIdPrefix={label}
             value={poste.alreadyPaid}

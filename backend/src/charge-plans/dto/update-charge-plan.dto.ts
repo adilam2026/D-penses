@@ -1,4 +1,4 @@
-import { IsIn, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
+import { IsArray, IsIn, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
 
 const OBLIGATION_VALUES = ['obligatoire', 'optionnelle_envisagee', 'optionnelle_souscrite', 'optionnelle_refusee'] as const;
 const RECURRENCE_VALUES = ['hebdomadaire', 'mensuel', 'trimestriel', 'semestriel', 'annuel', 'ponctuel'] as const;
@@ -73,4 +73,15 @@ export class UpdateChargePlanDto {
   @IsOptional()
   @IsIn(STATUS_VALUES)
   status?: (typeof STATUS_VALUES)[number];
+
+  /**
+   * Point 7 — bénéficiaires d'un poste existant (charge_plan_child), jamais
+   * réservé à la création : remplace intégralement la liste actuelle (0, 1 ou
+   * n enfants). N'affecte jamais Deadline/Payment — relation indépendante de
+   * l'historique payé.
+   */
+  @IsOptional()
+  @IsArray()
+  @IsUUID(undefined, { each: true })
+  childIds?: string[];
 }

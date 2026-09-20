@@ -262,7 +262,10 @@ function MonthCard({
               const groupItems = groupItemsByPlan(month.expense_items, planTypeById)[groupKey];
               if (groupItems.length === 0) return null;
               return (
-                <View key={groupKey} testID={`plan-group-${month.month}-${groupKey}`}>
+                // Point 4 — chaque catégorie devient un bloc visuellement distinct
+                // (fond légèrement différent, séparé par un espace vertical net),
+                // jamais un simple enchaînement de lignes qui se confondent.
+                <View key={groupKey} testID={`plan-group-${month.month}-${groupKey}`} style={styles.planGroupBlock}>
                   <Text style={styles.planGroupTitle}>{PLAN_GROUP_LABEL[groupKey]}</Text>
                   {groupItems.map((item) => (
                     <ExpenseRow key={item.entityId + item.date} item={item} onOpenDetail={onOpenDetail} />
@@ -273,22 +276,24 @@ function MonthCard({
           )}
           <Text style={styles.detailTotalLine}>Total dépenses {formatDh(month.total_expense)}</Text>
 
-          {/* Corrections consolidées §3 — le moteur de calcul n'est jamais modifié :
-              budget_items/prudent_budget_remaining restent cumulatifs depuis le début
-              de l'horizon par design. Seul le libellé change ici, pour ne jamais laisser
-              croire qu'il ne s'agit que des budgets de CE mois — ce sont les montants
-              encore comptés dans la projection prudente à cette date précise. Le total
-              affiché doit toujours égaler exactement "dont X DH de budgets encore
-              disponibles" (en-tête ci-dessus) — jamais mêlé aux dépenses. */}
+          {/* Correction (point 1, projection budgets) — le moteur de calcul n'est
+              jamais modifié : budget_items/prudent_budget_remaining (utilisé dans
+              l'en-tête ci-dessus, "dont X DH de budgets encore disponibles")
+              restent cumulatifs depuis le début de l'horizon, EXACTEMENT comme
+              avant — nécessaire au calcul du solde prudent. Seul CET affichage
+              détaillé change : budget_items_this_period ne liste que les budgets
+              de CE mois précis (jamais les occurrences déjà comptées les mois
+              précédents), pour éviter qu'un même budget mensuel n'apparaisse en
+              plusieurs lignes répétées quand on consulte un mois lointain. */}
           <Text style={styles.detailSectionTitle}>BUDGETS PRIS EN COMPTE</Text>
-          <Text style={styles.detailSectionSubtitle}>Montants encore pris en compte dans la projection à cette date</Text>
-          {month.budget_items.length === 0 ? (
+          <Text style={styles.detailSectionSubtitle}>Budgets applicables à ce mois précis</Text>
+          {month.budget_items_this_period.length === 0 ? (
             <Text style={styles.emptyText}>Aucun budget compté dans le calcul prudent de ce mois.</Text>
           ) : (
-            month.budget_items.map((item, index) => <BudgetRow key={`${item.budget_id}-${index}`} item={item} />)
+            month.budget_items_this_period.map((item, index) => <BudgetRow key={`${item.budget_id}-${index}`} item={item} />)
           )}
           <Text style={styles.detailTotalLine} testID={`month-total-budgets-${month.month}`}>
-            Total budgets pris en compte {formatDh(month.prudent_budget_remaining)}
+            Total budgets pris en compte {formatDh(month.budget_total_this_period)}
           </Text>
 
           {month.planned_transfer_items.length > 0 && (
@@ -605,7 +610,12 @@ const styles = StyleSheet.create({
   deficitText: { fontSize: 12, color: colors.danger, marginTop: 4 },
   detailSectionTitle: { fontSize: 12, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.sm, marginBottom: 4 },
   detailSectionSubtitle: { fontSize: 10, color: colors.textSecondary, fontStyle: 'italic', marginBottom: 4 },
-  planGroupTitle: { fontSize: 11, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', marginTop: 6, marginBottom: 2 },
+  // Point 4 — hiérarchie visuelle claire entre catégories : chaque bloc a son
+  // propre fond (légèrement différent de la carte du mois), un espace vertical
+  // net avant le suivant, et un titre plus marqué (poids/taille/espacement) —
+  // sans toucher au style graphique général de l'app (mêmes tokens colors/radius/spacing).
+  planGroupBlock: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.sm, marginTop: spacing.md },
+  planGroupTitle: { fontSize: 12, fontWeight: '800', color: colors.textPrimary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
   detailTotalLine: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', marginTop: 4, textAlign: 'right' },
   emptyText: { fontSize: 12, color: colors.textSecondary, fontStyle: 'italic' },
   itemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 },

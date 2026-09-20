@@ -56,6 +56,7 @@ jest.mock('../../../api/client', () => {
     listCategories: jest.fn(),
     createChargePlan: jest.fn(),
     createDeadline: jest.fn(),
+    cancelDeadline: jest.fn(),
   };
 });
 
@@ -77,6 +78,7 @@ const PLAN = {
   deadlinesCertain: [
     {
       id: 'd1',
+      chargePlanId: 'cp-t1',
       dueDate: '2026-09-30',
       chargePlanLabel: 'Scolarité T1',
       amountCurrent: 21800,
@@ -90,6 +92,7 @@ const PLAN = {
     },
     {
       id: 'd2',
+      chargePlanId: 'cp-garderie',
       dueDate: '2026-10-15',
       chargePlanLabel: 'Garderie',
       amountCurrent: 500,
@@ -125,18 +128,18 @@ it('le bouton "Payer" navigue réellement vers DeadlineDetail (bug critique corr
 
 it('taper une échéance "Estimé" navigue réellement vers ConfirmDeadline (bug critique corrigé)', async () => {
   await render(<FinancialPlanDetailScreen />);
-  await waitFor(() => screen.getByText(/Garderie/));
+  await waitFor(() => screen.getByTestId('deadline-row-d2'));
 
-  await fireEvent.press(screen.getByText(/Garderie/));
+  await fireEvent.press(screen.getByTestId('deadline-row-d2'));
 
   expect(mockNavigate).toHaveBeenCalledWith('ConfirmDeadline', { id: 'd2' });
 });
 
 it('taper une échéance déjà confirmée navigue vers DeadlineDetail (pas ConfirmDeadline)', async () => {
   await render(<FinancialPlanDetailScreen />);
-  await waitFor(() => screen.getByText(/Scolarité T1/));
+  await waitFor(() => screen.getByTestId('deadline-row-d1'));
 
-  await fireEvent.press(screen.getByText(/Scolarité T1/));
+  await fireEvent.press(screen.getByTestId('deadline-row-d1'));
 
   expect(mockNavigate).toHaveBeenCalledWith('DeadlineDetail', { id: 'd1' });
 });
@@ -371,4 +374,204 @@ it('14.3 — une échéance d\'un poste récurrent affiche sa périodicité, jam
   await waitFor(() => screen.getByText(/Scolarité T1/));
 
   expect(screen.getByText(/Mensuel/)).toBeTruthy();
+});
+
+// Point 6a — "Enfant(s) bénéficiaire(s)" ne doit apparaître dans "Ajouter un
+// poste" QUE pour un plan scolaire (basé sur planType, jamais sur le libellé).
+it('point 6a — plan scolaire : le champ "Enfant(s) bénéficiaire(s)" est proposé', async () => {
+  mockedApi.listChildren.mockResolvedValue([{ id: 'c1', firstName: 'Aîné', lastName: 'D' }]);
+
+  await render(<FinancialPlanDetailScreen />);
+  await waitFor(() => screen.getByTestId('plan-menu-button'));
+  await fireEvent.press(screen.getByTestId('plan-menu-button'));
+  await waitFor(() => screen.getByTestId('plan-menu-option-ajouter'));
+  await fireEvent.press(screen.getByTestId('plan-menu-option-ajouter'));
+
+  await waitFor(() => screen.getByTestId('plan-add-deadline-form'));
+  expect(screen.getByTestId('plan-add-deadline-children')).toBeTruthy();
+});
+
+it('point 6a — plan "Voiture · Opel Astra" (planType=vehicle) : le champ "Enfant(s) bénéficiaire(s)" n\'apparaît pas, même si le foyer a des enfants', async () => {
+  mockedApi.getFinancialPlan.mockResolvedValue({ ...PLAN, planType: 'vehicle', label: 'Voiture · Opel Astra' });
+  mockedApi.listChildren.mockResolvedValue([{ id: 'c1', firstName: 'Aîné', lastName: 'D' }]);
+
+  await render(<FinancialPlanDetailScreen />);
+  await waitFor(() => screen.getByTestId('plan-menu-button'));
+  await fireEvent.press(screen.getByTestId('plan-menu-button'));
+  await waitFor(() => screen.getByTestId('plan-menu-option-ajouter'));
+  await fireEvent.press(screen.getByTestId('plan-menu-option-ajouter'));
+
+  await waitFor(() => screen.getByTestId('plan-add-deadline-form'));
+  expect(screen.queryByTestId('plan-add-deadline-children')).toBeNull();
+});
+
+it('point 6a — plan "Maison · Villa Almaz" (planType=housing) : jamais le champ enfant', async () => {
+  mockedApi.getFinancialPlan.mockResolvedValue({ ...PLAN, planType: 'housing', label: 'Maison · Villa Almaz' });
+  mockedApi.listChildren.mockResolvedValue([{ id: 'c1', firstName: 'Aîné', lastName: 'D' }]);
+
+  await render(<FinancialPlanDetailScreen />);
+  await waitFor(() => screen.getByTestId('plan-menu-button'));
+  await fireEvent.press(screen.getByTestId('plan-menu-button'));
+  await waitFor(() => screen.getByTestId('plan-menu-option-ajouter'));
+  await fireEvent.press(screen.getByTestId('plan-menu-option-ajouter'));
+
+  await waitFor(() => screen.getByTestId('plan-add-deadline-form'));
+  expect(screen.queryByTestId('plan-add-deadline-children')).toBeNull();
+});
+
+it('point 6a — plan "Abonnements" (planType=subscriptions) : jamais le champ enfant', async () => {
+  mockedApi.getFinancialPlan.mockResolvedValue({ ...PLAN, planType: 'subscriptions', label: 'Abonnements' });
+  mockedApi.listChildren.mockResolvedValue([{ id: 'c1', firstName: 'Aîné', lastName: 'D' }]);
+
+  await render(<FinancialPlanDetailScreen />);
+  await waitFor(() => screen.getByTestId('plan-menu-button'));
+  await fireEvent.press(screen.getByTestId('plan-menu-button'));
+  await waitFor(() => screen.getByTestId('plan-menu-option-ajouter'));
+  await fireEvent.press(screen.getByTestId('plan-menu-option-ajouter'));
+
+  await waitFor(() => screen.getByTestId('plan-add-deadline-form'));
+  expect(screen.queryByTestId('plan-add-deadline-children')).toBeNull();
+});
+
+// Point 6b — le ScrollView du modal "Ajouter un poste" porte lui-même une
+// largeur 100% (pas seulement son contentContainerStyle), pour que la carte
+// occupe toute la largeur disponible plutôt qu'un shrink-to-fit étroit.
+it('point 6b — le modal "Ajouter un poste" porte une largeur 100% sur le ScrollView lui-même', async () => {
+  await render(<FinancialPlanDetailScreen />);
+  await waitFor(() => screen.getByTestId('plan-menu-button'));
+  await fireEvent.press(screen.getByTestId('plan-menu-button'));
+  await waitFor(() => screen.getByTestId('plan-menu-option-ajouter'));
+  await fireEvent.press(screen.getByTestId('plan-menu-option-ajouter'));
+
+  const form = await screen.findByTestId('plan-add-deadline-form');
+  const flatStyle = [form.props.style].flat();
+  expect(flatStyle.some((s: any) => s && s.width === '100%')).toBe(true);
+});
+
+// Point 7 (révision) — "Modifier le plan" affiche une liste de POSTES (pas
+// une répétition d'échéances) : chaque poste expose Modifier le poste /
+// Ajouter une échéance / Retirer du plan, réutilisant ChargePlanDetailScreen
+// (jamais un nouveau moteur métier). Le tap sur une échéance elle-même reste
+// inchangé (Payer/Confirmer).
+it('point 7 — "Modifier le poste" navigue vers ChargePlanDetail avec le chargePlanId, sans changer le tap principal de la ligne', async () => {
+  await render(<FinancialPlanDetailScreen />);
+  await waitFor(() => screen.getByTestId('poste-edit-cp-t1'));
+
+  await fireEvent.press(screen.getByTestId('poste-edit-cp-t1'));
+  expect(mockNavigate).toHaveBeenCalledWith('ChargePlanDetail', { id: 'cp-t1' });
+
+  mockNavigate.mockClear();
+  await fireEvent.press(screen.getByTestId('deadline-row-d1'));
+  expect(mockNavigate).toHaveBeenCalledWith('DeadlineDetail', { id: 'd1' });
+});
+
+it('point 7 — "Ajouter une échéance" navigue vers ChargePlanDetail avec openAddDeadline pour ouvrir directement le formulaire', async () => {
+  await render(<FinancialPlanDetailScreen />);
+  await waitFor(() => screen.getByTestId('poste-add-deadline-cp-t1'));
+
+  await fireEvent.press(screen.getByTestId('poste-add-deadline-cp-t1'));
+
+  expect(mockNavigate).toHaveBeenCalledWith('ChargePlanDetail', { id: 'cp-t1', openAddDeadline: true });
+});
+
+it('point 7 — "Retirer du plan" (action du poste) navigue vers ChargePlanDetail, où le retrait déjà existant s\'applique (aucun moteur dupliqué)', async () => {
+  await render(<FinancialPlanDetailScreen />);
+  await waitFor(() => screen.getByTestId('poste-retire-cp-t1'));
+
+  await fireEvent.press(screen.getByTestId('poste-retire-cp-t1'));
+
+  expect(mockNavigate).toHaveBeenCalledWith('ChargePlanDetail', { id: 'cp-t1' });
+});
+
+// IMPORTANT (exigence explicite) — un poste récurrent avec plusieurs
+// échéances ouvertes simultanément doit apparaître UNE SEULE FOIS comme
+// poste ; ses échéances ne doivent jamais être présentées comme plusieurs
+// postes distincts.
+it('point 7 — un poste avec plusieurs échéances ouvertes apparaît UNE SEULE FOIS (jamais un poste par échéance)', async () => {
+  mockedApi.getFinancialPlan.mockResolvedValue({
+    ...PLAN,
+    deadlinesCertain: [
+      ...PLAN.deadlinesCertain,
+      {
+        id: 'd1-bis',
+        chargePlanId: 'cp-t1',
+        dueDate: '2026-10-30',
+        chargePlanLabel: 'Scolarité T1',
+        amountCurrent: 21800,
+        amountStatus: 'confirme' as const,
+        resteAPayer: 21800,
+        financialStatus: 'ouverte' as const,
+        provisionId: null,
+        coverageAffectee: 0,
+        engagementNonCouvert: 21800,
+        coverageStatus: 'non_couverte' as const,
+      },
+    ],
+  });
+
+  await render(<FinancialPlanDetailScreen />);
+  await waitFor(() => screen.getByTestId('poste-cp-t1'));
+
+  // Un seul poste-card pour cp-t1, malgré ses 2 échéances ouvertes.
+  expect(screen.getAllByTestId('poste-cp-t1')).toHaveLength(1);
+  // Les 2 échéances distinctes restent bien visibles, imbriquées sous ce poste.
+  expect(screen.getByTestId('pay-deadline-d1')).toBeTruthy();
+  expect(screen.getByTestId('pay-deadline-d1-bis')).toBeTruthy();
+  // Indication du nombre d'échéances ouvertes sur l'en-tête du poste.
+  expect(screen.getByText(/2 échéances ouvertes/)).toBeTruthy();
+});
+
+// Point 7 (révision, message suivant) — "Annuler" directe sur une échéance
+// future, visible depuis la gestion du plan (sans devoir naviguer vers
+// DeadlineDetail), réutilisant exactement api.cancelDeadline().
+describe('Point 7 (révision) — Annuler une échéance future directement depuis la gestion du plan', () => {
+  it('le bouton "Annuler" est visible pour une échéance ouverte, demande confirmation puis appelle api.cancelDeadline()', async () => {
+    mockedApi.cancelDeadline.mockResolvedValue({ id: 'd1', financialStatus: 'annulee' });
+    const RN = require('react-native');
+    jest.spyOn(RN.Alert, 'alert').mockImplementation((...args: unknown[]) => {
+      const buttons = args[2] as Array<{ text: string; onPress?: () => void }> | undefined;
+      buttons?.find((b) => b.text === "Annuler l'échéance")?.onPress?.();
+    });
+
+    await render(<FinancialPlanDetailScreen />);
+    await waitFor(() => screen.getByTestId('cancel-deadline-d1'));
+
+    await fireEvent.press(screen.getByTestId('cancel-deadline-d1'));
+
+    expect(RN.Alert.alert).toHaveBeenCalled();
+    await waitFor(() => expect(mockedApi.cancelDeadline).toHaveBeenCalledWith('d1'));
+    // Recharge après annulation (chargement initial + après action).
+    await waitFor(() => expect(mockedApi.getFinancialPlan).toHaveBeenCalledTimes(2));
+  });
+
+  it('n\'annule rien si l\'utilisateur choisit "Ne pas annuler"', async () => {
+    const RN = require('react-native');
+    jest.spyOn(RN.Alert, 'alert').mockImplementation((...args: unknown[]) => {
+      const buttons = args[2] as Array<{ text: string; onPress?: () => void }> | undefined;
+      buttons?.find((b) => b.text === 'Ne pas annuler')?.onPress?.();
+    });
+
+    await render(<FinancialPlanDetailScreen />);
+    await waitFor(() => screen.getByTestId('cancel-deadline-d1'));
+
+    await fireEvent.press(screen.getByTestId('cancel-deadline-d1'));
+
+    expect(mockedApi.cancelDeadline).not.toHaveBeenCalled();
+  });
+
+  it("affiche une erreur claire si l'annulation est refusée (ex. échéance déjà soldée), sans planter l'écran", async () => {
+    mockedApi.cancelDeadline.mockRejectedValue(new api.ApiError(409, 'Impossible d\'annuler : cette échéance est déjà soldée.'));
+    const RN = require('react-native');
+    jest.spyOn(RN.Alert, 'alert').mockImplementation((...args: unknown[]) => {
+      const buttons = args[2] as Array<{ text: string; onPress?: () => void }> | undefined;
+      buttons?.find((b) => b.text === "Annuler l'échéance")?.onPress?.();
+    });
+
+    await render(<FinancialPlanDetailScreen />);
+    await waitFor(() => screen.getByTestId('cancel-deadline-d1'));
+
+    await fireEvent.press(screen.getByTestId('cancel-deadline-d1'));
+
+    await waitFor(() => screen.getByText(/déjà soldée/));
+  });
 });

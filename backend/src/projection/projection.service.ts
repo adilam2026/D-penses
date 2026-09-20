@@ -225,7 +225,14 @@ export class ProjectionService {
         prudent_budget_remaining: m.prudentBudgetRemaining,
         // Corrections consolidées §10 — détail listant les budgets réellement
         // comptés dans prudent_budget_remaining ci-dessus (Σ amount === prudent_budget_remaining).
+        // Cumulatif (inclut les occurrences des mois antérieurs) — sert au calcul
+        // financier, jamais destiné à l'affichage détaillé d'un seul mois tel quel.
         budget_items: m.budgetItems.map((b) => ({ budget_id: b.budgetId, label: b.label, amount: b.amount })),
+        // Correction (point 1, projection budgets) — sous-ensemble non cumulatif :
+        // uniquement les budgets de CE mois précis, pour un affichage mensuel sans
+        // répétition des occurrences intermédiaires déjà comptées les mois précédents.
+        budget_items_this_period: m.budgetItemsThisPeriod.map((b) => ({ budget_id: b.budgetId, label: b.label, amount: b.amount })),
+        budget_total_this_period: m.budgetTotalThisPeriod,
         planned_transfer_net_treasury_impact: m.plannedTransferNetTreasuryImpact,
         // R6.4 (§9) — jamais rangé dans income_items/expense_items : un transfert reste
         // identifiable comme TRANSFERT, son impact appartient uniquement à la trésorerie pilotée.

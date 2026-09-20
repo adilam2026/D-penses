@@ -24,7 +24,7 @@ jest.mock('@expo/vector-icons', () => {
 
 jest.mock('../../../ui/useTopInset', () => ({ useTopInset: () => 16 }));
 
-jest.mock('../../../api/client', () => ({ getCalendar: jest.fn() }));
+jest.mock('../../../api/client', () => ({ getCalendar: jest.fn(), listFinancialPlans: jest.fn() }));
 const mockedApi = api as jest.Mocked<typeof api>;
 
 const EVENTS = [
@@ -36,6 +36,7 @@ const EVENTS = [
 beforeEach(() => {
   jest.clearAllMocks();
   mockedApi.getCalendar.mockResolvedValue({ events: EVENTS });
+  mockedApi.listFinancialPlans.mockResolvedValue([]);
 });
 
 it('affiche un événement par ligne avec sa date/libellé/type', async () => {
@@ -80,4 +81,44 @@ it('taper une échéance navigue vers DeadlineDetail, un revenu prévu (sans dea
   mockNavigate.mockClear();
   await fireEvent.press(screen.getByText('Salaire'));
   expect(mockNavigate).not.toHaveBeenCalled();
+});
+
+// Point 5A — même date : ordre alphabétique du libellé, jamais l'ordre reçu de l'API.
+it("point 5A — deux opérations à la même date sont triées par ordre alphabétique du libellé", async () => {
+  mockedApi.getCalendar.mockResolvedValue({
+    events: [
+      { date: '2026-09-10', kind: 'echeance' as const, label: 'Électricité', amount: 200 },
+      { date: '2026-09-10', kind: 'echeance' as const, label: 'Assurance', amount: 900 },
+      { date: '2026-09-10', kind: 'echeance' as const, label: 'Carburant', amount: 400 },
+    ],
+  });
+  await render(<CalendarScreen />);
+  await waitFor(() => screen.getByText('Assurance'));
+
+  const labels = screen.getAllByText(/Assurance|Carburant|Électricité/).map((n) => n.props.children);
+  expect(labels).toEqual(['Assurance', 'Carburant', 'Électricité']);
+});
+
+// Point 5B — vue "Par catégorie / plan financier" : Mois → groupe → opérations,
+// mêmes événements, jamais dupliqués/recalculés.
+it('point 5B — la vue "Par catégorie / plan" regroupe les mêmes échéances par plan financier / catégorie, jamais un poste séparé par occurrence', async () => {
+  mockedApi.listFinancialPlans.mockResolvedValue([{ id: 'plan1', label: 'Voiture · Opel Astra' }]);
+  mockedApi.getCalendar.mockResolvedValue({
+    events: [
+      { date: '2026-09-05', kind: 'echeance' as const, label: 'Carburant', amount: 400, deadlineId: 'd1', financialPlanId: 'plan1', categoryId: null, categoryName: null },
+      { date: '2026-09-12', kind: 'echeance' as const, label: 'Eau', amount: 150, deadlineId: 'd2', financialPlanId: null, categoryId: 'cat1', categoryName: 'Logement' },
+      { date: '2026-09-20', kind: 'revenu_prevu' as const, label: 'Salaire', amount: 8000 },
+    ],
+  });
+
+  await render(<CalendarScreen />);
+  await waitFor(() => screen.getByTestId('calendar-view-mode-category'));
+  await fireEvent.press(screen.getByTestId('calendar-view-mode-category'));
+
+  await waitFor(() => screen.getByText('Voiture · Opel Astra'));
+  expect(screen.getByText('Carburant')).toBeTruthy();
+  expect(screen.getByText('Logement')).toBeTruthy();
+  expect(screen.getByText('Eau')).toBeTruthy();
+  expect(screen.getByText('Revenus')).toBeTruthy();
+  expect(screen.getByText('Salaire')).toBeTruthy();
 });

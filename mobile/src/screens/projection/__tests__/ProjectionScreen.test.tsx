@@ -63,6 +63,8 @@ function monthBucket(overrides: Partial<api.MonthBucketApi> = {}): api.MonthBuck
     projected_cash_balance_prudent: 2000,
     prudent_budget_remaining: 0,
     budget_items: [],
+    budget_items_this_period: [],
+    budget_total_this_period: 0,
     income_items: [
       { entityType: 'income_occurrence', entityId: 'occ1', label: 'Salaire', date: '2026-09-05', amount: 30000, accountId: 'acc1', accountKnown: true, movable: false, realized: false },
     ],
@@ -471,18 +473,32 @@ it("M9C : un mois sans prévision long terme (impact=0) n'affiche jamais la 3e l
   expect(screen.queryByText('Prévisions scolaires')).toBeNull();
 });
 
-// Corrections consolidées §10 — bloc BUDGETS listant les budgets comptés dans
-// "dont X DH de budgets encore disponibles sur la période", avec un total qui
-// doit toujours égaler ce même montant (Σ budget_items === prudent_budget_remaining).
-it('corrections consolidées §10 — le bloc BUDGETS liste les budgets comptés et son total égale "dont X DH de budgets encore disponibles"', async () => {
+// Correction (point 1, projection budgets) — le bloc BUDGETS du détail mensuel
+// liste uniquement les budgets de CE mois (budget_items_this_period), jamais le
+// cumul depuis le début de l'horizon (budget_items, qui reste utilisé ailleurs
+// pour l'en-tête "dont X DH de budgets encore disponibles", cumulatif par design
+// et nécessaire au calcul du solde prudent — jamais modifié ici).
+it('correction (point 1) — le bloc BUDGETS liste uniquement les budgets de ce mois précis, jamais le cumul', async () => {
   mockedApi.getMonthlyProjection.mockResolvedValue(
     projectionFixture([
       monthBucket({
-        prudent_budget_remaining: 450,
+        // Cumul depuis le début de l'horizon (peut inclure des mois antérieurs) —
+        // reste utilisé pour l'en-tête "dont X DH...", jamais pour cette liste.
+        prudent_budget_remaining: 1350,
         budget_items: [
+          { budget_id: 'b1', label: 'Alimentation (période courante)', amount: 300 },
+          { budget_id: 'b1', label: 'Alimentation (mois précédent)', amount: 300 },
+          { budget_id: 'b1', label: 'Alimentation (2 mois avant)', amount: 300 },
+          { budget_id: 'b2', label: 'Loisirs (période courante)', amount: 150 },
+          { budget_id: 'b2', label: 'Loisirs (mois précédent)', amount: 150 },
+          { budget_id: 'b2', label: 'Loisirs (2 mois avant)', amount: 150 },
+        ],
+        // Uniquement les budgets pertinents pour CE mois — jamais répétés.
+        budget_items_this_period: [
           { budget_id: 'b1', label: 'Alimentation (période courante)', amount: 300 },
           { budget_id: 'b2', label: 'Loisirs (période courante)', amount: 150 },
         ],
+        budget_total_this_period: 450,
       }),
     ]),
   );
@@ -490,14 +506,17 @@ it('corrections consolidées §10 — le bloc BUDGETS liste les budgets comptés
   await waitFor(() => screen.getByTestId('month-toggle-2026-09'));
   await fireEvent.press(screen.getByTestId('month-toggle-2026-09'));
 
-  // Corrections consolidées §3 — libellé clarifié (jamais "budgets de ce mois
-  // seulement") : le moteur de calcul cumulatif depuis le début de l'horizon
-  // n'est pas modifié, seul le texte l'explicite désormais.
   await waitFor(() => screen.getByText('BUDGETS PRIS EN COMPTE'));
-  expect(screen.getByText('Montants encore pris en compte dans la projection à cette date')).toBeTruthy();
-  expect(screen.getByText('Alimentation (période courante)')).toBeTruthy();
-  expect(screen.getByText('Loisirs (période courante)')).toBeTruthy();
+  expect(screen.getByText('Budgets applicables à ce mois précis')).toBeTruthy();
+  // Une seule occurrence par budget affichée, jamais les 3 répétitions du cumul.
+  expect(screen.getAllByText('Alimentation (période courante)')).toHaveLength(1);
+  expect(screen.getAllByText('Loisirs (période courante)')).toHaveLength(1);
+  expect(screen.queryByText('Alimentation (mois précédent)')).toBeNull();
+  expect(screen.queryByText('Alimentation (2 mois avant)')).toBeNull();
+  // Le total du détail suit budget_total_this_period (450), jamais le cumul (1350).
   expect(screen.getByTestId('month-total-budgets-2026-09')).toHaveTextContent('Total budgets pris en compte 450 DH');
+  // L'en-tête (cumulatif, sert au calcul du solde prudent) reste inchangé : 1350.
+  expect(screen.getByTestId('month-ecart-prudentiel-2026-09')).toHaveTextContent(`dont 1 350 DH de budgets encore disponibles sur la période`);
 });
 
 it('corrections consolidées §10 — état vide explicite quand aucun budget n\'est compté ce mois', async () => {

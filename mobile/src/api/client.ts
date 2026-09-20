@@ -535,6 +535,7 @@ export const updateChargePlan = (
     obligationStatus?: string;
     financialPlanId?: string | null;
     status?: 'actif' | 'inactif';
+    childIds?: string[];
   },
 ) => apiFetch(`/charge-plans/${id}`, { method: 'PATCH', body: data });
 
@@ -890,7 +891,14 @@ export interface MonthBucketApi {
   projected_cash_balance_prudent: number;
   prudent_budget_remaining: number;
   // Corrections consolidées §10 — détail des budgets comptés dans prudent_budget_remaining.
+  // Cumulatif (inclut les mois antérieurs) — sert au calcul, jamais à afficher
+  // le détail d'un seul mois tel quel (cf. budget_items_this_period ci-dessous).
   budget_items: BudgetLineItemApi[];
+  // Correction (point 1, projection budgets) — sous-ensemble non cumulatif :
+  // uniquement les budgets de CE mois précis, à utiliser pour l'affichage du
+  // détail mensuel (jamais budget_items, qui répéterait les mois précédents).
+  budget_items_this_period: BudgetLineItemApi[];
+  budget_total_this_period: number;
   income_items: MonthlyLineItem[];
   expense_items: MonthlyLineItem[];
   movable_expense_total: number;

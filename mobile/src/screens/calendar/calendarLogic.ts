@@ -19,6 +19,12 @@ export interface CalendarEvent {
   incomeSourceId?: string;
   // M5 — cible du clic « transfert planifié » (RecurringTransfer parent).
   recurringTransferId?: string;
+  // Point 5 — vue "Par catégorie / plan financier" : déjà résolus côté backend
+  // (GET /calendar), jamais recalculés ici — uniquement pour les événements
+  // liés à une Deadline (undefined pour revenu_prevu/transfert_prevu).
+  financialPlanId?: string | null;
+  categoryId?: string | null;
+  categoryName?: string | null;
 }
 
 export const KIND_LABEL: Record<CalendarEvent['kind'], string> = {
@@ -73,9 +79,17 @@ export function monthSectionTitle(key: string): string {
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).toUpperCase();
 }
 
+// Point 5A — même date : ordre alphabétique du libellé (insensible à la casse/
+// accents), jamais l'ordre d'arrivée depuis l'API.
+function compareByDateThenLabel(x: CalendarEvent, y: CalendarEvent): number {
+  if (x.date !== y.date) return x.date < y.date ? -1 : 1;
+  return x.label.localeCompare(y.label, 'fr', { sensitivity: 'base' });
+}
+
 /**
- * Corrections UI/UX finales §8 — regroupement par mois, ordre chronologique
- * croissant (le mois le plus proche en premier), jamais un second calcul des
+ * Corrections UI/UX finales §8, tri affiné point 5A — regroupement par mois,
+ * ordre chronologique croissant (le mois le plus proche en premier) ; à date
+ * égale, ordre alphabétique du libellé. Jamais un second calcul des
  * événements eux-mêmes (CalendarEvent reste la seule source, dérivée de
  * GET /calendar).
  */
@@ -88,5 +102,63 @@ export function groupEventsByMonth(events: CalendarEvent[]): { title: string; da
   }
   return Array.from(byMonth.entries())
     .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-    .map(([key, data]) => ({ title: monthSectionTitle(key), data: data.slice().sort((x, y) => (x.date < y.date ? -1 : 1)) }));
+    .map(([key, data]) => ({ title: monthSectionTitle(key), data: data.slice().sort(compareByDateThenLabel) }));
+}
+
+const REVENU_GROUP_LABEL = 'Revenus';
+const TRANSFERT_GROUP_LABEL = 'Transferts planifiés';
+const AUTRES_GROUP_LABEL = 'Autres';
+
+/**
+ * Point 5B — deuxième représentation des MÊMES échéances (aucune donnée
+ * dupliquée/recalculée) : Mois → Catégorie/Plan financier → opérations,
+ * plutôt que Mois → Date. Regroupement :
+ *  - événement lié à un FinancialPlan (financialPlanId) → sous son libellé
+ *    (déjà composé/stocké tel quel côté backend, ex. "Voiture · Opel Astra") ;
+ *  - sinon lié à une Category (categoryName) → sous son nom ;
+ *  - sinon (revenu/transfert/charge sans catégorie) → groupe générique fixe.
+ * Les groupes d'un même mois sont triés alphabétiquement (mêmes règles
+ * d'insensibilité que le tri par date), puis les opérations de chaque groupe
+ * triées par date puis libellé (même comparateur que la vue "Par date").
+ */
+export interface CalendarCategoryGroup {
+  label: string;
+  events: CalendarEvent[];
+}
+
+// `financialPlanLabelById` : construit côté écran depuis listFinancialPlans()
+// (déjà l'API utilisée par FinancialPlansScreen/ProjectionScreen — jamais un
+// second endpoint), pour résoudre financialPlanId → libellé déjà composé
+// côté backend au moment de la création du plan (ex. "Voiture · Opel Astra").
+function groupLabelOf(e: CalendarEvent, financialPlanLabelById: Map<string, string>): string {
+  if (e.kind === 'revenu_prevu') return REVENU_GROUP_LABEL;
+  if (e.kind === 'transfert_prevu') return TRANSFERT_GROUP_LABEL;
+  if (e.financialPlanId) return financialPlanLabelById.get(e.financialPlanId) ?? AUTRES_GROUP_LABEL;
+  return e.categoryName || AUTRES_GROUP_LABEL;
+}
+
+export function groupEventsByMonthThenCategory(
+  events: CalendarEvent[],
+  financialPlanLabelById: Map<string, string>,
+): { title: string; groups: CalendarCategoryGroup[] }[] {
+  const byMonth = new Map<string, CalendarEvent[]>();
+  for (const e of events) {
+    const key = monthKey(e.date);
+    if (!byMonth.has(key)) byMonth.set(key, []);
+    byMonth.get(key)!.push(e);
+  }
+  return Array.from(byMonth.entries())
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([key, monthEvents]) => {
+      const byGroup = new Map<string, CalendarEvent[]>();
+      for (const e of monthEvents) {
+        const label = groupLabelOf(e, financialPlanLabelById);
+        if (!byGroup.has(label)) byGroup.set(label, []);
+        byGroup.get(label)!.push(e);
+      }
+      const groups: CalendarCategoryGroup[] = Array.from(byGroup.entries())
+        .sort((a, b) => a[0].localeCompare(b[0], 'fr', { sensitivity: 'base' }))
+        .map(([label, groupEvents]) => ({ label, events: groupEvents.slice().sort(compareByDateThenLabel) }));
+      return { title: monthSectionTitle(key), groups };
+    });
 }

@@ -424,7 +424,7 @@ export function AccountDetailScreen() {
           "•••", même logique/état qu'avant (onReconcile/onAdjust inchangés). */}
       <Modal visible={reconcileOpen} transparent animationType="fade" onRequestClose={() => setReconcileOpen(false)}>
         <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <ScrollView contentContainerStyle={styles.modalScrollContent}>
+          <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent}>
             <View style={styles.modalCard} testID="account-reconcile-form">
               <Text style={styles.modalTitle}>Rapprochement</Text>
               <Text style={styles.help}>Saisissez le solde constaté (ex. sur votre relevé bancaire) pour vérifier s'il correspond au solde calculé.</Text>
@@ -482,7 +482,7 @@ export function AccountDetailScreen() {
           même logique/état qu'avant (onTransfer inchangé). */}
       <Modal visible={transferOpen} transparent animationType="fade" onRequestClose={() => setTransferOpen(false)}>
         <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <ScrollView contentContainerStyle={styles.modalScrollContent}>
+          <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent}>
             <View style={styles.modalCard} testID="account-transfer-form">
               <Text style={styles.modalTitle}>Transfert vers un autre compte</Text>
               {account.status === 'archive' ? (
@@ -599,6 +599,10 @@ const styles = StyleSheet.create({
   addTransactionButton: { backgroundColor: colors.surfaceActive, borderRadius: radius.sm, paddingVertical: 10, alignItems: 'center', marginTop: 12 },
   addTransactionButtonText: { color: colors.textPrimary, fontWeight: '600', fontSize: 13 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)', alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
+  // Point 6b — même correction que FinancialPlanDetailScreen : le ScrollView
+  // a besoin d'une largeur propre (pas seulement via contentContainerStyle),
+  // sinon la carte se réduit au shrink-to-fit sous un parent en centre.
+  modalScroll: { width: '100%', alignSelf: 'stretch' },
   modalCard: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.xl, width: '100%' },
   modalTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.md },
   modalInput: {

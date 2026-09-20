@@ -128,9 +128,9 @@ export function RootNavigator() {
       <Stack.Screen name="Income" component={IncomeScreen} options={{ headerShown: true, title: 'Revenus' }} />
       <Stack.Screen name="IncomeSourceDetail" component={IncomeSourceDetailScreen} options={{ headerShown: true, title: 'Revenu' }} />
       <Stack.Screen name="CreateIncome" component={CreateIncomeScreen} options={{ headerShown: true, title: 'Nouveau revenu', presentation: 'modal' }} />
-      <Stack.Screen name="Charges" component={ChargesScreen} options={{ headerShown: !isWeb, title: 'Charges récurrentes' }} />
+      <Stack.Screen name="Charges" component={ChargesScreen} options={{ headerShown: !isWeb, title: 'Charges prévisionnelles' }} />
       <Stack.Screen name="CreateCharge" component={CreateChargeScreen} options={{ headerShown: true, title: 'Nouvelle charge', presentation: 'modal' }} />
-      <Stack.Screen name="ChargePlanDetail" component={ChargePlanDetailScreen} options={{ headerShown: !isWeb, title: 'Charge récurrente' }} />
+      <Stack.Screen name="ChargePlanDetail" component={ChargePlanDetailScreen} options={{ headerShown: !isWeb, title: 'Charge prévisionnelle' }} />
       <Stack.Screen name="DeadlineDetail" component={DeadlineDetailScreen} options={{ headerShown: !isWeb, title: 'Échéance' }} />
       <Stack.Screen name="EngagedDetail" component={EngagedDetailScreen} options={{ headerShown: true, title: 'Détail de l\'engagé' }} />
       <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} options={{ headerShown: !isWeb, title: 'Transaction' }} />

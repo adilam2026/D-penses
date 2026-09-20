@@ -165,6 +165,10 @@ export class ChargePlansService {
         const account = await tx.financialAccount.findFirst({ where: { id: dto.defaultAccountId, householdId } });
         if (!account) throw new NotFoundException('Compte par défaut introuvable dans ce foyer');
       }
+      if (dto.childIds?.length) {
+        const count = await tx.child.count({ where: { id: { in: dto.childIds }, householdId } });
+        if (count !== dto.childIds.length) throw new NotFoundException('Un ou plusieurs enfants sont introuvables dans ce foyer');
+      }
 
       const existingAnchorIso = existing.recurrenceAnchorDate ? existing.recurrenceAnchorDate.toISOString().slice(0, 10) : null;
       const recurrenceChanged =
@@ -218,6 +222,18 @@ export class ChargePlansService {
             confirmedAt: amountStatus === 'confirme' ? new Date() : null,
           },
         });
+      }
+
+      // Point 7 — bénéficiaires : remplacement intégral de charge_plan_child,
+      // relation indépendante de Deadline/Payment (jamais d'impact sur
+      // l'historique payé, contrairement à recurrenceChanged/amountStatus
+      // ci-dessus qui restent scopés aux échéances ouvertes sans paiement).
+      if (dto.childIds !== undefined) {
+        await tx.chargePlanChild.deleteMany({ where: { chargePlanId: id } });
+        if (dto.childIds.length) {
+          await tx.chargePlanChild.createMany({ data: dto.childIds.map((childId) => ({ chargePlanId: id, childId })) });
+        }
+        return tx.chargePlan.findUniqueOrThrow({ where: { id }, include: { children: true } });
       }
 
       return updated;
@@ -307,7 +323,15 @@ export class ChargePlansService {
   async findOne(userId: string, householdId: string, id: string) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
-      return this.assertOwned(tx, id, householdId);
+      await this.assertOwned(tx, id, householdId);
+      // Point 7 — children + financialPlan.planType additifs : le mobile en a
+      // besoin pour savoir si "Enfant(s) bénéficiaire(s)" a un sens pour CE
+      // poste (même règle que la création : uniquement un plan scolaire),
+      // jamais une seconde requête séparée.
+      return tx.chargePlan.findUniqueOrThrow({
+        where: { id },
+        include: { children: true, financialPlan: { select: { planType: true } } },
+      });
     });
   }
 
