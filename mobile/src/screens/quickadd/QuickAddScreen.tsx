@@ -105,6 +105,9 @@ export function QuickAddScreen() {
   const [label, setLabel] = useState('');
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
+  // Correction UX (date réelle éditable) : pré-remplie avec aujourd'hui, mais
+  // modifiable — une dépense saisie après coup doit pouvoir porter sa vraie date.
+  const [spentDate, setSpentDate] = useState(todayIso());
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountId, setAccountId] = useState<string | null>(null);
@@ -301,6 +304,7 @@ export function QuickAddScreen() {
           categoryTypeId: presetBudget ? presetBudget.categoryTypeId : categoryTypeId ?? undefined,
           categorySubtypeId: presetBudget ? undefined : categorySubtypeId ?? undefined,
           variableBudgetId: presetBudget?.variableBudgetId,
+          spentDate: spentDate || today,
           notes: notes || undefined,
         });
       } else if (mode === 'revenu') {
@@ -565,7 +569,10 @@ export function QuickAddScreen() {
             )}
 
             {mode === 'depense' && (
-              <FormField testID="quickadd-notes-input" placeholder="Note (facultatif)" value={notes} onChangeText={setNotes} onFocus={handleFocus} />
+              <>
+                <FormField testID="quickadd-notes-input" placeholder="Note (facultatif)" value={notes} onChangeText={setNotes} onFocus={handleFocus} />
+                <DateField label="Date de la dépense" value={spentDate} onChange={setSpentDate} />
+              </>
             )}
 
             {mode !== 'paiement' && (

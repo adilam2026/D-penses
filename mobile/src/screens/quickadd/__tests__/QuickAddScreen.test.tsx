@@ -90,6 +90,24 @@ it('corrections consolidées §7 — accountId en paramètre de route prérempli
   await waitFor(() => expect(screen.getByText('Compte BP')).toBeTruthy());
 });
 
+// Correction UX (date réelle éditable) : "+ Ajouter une dépense" n'avait aucun
+// champ date (toujours aujourd'hui, silencieusement) — désormais pré-rempli
+// avec aujourd'hui mais modifiable, envoyé comme spentDate.
+it("la date de la dépense est pré-remplie avec aujourd'hui, mais reste modifiable — envoie la date corrigée à createExpense", async () => {
+  mockRouteParams = { mode: 'depense' };
+  mockedApi.listCategoryTypes.mockResolvedValue([]);
+  await renderScreen();
+
+  await waitFor(() => expect(screen.getByTestId('date-Date de la dépense')).toBeTruthy());
+  expect(screen.getByTestId('date-Date de la dépense').props.value).toBeTruthy();
+
+  await fireEvent.changeText(screen.getByTestId('date-Date de la dépense'), '2026-09-10');
+  await fireEvent.changeText(screen.getByPlaceholderText('Montant (DH)'), '100');
+  await fireEvent.press(screen.getByText('Enregistrer'));
+
+  await waitFor(() => expect(mockedApi.createExpense).toHaveBeenCalledWith(expect.objectContaining({ spentDate: '2026-09-10' })));
+});
+
 describe('QuickAddScreen — Type en sélecteur compact au-delà de 4 choix', () => {
   it('plus de 4 types actifs → Select au lieu des chips', async () => {
     mockedApi.listCategoryTypes.mockResolvedValue([

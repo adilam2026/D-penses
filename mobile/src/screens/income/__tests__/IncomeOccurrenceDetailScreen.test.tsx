@@ -12,6 +12,15 @@ import * as api from '../../../api/client';
  */
 jest.mock('../../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
 
+jest.mock('../../../ui/DateField', () => {
+  const { TextInput } = require('react-native');
+  return {
+    DateField: ({ value, onChange, label }: { value: string; onChange: (v: string) => void; label?: string }) => (
+      <TextInput testID={label ? `date-${label}` : 'date-field'} value={value} onChangeText={onChange} />
+    ),
+  };
+});
+
 const mockNavigate = jest.fn();
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({ navigate: mockNavigate }),
@@ -88,6 +97,26 @@ it('"Reçu" réutilise exactement confirmIncomeOccurrence (compte obligatoire, m
 
   await waitFor(() =>
     expect(mockedApi.confirmIncomeOccurrence).toHaveBeenCalledWith('occ1', expect.objectContaining({ actualAmount: 46700, accountId: 'acc1' })),
+  );
+});
+
+// Correction UX (date réelle éditable) : la date de réception est pré-remplie
+// avec la date PRÉVUE (usualDate), jamais figée sur aujourd'hui — un salaire
+// prévu le 26 mais reçu le 28 doit pouvoir être corrigé avant confirmation.
+it('la date de réception est pré-remplie avec la date prévue, mais reste modifiable — "Reçu" envoie la date corrigée', async () => {
+  mockedApi.getIncomeOccurrence.mockResolvedValue(OCCURRENCE_PREVU);
+  mockedApi.confirmIncomeOccurrence.mockResolvedValue({});
+  await render(<IncomeOccurrenceDetailScreen />);
+  await waitFor(() => screen.getByTestId('date-Date de réception'));
+
+  expect(screen.getByTestId('date-Date de réception').props.value).toBe('2026-09-26');
+
+  await fireEvent.changeText(screen.getByTestId('date-Date de réception'), '2026-09-28');
+  await fireEvent.changeText(screen.getByTestId('income-occurrence-amount-input'), '46700');
+  await fireEvent.press(screen.getByTestId('income-occurrence-confirm'));
+
+  await waitFor(() =>
+    expect(mockedApi.confirmIncomeOccurrence).toHaveBeenCalledWith('occ1', expect.objectContaining({ actualDate: '2026-09-28' })),
   );
 });
 

@@ -9,7 +9,7 @@ import { Select } from '../../ui/Select';
 import { DateField } from '../../ui/DateField';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
 import { TEMPORAL_STATUS_LABEL, temporalStatus, temporalStatusColor } from '../../ui/temporalStatus';
-import { AMOUNT_STATUS_OPTIONS, Account, Deadline as BaseDeadline, Payment, Provision, STATUS_LABEL, formatDate, n, todayIso } from './deadlineDetailLogic';
+import { AMOUNT_STATUS_OPTIONS, Account, Deadline as BaseDeadline, Payment, Provision, STATUS_LABEL, formatDate, n } from './deadlineDetailLogic';
 
 // Corrections consolidées §8 — compte d'imputation par défaut du ChargePlan,
 // UNIQUEMENT un préremplissage au moment du paiement (jamais imposé) :
@@ -55,6 +55,10 @@ export function DeadlineDetailScreen() {
   const [fundingSource, setFundingSource] = useState<'compte' | 'provision'>('compte');
   const [payAmount, setPayAmount] = useState('');
   const [payAccountId, setPayAccountId] = useState<string | null>(null);
+  // Correction UX (date réelle éditable) : pré-remplie avec la date PRÉVUE de
+  // l'échéance (dueDate), jamais figée sur aujourd'hui — une facture prévue
+  // le 30 mais payée le 2 du mois suivant doit pouvoir être corrigée ici.
+  const [payDate, setPayDate] = useState('');
   const [paying, setPaying] = useState(false);
 
   const [closing, setClosing] = useState(false);
@@ -74,6 +78,7 @@ export function DeadlineDetailScreen() {
       setPayments(p);
       setAccounts(accountList);
       setSeuilAPayerDays(household?.settings?.seuilAPayerDays ?? 7);
+      setPayDate(d.dueDate.slice(0, 10));
 
       if (d.provisionId) {
         const prov: Provision = await api.getProvision(d.provisionId);
@@ -146,6 +151,10 @@ export function DeadlineDetailScreen() {
       setError('Choisissez un compte');
       return;
     }
+    if (!payDate) {
+      setError('La date de paiement est requise');
+      return;
+    }
     if (fundingSource === 'provision' && provision) {
       const available = n(provision.currentAmount) ?? 0;
       if (value > available) {
@@ -172,9 +181,9 @@ export function DeadlineDetailScreen() {
     setPaying(true);
     try {
       if (fundingSource === 'provision' && provision) {
-        await api.payDeadlineWithProvision(id, { amount: value, accountId: payAccountId, provisionId: provision.id, paidDate: todayIso() });
+        await api.payDeadlineWithProvision(id, { amount: value, accountId: payAccountId, provisionId: provision.id, paidDate: payDate });
       } else {
-        await api.createPayment(id, { amount: value, accountId: payAccountId, paidDate: todayIso() });
+        await api.createPayment(id, { amount: value, accountId: payAccountId, paidDate: payDate });
       }
       if (shouldClose) {
         await api.closeDeadline(id);
@@ -337,6 +346,7 @@ export function DeadlineDetailScreen() {
               onChangeText={setPayAmount}
               onFocus={handleFocus}
             />
+            <DateField label="Date de paiement" value={payDate} onChange={setPayDate} />
 
             {isOverpayment && (
               <View style={styles.overpaymentCard} testID="payment-overpayment-error">
@@ -353,6 +363,10 @@ export function DeadlineDetailScreen() {
                 <View style={styles.recapRow}>
                   <Text style={styles.recapLabel}>Montant payé</Text>
                   <Text style={styles.recapValue}>{payValue.toLocaleString('fr-FR')} DH</Text>
+                </View>
+                <View style={styles.recapRow}>
+                  <Text style={styles.recapLabel}>Date de paiement</Text>
+                  <Text style={styles.recapValue}>{payDate ? formatDate(payDate) : '—'}</Text>
                 </View>
                 <View style={styles.recapRow}>
                   <Text style={styles.recapLabel}>Compte</Text>

@@ -339,7 +339,10 @@ export function BudgetDetailScreen() {
         ListEmptyComponent={<Text style={styles.empty}>Aucune dépense enregistrée dans cette période.</Text>}
         renderItem={({ item }) => (
           <View style={styles.historyRow}>
-            <Text style={styles.historyLabel}>{item.notes || formatDate(item.spentDate)}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.historyLabel}>{item.notes || formatDate(item.spentDate)}</Text>
+              {item.notes ? <Text style={styles.historyDate}>{formatDate(item.spentDate)}</Text> : null}
+            </View>
             <Text style={styles.historyAmount}>{item.amount.toLocaleString('fr-FR')} DH</Text>
           </View>
         )}
@@ -538,6 +541,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   historyLabel: { fontSize: 13, color: colors.textPrimary },
+  historyDate: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
   historyAmount: { fontSize: 13, fontWeight: '700', color: colors.danger },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)', alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   modalCard: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.xl, width: '100%' },

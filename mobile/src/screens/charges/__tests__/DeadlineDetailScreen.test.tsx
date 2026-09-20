@@ -23,6 +23,14 @@ jest.mock('../../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
 jest.mock('../../../ui/useKeyboardAwareScroll', () => ({
   useKeyboardAwareScroll: () => ({ scrollRef: { current: null }, handleFocus: jest.fn() }),
 }));
+jest.mock('../../../ui/DateField', () => {
+  const { TextInput } = require('react-native');
+  return {
+    DateField: ({ value, onChange, label }: { value: string; onChange: (v: string) => void; label?: string }) => (
+      <TextInput testID={label ? `date-${label}` : 'date-field'} value={value} onChangeText={onChange} />
+    ),
+  };
+});
 
 jest.mock('../../../api/client', () => {
   const actual = jest.requireActual('../../../api/client');
@@ -101,6 +109,31 @@ it('affiche le récapitulatif (solde actuel/après, reste à payer) avant confir
   await waitFor(() => expect(mockedApi.createPayment).toHaveBeenCalledWith('dl1', { amount: 1000, accountId: 'acc1', paidDate: expect.any(String) }));
   // Paiement total → l'app appelle EXPLICITEMENT close(), jamais une clôture implicite backend.
   await waitFor(() => expect(mockedApi.closeDeadline).toHaveBeenCalledWith('dl1'));
+});
+
+// Correction UX (date réelle éditable) : la date de paiement est pré-remplie
+// avec la date PRÉVUE de l'échéance (dueDate), jamais figée sur aujourd'hui —
+// une facture prévue le 15 mais payée le 20 doit pouvoir être corrigée ici.
+it('la date de paiement est pré-remplie avec la date prévue de l\'échéance, mais reste modifiable — envoie la date corrigée', async () => {
+  mockedApi.getDeadline.mockResolvedValue(DEADLINE);
+  mockedApi.createPayment.mockResolvedValue({} as any);
+  await render(<DeadlineDetailScreen />);
+
+  await waitFor(() => expect(screen.getByTestId('date-Date de paiement')).toBeTruthy());
+  expect(screen.getByTestId('date-Date de paiement').props.value).toBe('2026-10-15');
+
+  fireEvent.press(screen.getByTestId('deadline-pay-account-select'));
+  await waitFor(() => expect(screen.getByTestId('deadline-pay-account-select-option-acc1')).toBeTruthy());
+  await fireEvent.press(screen.getByTestId('deadline-pay-account-select-option-acc1'));
+  await fireEvent.changeText(screen.getByTestId('deadline-pay-amount-input'), '1000');
+  await fireEvent.changeText(screen.getByTestId('date-Date de paiement'), '2026-10-20');
+
+  await waitFor(() => expect(screen.getByTestId('deadline-pay-button')).toBeTruthy());
+  await fireEvent.press(screen.getByTestId('deadline-pay-button'));
+
+  await waitFor(() =>
+    expect(mockedApi.createPayment).toHaveBeenCalledWith('dl1', { amount: 1000, accountId: 'acc1', paidDate: '2026-10-20' }),
+  );
 });
 
 // Corrections UI/UX finales §3 — le bloc "Confirmer la facture" (montant réel

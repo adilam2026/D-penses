@@ -5,6 +5,7 @@ import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { Select } from '../../ui/Select';
 import { FormField } from '../../ui/FormField';
+import { DateField } from '../../ui/DateField';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { colors, radius, spacing } from '../../ui/theme';
 
@@ -33,10 +34,6 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 /**
  * Correction UX (Calendrier — occurrence de revenu) : fiche d'UNE occurrence
  * précise. Les actions de gestion de la récurrence (libellé, fréquence,
@@ -57,6 +54,10 @@ export function IncomeOccurrenceDetailScreen() {
 
   const [accountId, setAccountId] = useState<string | null>(null);
   const [actualAmount, setActualAmount] = useState('');
+  // Correction UX (date réelle éditable) : pré-remplie avec la date PRÉVUE
+  // (occurrence.usualDate), jamais figée sur aujourd'hui — un salaire prévu
+  // le 26 mais reçu le 28 doit pouvoir être corrigé avant confirmation.
+  const [actualDate, setActualDate] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
@@ -71,6 +72,7 @@ export function IncomeOccurrenceDetailScreen() {
       setAccounts(accs);
       setAccountId(o.accountId ?? null);
       setActualAmount(String(n(o.plannedAmount)));
+      setActualDate(o.usualDate.slice(0, 10));
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Occurrence introuvable');
     } finally {
@@ -96,9 +98,13 @@ export function IncomeOccurrenceDetailScreen() {
       setConfirmError('Choisissez un compte à créditer');
       return;
     }
+    if (!actualDate) {
+      setConfirmError('La date de réception est requise');
+      return;
+    }
     setConfirming(true);
     try {
-      await api.confirmIncomeOccurrence(occurrence.id, { actualAmount: value, actualDate: todayIso(), accountId });
+      await api.confirmIncomeOccurrence(occurrence.id, { actualAmount: value, actualDate, accountId });
       await load();
     } catch (err) {
       setConfirmError(err instanceof api.ApiError ? err.message : 'Confirmation impossible');
@@ -189,6 +195,7 @@ export function IncomeOccurrenceDetailScreen() {
               onChangeText={setActualAmount}
               onFocus={handleFocus}
             />
+            <DateField label="Date de réception" value={actualDate} onChange={setActualDate} />
           </View>
         )}
 

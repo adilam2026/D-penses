@@ -79,6 +79,33 @@ function detailFixture(rythmeAlerte: boolean) {
   };
 }
 
+// Correction UX (date des dépenses toujours visible) : une dépense avec note
+// n'affichait QUE la note (jamais la date, remplacée silencieusement) — la
+// date reste désormais toujours visible, avec ou sans note.
+describe('BudgetDetailScreen — la date de chaque dépense reste toujours visible', () => {
+  it("affiche la note ET la date quand une note existe, jamais l'une à la place de l'autre", async () => {
+    mockedApi.getVariableBudget.mockResolvedValue({
+      ...detailFixture(false),
+      history: [{ id: 'exp1', amount: 100, spentDate: '2026-09-18', notes: 'Légumes' }],
+    });
+    await render(<BudgetDetailScreen />);
+
+    await waitFor(() => screen.getByText('Légumes'));
+    expect(screen.getByText('18 septembre')).toBeTruthy();
+  });
+
+  it('sans note, la date reste la seule ligne affichée (comportement historique)', async () => {
+    mockedApi.getVariableBudget.mockResolvedValue({
+      ...detailFixture(false),
+      history: [{ id: 'exp1', amount: 100, spentDate: '2026-09-18', notes: null }],
+    });
+    await render(<BudgetDetailScreen />);
+
+    await waitFor(() => screen.getByText('18 septembre'));
+    expect(screen.getAllByText('18 septembre')).toHaveLength(1);
+  });
+});
+
 describe('BudgetDetailScreen — alerte de rythme (Lot 3)', () => {
   it('affiche le bandeau avec % consommé/% écoulé quand rythmeAlerte=true', async () => {
     mockedApi.getVariableBudget.mockResolvedValue(detailFixture(true));
