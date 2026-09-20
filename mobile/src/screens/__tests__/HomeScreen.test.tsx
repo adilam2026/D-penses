@@ -243,6 +243,14 @@ describe('Accueil — état configuré (§7-17/§31, Maquette 3)', () => {
     expect(mockNavigate).toHaveBeenCalledWith('Transactions');
   });
 
+  it('Correction UX (Transactions) — appelle listTransactions avec excludeReconciliation: true (jamais un écart de rapprochement dans "Dernières transactions")', async () => {
+    mockedApi.listTransactions.mockResolvedValue([]);
+    await render(<HomeScreen />);
+    await waitFor(() => screen.getByText('Dernières transactions'));
+
+    expect(mockedApi.listTransactions).toHaveBeenCalledWith(expect.objectContaining({ excludeReconciliation: true }));
+  });
+
   it('corrections consolidées §2 — sans transaction réelle, affiche un état vide explicite', async () => {
     mockedApi.listTransactions.mockResolvedValue([]);
     await render(<HomeScreen />);

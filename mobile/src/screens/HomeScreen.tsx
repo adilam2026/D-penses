@@ -57,7 +57,10 @@ export function HomeScreen() {
         api.listAccounts(),
         api.listIncomeSources(),
         api.getMyHousehold(),
-        api.listTransactions({ limit: 4 }),
+        // Correction UX (Transactions) — un écart de rapprochement de solde
+        // n'est jamais une opération saisie par l'utilisateur : jamais affiché
+        // dans "Dernières transactions".
+        api.listTransactions({ limit: 4, excludeReconciliation: true }),
       ]);
       setSummary(s);
       setAccounts(a);

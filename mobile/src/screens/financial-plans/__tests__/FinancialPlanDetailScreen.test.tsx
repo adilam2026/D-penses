@@ -496,8 +496,11 @@ it('point 7 — un poste avec plusieurs échéances ouvertes apparaît UNE SEULE
   // Aucune des 2 échéances individuelles n'est listée directement ici.
   expect(screen.queryByTestId('pay-deadline-d1')).toBeNull();
   expect(screen.queryByTestId('pay-deadline-d1-bis')).toBeNull();
-  // Indication du nombre d'échéances ouvertes sur l'en-tête du poste.
-  expect(screen.getByText(/2 échéances ouvertes/)).toBeTruthy();
+  // Correction UX (alignement Transactions) — seule la prochaine échéance
+  // (30 sept. 2026, la plus proche) est affichée, jamais un compteur
+  // "N échéances ouvertes" ni la seconde date.
+  expect(screen.getByText(/Prochaine échéance : 30 sept\. 2026/)).toBeTruthy();
+  expect(screen.queryByText(/30 oct\. 2026/)).toBeNull();
 });
 
 // RÈGLE ATTENDUE (correction Plan financier — affichage des postes) : pour un
@@ -543,12 +546,14 @@ it("point 7 — poste avec 23 échéances ouvertes : une seule carte compacte, a
   // Aucune des 22 autres dates n'apparaît directement dans l'écran.
   expect(screen.queryByText(/01 nov\. 2026/)).toBeNull();
   expect(screen.queryByText(/01 déc\. 2026/)).toBeNull();
-  // Compteur exact.
-  expect(screen.getByText(/23 échéances ouvertes/)).toBeTruthy();
+  // Correction UX (alignement Transactions) — jamais de compteur "N échéances
+  // ouvertes" affiché ici (détail réservé à ChargePlanDetailScreen).
+  expect(screen.queryByText(/échéances ouvertes/)).toBeNull();
   // Correction (montant ambigu) : le montant affiché est celui de LA SEULE
-  // prochaine échéance (1 000 DH), jamais la somme des 23 échéances ouvertes
-  // (23 000 DH, qui donnait l'impression trompeuse d'un total dû d'un coup).
-  expect(screen.getByText("Montant de l'échéance : 1 000 DH")).toBeTruthy();
+  // prochaine échéance (1 000 DH, en vert sur la 1ère ligne comme les
+  // transactions), jamais la somme des 23 échéances ouvertes (23 000 DH, qui
+  // donnait l'impression trompeuse d'un total dû d'un coup).
+  expect(screen.getByText(/1 000 DH/)).toBeTruthy();
   expect(screen.queryByText(/23 000 DH/)).toBeNull();
   // Aucune échéance individuelle listée directement dans le Plan financier.
   expect(screen.queryByTestId('pay-deadline-d-eau-0')).toBeNull();
@@ -593,6 +598,6 @@ it("poste avec un paiement partiel déjà enregistré : affiche le montant de l'
   await render(<FinancialPlanDetailScreen />);
   await waitFor(() => screen.getByTestId('poste-cp-loyer'));
 
-  expect(screen.getByText("Montant de l'échéance : 1 000 DH")).toBeTruthy();
+  expect(screen.getByText(/1 000 DH/)).toBeTruthy();
   expect(screen.queryByText(/400 DH/)).toBeNull();
 });

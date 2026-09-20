@@ -95,6 +95,10 @@ export function toApiFilters(f: Filters): api.TransactionFilters {
     budgetId: f.budgetId ?? undefined,
     financialPlanId: f.financialPlanId ?? undefined,
     createdByUserId: f.createdByUserId ?? undefined,
+    // Correction UX (Transactions) — un écart de rapprochement de solde n'est
+    // jamais une opération saisie par l'utilisateur : jamais affiché ici,
+    // toujours actif (pas un filtre optionnel côté écran).
+    excludeReconciliation: true,
   };
 }
 

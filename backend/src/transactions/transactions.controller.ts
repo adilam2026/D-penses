@@ -24,6 +24,10 @@ export class TransactionsController {
     @Query('budgetId') budgetId?: string,
     @Query('financialPlanId') financialPlanId?: string,
     @Query('createdByUserId') createdByUserId?: string,
+    // Correction UX (Transactions) — masque les écarts de rapprochement de
+    // solde (jamais les corrections de dépenses, qui restent visibles) :
+    // 'true'/'1' uniquement, absent = comportement historique inchangé.
+    @Query('excludeReconciliation') excludeReconciliation?: string,
   ) {
     const parsedLimit = limit ? Number(limit) : undefined;
     return this.transactions.list(user.sub, user.householdId!, {
@@ -36,6 +40,7 @@ export class TransactionsController {
       budgetId,
       financialPlanId,
       createdByUserId,
+      excludeReconciliation: excludeReconciliation === 'true' || excludeReconciliation === '1',
     });
   }
 

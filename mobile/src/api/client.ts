@@ -215,6 +215,9 @@ export interface TransactionFilters {
   /** Portail Web v4 (WEB-V4.2) — le endpoint accepte déjà `limit` côté serveur
    *  (défaut 200) ; simple passthrough, aucun nouvel endpoint. */
   limit?: number;
+  /** Correction UX (Transactions) — masque les écarts de rapprochement de
+   *  solde, jamais les corrections de dépenses (cf. transactions.service.ts). */
+  excludeReconciliation?: boolean;
 }
 
 export const listTransactions = (filters: TransactionFilters = {}) => {
@@ -228,6 +231,7 @@ export const listTransactions = (filters: TransactionFilters = {}) => {
   if (filters.financialPlanId) params.push(`financialPlanId=${encodeURIComponent(filters.financialPlanId)}`);
   if (filters.createdByUserId) params.push(`createdByUserId=${encodeURIComponent(filters.createdByUserId)}`);
   if (filters.limit) params.push(`limit=${filters.limit}`);
+  if (filters.excludeReconciliation) params.push(`excludeReconciliation=true`);
   return apiFetch(`/transactions${params.length ? `?${params.join('&')}` : ''}`);
 };
 

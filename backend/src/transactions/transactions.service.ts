@@ -57,6 +57,13 @@ export interface TransactionListFilters {
   budgetId?: string;
   financialPlanId?: string;
   createdByUserId?: string;
+  // Correction UX (Transactions) — un écart de rapprochement (Adjustment lié à
+  // une Reconciliation, cf. accounts.service.ts adjustReconciliation) n'est
+  // jamais une opération que l'utilisateur a saisie : masqué à la demande des
+  // écrans Accueil/Transactions, jamais du calcul de solde (ledger_entry reste
+  // inchangée). Optionnel (défaut false) pour ne rien changer aux appelants
+  // existants (ex. tests e2e qui vérifient déjà sa présence par défaut).
+  excludeReconciliation?: boolean;
 }
 
 // Regroupement d'affichage pour l'écran Transactions (§13) : +revenu / -paiement / transfert —
@@ -104,6 +111,7 @@ export class TransactionsService {
       if (filters.budgetId) conditions.push(Prisma.sql`le.budget_id = ${filters.budgetId}`);
       if (filters.financialPlanId) conditions.push(Prisma.sql`le.financial_plan_id = ${filters.financialPlanId}`);
       if (filters.createdByUserId) conditions.push(Prisma.sql`le.created_by_user_id = ${filters.createdByUserId}`);
+      if (filters.excludeReconciliation) conditions.push(Prisma.sql`le.linked_reconciliation_id IS NULL`);
 
       const rows = await tx.$queryRaw<
         (LedgerRow & { vehicle_name: string | null; housing_name: string | null; travel_destination: string | null; child_first_name: string | null })[]

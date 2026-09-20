@@ -448,38 +448,43 @@ export function FinancialPlanDetailScreen() {
       {detail.deadlinesCertain.length === 0 ? (
         <Text style={styles.empty}>Aucune échéance certaine pour l'instant.</Text>
       ) : (
-        groupDeadlinesByChargePlan(detail.deadlinesCertain).map((g) => {
-          const openCount = g.deadlines.filter((d) => d.financialStatus === 'ouverte' || d.financialStatus === 'partiellement_payee').length;
-          return (
-            // Correction UX (Plan financier trop chargé) — 1 poste = 1 carte
-            // RÉSUMÉ, entièrement tappable, SANS aucune action exposée ici
-            // (Modifier/Voir les échéances/Ajouter une échéance/Retirer du
-            // plan sont toutes déjà dans ChargePlanDetailScreen, jamais
-            // réimplémentées) : hiérarchie simple Plan → poste → échéance,
-            // jamais toutes les actions sur l'écran principal.
-            <TouchableOpacity
-              key={g.chargePlanId}
-              style={styles.posteCard}
-              testID={`poste-${g.chargePlanId}`}
-              onPress={() => navigation.navigate('ChargePlanDetail', { id: g.chargePlanId })}
-            >
+        groupDeadlinesByChargePlan(detail.deadlinesCertain).map((g) => (
+          // Correction UX (Plan financier trop chargé) — 1 poste = 1 carte
+          // RÉSUMÉ, entièrement tappable, SANS aucune action exposée ici
+          // (Modifier/Voir les échéances/Ajouter une échéance/Retirer du
+          // plan sont toutes déjà dans ChargePlanDetailScreen, jamais
+          // réimplémentées) : hiérarchie simple Plan → poste → échéance,
+          // jamais toutes les actions sur l'écran principal.
+          // Correction UX (alignement Transactions) — montant en vert sur la
+          // 1ère ligne à droite (même disposition que TransactionsScreen),
+          // jamais un libellé "Montant de l'échéance" séparé. Le compteur
+          // d'échéances ouvertes n'apporte rien ici (détail dans
+          // ChargePlanDetailScreen) ; la périodicité rejoint la ligne
+          // "Prochaine échéance" plutôt que la ligne catégorie.
+          <TouchableOpacity
+            key={g.chargePlanId}
+            style={styles.posteCard}
+            testID={`poste-${g.chargePlanId}`}
+            onPress={() => navigation.navigate('ChargePlanDetail', { id: g.chargePlanId })}
+          >
+            <View style={styles.posteHeaderRow}>
               <Text style={styles.posteLabel}>{g.chargePlanLabel}</Text>
+              {g.nextDueDate ? <Text style={styles.posteAmount}>{g.nextAmount.toLocaleString('fr-FR')} DH</Text> : null}
+            </View>
+            {(g.categoryName || g.status === 'inactif') && (
               <Text style={styles.posteMeta}>
-                {g.categoryName ? `${g.categoryName} · ` : ''}
-                {g.recurrenceRule && g.recurrenceRule !== 'ponctuel' ? PERIODICITY_LABEL[g.recurrenceRule] : 'Ponctuel'}
-                {g.status === 'inactif' ? ' · Récurrence arrêtée' : ''}
+                {g.categoryName ?? ''}
+                {g.categoryName && g.status === 'inactif' ? ' · ' : ''}
+                {g.status === 'inactif' ? 'Récurrence arrêtée' : ''}
               </Text>
-              <Text style={styles.posteMeta}>
-                {g.nextDueDate
-                  ? `Prochaine échéance : ${formatShortDate(g.nextDueDate)}${openCount > 1 ? ` (${openCount} échéances ouvertes)` : ''}`
-                  : 'Aucune échéance ouverte'}
-              </Text>
-              <Text style={styles.posteAmount}>
-                {g.nextDueDate ? `Montant de l'échéance : ${g.nextAmount.toLocaleString('fr-FR')} DH` : 'Aucun montant dû'}
-              </Text>
-            </TouchableOpacity>
-          );
-        })
+            )}
+            <Text style={styles.posteMeta}>
+              {g.nextDueDate ? `Prochaine échéance : ${formatShortDate(g.nextDueDate)}` : 'Aucune échéance ouverte'}
+              {' · '}
+              {g.recurrenceRule && g.recurrenceRule !== 'ponctuel' ? PERIODICITY_LABEL[g.recurrenceRule] : 'Ponctuel'}
+            </Text>
+          </TouchableOpacity>
+        ))
       )}
 
       <Text style={styles.sectionTitle}>Options envisagées</Text>
@@ -758,9 +763,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  posteLabel: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  // Correction UX (alignement Transactions) — libellé + montant sur la même
+  // ligne, comme TransactionsScreen (rowLeft/rowRight).
+  posteHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  posteLabel: { flexShrink: 1, marginRight: spacing.sm, fontSize: 14, fontWeight: '700', color: colors.textPrimary },
   posteMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
-  posteAmount: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginTop: 4 },
+  posteAmount: { fontSize: 14, fontWeight: '700', color: colors.success },
   optionTotal: { fontSize: 11, color: colors.textSecondary, marginTop: 4, marginBottom: 4, fontStyle: 'italic' },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   menuButton: { paddingHorizontal: 10, paddingVertical: 4 },

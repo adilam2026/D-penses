@@ -1,4 +1,4 @@
-import { LedgerEntry, groupByMonthAndPlan, isPlanHeaderRow, sortLedgerEntries } from '../transactionsLogic';
+import { EMPTY_FILTERS, LedgerEntry, groupByMonthAndPlan, isPlanHeaderRow, sortLedgerEntries, toApiFilters } from '../transactionsLogic';
 
 /**
  * Corrections consolidées §12/§13 — tests unitaires purs du moteur de tri et
@@ -21,6 +21,20 @@ function entry(overrides: Partial<LedgerEntry> & Pick<LedgerEntry, 'id' | 'occur
     ...overrides,
   };
 }
+
+// Correction UX (Transactions) — un écart de rapprochement de solde n'est
+// jamais une opération saisie par l'utilisateur : toApiFilters l'exclut
+// TOUJOURS, sans que l'écran ait à s'en soucier explicitement.
+describe('toApiFilters — exclusion systématique des écarts de rapprochement', () => {
+  it("inclut excludeReconciliation: true même sans aucun filtre actif", () => {
+    expect(toApiFilters(EMPTY_FILTERS).excludeReconciliation).toBe(true);
+  });
+
+  it('inclut excludeReconciliation: true en plus des autres filtres actifs', () => {
+    const filters = { ...EMPTY_FILTERS, accountId: 'acc-1', kinds: ['depense'] };
+    expect(toApiFilters(filters).excludeReconciliation).toBe(true);
+  });
+});
 
 describe('§13 — sortLedgerEntries', () => {
   it('trie par jour décroissant, puis alphabétiquement par libellé pour le même jour', () => {
