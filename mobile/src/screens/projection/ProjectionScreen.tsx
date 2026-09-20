@@ -261,12 +261,21 @@ function MonthCard({
             PLAN_GROUP_ORDER.map((groupKey) => {
               const groupItems = groupItemsByPlan(month.expense_items, planTypeById)[groupKey];
               if (groupItems.length === 0) return null;
+              // Correction UX (Projection — total par groupe) — somme des SEULES
+              // lignes affichées ici, pour CE mois (jamais un cumul d'autres mois) :
+              // les montants estimés sont inclus normalement, jamais exclus.
+              const groupTotal = groupItems.reduce((sum, item) => sum + item.amount, 0);
               return (
                 // Point 4 — chaque catégorie devient un bloc visuellement distinct
                 // (fond légèrement différent, séparé par un espace vertical net),
                 // jamais un simple enchaînement de lignes qui se confondent.
                 <View key={groupKey} testID={`plan-group-${month.month}-${groupKey}`} style={styles.planGroupBlock}>
-                  <Text style={styles.planGroupTitle}>{PLAN_GROUP_LABEL[groupKey]}</Text>
+                  <View style={styles.planGroupHeaderRow}>
+                    <Text style={styles.planGroupTitle}>{PLAN_GROUP_LABEL[groupKey]}</Text>
+                    <Text style={styles.planGroupTotal} testID={`plan-group-total-${month.month}-${groupKey}`}>
+                      {formatDh(groupTotal)}
+                    </Text>
+                  </View>
                   {groupItems.map((item) => (
                     <ExpenseRow key={item.entityId + item.date} item={item} onOpenDetail={onOpenDetail} />
                   ))}
@@ -615,7 +624,12 @@ const styles = StyleSheet.create({
   // net avant le suivant, et un titre plus marqué (poids/taille/espacement) —
   // sans toucher au style graphique général de l'app (mêmes tokens colors/radius/spacing).
   planGroupBlock: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.sm, marginTop: spacing.md },
-  planGroupTitle: { fontSize: 12, fontWeight: '800', color: colors.textPrimary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
+  // Correction UX (Projection — total par groupe) — nom du groupe à gauche,
+  // total à droite légèrement mis en évidence (même bloc sobre existant,
+  // aucune nouvelle carte).
+  planGroupHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  planGroupTitle: { fontSize: 12, fontWeight: '800', color: colors.textPrimary, textTransform: 'uppercase', letterSpacing: 0.5 },
+  planGroupTotal: { fontSize: 13, fontWeight: '800', color: colors.textPrimary },
   detailTotalLine: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', marginTop: 4, textAlign: 'right' },
   emptyText: { fontSize: 12, color: colors.textSecondary, fontStyle: 'italic' },
   itemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 },

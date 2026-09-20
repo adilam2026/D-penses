@@ -607,3 +607,177 @@ it('corrections consolidées §11 — les dépenses du détail mensuel sont grou
   expect(screen.getAllByText('Vol aller-retour')).toHaveLength(1);
   expect(screen.getAllByText('Internet')).toHaveLength(1);
 });
+
+// Correction UX (Projection — total par groupe) — chaque bloc de groupe affiche
+// désormais son propre total (somme des SEULES lignes affichées dans ce bloc,
+// pour le mois courant), en plus du libellé du groupe.
+it('correction UX (Projection — total par groupe) — le total affiché par groupe = somme exacte de ses lignes, sans double comptage, cohérent avec le total général', async () => {
+  mockedApi.listFinancialPlans.mockResolvedValue([
+    { id: 'plan-school', planType: 'school' },
+    { id: 'plan-travel', planType: 'travel' },
+  ]);
+  mockedApi.getMonthlyProjection.mockResolvedValue(
+    projectionFixture([
+      monthBucket({
+        total_expense: 3700,
+        expense_items: [
+          {
+            entityType: 'deadline',
+            entityId: 'dl-school-1',
+            label: 'Scolarité T1',
+            date: '2026-09-10',
+            amount: 1000,
+            accountId: 'acc1',
+            accountKnown: true,
+            movable: false,
+            realized: false,
+            financialPlanId: 'plan-school',
+          },
+          {
+            entityType: 'deadline',
+            entityId: 'dl-school-2',
+            label: 'Scolarité T2 (estimée)',
+            date: '2026-09-20',
+            amount: 700,
+            accountId: 'acc1',
+            accountKnown: true,
+            movable: false,
+            realized: false,
+            amountStatus: 'estime',
+            financialPlanId: 'plan-school',
+          },
+          {
+            entityType: 'deadline',
+            entityId: 'dl-travel',
+            label: 'Vol aller-retour',
+            date: '2026-09-12',
+            amount: 1500,
+            accountId: 'acc1',
+            accountKnown: true,
+            movable: false,
+            realized: false,
+            financialPlanId: 'plan-travel',
+          },
+          {
+            entityType: 'deadline',
+            entityId: 'dl-loose',
+            label: 'Internet',
+            date: '2026-09-15',
+            amount: 500,
+            accountId: 'acc1',
+            accountKnown: true,
+            movable: true,
+            realized: false,
+            financialPlanId: null,
+          },
+        ],
+      }),
+    ]),
+  );
+  await render(<ProjectionScreen />);
+  await waitFor(() => screen.getByTestId('month-toggle-2026-09'));
+  await fireEvent.press(screen.getByTestId('month-toggle-2026-09'));
+
+  await waitFor(() => screen.getByTestId('plan-group-total-2026-09-school'));
+  // Groupe Scolarité : 1000 (confirmé) + 700 (estimé, inclus normalement, jamais exclu) = 1700.
+  expect(screen.getByTestId('plan-group-total-2026-09-school')).toHaveTextContent('1 700 DH');
+  // Groupe Voyage : une seule ligne, total indépendant du groupe Scolarité.
+  expect(screen.getByTestId('plan-group-total-2026-09-travel')).toHaveTextContent('1 500 DH');
+  // Groupe Autres : une seule ligne, total indépendant des 2 autres groupes.
+  expect(screen.getByTestId('plan-group-total-2026-09-other')).toHaveTextContent('500 DH');
+
+  // Aucune double comptabilisation : somme des 3 totaux de groupe (1700+1500+500=3700)
+  // rigoureusement égale au total général "Dépenses" existant (jamais recalculé ici,
+  // toujours issu de month.total_expense fourni par le moteur de projection).
+  expect(screen.getByText('Total dépenses 3 700 DH')).toBeTruthy();
+});
+
+it("correction UX (Projection — total par groupe) — un changement de mois recalcule chaque total à partir des SEULES lignes du nouveau mois, jamais un cumul", async () => {
+  mockedApi.listFinancialPlans.mockResolvedValue([
+    { id: 'plan-school', planType: 'school' },
+    { id: 'plan-travel', planType: 'travel' },
+  ]);
+  mockedApi.getMonthlyProjection.mockResolvedValue(
+    projectionFixture([
+      monthBucket({
+        month: '2026-09',
+        label: 'Septembre 2026',
+        total_expense: 1300,
+        expense_items: [
+          {
+            entityType: 'deadline',
+            entityId: 'dl-sept-school',
+            label: 'Scolarité T1',
+            date: '2026-09-10',
+            amount: 1000,
+            accountId: 'acc1',
+            accountKnown: true,
+            movable: false,
+            realized: false,
+            financialPlanId: 'plan-school',
+          },
+          {
+            entityType: 'deadline',
+            entityId: 'dl-sept-other',
+            label: 'Internet',
+            date: '2026-09-15',
+            amount: 300,
+            accountId: 'acc1',
+            accountKnown: true,
+            movable: true,
+            realized: false,
+            financialPlanId: null,
+          },
+        ],
+      }),
+      monthBucket({
+        month: '2026-10',
+        label: 'Octobre 2026',
+        total_expense: 1100,
+        expense_items: [
+          {
+            entityType: 'deadline',
+            entityId: 'dl-oct-school',
+            label: 'Scolarité T2',
+            date: '2026-10-10',
+            amount: 200,
+            accountId: 'acc1',
+            accountKnown: true,
+            movable: false,
+            realized: false,
+            financialPlanId: 'plan-school',
+          },
+          {
+            entityType: 'deadline',
+            entityId: 'dl-oct-travel',
+            label: 'Hôtel',
+            date: '2026-10-12',
+            amount: 900,
+            accountId: 'acc1',
+            accountKnown: true,
+            movable: false,
+            realized: false,
+            financialPlanId: 'plan-travel',
+          },
+        ],
+      }),
+    ]),
+  );
+  await render(<ProjectionScreen />);
+  await waitFor(() => screen.getByTestId('month-toggle-2026-09'));
+  await fireEvent.press(screen.getByTestId('month-toggle-2026-09'));
+  await fireEvent.press(screen.getByTestId('month-toggle-2026-10'));
+
+  // Septembre : groupe Scolarité = 1000 (sa seule ligne de ce mois), groupe Autres = 300.
+  await waitFor(() => screen.getByTestId('plan-group-total-2026-09-school'));
+  expect(screen.getByTestId('plan-group-total-2026-09-school')).toHaveTextContent('1 000 DH');
+  expect(screen.getByTestId('plan-group-total-2026-09-other')).toHaveTextContent('300 DH');
+  // Jamais de groupe Voyage en septembre (aucune ligne ce mois-là).
+  expect(screen.queryByTestId('plan-group-total-2026-09-travel')).toBeNull();
+
+  // Octobre : groupe Scolarité = 200 (sa propre ligne, jamais le cumul avec les 1000 de septembre),
+  // groupe Voyage = 900, jamais de groupe Autres (aucune ligne sans plan ce mois-là).
+  expect(screen.getByTestId('plan-group-total-2026-10-school')).toHaveTextContent('200 DH');
+  expect(screen.getByTestId('plan-group-total-2026-10-travel')).toHaveTextContent('900 DH');
+  expect(screen.queryByTestId('plan-group-total-2026-10-other')).toBeNull();
+});
