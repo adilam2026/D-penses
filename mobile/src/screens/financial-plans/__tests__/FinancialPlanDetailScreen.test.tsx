@@ -56,7 +56,6 @@ jest.mock('../../../api/client', () => {
     listCategories: jest.fn(),
     createChargePlan: jest.fn(),
     createDeadline: jest.fn(),
-    cancelDeadline: jest.fn(),
   };
 });
 
@@ -117,31 +116,27 @@ beforeEach(() => {
   mockedApi.listCategories.mockResolvedValue([]);
 });
 
-it('le bouton "Payer" navigue réellement vers DeadlineDetail (bug critique corrigé)', async () => {
+// Correction (Plan financier — affichage des postes) : l'écran ne liste plus
+// jamais les échéances individuelles (Payer/deadline-row disparaissent d'ici,
+// même comportement de navigation déplacé et réutilisé tel quel dans
+// ChargePlanDetailScreen, cf. son propre test file).
+it("n'affiche plus les échéances individuelles directement dans le Plan financier (seul le résumé du poste est visible)", async () => {
   await render(<FinancialPlanDetailScreen />);
-  await waitFor(() => screen.getByTestId('pay-deadline-d1'));
+  await waitFor(() => screen.getByTestId('poste-cp-t1'));
 
-  await fireEvent.press(screen.getByTestId('pay-deadline-d1'));
-
-  expect(mockNavigate).toHaveBeenCalledWith('DeadlineDetail', { id: 'd1' });
+  expect(screen.queryByTestId('pay-deadline-d1')).toBeNull();
+  expect(screen.queryByTestId('deadline-row-d1')).toBeNull();
+  expect(screen.queryByTestId('pay-deadline-d2')).toBeNull();
+  expect(screen.queryByTestId('deadline-row-d2')).toBeNull();
 });
 
-it('taper une échéance "Estimé" navigue réellement vers ConfirmDeadline (bug critique corrigé)', async () => {
+it('"Voir les échéances" navigue vers ChargePlanDetail (réutilise l\'écran existant, aucun nouveau moteur)', async () => {
   await render(<FinancialPlanDetailScreen />);
-  await waitFor(() => screen.getByTestId('deadline-row-d2'));
+  await waitFor(() => screen.getByTestId('poste-view-deadlines-cp-t1'));
 
-  await fireEvent.press(screen.getByTestId('deadline-row-d2'));
+  await fireEvent.press(screen.getByTestId('poste-view-deadlines-cp-t1'));
 
-  expect(mockNavigate).toHaveBeenCalledWith('ConfirmDeadline', { id: 'd2' });
-});
-
-it('taper une échéance déjà confirmée navigue vers DeadlineDetail (pas ConfirmDeadline)', async () => {
-  await render(<FinancialPlanDetailScreen />);
-  await waitFor(() => screen.getByTestId('deadline-row-d1'));
-
-  await fireEvent.press(screen.getByTestId('deadline-row-d1'));
-
-  expect(mockNavigate).toHaveBeenCalledWith('DeadlineDetail', { id: 'd1' });
+  expect(mockNavigate).toHaveBeenCalledWith('ChargePlanDetail', { id: 'cp-t1' });
 });
 
 /**
@@ -450,19 +445,15 @@ it('point 6b — le modal "Ajouter un poste" porte une largeur 100% sur le Scrol
 
 // Point 7 (révision) — "Modifier le plan" affiche une liste de POSTES (pas
 // une répétition d'échéances) : chaque poste expose Modifier le poste /
-// Ajouter une échéance / Retirer du plan, réutilisant ChargePlanDetailScreen
-// (jamais un nouveau moteur métier). Le tap sur une échéance elle-même reste
-// inchangé (Payer/Confirmer).
-it('point 7 — "Modifier le poste" navigue vers ChargePlanDetail avec le chargePlanId, sans changer le tap principal de la ligne', async () => {
+// Voir les échéances / Ajouter une échéance / Retirer du plan, réutilisant
+// ChargePlanDetailScreen (jamais un nouveau moteur métier).
+it('point 7 — "Modifier le poste" navigue vers ChargePlanDetail avec le chargePlanId', async () => {
   await render(<FinancialPlanDetailScreen />);
   await waitFor(() => screen.getByTestId('poste-edit-cp-t1'));
 
   await fireEvent.press(screen.getByTestId('poste-edit-cp-t1'));
-  expect(mockNavigate).toHaveBeenCalledWith('ChargePlanDetail', { id: 'cp-t1' });
 
-  mockNavigate.mockClear();
-  await fireEvent.press(screen.getByTestId('deadline-row-d1'));
-  expect(mockNavigate).toHaveBeenCalledWith('DeadlineDetail', { id: 'd1' });
+  expect(mockNavigate).toHaveBeenCalledWith('ChargePlanDetail', { id: 'cp-t1' });
 });
 
 it('point 7 — "Ajouter une échéance" navigue vers ChargePlanDetail avec openAddDeadline pour ouvrir directement le formulaire', async () => {
@@ -486,8 +477,8 @@ it('point 7 — "Retirer du plan" (action du poste) navigue vers ChargePlanDetai
 // IMPORTANT (exigence explicite) — un poste récurrent avec plusieurs
 // échéances ouvertes simultanément doit apparaître UNE SEULE FOIS comme
 // poste ; ses échéances ne doivent jamais être présentées comme plusieurs
-// postes distincts.
-it('point 7 — un poste avec plusieurs échéances ouvertes apparaît UNE SEULE FOIS (jamais un poste par échéance)', async () => {
+// postes distincts, ni listées directement dans cet écran.
+it('point 7 — un poste avec plusieurs échéances ouvertes apparaît UNE SEULE FOIS (jamais un poste par échéance, jamais la liste des échéances)', async () => {
   mockedApi.getFinancialPlan.mockResolvedValue({
     ...PLAN,
     deadlinesCertain: [
@@ -514,64 +505,63 @@ it('point 7 — un poste avec plusieurs échéances ouvertes apparaît UNE SEULE
 
   // Un seul poste-card pour cp-t1, malgré ses 2 échéances ouvertes.
   expect(screen.getAllByTestId('poste-cp-t1')).toHaveLength(1);
-  // Les 2 échéances distinctes restent bien visibles, imbriquées sous ce poste.
-  expect(screen.getByTestId('pay-deadline-d1')).toBeTruthy();
-  expect(screen.getByTestId('pay-deadline-d1-bis')).toBeTruthy();
+  // Aucune des 2 échéances individuelles n'est listée directement ici.
+  expect(screen.queryByTestId('pay-deadline-d1')).toBeNull();
+  expect(screen.queryByTestId('pay-deadline-d1-bis')).toBeNull();
   // Indication du nombre d'échéances ouvertes sur l'en-tête du poste.
   expect(screen.getByText(/2 échéances ouvertes/)).toBeTruthy();
 });
 
-// Point 7 (révision, message suivant) — "Annuler" directe sur une échéance
-// future, visible depuis la gestion du plan (sans devoir naviguer vers
-// DeadlineDetail), réutilisant exactement api.cancelDeadline().
-describe('Point 7 (révision) — Annuler une échéance future directement depuis la gestion du plan', () => {
-  it('le bouton "Annuler" est visible pour une échéance ouverte, demande confirmation puis appelle api.cancelDeadline()', async () => {
-    mockedApi.cancelDeadline.mockResolvedValue({ id: 'd1', financialStatus: 'annulee' });
-    const RN = require('react-native');
-    jest.spyOn(RN.Alert, 'alert').mockImplementation((...args: unknown[]) => {
-      const buttons = args[2] as Array<{ text: string; onPress?: () => void }> | undefined;
-      buttons?.find((b) => b.text === "Annuler l'échéance")?.onPress?.();
-    });
-
-    await render(<FinancialPlanDetailScreen />);
-    await waitFor(() => screen.getByTestId('cancel-deadline-d1'));
-
-    await fireEvent.press(screen.getByTestId('cancel-deadline-d1'));
-
-    expect(RN.Alert.alert).toHaveBeenCalled();
-    await waitFor(() => expect(mockedApi.cancelDeadline).toHaveBeenCalledWith('d1'));
-    // Recharge après annulation (chargement initial + après action).
-    await waitFor(() => expect(mockedApi.getFinancialPlan).toHaveBeenCalledTimes(2));
+// RÈGLE ATTENDUE (correction Plan financier — affichage des postes) : pour un
+// poste avec un grand nombre d'échéances ouvertes (ex. charge mensuelle sur
+// plusieurs années), l'écran Plan financier doit rester une SEULE carte
+// résumé — jamais une liste de dizaines de lignes. Exemple exact demandé :
+// "Eau · Villa Almaz" avec 23 échéances mensuelles ouvertes.
+it("point 7 — poste avec 23 échéances ouvertes : une seule carte, seule la prochaine échéance est affichée, compteur exact, accès via \"Voir les échéances\", aucun doublon", async () => {
+  // 23 échéances mensuelles consécutives, à partir du 01 oct. 2026 (la plus proche en premier).
+  const deadlinesCertain = Array.from({ length: 23 }, (_, i) => {
+    const monthIndex0 = 9 + i; // octobre 2026 = mois index 9 (0=janvier)
+    const year = 2026 + Math.floor(monthIndex0 / 12);
+    const month = (monthIndex0 % 12) + 1;
+    return {
+      id: `d-eau-${i}`,
+      chargePlanId: 'cp-eau',
+      dueDate: `${year}-${String(month).padStart(2, '0')}-01`,
+      chargePlanLabel: 'Eau · Villa Almaz',
+      amountCurrent: 1000,
+      amountStatus: 'confirme' as const,
+      resteAPayer: 1000,
+      financialStatus: 'ouverte' as const,
+      provisionId: null,
+      coverageAffectee: 0,
+      engagementNonCouvert: 1000,
+      coverageStatus: 'non_couverte' as const,
+      categoryName: null,
+      defaultAccountId: null,
+      status: 'actif' as const,
+      recurrenceRule: 'mensuel' as const,
+    };
   });
 
-  it('n\'annule rien si l\'utilisateur choisit "Ne pas annuler"', async () => {
-    const RN = require('react-native');
-    jest.spyOn(RN.Alert, 'alert').mockImplementation((...args: unknown[]) => {
-      const buttons = args[2] as Array<{ text: string; onPress?: () => void }> | undefined;
-      buttons?.find((b) => b.text === 'Ne pas annuler')?.onPress?.();
-    });
+  mockedApi.getFinancialPlan.mockResolvedValue({ ...PLAN, deadlinesCertain });
 
-    await render(<FinancialPlanDetailScreen />);
-    await waitFor(() => screen.getByTestId('cancel-deadline-d1'));
+  await render(<FinancialPlanDetailScreen />);
+  await waitFor(() => screen.getByTestId('poste-cp-eau'));
 
-    await fireEvent.press(screen.getByTestId('cancel-deadline-d1'));
-
-    expect(mockedApi.cancelDeadline).not.toHaveBeenCalled();
-  });
-
-  it("affiche une erreur claire si l'annulation est refusée (ex. échéance déjà soldée), sans planter l'écran", async () => {
-    mockedApi.cancelDeadline.mockRejectedValue(new api.ApiError(409, 'Impossible d\'annuler : cette échéance est déjà soldée.'));
-    const RN = require('react-native');
-    jest.spyOn(RN.Alert, 'alert').mockImplementation((...args: unknown[]) => {
-      const buttons = args[2] as Array<{ text: string; onPress?: () => void }> | undefined;
-      buttons?.find((b) => b.text === "Annuler l'échéance")?.onPress?.();
-    });
-
-    await render(<FinancialPlanDetailScreen />);
-    await waitFor(() => screen.getByTestId('cancel-deadline-d1'));
-
-    await fireEvent.press(screen.getByTestId('cancel-deadline-d1'));
-
-    await waitFor(() => screen.getByText(/déjà soldée/));
-  });
+  // 1 poste = 1 carte, jamais un doublon même avec 23 échéances.
+  expect(screen.getAllByTestId('poste-cp-eau')).toHaveLength(1);
+  // Seule la prochaine échéance (la plus proche, 01 oct. 2026) est affichée.
+  expect(screen.getByText(/Prochaine échéance : 01 oct\. 2026/)).toBeTruthy();
+  // Aucune des 22 autres dates n'apparaît directement dans l'écran.
+  expect(screen.queryByText(/01 nov\. 2026/)).toBeNull();
+  expect(screen.queryByText(/01 déc\. 2026/)).toBeNull();
+  // Compteur exact.
+  expect(screen.getByText(/23 échéances ouvertes/)).toBeTruthy();
+  // Aucune échéance individuelle listée directement dans le Plan financier.
+  expect(screen.queryByTestId('pay-deadline-d-eau-0')).toBeNull();
+  expect(screen.queryByTestId('deadline-row-d-eau-0')).toBeNull();
+  // Accès à toutes les échéances via "Voir les échéances" (réutilise ChargePlanDetailScreen).
+  expect(screen.getByTestId('poste-view-deadlines-cp-eau')).toBeTruthy();
+  await fireEvent.press(screen.getByTestId('poste-view-deadlines-cp-eau'));
+  expect(mockNavigate).toHaveBeenCalledWith('ChargePlanDetail', { id: 'cp-eau' });
 });

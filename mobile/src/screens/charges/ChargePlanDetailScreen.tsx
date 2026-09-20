@@ -513,7 +513,17 @@ export function ChargePlanDetailScreen() {
           <Text style={styles.empty}>Aucune échéance pour l'instant.</Text>
         ) : (
           deadlines.map((d) => (
-            <TouchableOpacity key={d.id} style={styles.deadlineRow} onPress={() => navigation.navigate('DeadlineDetail', { id: d.id })}>
+            <TouchableOpacity
+              key={d.id}
+              style={styles.deadlineRow}
+              // Correction (Plan financier — affichage des postes) : ce
+              // screen devient la destination principale de "Voir les
+              // échéances" depuis FinancialPlanDetailScreen — même règle de
+              // navigation qu'y était appliquée (montant non confirmé →
+              // ConfirmDeadline, sinon DeadlineDetail), jamais un nouveau
+              // moteur, juste la même branche portée ici.
+              onPress={() => navigation.navigate(d.amountStatus !== 'confirme' ? 'ConfirmDeadline' : 'DeadlineDetail', { id: d.id })}
+            >
               <View style={{ flex: 1 }}>
                 <Text style={styles.deadlineDate}>{formatDate(d.dueDate)}</Text>
                 <Text style={styles.deadlineMeta}>

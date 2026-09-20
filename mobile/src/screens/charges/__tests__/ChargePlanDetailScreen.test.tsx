@@ -195,6 +195,23 @@ it('taper une échéance navigue vers DeadlineDetail', async () => {
   expect(mockNavigate).toHaveBeenCalledWith('DeadlineDetail', { id: 'd1' });
 });
 
+// Correction (Plan financier — affichage des postes) : cet écran devient la
+// destination principale de "Voir les échéances" depuis FinancialPlanDetailScreen
+// (qui ne liste plus les échéances individuellement) — la branche ConfirmDeadline
+// pour un montant non confirmé, auparavant seulement dans FinancialPlanDetailScreen,
+// est donc portée ici pour ne jamais perdre ce comportement déjà établi.
+it('taper une échéance "Estimé" navigue vers ConfirmDeadline (pas DeadlineDetail)', async () => {
+  mockedApi.listChargePlanDeadlines.mockResolvedValue([
+    { id: 'd2', dueDate: '2026-10-15', amountCurrent: 500, amountStatus: 'estime', financialStatus: 'ouverte', resteAPayer: 500 },
+  ]);
+  await render(<ChargePlanDetailScreen />);
+  await waitFor(() => screen.getByText(/15 oct/));
+
+  await fireEvent.press(screen.getByText(/15 oct/));
+
+  expect(mockNavigate).toHaveBeenCalledWith('ConfirmDeadline', { id: 'd2' });
+});
+
 // Point 7 — "Enfant(s) bénéficiaire(s)" éditable ici, jamais réservé à la
 // création, mais uniquement pour un poste rattaché à un plan scolaire (même
 // règle que "Ajouter un poste", point 6a).

@@ -73,36 +73,6 @@ interface DeadlineRow {
   status?: 'actif' | 'inactif';
 }
 
-const STATUS_MARK: Record<DeadlineRow['financialStatus'], string> = {
-  ouverte: '○',
-  partiellement_payee: '◐',
-  soldee: '✓',
-  annulee: '✕',
-};
-
-// §9 — un symbole par statut de COUVERTURE (réservé), jamais confondu avec le
-// statut de PAIEMENT (STATUS_MARK/STATUS_LABEL ci-dessus, §10).
-const COVERAGE_ICON: Record<CoverageStatus, string> = {
-  couverte: '✅',
-  partielle: '🟠',
-  non_couverte: '🔴',
-  sans_objet: '',
-};
-
-const COVERAGE_LABEL: Record<CoverageStatus, string> = {
-  couverte: 'Couverte',
-  partielle: 'Partiellement couverte',
-  non_couverte: 'Non couverte',
-  sans_objet: '',
-};
-
-const STATUS_LABEL: Record<DeadlineRow['financialStatus'], string> = {
-  ouverte: 'Ouverte',
-  partiellement_payee: 'Partiellement payée',
-  soldee: 'Soldée',
-  annulee: 'Annulée',
-};
-
 // R6.3 (point H) — les échéances certaines d'un plan (ex. École T1 sept./T2
 // janv./T3 avril) s'étalent souvent sur deux années civiles : l'année doit
 // toujours être explicite dans cette liste, jamais seulement jour/mois.
@@ -244,15 +214,6 @@ export function FinancialPlanDetailScreen() {
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
-  // Point 7 (révision) — "Annuler" une échéance future directement depuis la
-  // gestion du plan, sans devoir naviguer vers DeadlineDetail : réutilise
-  // exactement api.cancelDeadline() (aucun nouveau moteur métier). Le backend
-  // refuse déjà une échéance soldée (historique payé jamais modifiable) —
-  // ce garde-fou n'est jamais dupliqué ici, seul isOpen conditionne l'affichage
-  // du bouton pour éviter une erreur évitable.
-  const [cancellingDeadlineId, setCancellingDeadlineId] = useState<string | null>(null);
-  const [cancelError, setCancelError] = useState<string | null>(null);
-
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -274,33 +235,6 @@ export function FinancialPlanDetailScreen() {
       load();
     }, [load]),
   );
-
-  // Point 7 (révision) — "Annuler" directe sur une échéance future, visible
-  // depuis la gestion du plan (jamais besoin de deviner un second parcours
-  // via DeadlineDetail). Réutilise api.cancelDeadline() tel quel : le backend
-  // porte déjà les garde-fous (une échéance soldée est refusée, l'historique
-  // payé n'est jamais modifié) — non dupliqués ici.
-  function onCancelDeadline(deadlineId: string) {
-    Alert.alert('Annuler cette échéance ?', "Cette échéance future sera annulée et ne restera plus due. Aucun paiement déjà enregistré n'est affecté.", [
-      { text: 'Ne pas annuler', style: 'cancel' },
-      {
-        text: 'Annuler l\'échéance',
-        style: 'destructive',
-        onPress: async () => {
-          setCancelError(null);
-          setCancellingDeadlineId(deadlineId);
-          try {
-            await api.cancelDeadline(deadlineId);
-            await load();
-          } catch (err) {
-            setCancelError(err instanceof api.ApiError ? err.message : "Impossible d'annuler cette échéance");
-          } finally {
-            setCancellingDeadlineId(null);
-          }
-        },
-      },
-    ]);
-  }
 
   const loadChildren = useCallback(async () => {
     setChildren(await api.listChildren());
@@ -527,12 +461,17 @@ export function FinancialPlanDetailScreen() {
               </Text>
               <Text style={styles.posteAmount}>{g.totalResteAPayer.toLocaleString('fr-FR')} DH restants sur ce poste</Text>
 
-              {/* Point 7 — actions du poste, jamais réimplémentées : navigation vers
-                  ChargePlanDetailScreen (édition/ajout d'échéance/retrait déjà en
-                  place là-bas, garde-fous "échéance déjà payée" inchangés). */}
+              {/* Correction (Plan financier — affichage des postes) : 1 poste = 1 carte
+                  RÉSUMÉ, jamais la liste de ses échéances (un poste récurrent peut en
+                  compter des dizaines). Le détail (historique, Payer, Annuler) reste
+                  entièrement dans ChargePlanDetailScreen — jamais réimplémenté ici,
+                  seulement un lien "Voir les échéances →" vers cet écran existant. */}
               <View style={styles.posteActionsRow}>
                 <TouchableOpacity testID={`poste-edit-${g.chargePlanId}`} onPress={() => navigation.navigate('ChargePlanDetail', { id: g.chargePlanId })}>
                   <Text style={styles.editPosteLink}>Modifier le poste →</Text>
+                </TouchableOpacity>
+                <TouchableOpacity testID={`poste-view-deadlines-${g.chargePlanId}`} onPress={() => navigation.navigate('ChargePlanDetail', { id: g.chargePlanId })}>
+                  <Text style={styles.editPosteLink}>Voir les échéances →</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   testID={`poste-add-deadline-${g.chargePlanId}`}
@@ -544,71 +483,10 @@ export function FinancialPlanDetailScreen() {
                   <Text style={styles.editPosteLink}>Retirer du plan →</Text>
                 </TouchableOpacity>
               </View>
-
-              {/* Échéances de CE poste (historique payé visible, jamais modifiable ici
-                  — DeadlineDetailScreen porte déjà cette règle) : comportement de tap
-                  inchangé (Payer/Confirmer), seulement imbriqué sous l'en-tête du poste. */}
-              {g.deadlines.map((d) => {
-                const isOpen = d.financialStatus === 'ouverte' || d.financialStatus === 'partiellement_payee';
-                const resteAPayerNum = d.resteAPayer !== null ? Number(d.resteAPayer) : 0;
-                const couverturePct = d.coverageStatus !== 'sans_objet' && resteAPayerNum > 0 ? Math.round((d.coverageAffectee / resteAPayerNum) * 100) : null;
-                return (
-                  <TouchableOpacity
-                    key={d.id}
-                    testID={`deadline-row-${d.id}`}
-                    style={styles.deadlineSubRow}
-                    onPress={() => navigation.navigate(d.amountStatus !== 'confirme' ? 'ConfirmDeadline' : 'DeadlineDetail', { id: d.id })}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.rowLabel}>
-                        {COVERAGE_ICON[d.coverageStatus]} {formatShortDate(d.dueDate)}
-                      </Text>
-                      <Text style={styles.rowMeta}>
-                        {STATUS_MARK[d.financialStatus]} {STATUS_LABEL[d.financialStatus]} ·{' '}
-                        {d.amountStatus === 'confirme' ? 'Montant confirmé' : d.amountStatus === 'estime' ? 'Estimé — appuyer pour confirmer' : 'Montant inconnu'}
-                      </Text>
-                      {couverturePct !== null && (
-                        <Text style={styles.rowCoverage}>
-                          Couverture : {couverturePct}% ({COVERAGE_LABEL[d.coverageStatus]}) · Paiement : {STATUS_LABEL[d.financialStatus]}
-                        </Text>
-                      )}
-                    </View>
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={styles.rowAmount}>{d.resteAPayer !== null ? `${resteAPayerNum.toLocaleString('fr-FR')} DH restants` : '—'}</Text>
-                      {isOpen && (
-                        <View style={styles.deadlineActionsRow}>
-                          <TouchableOpacity
-                            testID={`pay-deadline-${d.id}`}
-                            style={styles.payButton}
-                            onPress={() => navigation.navigate('DeadlineDetail', { id: d.id })}
-                          >
-                            <Text style={styles.payButtonText}>Payer</Text>
-                          </TouchableOpacity>
-                          {/* Point 7 (révision) — "Annuler" une échéance future, directe
-                              (pas de second parcours à deviner), réutilise api.cancelDeadline(). */}
-                          <TouchableOpacity
-                            testID={`cancel-deadline-${d.id}`}
-                            style={styles.cancelDeadlineButton}
-                            disabled={cancellingDeadlineId === d.id}
-                            onPress={() => onCancelDeadline(d.id)}
-                          >
-                            {cancellingDeadlineId === d.id ? (
-                              <ActivityIndicator size="small" color={colors.danger} />
-                            ) : (
-                              <Text style={styles.cancelDeadlineButtonText}>Annuler</Text>
-                            )}
-                          </TouchableOpacity>
-                        </View>
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
             </View>
           );
         })
       )}
-      {cancelError ? <Text style={styles.error}>{cancelError}</Text> : null}
 
       <Text style={styles.sectionTitle}>Options envisagées</Text>
       {detail.envisagedItems.length === 0 ? (
@@ -875,8 +753,6 @@ const styles = StyleSheet.create({
   rowSimple: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm },
   rowLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
   rowMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
-  rowCoverage: { fontSize: 10, color: colors.textSecondary, marginTop: 2, fontStyle: 'italic' },
-  rowAmount: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
   editPosteLink: { fontSize: 11, fontWeight: '600', color: colors.primary, marginTop: 6 },
   // Point 7 (révision) — carte "poste" (un poste = une carte, jamais une par
   // échéance) : mêmes tokens de surface que `row`, en conteneur englobant.
@@ -892,28 +768,6 @@ const styles = StyleSheet.create({
   posteMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
   posteAmount: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginTop: 4 },
   posteActionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: spacing.sm, marginBottom: spacing.sm },
-  deadlineSubRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.sm,
-    padding: spacing.sm,
-    marginTop: spacing.xs,
-  },
-  payButton: { backgroundColor: colors.primary, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 5, marginTop: 6 },
-  payButtonText: { color: colors.textOnPrimary, fontSize: 11, fontWeight: '600' },
-  deadlineActionsRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  cancelDeadlineButton: {
-    backgroundColor: colors.dangerLight,
-    borderRadius: radius.pill,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    marginTop: 6,
-    minWidth: 60,
-    alignItems: 'center',
-  },
-  cancelDeadlineButtonText: { color: colors.danger, fontSize: 11, fontWeight: '600' },
   optionTotal: { fontSize: 11, color: colors.textSecondary, marginTop: 4, marginBottom: 4, fontStyle: 'italic' },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   menuButton: { paddingHorizontal: 10, paddingVertical: 4 },
