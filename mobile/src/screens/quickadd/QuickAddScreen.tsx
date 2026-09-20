@@ -24,6 +24,15 @@ import { colors, elevation, radius, spacing } from '../../ui/theme';
 
 type Mode = 'depense' | 'revenu' | 'paiement' | 'transfert';
 
+// NOUVELLE ÉVOLUTION — Réalisé vs à venir : une dépense/un revenu ponctuel(le)
+// est soit un fait immédiat (Réalisée/Reçu), soit un engagement futur (À venir).
+// 'reel' réutilise le moteur existant (AdHocExpense/BudgetExpense ou
+// IncomeOccurrence confirmée) ; 'a_venir' réutilise EXACTEMENT le moteur des
+// charges prévisionnelles (ChargePlan+Deadline ponctuel) côté dépense, et
+// l'IncomeOccurrence non confirmée (statut 'prevu') côté revenu — jamais un
+// second moteur de prévision.
+type OperationStatus = 'reel' | 'a_venir';
+
 // R6.2 (§10-12) : un transfert récurrent reste un objet séparé (RecurringTransfer),
 // jamais une ChargePlan — 'ponctuel' n'existe pas côté récurrent (POST /accounts/transfers
 // reste le seul chemin pour un transfert sans répétition).
@@ -108,6 +117,10 @@ export function QuickAddScreen() {
   // Correction UX (date réelle éditable) : pré-remplie avec aujourd'hui, mais
   // modifiable — une dépense saisie après coup doit pouvoir porter sa vraie date.
   const [spentDate, setSpentDate] = useState(todayIso());
+  // NOUVELLE ÉVOLUTION — même principe pour le revenu (aucune date n'existait
+  // auparavant, today était utilisé en dur).
+  const [incomeDate, setIncomeDate] = useState(todayIso());
+  const [operationStatus, setOperationStatus] = useState<OperationStatus>('reel');
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountId, setAccountId] = useState<string | null>(null);
@@ -141,6 +154,19 @@ export function QuickAddScreen() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // NOUVELLE ÉVOLUTION — le segment Réalisé/À venir n'a de sens que pour Dépense
+  // (hors budget préréglé, toujours réalisé) et Revenu ; jamais pour Transfert
+  // ni la sélection d'échéance existante (mode 'paiement').
+  const showStatusToggle = (mode === 'depense' && !presetBudget) || mode === 'revenu';
+  const isAVenir = showStatusToggle && operationStatus === 'a_venir';
+  // Une dépense/un revenu "à venir" a besoin d'un libellé identifiant
+  // l'échéance/l'occurrence future — exactement comme "Charge prévisionnelle".
+  const needsLabel = mode === 'revenu' || (mode === 'depense' && isAVenir);
+
+  useEffect(() => {
+    setOperationStatus('reel');
+  }, [mode]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -189,7 +215,9 @@ export function QuickAddScreen() {
 
   useEffect(() => {
     setBudgetHint(null);
-    if (mode !== 'depense' || !categoryId) return;
+    // NOUVELLE ÉVOLUTION — une dépense "à venir" ne crée jamais de BudgetExpense
+    // (c'est un ChargePlan+Deadline) : l'astuce budget n'a pas de sens ici.
+    if (mode !== 'depense' || !categoryId || isAVenir) return;
     let cancelled = false;
     api
       .findActiveBudgetsForCategory(categoryId)
@@ -202,7 +230,7 @@ export function QuickAddScreen() {
     return () => {
       cancelled = true;
     };
-  }, [mode, categoryId, categories]);
+  }, [mode, categoryId, categories, isAVenir]);
 
   useEffect(() => {
     setCategoryTypes([]);
@@ -282,6 +310,10 @@ export function QuickAddScreen() {
       promptCreateAccount();
       return;
     }
+    if (needsLabel && !label.trim()) {
+      setError('Un libellé est requis');
+      return;
+    }
     if (mode === 'transfert' && transferKind === 'recurrent') {
       if (!transferLabel.trim()) {
         setError('Un libellé est requis pour un transfert récurrent');
@@ -297,22 +329,37 @@ export function QuickAddScreen() {
     try {
       const today = todayIso();
       if (mode === 'depense') {
-        await api.createExpense({
-          amount: numericAmount,
-          accountId: accountId!,
-          categoryId: presetBudget ? presetBudget.categoryId : categoryId ?? undefined,
-          categoryTypeId: presetBudget ? presetBudget.categoryTypeId : categoryTypeId ?? undefined,
-          categorySubtypeId: presetBudget ? undefined : categorySubtypeId ?? undefined,
-          variableBudgetId: presetBudget?.variableBudgetId,
-          spentDate: spentDate || today,
-          notes: notes || undefined,
-        });
-      } else if (mode === 'revenu') {
-        if (!label.trim()) {
-          setError('Un libellé est requis');
-          setSubmitting(false);
-          return;
+        if (isAVenir) {
+          // Cas C — Dépense à venir : réutilise EXACTEMENT le moteur de "Charge
+          // prévisionnelle" (ChargePlan + Deadline ponctuel), jamais un second
+          // moteur de prévision. Aucune transaction réelle créée ici.
+          const plan = await api.createChargePlan({
+            label: label.trim(),
+            startDate: spentDate,
+            categoryId: categoryId ?? undefined,
+            defaultAccountId: accountId ?? undefined,
+          });
+          await api.createDeadline(plan.id, {
+            dueDate: spentDate,
+            amountStatus: 'confirme',
+            amountCurrent: numericAmount,
+          });
+        } else {
+          await api.createExpense({
+            amount: numericAmount,
+            accountId: accountId!,
+            categoryId: presetBudget ? presetBudget.categoryId : categoryId ?? undefined,
+            categoryTypeId: presetBudget ? presetBudget.categoryTypeId : categoryTypeId ?? undefined,
+            categorySubtypeId: presetBudget ? undefined : categorySubtypeId ?? undefined,
+            variableBudgetId: presetBudget?.variableBudgetId,
+            spentDate: spentDate || today,
+            notes: notes || undefined,
+          });
         }
+      } else if (mode === 'revenu') {
+        // Cas B/D — Reçu vs À venir : les deux premiers appels sont IDENTIQUES
+        // (source + occurrence prévue) ; seule la confirmation immédiate
+        // distingue "Reçu" — jamais un second moteur de revenu prévu.
         const source = await api.createIncomeSource({
           label: label.trim(),
           usualAmount: numericAmount,
@@ -320,8 +367,10 @@ export function QuickAddScreen() {
           isRecurring: false,
           recurrenceRule: 'ponctuel',
         });
-        const occurrence = await api.createIncomeOccurrence(source.id, { usualDate: today, plannedAmount: numericAmount });
-        await api.confirmIncomeOccurrence(occurrence.id, { actualAmount: numericAmount, actualDate: today, accountId: accountId! });
+        const occurrence = await api.createIncomeOccurrence(source.id, { usualDate: incomeDate, plannedAmount: numericAmount });
+        if (!isAVenir) {
+          await api.confirmIncomeOccurrence(occurrence.id, { actualAmount: numericAmount, actualDate: incomeDate, accountId: accountId! });
+        }
       } else {
         if (!toAccountId || toAccountId === accountId) {
           setError('Choisissez un compte de destination différent');
@@ -373,8 +422,33 @@ export function QuickAddScreen() {
           <ActivityIndicator style={{ marginTop: 24 }} />
         ) : (
           <>
-            {mode === 'revenu' && (
-              <FormField testID="quickadd-label-input" placeholder="Libellé (ex. Salaire)" value={label} onChangeText={setLabel} onFocus={handleFocus} />
+            {showStatusToggle && (
+              // NOUVELLE ÉVOLUTION — segmented control Réalisée/Reçu vs À venir,
+              // même style visuel que le toggle Ponctuel/Récurrent du transfert.
+              <View style={styles.segment} testID="quickadd-status-toggle">
+                {(['reel', 'a_venir'] as const).map((s) => (
+                  <TouchableOpacity
+                    key={s}
+                    testID={`quickadd-status-${s}`}
+                    style={[styles.segmentItem, operationStatus === s && styles.segmentActive]}
+                    onPress={() => setOperationStatus(s)}
+                  >
+                    <Text style={[styles.segmentText, operationStatus === s && styles.segmentTextActive]}>
+                      {s === 'reel' ? (mode === 'revenu' ? 'Reçu' : 'Réalisée') : 'À venir'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            {needsLabel && (
+              <FormField
+                testID="quickadd-label-input"
+                placeholder={mode === 'revenu' ? 'Libellé (ex. Salaire)' : 'Libellé (ex. Loyer, Facture)'}
+                value={label}
+                onChangeText={setLabel}
+                onFocus={handleFocus}
+              />
             )}
 
             {mode === 'paiement' ? (
@@ -437,6 +511,11 @@ export function QuickAddScreen() {
                 />
                 {budgetHint ? <Text style={styles.hint}>{budgetHint}</Text> : null}
 
+                {/* NOUVELLE ÉVOLUTION — une dépense "à venir" crée un ChargePlan
+                    (categoryId uniquement) : Type/Sous-type n'existent pas sur ce
+                    modèle, donc masqués plutôt que silencieusement ignorés. */}
+                {!isAVenir && (
+                <>
                 {categoryId &&
                   categoryTypes.length > 0 &&
                   (() => {
@@ -565,14 +644,24 @@ export function QuickAddScreen() {
                       </>
                     );
                   })()}
+                </>
+                )}
               </>
             )}
 
             {mode === 'depense' && (
               <>
-                <FormField testID="quickadd-notes-input" placeholder="Note (facultatif)" value={notes} onChangeText={setNotes} onFocus={handleFocus} />
-                <DateField label="Date de la dépense" value={spentDate} onChange={setSpentDate} />
+                {/* NOUVELLE ÉVOLUTION — une dépense "à venir" crée un ChargePlan
+                    (pas de champ notes sur ce modèle) : masqué plutôt qu'ignoré. */}
+                {!isAVenir && (
+                  <FormField testID="quickadd-notes-input" placeholder="Note (facultatif)" value={notes} onChangeText={setNotes} onFocus={handleFocus} />
+                )}
+                <DateField label={isAVenir ? 'Date prévue' : 'Date de la dépense'} value={spentDate} onChange={setSpentDate} />
               </>
+            )}
+
+            {mode === 'revenu' && (
+              <DateField label={isAVenir ? 'Date prévue' : 'Date de réception'} value={incomeDate} onChange={setIncomeDate} />
             )}
 
             {mode !== 'paiement' && (
@@ -580,7 +669,7 @@ export function QuickAddScreen() {
               // jamais un mur de chips permanent.
               <Select
                 testID="quickadd-account-select"
-                label={mode === 'transfert' ? 'Compte source' : 'Compte'}
+                label={mode === 'transfert' ? 'Compte source' : mode === 'revenu' && isAVenir ? 'Compte à créditer' : 'Compte'}
                 placeholder="Choisir un compte"
                 value={accountId}
                 onChange={setAccountId}
@@ -686,7 +775,13 @@ export function QuickAddScreen() {
                   <ActivityIndicator color={colors.textOnPrimary} />
                 ) : (
                   <Text style={styles.buttonText}>
-                    {mode === 'transfert' ? (transferKind === 'recurrent' ? 'CRÉER LE TRANSFERT RÉCURRENT' : 'CONFIRMER LE TRANSFERT') : 'Enregistrer'}
+                    {mode === 'transfert'
+                      ? transferKind === 'recurrent'
+                        ? 'CRÉER LE TRANSFERT RÉCURRENT'
+                        : 'CONFIRMER LE TRANSFERT'
+                      : isAVenir
+                        ? 'Planifier'
+                        : 'Enregistrer'}
                   </Text>
                 )}
               </TouchableOpacity>

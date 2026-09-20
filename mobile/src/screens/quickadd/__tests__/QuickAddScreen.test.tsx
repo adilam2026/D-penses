@@ -43,6 +43,11 @@ jest.mock('../../../api/client', () => {
     createExpense: jest.fn(),
     createTransfer: jest.fn(),
     createRecurringTransfer: jest.fn(),
+    createIncomeSource: jest.fn(),
+    createIncomeOccurrence: jest.fn(),
+    confirmIncomeOccurrence: jest.fn(),
+    createChargePlan: jest.fn(),
+    createDeadline: jest.fn(),
   };
 });
 
@@ -60,6 +65,11 @@ beforeEach(() => {
   mockedApi.listOpenDeadlines.mockResolvedValue([]);
   mockedApi.findActiveBudgetsForCategory.mockResolvedValue([]);
   mockedApi.createExpense.mockResolvedValue({ kind: 'adhoc_expense', expense: {}, soldeCourant: 0 });
+  mockedApi.createIncomeSource.mockResolvedValue({ id: 'src-1' });
+  mockedApi.createIncomeOccurrence.mockResolvedValue({ id: 'occ-1' });
+  mockedApi.confirmIncomeOccurrence.mockResolvedValue({});
+  mockedApi.createChargePlan.mockResolvedValue({ id: 'plan-1' });
+  mockedApi.createDeadline.mockResolvedValue({});
 });
 
 async function renderScreen() {
@@ -343,5 +353,126 @@ describe('QuickAddScreen — Transfert entre comptes (§11)', () => {
       ),
     );
     expect(mockedApi.createTransfer).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * NOUVELLE ÉVOLUTION — Réalisé/Reçu vs À venir : les 4 cas doivent réutiliser
+ * exactement les moteurs existants (AdHocExpense/BudgetExpense, IncomeOccurrence,
+ * ChargePlan+Deadline ponctuel via le même chemin que "Charge prévisionnelle"),
+ * jamais un second moteur de prévision.
+ */
+describe('QuickAddScreen — Réalisé/Reçu vs À venir', () => {
+  it('le segment Réalisé/À venir n\'apparaît ni pour Transfert ni pour la sélection d\'Échéance', async () => {
+    mockRouteParams = { mode: 'transfert' };
+    mockedApi.listAccounts.mockResolvedValue([{ id: 'acc-1', name: 'Compte SG', soldeCourant: 1000 }]);
+    await render(<QuickAddScreen />);
+    await waitFor(() => screen.getByTestId('quickadd-account-select'));
+    expect(screen.queryByTestId('quickadd-status-toggle')).toBeNull();
+
+    mockRouteParams = { mode: 'paiement' };
+    await render(<QuickAddScreen />);
+    await waitFor(() => screen.getByText("Aucune échéance ouverte pour l'instant."));
+    expect(screen.queryByTestId('quickadd-status-toggle')).toBeNull();
+  });
+
+  it('Cas A — Dépense réalisée (par défaut) : createExpense, jamais un ChargePlan', async () => {
+    mockRouteParams = { mode: 'depense' };
+    mockedApi.listCategoryTypes.mockResolvedValue([]);
+    await renderScreen();
+
+    await fireEvent.changeText(screen.getByPlaceholderText('Montant (DH)'), '100');
+    await fireEvent.press(screen.getByText('Enregistrer'));
+
+    await waitFor(() => expect(mockedApi.createExpense).toHaveBeenCalled());
+    expect(mockedApi.createChargePlan).not.toHaveBeenCalled();
+  });
+
+  it('Cas C — Dépense à venir : réutilise EXACTEMENT le moteur ChargePlan+Deadline ponctuel, jamais createExpense', async () => {
+    mockRouteParams = { mode: 'depense' };
+    mockedApi.listCategoryTypes.mockResolvedValue([]);
+    await renderScreen();
+
+    await fireEvent.press(screen.getByTestId('quickadd-status-a_venir'));
+    await waitFor(() => screen.getByTestId('quickadd-label-input'));
+    await fireEvent.changeText(screen.getByTestId('quickadd-label-input'), 'Loyer');
+    await fireEvent.changeText(screen.getByPlaceholderText('Montant (DH)'), '1200');
+    await fireEvent.press(screen.getByText('Planifier'));
+
+    await waitFor(() => expect(mockedApi.createChargePlan).toHaveBeenCalled());
+    expect(mockedApi.createChargePlan).toHaveBeenCalledWith(
+      expect.objectContaining({ label: 'Loyer', defaultAccountId: 'acc-1' }),
+    );
+    expect(mockedApi.createDeadline).toHaveBeenCalledWith(
+      'plan-1',
+      expect.objectContaining({ amountStatus: 'confirme', amountCurrent: 1200 }),
+    );
+    expect(mockedApi.createExpense).not.toHaveBeenCalled();
+  });
+
+  it('Cas C — le libellé est obligatoire (comme pour "Charge prévisionnelle")', async () => {
+    mockRouteParams = { mode: 'depense' };
+    mockedApi.listCategoryTypes.mockResolvedValue([]);
+    await renderScreen();
+
+    await fireEvent.press(screen.getByTestId('quickadd-status-a_venir'));
+    await waitFor(() => screen.getByTestId('quickadd-label-input'));
+    await fireEvent.changeText(screen.getByPlaceholderText('Montant (DH)'), '1200');
+    await fireEvent.press(screen.getByText('Planifier'));
+
+    await waitFor(() => screen.getByText('Un libellé est requis'));
+    expect(mockedApi.createChargePlan).not.toHaveBeenCalled();
+  });
+
+  it('Cas B — Revenu reçu : source + occurrence + confirmation immédiate (comportement historique)', async () => {
+    mockRouteParams = { mode: 'revenu' };
+    await render(<QuickAddScreen />);
+    await waitFor(() => screen.getByTestId('quickadd-label-input'));
+
+    await fireEvent.changeText(screen.getByTestId('quickadd-label-input'), 'Salaire');
+    await fireEvent.changeText(screen.getByPlaceholderText('Montant (DH)'), '10000');
+    await fireEvent.press(screen.getByText('Enregistrer'));
+
+    await waitFor(() => expect(mockedApi.confirmIncomeOccurrence).toHaveBeenCalled());
+    expect(mockedApi.createIncomeSource).toHaveBeenCalledWith(
+      expect.objectContaining({ label: 'Salaire', usualAmount: 10000, defaultAccountId: 'acc-1' }),
+    );
+    expect(mockedApi.createIncomeOccurrence).toHaveBeenCalledWith('src-1', expect.objectContaining({ plannedAmount: 10000 }));
+    expect(mockedApi.confirmIncomeOccurrence).toHaveBeenCalledWith('occ-1', expect.objectContaining({ actualAmount: 10000, accountId: 'acc-1' }));
+  });
+
+  it('Cas D — Revenu à venir : source + occurrence "prevu", JAMAIS de confirmation (le compte n\'est pas crédité)', async () => {
+    mockRouteParams = { mode: 'revenu' };
+    await render(<QuickAddScreen />);
+    await waitFor(() => screen.getByTestId('quickadd-status-a_venir'));
+
+    await fireEvent.press(screen.getByTestId('quickadd-status-a_venir'));
+    expect(screen.getByText('Compte à créditer')).toBeTruthy();
+
+    await waitFor(() => screen.getByTestId('date-Date prévue'));
+    await fireEvent.changeText(screen.getByTestId('quickadd-label-input'), 'Prime');
+    await fireEvent.changeText(screen.getByPlaceholderText('Montant (DH)'), '5000');
+    await fireEvent.changeText(screen.getByTestId('date-Date prévue'), '2026-10-15');
+    await fireEvent.press(screen.getByText('Planifier'));
+
+    await waitFor(() => expect(mockedApi.createIncomeOccurrence).toHaveBeenCalled());
+    expect(mockedApi.createIncomeOccurrence).toHaveBeenCalledWith('src-1', { usualDate: '2026-10-15', plannedAmount: 5000 });
+    expect(mockedApi.confirmIncomeOccurrence).not.toHaveBeenCalled();
+  });
+
+  it('la date de réception d\'un revenu reçu est pré-remplie avec aujourd\'hui mais reste modifiable', async () => {
+    mockRouteParams = { mode: 'revenu' };
+    await render(<QuickAddScreen />);
+    await waitFor(() => screen.getByTestId('date-Date de réception'));
+    expect(screen.getByTestId('date-Date de réception').props.value).toBeTruthy();
+
+    await fireEvent.changeText(screen.getByTestId('date-Date de réception'), '2026-09-12');
+    await fireEvent.changeText(screen.getByTestId('quickadd-label-input'), 'Salaire');
+    await fireEvent.changeText(screen.getByPlaceholderText('Montant (DH)'), '9000');
+    await fireEvent.press(screen.getByText('Enregistrer'));
+
+    await waitFor(() =>
+      expect(mockedApi.confirmIncomeOccurrence).toHaveBeenCalledWith('occ-1', expect.objectContaining({ actualDate: '2026-09-12' })),
+    );
   });
 });
