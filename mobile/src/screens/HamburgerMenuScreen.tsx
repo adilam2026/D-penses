@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../auth/AuthContext';
 import { useBottomInset } from '../ui/useBottomInset';
 import { useTopInset } from '../ui/useTopInset';
-import { colors, radius, spacing } from '../ui/theme';
+import { colors, elevation, radius, spacing } from '../ui/theme';
 import { HAMBURGER_SECTIONS as SECTIONS } from '../navigation/menuSections';
 
 // Vague 3 §5 — menu structurel (☰), organisé par logique utilisateur. Les actions
@@ -24,6 +24,20 @@ export function HamburgerMenuScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingTop: topInset, paddingBottom: bottomInset }}>
       <Text style={styles.title}>Menu</Text>
+
+      {/* CTA UX §18 — "Rejoindre un foyer" mis en avant en action principale,
+          au-dessus de "Mon foyer" : réutilise la route "JoinHousehold"
+          existante (formulaire "Rejoindre un nouveau foyer"), jamais de
+          logique métier dupliquée. Toujours visible, même avec un foyer déjà
+          actif (multi-foyers). */}
+      <TouchableOpacity
+        testID="menu-join-household-cta"
+        style={styles.joinHouseholdCta}
+        onPress={() => navigation.navigate('JoinHousehold')}
+      >
+        <Ionicons name="person-add" size={20} color={colors.textOnPrimary} style={styles.rowIcon} />
+        <Text style={styles.joinHouseholdCtaText}>Rejoindre un foyer</Text>
+      </TouchableOpacity>
 
       {SECTIONS.map((section) => (
         <View key={section.title} style={styles.section}>
@@ -48,6 +62,17 @@ export function HamburgerMenuScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: spacing.xl },
   title: { fontSize: 22, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.xl },
+  joinHouseholdCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.success,
+    borderRadius: radius.lg,
+    paddingVertical: 16,
+    marginBottom: spacing.xl,
+    ...elevation.card,
+  },
+  joinHouseholdCtaText: { fontSize: 16, fontWeight: '700', color: colors.textOnPrimary },
   section: { marginBottom: spacing.xl },
   sectionTitle: { fontSize: 12, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', marginBottom: spacing.sm, letterSpacing: 0.5 },
   row: {
