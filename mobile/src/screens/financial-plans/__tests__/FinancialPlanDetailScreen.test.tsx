@@ -35,6 +35,15 @@ jest.mock('@expo/vector-icons', () => {
   return { Ionicons: (props: any) => Text != null && require('react').createElement(Text, null, props.name) };
 });
 
+jest.mock('../../../ui/DateField', () => {
+  const { TextInput } = require('react-native');
+  return {
+    DateField: ({ value, onChange, label }: { value: string; onChange: (v: string) => void; label?: string }) => (
+      <TextInput testID={label ? `date-${label}` : 'date-field'} value={value} onChangeText={onChange} />
+    ),
+  };
+});
+
 jest.mock('../../../api/client', () => {
   const actual = jest.requireActual('../../../api/client');
   return {
@@ -44,6 +53,9 @@ jest.mock('../../../api/client', () => {
     deleteFinancialPlan: jest.fn(),
     duplicateFinancialPlan: jest.fn(),
     listChildren: jest.fn(),
+    listCategories: jest.fn(),
+    createChargePlan: jest.fn(),
+    createDeadline: jest.fn(),
   };
 });
 
@@ -99,6 +111,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockedApi.getFinancialPlan.mockResolvedValue(PLAN);
   mockedApi.listChildren.mockResolvedValue([]);
+  mockedApi.listCategories.mockResolvedValue([]);
 });
 
 it('le bouton "Payer" navigue réellement vers DeadlineDetail (bug critique corrigé)', async () => {
@@ -273,4 +286,89 @@ it("§2 — Supprimer bloqué (paiements existants) affiche le message du backen
 
   await waitFor(() => expect(screen.getByText(/paiements enregistrés/)).toBeTruthy());
   expect(mockGoBack).not.toHaveBeenCalled();
+});
+
+// Point 14.3 — "Ajouter un poste" propose désormais explicitement une
+// Périodicité (Ponctuel par défaut ou une récurrence), sans redemander la
+// date de fin du plan (automatiquement liée à periodEnd, garde-fou backend).
+it('14.3 — "Ajouter un poste" en Ponctuel (par défaut) crée un ChargePlan calendrier_manuel, comportement historique inchangé', async () => {
+  mockedApi.createChargePlan.mockResolvedValue({ id: 'cp-new' });
+  mockedApi.createDeadline.mockResolvedValue({ id: 'd-new' });
+
+  await render(<FinancialPlanDetailScreen />);
+  await waitFor(() => screen.getByTestId('plan-menu-button'));
+  await fireEvent.press(screen.getByTestId('plan-menu-button'));
+  await waitFor(() => screen.getByTestId('plan-menu-option-ajouter'));
+  await fireEvent.press(screen.getByTestId('plan-menu-option-ajouter'));
+
+  await waitFor(() => screen.getByTestId('plan-add-deadline-form'));
+  await fireEvent.changeText(screen.getByTestId('plan-add-deadline-label'), 'Fournitures');
+  await fireEvent.changeText(screen.getByTestId('plan-add-deadline-amount'), '120');
+  await fireEvent.changeText(screen.getByTestId("date-Date d'échéance"), '2026-10-05');
+  await fireEvent.press(screen.getByTestId('plan-add-deadline-save'));
+
+  await waitFor(() =>
+    expect(mockedApi.createChargePlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        label: 'Fournitures',
+        financialPlanId: 'plan-1',
+        generationMode: 'calendrier_manuel',
+        recurrenceRule: undefined,
+        recurrenceAnchorDate: undefined,
+      }),
+    ),
+  );
+  await waitFor(() => expect(mockedApi.createDeadline).toHaveBeenCalledWith('cp-new', expect.objectContaining({ dueDate: '2026-10-05' })));
+});
+
+it("14.3 — choisir une périodicité récurrente crée un ChargePlan auto_frequence, ancré sur la date de début, sans redemander la fin du plan", async () => {
+  mockedApi.createChargePlan.mockResolvedValue({ id: 'cp-recurring' });
+  mockedApi.createDeadline.mockResolvedValue({ id: 'd-recurring' });
+
+  await render(<FinancialPlanDetailScreen />);
+  await waitFor(() => screen.getByTestId('plan-menu-button'));
+  await fireEvent.press(screen.getByTestId('plan-menu-button'));
+  await waitFor(() => screen.getByTestId('plan-menu-option-ajouter'));
+  await fireEvent.press(screen.getByTestId('plan-menu-option-ajouter'));
+
+  await waitFor(() => screen.getByTestId('plan-add-deadline-form'));
+  await fireEvent.changeText(screen.getByTestId('plan-add-deadline-label'), 'Activité mensuelle');
+  await fireEvent.press(screen.getByTestId('plan-add-deadline-periodicity'));
+  await waitFor(() => screen.getByTestId('plan-add-deadline-periodicity-option-mensuel'));
+  await fireEvent.press(screen.getByTestId('plan-add-deadline-periodicity-option-mensuel'));
+
+  // Le libellé du champ date passe à "Date de début" et la date de fin
+  // n'est JAMAIS redemandée — seulement affichée en information (periodEnd).
+  await waitFor(() => screen.getByTestId('date-Date de début'));
+  expect(screen.getByText(/Se termine automatiquement à la fin du plan/)).toBeTruthy();
+  expect(screen.getByText(/30 juin 2027/)).toBeTruthy();
+
+  await fireEvent.changeText(screen.getByTestId('plan-add-deadline-amount'), '500');
+  await fireEvent.changeText(screen.getByTestId('date-Date de début'), '2026-09-15');
+  await fireEvent.press(screen.getByTestId('plan-add-deadline-save'));
+
+  await waitFor(() =>
+    expect(mockedApi.createChargePlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        label: 'Activité mensuelle',
+        financialPlanId: 'plan-1',
+        generationMode: 'auto_frequence',
+        recurrenceRule: 'mensuel',
+        recurrenceAnchorDate: '2026-09-15',
+        startDate: '2026-09-15',
+      }),
+    ),
+  );
+});
+
+it('14.3 — une échéance d\'un poste récurrent affiche sa périodicité, jamais un poste séparé par occurrence', async () => {
+  mockedApi.getFinancialPlan.mockResolvedValue({
+    ...PLAN,
+    deadlinesCertain: [{ ...PLAN.deadlinesCertain[0], recurrenceRule: 'mensuel' }],
+  });
+
+  await render(<FinancialPlanDetailScreen />);
+  await waitFor(() => screen.getByText(/Scolarité T1/));
+
+  expect(screen.getByText(/Mensuel/)).toBeTruthy();
 });

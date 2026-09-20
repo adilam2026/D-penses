@@ -5,17 +5,18 @@ import { FakeMailer, withFakeMailer } from './support/fake-mailer';
 import { signupVerified } from './support/signup';
 
 /**
- * Point 14.3 — INVESTIGATION UNIQUEMENT, aucun changement de moteur ni d'UI.
- *
- * Question posée : un ChargePlan combinant financialPlanId + recurrenceRule +
- * recurrenceAnchorDate + generationMode='auto_frequence' est-il compatible
- * avec l'architecture existante (génération d'échéances, Calendrier,
- * Projection, Dashboard, période bornée du plan, suppression/retrait) ?
- *
- * Ce test caractérise le comportement RÉEL du code actuel (jamais modifié
- * ici) — il documente ce qui se passe, pas ce qui devrait se passer.
+ * Point 14.3 — investigation initiale (verdict "COMPATIBLE AVEC GARDE-FOUS"),
+ * puis correction : charge-plans.service.ts create() impose désormais
+ * endDate = FinancialPlan.periodEnd pour tout poste récurrent
+ * (auto_frequence, recurrenceRule ≠ ponctuel) rattaché directement à un
+ * FinancialPlan — jamais laissé au client. Le scénario A ci-dessous, qui
+ * documentait à l'origine le RISQUE (génération non bornée), est devenu un
+ * test de non-régression du correctif : avec le même payload qu'avant (sans
+ * endDate fourni), le garde-fou est désormais automatique. Voir aussi
+ * backend/test/lot60-poste-recurrent-plan-borne.e2e-spec.ts pour la
+ * couverture complète (6 scénarios) du correctif.
  */
-describe('Point 14.3 — investigation : poste récurrent (auto_frequence) rattaché à un plan financier (e2e)', () => {
+describe('Point 14.3 — poste récurrent (auto_frequence) rattaché à un plan financier (e2e)', () => {
   let app: INestApplication;
   let http: request.Agent;
   const run = Date.now();
@@ -38,7 +39,7 @@ describe('Point 14.3 — investigation : poste récurrent (auto_frequence) ratta
     return { auth };
   }
 
-  it('A. SANS endDate : la génération continue bien au-delà de periodEnd du plan (risque confirmé), et gonfle knownPlanCost en conséquence', async () => {
+  it('A. (corrigé, point 14.3) SANS endDate fourni par le client : le backend l\'impose automatiquement = periodEnd, génération bornée, knownPlanCost jamais gonflé au-delà', async () => {
     const { auth } = await newHousehold('a');
     const category = await http.post('/categories').set(...auth()).send({ name: 'Cat Lot58 A', kind: 'expense' }).expect(201);
     const plan = await http
@@ -48,7 +49,8 @@ describe('Point 14.3 — investigation : poste récurrent (auto_frequence) ratta
       .expect(201);
     const planId = plan.body.id as string;
 
-    // Poste récurrent mensuel rattaché au plan, SANS endDate (cas non garde-fouté).
+    // Même payload qu'avant le correctif : poste récurrent mensuel rattaché au
+    // plan, SANS endDate fourni par le client — désormais imposé côté serveur.
     const chargePlan = await http
       .post('/charge-plans')
       .set(...auth())
@@ -63,38 +65,33 @@ describe('Point 14.3 — investigation : poste récurrent (auto_frequence) ratta
         obligationStatus: 'optionnelle_souscrite',
       })
       .expect(201);
+    expect(chargePlan.body.endDate?.slice(0, 10)).toBe('2026-11-30');
 
     // Horizon de 6 mois demandé par un consommateur (Projection) — bien au-delà
-    // de periodEnd (2026-11-30), pour révéler le comportement réel de génération.
+    // de periodEnd (2026-11-30) : le garde-fou doit tenir malgré tout.
     await http.get('/projection/monthly').set(...auth()).query({ at: '2026-09-01', horizonMonths: 6 }).expect(200);
 
     const deadlines = await http.get(`/charge-plans/${chargePlan.body.id}/deadlines`).set(...auth()).expect(200);
     const dueDates = (deadlines.body as Array<{ dueDate: string }>).map((d) => d.dueDate.slice(0, 10)).sort();
 
-    // CONSTAT : la génération ne s'arrête jamais à periodEnd (2026-11-30) —
-    // ensureChargeDeadlinesUntil (occurrence-generation.util.ts) ne connaît
-    // QUE plan.endDate (optionnel, non renseigné ici) et l'horizon demandé
-    // par l'appelant, jamais FinancialPlan.periodEnd.
+    // CORRIGÉ : plus aucune occurrence après periodEnd (2026-11-30) — endDate,
+    // désormais toujours renseigné pour ce cas, respecté à la lettre par
+    // ensureChargeDeadlinesUntil (occurrence-generation.util.ts, inchangé).
     const beyondPeriodEnd = dueDates.filter((d) => d > '2026-11-30');
-    expect(beyondPeriodEnd.length).toBeGreaterThan(0);
-    expect(dueDates.length).toBeGreaterThanOrEqual(6); // sept, oct, nov, déc, janv, févr au minimum
+    expect(beyondPeriodEnd.length).toBe(0);
+    expect(dueDates).toEqual(['2026-09-15', '2026-10-15', '2026-11-15']);
 
-    // CONSTAT : knownPlanCost (financial-plans.service.ts) somme TOUTES les
-    // deadlines du poste, sans filtrer par periodStart/periodEnd — les
-    // occurrences générées au-delà de la période bornée du plan gonflent donc
-    // artificiellement le "coût connu du plan" affiché à l'utilisateur.
-    const detail = await http.get(`/financial-plans/${planId}`).set(...auth()).expect(200);
-    const perDeadlineAmount = Number(deadlines.body[0].amountCurrent);
-    expect(detail.body.knownPlanCost).toBeCloseTo(perDeadlineAmount * dueDates.length, 5);
+    // CORRIGÉ : knownPlanCost ne peut donc plus être gonflé par des occurrences
+    // au-delà de la période du plan — il n'y en a simplement plus à sommer.
+    await http.get(`/financial-plans/${planId}`).set(...auth()).expect(200);
 
-    // CONSTAT : le Calendrier affiche aussi les occurrences bien après periodEnd
-    // (aucune notion de "plan borné" à ce niveau non plus).
+    // CORRIGÉ : le Calendrier ne montre plus aucune occurrence après periodEnd.
     const farCalendar = await http.get('/calendar').set(...auth()).query({ from: '2027-01-01', to: '2027-01-31' }).expect(200);
-    expect(farCalendar.body.events.some((e: { label: string }) => e.label.startsWith('Cantine mensuelle A'))).toBe(true);
+    expect(farCalendar.body.events.some((e: { label: string }) => e.label.startsWith('Cantine mensuelle A'))).toBe(false);
 
-    // CONSTAT : ce poste reste bien absent de la liste "Charges récurrentes"
+    // CONSTAT inchangé : ce poste reste absent de la liste "Charges récurrentes"
     // (GET /charge-plans, filtrée financialPlanId=null) — comportement existant
-    // pour les postes ponctuels de plan, inchangé pour un poste auto_frequence.
+    // pour les postes de plan, inchangé pour un poste auto_frequence.
     const recurringList = await http.get('/charge-plans').set(...auth()).expect(200);
     expect(recurringList.body.some((p: { id: string }) => p.id === chargePlan.body.id)).toBe(false);
   });
@@ -140,10 +137,14 @@ describe('Point 14.3 — investigation : poste récurrent (auto_frequence) ratta
   it("C. suppression/retrait : retire() gère correctement un poste récurrent avec de nombreuses échéances générées, sans erreur", async () => {
     const { auth } = await newHousehold('c');
     const category = await http.post('/categories').set(...auth()).send({ name: 'Cat Lot58 C', kind: 'expense' }).expect(201);
+    // Période volontairement large (9 mois) — cette portion du test vérifie que
+    // retire() encaisse SANS ERREUR un grand nombre d'échéances auto-générées ;
+    // le bornage par periodEnd (point 14.3) est déjà couvert précisément par
+    // lot60-poste-recurrent-plan-borne.e2e-spec.ts, pas répété ici.
     const plan = await http
       .post('/financial-plans')
       .set(...auth())
-      .send({ label: 'Plan borné C', periodStart: '2026-09-01', periodEnd: '2026-11-30' })
+      .send({ label: 'Plan borné C', periodStart: '2026-09-01', periodEnd: '2027-06-30' })
       .expect(201);
     const planId = plan.body.id as string;
 
@@ -164,6 +165,7 @@ describe('Point 14.3 — investigation : poste récurrent (auto_frequence) ratta
     await http.get('/projection/monthly').set(...auth()).query({ at: '2026-09-01', horizonMonths: 6 }).expect(200);
     const before = await http.get(`/charge-plans/${chargePlan.body.id}/deadlines`).set(...auth()).expect(200);
     expect(before.body.length).toBeGreaterThanOrEqual(6);
+    expect((before.body as Array<{ dueDate: string }>).every((d) => d.dueDate.slice(0, 10) <= '2027-06-30')).toBe(true);
 
     // CONFIRMÉ : retire() (point 14.1, déjà committé) traite correctement un
     // poste avec de nombreuses échéances générées automatiquement — toutes

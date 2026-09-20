@@ -159,6 +159,13 @@ export class FinancialPlansService {
         deadlinesCertain.push({
           ...d,
           chargePlanLabel: labelOf(cp),
+          // Point 14.3 — un poste récurrent (auto_frequence, recurrenceRule ≠
+          // ponctuel) doit rester identifiable comme tel dans le détail du plan
+          // (ex. "Mensuel"), sans jamais afficher chaque occurrence générée
+          // comme un poste séparé : le poste reste unique, seules ses échéances
+          // sont multiples (déjà le cas ici — une ligne par échéance, jamais
+          // par poste).
+          recurrenceRule: cp.recurrenceRule,
           resteAPayer,
           coverageAffectee: round2(coverageAffectee),
           engagementNonCouvert: round2(engagementNonCouvertAmount),

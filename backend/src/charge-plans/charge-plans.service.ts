@@ -30,13 +30,36 @@ export class ChargePlansService {
         const account = await tx.financialAccount.findFirst({ where: { id: dto.defaultAccountId, householdId } });
         if (!account) throw new NotFoundException('Compte par défaut introuvable dans ce foyer');
       }
+      let financialPlan: { periodEnd: Date } | null = null;
       if (dto.financialPlanId) {
-        const plan = await tx.financialPlan.findFirst({ where: { id: dto.financialPlanId, householdId } });
-        if (!plan) throw new NotFoundException('FinancialPlan introuvable dans ce foyer');
+        financialPlan = await tx.financialPlan.findFirst({ where: { id: dto.financialPlanId, householdId }, select: { periodEnd: true } });
+        if (!financialPlan) throw new NotFoundException('FinancialPlan introuvable dans ce foyer');
       }
       if (dto.childIds?.length) {
         const count = await tx.child.count({ where: { id: { in: dto.childIds }, householdId } });
         if (count !== dto.childIds.length) throw new NotFoundException('Un ou plusieurs enfants sont introuvables dans ce foyer');
+      }
+
+      // Point 14.3 — garde-fou : un poste RÉCURRENT (auto_frequence, recurrenceRule
+      // ≠ ponctuel) rattaché DIRECTEMENT à un FinancialPlan (financialPlanId) doit
+      // toujours être borné par endDate = FinancialPlan.periodEnd, sinon
+      // ensureChargeDeadlinesUntil (occurrence-generation.util.ts) génère des
+      // échéances indéfiniment au-delà de la période du plan (investigation point
+      // 14.3, verdict "COMPATIBLE AVEC GARDE-FOUS"). endDate est déjà respecté par
+      // ce moteur, réutilisé tel quel — jamais un second mécanisme de bornage. Un
+      // poste ponctuel (calendrier_manuel, CAS 1) n'est jamais concerné : une seule
+      // Deadline créée explicitement, aucune génération automatique.
+      const generationMode = dto.generationMode ?? 'auto_frequence';
+      const isRecurringInPlan = !!financialPlan && generationMode === 'auto_frequence' && !!dto.recurrenceRule && dto.recurrenceRule !== 'ponctuel';
+      let endDate = dto.endDate ? new Date(dto.endDate) : undefined;
+      if (isRecurringInPlan && financialPlan) {
+        const startDate = new Date(dto.startDate);
+        if (startDate.getTime() > financialPlan.periodEnd.getTime()) {
+          throw new BadRequestException(
+            'La date de départ du poste est postérieure à la fin du plan financier (periodEnd) — impossible de créer un poste récurrent au-delà de la période du plan.',
+          );
+        }
+        endDate = financialPlan.periodEnd;
       }
 
       return tx.chargePlan.create({
@@ -44,14 +67,14 @@ export class ChargePlansService {
           householdId,
           label: dto.label,
           categoryId: dto.categoryId,
-          generationMode: dto.generationMode ?? 'auto_frequence',
+          generationMode,
           recurrenceRule: dto.recurrenceRule,
           defaultAccountId: dto.defaultAccountId,
           obligationStatus: dto.obligationStatus ?? 'obligatoire',
           financialPlanId: dto.financialPlanId,
           startDate: new Date(dto.startDate),
           recurrenceAnchorDate: dto.recurrenceAnchorDate ? new Date(dto.recurrenceAnchorDate) : undefined,
-          endDate: dto.endDate ? new Date(dto.endDate) : undefined,
+          endDate,
           priorityLevel: dto.priorityLevel ?? 1,
           children: dto.childIds?.length ? { create: dto.childIds.map((childId) => ({ childId })) } : undefined,
         },

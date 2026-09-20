@@ -15,6 +15,27 @@ const AMOUNT_STATUS_OPTIONS = [
   { value: 'inconnu', label: 'Inconnu' },
 ];
 
+// Point 14.3 — périodicités déjà supportées par le moteur de récurrence
+// existant (common/ledger/recurrence.util.ts, RecurrenceRule) : jamais un
+// nouveau moteur, jamais une valeur non gérée côté backend.
+type Periodicity = 'ponctuel' | 'hebdomadaire' | 'mensuel' | 'trimestriel' | 'semestriel' | 'annuel';
+const PERIODICITY_OPTIONS: Array<{ value: Periodicity; label: string }> = [
+  { value: 'ponctuel', label: 'Ponctuel' },
+  { value: 'hebdomadaire', label: 'Hebdomadaire' },
+  { value: 'mensuel', label: 'Mensuel' },
+  { value: 'trimestriel', label: 'Trimestriel' },
+  { value: 'semestriel', label: 'Semestriel' },
+  { value: 'annuel', label: 'Annuel' },
+];
+const PERIODICITY_LABEL: Record<Periodicity, string> = {
+  ponctuel: 'Ponctuel',
+  hebdomadaire: 'Hebdomadaire',
+  mensuel: 'Mensuel',
+  trimestriel: 'Trimestriel',
+  semestriel: 'Semestriel',
+  annuel: 'Annuel',
+};
+
 interface Child {
   id: string;
   firstName: string;
@@ -35,6 +56,10 @@ interface DeadlineRow {
   coverageAffectee: number;
   engagementNonCouvert: number;
   coverageStatus: CoverageStatus;
+  // Point 14.3 — présent uniquement pour un poste récurrent (auto_frequence,
+  // ≠ ponctuel) : sert à afficher "Mensuel" etc. à côté de l'échéance, jamais
+  // à créer une carte "poste" séparée (le poste reste unique, cf. affichage).
+  recurrenceRule?: 'hebdomadaire' | 'mensuel' | 'trimestriel' | 'semestriel' | 'annuel' | 'ponctuel' | null;
 }
 
 const STATUS_MARK: Record<DeadlineRow['financialStatus'], string> = {
@@ -143,12 +168,18 @@ export function FinancialPlanDetailScreen() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // R6.4 (§2) — "+ Ajouter une échéance" : un nouveau ChargePlan ponctuel
-  // (calendrier_manuel, financialPlanId=ce plan) + 1 Deadline — jamais un
-  // ChargePlan récurrent pour cette opération.
+  // R6.4 (§2) — "+ Ajouter une échéance" : un nouveau ChargePlan (ponctuel,
+  // calendrier_manuel, financialPlanId=ce plan) + 1 Deadline.
+  // Point 14.3 — même modal, périodicité désormais choisie explicitement :
+  // Ponctuel garde le comportement ci-dessus ; une périodicité récurrente
+  // crée un ChargePlan auto_frequence (recurrenceAnchorDate = date de
+  // début), toujours financialPlanId=ce plan — le backend impose alors
+  // automatiquement endDate = periodEnd du plan (garde-fou, jamais redemandé
+  // ici) et refuse une date de début postérieure à periodEnd.
   const [addOpen, setAddOpen] = useState(false);
   const [addLabel, setAddLabel] = useState('');
   const [addCategoryId, setAddCategoryId] = useState<string | null>(null);
+  const [addPeriodicity, setAddPeriodicity] = useState<Periodicity>('ponctuel');
   const [addAmountStatus, setAddAmountStatus] = useState<'confirme' | 'estime' | 'inconnu'>('confirme');
   const [addAmount, setAddAmount] = useState('');
   const [addDueDate, setAddDueDate] = useState('');
@@ -187,6 +218,7 @@ export function FinancialPlanDetailScreen() {
     setMenuOpen(false);
     setAddLabel('');
     setAddCategoryId(null);
+    setAddPeriodicity('ponctuel');
     setAddAmountStatus('confirme');
     setAddAmount('');
     setAddDueDate('');
@@ -205,7 +237,7 @@ export function FinancialPlanDetailScreen() {
       return;
     }
     if (!addDueDate) {
-      setAddError("La date d'échéance est obligatoire");
+      setAddError(addPeriodicity === 'ponctuel' ? "La date d'échéance est obligatoire" : 'La date de début est obligatoire');
       return;
     }
     if (addAmountStatus !== 'inconnu' && (!addAmount.trim() || Number(addAmount.replace(',', '.')) <= 0)) {
@@ -215,13 +247,21 @@ export function FinancialPlanDetailScreen() {
     setAdding(true);
     setAddError(null);
     try {
+      const isRecurring = addPeriodicity !== 'ponctuel';
       const newPlan = await api.createChargePlan({
         label: addLabel.trim(),
         startDate: addDueDate,
         categoryId: addCategoryId ?? undefined,
         childIds: addChildIds,
         financialPlanId: id,
-        generationMode: 'calendrier_manuel',
+        // Point 14.3 — CAS 2 (récurrent) : generationMode='auto_frequence' +
+        // recurrenceRule choisi + recurrenceAnchorDate=date de début. Le
+        // backend impose seul endDate=periodEnd (jamais redemandé ici) et
+        // refuse une date de début postérieure à periodEnd (erreur affichée
+        // ci-dessous, cf. addError). CAS 1 (ponctuel) : comportement inchangé.
+        generationMode: isRecurring ? 'auto_frequence' : 'calendrier_manuel',
+        recurrenceRule: isRecurring ? addPeriodicity : undefined,
+        recurrenceAnchorDate: isRecurring ? addDueDate : undefined,
         // R6.4 (§2/§3) — 'optionnelle_souscrite' compte comme 'obligatoire' dans le coût
         // connu/reste à financer du plan (financial-plans.service detailOnTx), mais reste
         // une échéance dont la date peut encore être corrigée (DeadlinesService.update
@@ -392,6 +432,10 @@ export function FinancialPlanDetailScreen() {
                 <Text style={styles.rowMeta}>
                   {STATUS_MARK[d.financialStatus]} {STATUS_LABEL[d.financialStatus]} ·{' '}
                   {d.amountStatus === 'confirme' ? 'Montant confirmé' : d.amountStatus === 'estime' ? 'Estimé — appuyer pour confirmer' : 'Montant inconnu'}
+                  {/* Point 14.3 — un poste récurrent reste identifiable ("Mensuel"),
+                      jamais affiché comme un poste séparé par occurrence : une
+                      seule ligne par échéance, comme toutes les autres. */}
+                  {d.recurrenceRule && d.recurrenceRule !== 'ponctuel' ? ` · ${PERIODICITY_LABEL[d.recurrenceRule]}` : ''}
                 </Text>
                 {/* §10 — Couverture (réservé) et Paiement (réglé) : deux informations
                     toujours affichées séparément, jamais fusionnées en une seule. */}
@@ -466,7 +510,7 @@ export function FinancialPlanDetailScreen() {
       <Modal visible={addOpen} transparent animationType="fade" onRequestClose={() => setAddOpen(false)}>
         <View style={styles.modalOverlay}>
           <ScrollView contentContainerStyle={styles.modalCard} testID="plan-add-deadline-form">
-            <Text style={styles.modalTitle}>Ajouter une échéance</Text>
+            <Text style={styles.modalTitle}>Ajouter un poste</Text>
             <TextInput style={styles.modalInput} value={addLabel} onChangeText={setAddLabel} placeholder="Libellé" testID="plan-add-deadline-label" />
             {categories.length > 0 && (
               <Select
@@ -478,6 +522,15 @@ export function FinancialPlanDetailScreen() {
                 options={categories.map((c) => ({ value: c.id, label: c.name }))}
               />
             )}
+            {/* Point 14.3 — Ponctuel (comportement historique) ou une récurrence
+                déjà supportée par le moteur existant, jamais un nouveau mécanisme. */}
+            <Select
+              testID="plan-add-deadline-periodicity"
+              label="Périodicité"
+              value={addPeriodicity}
+              onChange={(v) => setAddPeriodicity(v as Periodicity)}
+              options={PERIODICITY_OPTIONS}
+            />
             <Select
               testID="plan-add-deadline-amount-status"
               label="Montant"
@@ -495,7 +548,12 @@ export function FinancialPlanDetailScreen() {
                 testID="plan-add-deadline-amount"
               />
             )}
-            <DateField label="Date d'échéance" value={addDueDate} onChange={setAddDueDate} />
+            <DateField label={addPeriodicity === 'ponctuel' ? "Date d'échéance" : 'Date de début'} value={addDueDate} onChange={setAddDueDate} />
+            {addPeriodicity !== 'ponctuel' && detail && (
+              // Jamais redemandée : la date de fin est automatiquement celle du
+              // plan (endDate=periodEnd imposé côté backend, garde-fou 14.3).
+              <Text style={styles.help}>Se termine automatiquement à la fin du plan : {formatShortDate(detail.periodEnd)}</Text>
+            )}
             {children.length > 0 && (
               <MultiSelect
                 testID="plan-add-deadline-children"

@@ -293,8 +293,11 @@ export const createChargePlan = (data: {
   defaultAccountId?: string;
   childIds?: string[];
   // R6.4 (§2) — "+ Ajouter une échéance" à un plan existant : un nouveau
-  // ChargePlan ponctuel (generationMode calendrier_manuel, financialPlanId
-  // du plan) + 1 Deadline, jamais un ChargePlan récurrent.
+  // ChargePlan (ponctuel par défaut, generationMode calendrier_manuel) +
+  // 1 Deadline. Point 14.3 — peut aussi être un poste récurrent
+  // (generationMode auto_frequence + recurrenceRule ≠ ponctuel) rattaché
+  // directement au plan : le backend impose alors seul endDate = periodEnd
+  // du plan (charge-plans.service.ts create(), jamais fourni ici).
   financialPlanId?: string;
   generationMode?: 'auto_frequence' | 'calendrier_manuel';
   obligationStatus?: 'obligatoire' | 'optionnelle_envisagee' | 'optionnelle_souscrite' | 'optionnelle_refusee';
