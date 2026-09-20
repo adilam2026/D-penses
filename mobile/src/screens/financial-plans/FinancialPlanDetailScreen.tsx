@@ -94,11 +94,14 @@ interface ChargePlanGroup {
   status: 'actif' | 'inactif';
   recurrenceRule: DeadlineRow['recurrenceRule'];
   deadlines: DeadlineRow[];
-  // Correction (Plan financier — montant affiché ambigu) : le reste à payer de
-  // la SEULE prochaine échéance (nextDueDate), jamais la somme de toutes les
+  // Correction (Plan financier — montant affiché ambigu) : le montant de la
+  // SEULE prochaine échéance (nextDueDate), jamais la somme de toutes les
   // échéances ouvertes du poste (un poste mensuel sur 23 échéances affichait
   // un total trompeur, ex. 23 × montant, jamais réellement dû en une fois).
-  nextResteAPayer: number;
+  // Correction (montant vs reste à payer) : amountCurrent (montant de
+  // l'échéance), jamais resteAPayer — ce résumé n'affiche jamais de suivi de
+  // paiement partiel, réservé à ChargePlanDetail (carte = résumé seulement).
+  nextAmount: number;
   nextDueDate: string | null;
 }
 
@@ -120,7 +123,7 @@ function groupDeadlinesByChargePlan(rows: DeadlineRow[]): ChargePlanGroup[] {
       status: first.status ?? 'actif',
       recurrenceRule: first.recurrenceRule,
       deadlines: sorted,
-      nextResteAPayer: openOnes.length > 0 && openOnes[0].resteAPayer !== null ? Number(openOnes[0].resteAPayer) : 0,
+      nextAmount: openOnes.length > 0 && openOnes[0].amountCurrent !== null ? Number(openOnes[0].amountCurrent) : 0,
       nextDueDate: openOnes.length > 0 ? openOnes[0].dueDate : null,
     };
   });
@@ -472,7 +475,7 @@ export function FinancialPlanDetailScreen() {
                   : 'Aucune échéance ouverte'}
               </Text>
               <Text style={styles.posteAmount}>
-                {g.nextDueDate ? `${g.nextResteAPayer.toLocaleString('fr-FR')} DH restants sur cette échéance` : 'Aucun montant dû'}
+                {g.nextDueDate ? `Montant de l'échéance : ${g.nextAmount.toLocaleString('fr-FR')} DH` : 'Aucun montant dû'}
               </Text>
             </TouchableOpacity>
           );

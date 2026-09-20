@@ -548,7 +548,7 @@ it("point 7 — poste avec 23 échéances ouvertes : une seule carte compacte, a
   // Correction (montant ambigu) : le montant affiché est celui de LA SEULE
   // prochaine échéance (1 000 DH), jamais la somme des 23 échéances ouvertes
   // (23 000 DH, qui donnait l'impression trompeuse d'un total dû d'un coup).
-  expect(screen.getByText('1 000 DH restants sur cette échéance')).toBeTruthy();
+  expect(screen.getByText("Montant de l'échéance : 1 000 DH")).toBeTruthy();
   expect(screen.queryByText(/23 000 DH/)).toBeNull();
   // Aucune échéance individuelle listée directement dans le Plan financier.
   expect(screen.queryByTestId('pay-deadline-d-eau-0')).toBeNull();
@@ -561,4 +561,38 @@ it("point 7 — poste avec 23 échéances ouvertes : une seule carte compacte, a
   // Taper la carte elle-même donne accès à toutes les échéances (réutilise ChargePlanDetailScreen).
   await fireEvent.press(screen.getByTestId('poste-cp-eau'));
   expect(mockNavigate).toHaveBeenCalledWith('ChargePlanDetail', { id: 'cp-eau' });
+});
+
+// Correction (montant vs reste à payer) : la carte résumé affiche le montant
+// DE L'ÉCHÉANCE (amountCurrent), jamais un "reste à payer" (resteAPayer) —
+// cette nuance de paiement partiel reste réservée à ChargePlanDetail, jamais
+// affichée ici (carte = résumé seulement).
+it("poste avec un paiement partiel déjà enregistré : affiche le montant de l'échéance (amountCurrent), jamais le reste à payer (resteAPayer)", async () => {
+  const deadlinesCertain = [
+    {
+      id: 'd-loyer-1',
+      chargePlanId: 'cp-loyer',
+      dueDate: '2026-09-30',
+      chargePlanLabel: 'Loyer',
+      amountCurrent: 1000,
+      amountStatus: 'confirme' as const,
+      resteAPayer: 400,
+      financialStatus: 'partiellement_payee' as const,
+      provisionId: null,
+      coverageAffectee: 0,
+      engagementNonCouvert: 400,
+      coverageStatus: 'non_couverte' as const,
+      categoryName: null,
+      defaultAccountId: null,
+      status: 'actif' as const,
+      recurrenceRule: null,
+    },
+  ];
+  mockedApi.getFinancialPlan.mockResolvedValue({ ...PLAN, deadlinesCertain });
+
+  await render(<FinancialPlanDetailScreen />);
+  await waitFor(() => screen.getByTestId('poste-cp-loyer'));
+
+  expect(screen.getByText("Montant de l'échéance : 1 000 DH")).toBeTruthy();
+  expect(screen.queryByText(/400 DH/)).toBeNull();
 });
