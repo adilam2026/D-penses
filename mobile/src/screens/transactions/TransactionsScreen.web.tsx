@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as api from '../../api/client';
 import { DateField } from '../../ui/DateField';
 import { FormField } from '../../ui/FormField';
 import { MultiSelect } from '../../ui/MultiSelect';
 import { Select } from '../../ui/Select';
 import { frequencyOptions } from '../../ui/frequency';
+import { useResponsiveLayout } from '../../ui/useResponsiveLayout';
 import { MAX_CONTENT_WIDTH, webColors, webRadius, webSpacing } from '../../web/webTheme';
 // Portail Web v4 §1 — même source que TransactionsScreen.tsx (mobile) pour les
 // filtres/regroupement : jamais une seconde règle parallèle.
@@ -17,11 +19,19 @@ import {
   KIND_GROUPS,
   KIND_LABEL,
   LedgerEntry,
-  formatDate,
-  groupByMonth,
+  STATUS_LABEL,
+  formatShortDate,
+  groupByDay,
   hasActiveFilters,
   toApiFilters,
 } from './transactionsLogic';
+
+// Refonte liste Transactions Web — largeur propre à la LISTE (jamais la zone
+// de saisie "Nouvelle transaction" ni le tiroir de filtres, toujours sur
+// MAX_CONTENT_WIDTH=1600 comme les 14 autres écrans web) : un tableau étiré
+// sur 1600px laisse un vide énorme entre une date sur 2 caractères et un
+// montant aligné à droite. 1120px reste dans la fourchette 1000-1200 demandée.
+const LIST_MAX_WIDTH = 1120;
 
 // Portail Web v4 §1 (règle "ne rien inventer") — EXACTEMENT les 4 actions déjà
 // réellement supportées par QuickAddScreen (mobile), mêmes endpoints, mêmes
@@ -173,7 +183,9 @@ export function TransactionsScreen() {
     for (const p of plans) map[p.id] = p.label;
     return map;
   }, [plans]);
-  const sections = useMemo(() => groupByMonth(entries), [entries]);
+  const sections = useMemo(() => groupByDay(entries), [entries]);
+  const { deviceClass } = useResponsiveLayout();
+  const compactRows = deviceClass === 'mobile';
   const expenseCategories = categories.filter((c) => c.kind === 'expense' || c.kind === 'both');
   const filtersActive = hasActiveFilters(appliedFilters);
 
@@ -480,72 +492,111 @@ export function TransactionsScreen() {
         )}
       </View>
 
-      {/* Opérations — table dense, groupée par mois (mêmes données que mobile). */}
-      <View style={styles.listHead}>
-        <Text style={styles.listTitle}>Opérations</Text>
-        <TouchableOpacity testID="web-tx-filters-button" style={styles.filterButton} onPress={openFilters}>
-          <Text style={styles.filterButtonText}>Filtres{filtersActive ? ' •' : ''}</Text>
-        </TouchableOpacity>
-      </View>
-
-      {entries.length === DEFAULT_LIST_LIMIT && (
-        <Text style={styles.limitWarning}>Affichage limité aux {DEFAULT_LIST_LIMIT} transactions les plus récentes — affinez les filtres pour voir le reste.</Text>
-      )}
-
-      <View style={styles.table}>
-        <View style={styles.tableHeaderRow}>
-          <Text style={[styles.th, styles.colDate]}>Date</Text>
-          <Text style={[styles.th, styles.colLabel]}>Libellé</Text>
-          <Text style={[styles.th, styles.colAccount]}>Compte</Text>
-          <Text style={[styles.th, styles.colCategory]}>Catégorie</Text>
-          <Text style={[styles.th, styles.colAttach]}>Rattaché</Text>
-          <Text style={[styles.th, styles.colAmount]}>Montant</Text>
+      {/* Opérations — liste dense, groupée par jour (Aujourd'hui / Hier / date). */}
+      <View style={styles.listWrap}>
+        <View style={styles.listHead}>
+          <Text style={styles.listTitle}>Opérations</Text>
+          <TouchableOpacity testID="web-tx-filters-button" style={styles.filterButton} onPress={openFilters}>
+            <Text style={styles.filterButtonText}>Filtres{filtersActive ? ' •' : ''}</Text>
+          </TouchableOpacity>
         </View>
 
-        {listLoading && entries.length === 0 ? (
-          <ActivityIndicator style={{ marginTop: 24 }} />
-        ) : entries.length === 0 ? (
-          <Text style={styles.empty}>{filtersActive ? 'Aucune transaction pour ces filtres.' : "Aucune transaction pour l'instant."}</Text>
-        ) : (
-          sections.map((section) => (
-            <View key={section.title}>
-              <Text style={styles.monthHeader}>{section.title}</Text>
-              {section.data.map((item) => {
-                const positive = item.amount >= 0;
-                const budgetLabel = item.budgetId ? (budgetLabelById[item.budgetId] ?? 'Budget') : null;
-                const planLabel = item.financialPlanId ? (planLabelById[item.financialPlanId] ?? 'Plan') : null;
-                return (
-                  <TouchableOpacity
-                    key={`${item.kind}-${item.id}`}
-                    testID={`web-transaction-row-${item.kind}-${item.id}`}
-                    style={styles.tableRow}
-                    onPress={() => navigation.navigate('TransactionDetail', { kind: item.kind, id: item.id })}
-                  >
-                    <Text style={[styles.td, styles.colDate]}>{formatDate(item.occurredAt)}</Text>
-                    <Text style={[styles.td, styles.colLabel]} numberOfLines={1}>
-                      {item.label ?? KIND_LABEL[item.displayKind] ?? item.kind}
-                    </Text>
-                    <Text style={[styles.td, styles.colAccount]} numberOfLines={1}>
-                      {item.accountName}
-                    </Text>
-                    <Text style={[styles.td, styles.colCategory]} numberOfLines={1}>
-                      {item.categoryName ?? '—'}
-                    </Text>
-                    <View style={[styles.colAttach, { flexDirection: 'row', flexWrap: 'wrap', gap: 4 }]}>
-                      {budgetLabel && <Text style={styles.attachBadge}>{budgetLabel}</Text>}
-                      {planLabel && <Text style={styles.attachBadge}>{planLabel}</Text>}
-                      {!budgetLabel && !planLabel && <Text style={styles.td}>—</Text>}
-                    </View>
-                    <Text style={[styles.td, styles.colAmount, positive ? styles.amountPositive : styles.amountNegative]}>
-                      {positive ? '+' : ''}
-                      {item.amount.toLocaleString('fr-FR')} DH
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ))
+        {entries.length === DEFAULT_LIST_LIMIT && (
+          <Text style={styles.limitWarning}>Affichage limité aux {DEFAULT_LIST_LIMIT} transactions les plus récentes — affinez les filtres pour voir le reste.</Text>
         )}
+
+        <View style={styles.table}>
+          {!compactRows && (
+            <View style={styles.tableHeaderRow}>
+              <Text style={[styles.th, styles.colDate]}>Date</Text>
+              <Text style={[styles.th, styles.colLabel]}>Libellé</Text>
+              <Text style={[styles.th, styles.colCategory]}>Catégorie</Text>
+              <Text style={[styles.th, styles.colAccount]}>Compte / enveloppe</Text>
+              <Text style={[styles.th, styles.colStatus]}>Statut</Text>
+              <Text style={[styles.th, styles.colAmount]}>Montant</Text>
+              <View style={styles.colActions} />
+            </View>
+          )}
+
+          {listLoading && entries.length === 0 ? (
+            <ActivityIndicator style={{ marginTop: 24 }} />
+          ) : entries.length === 0 ? (
+            <Text style={styles.empty}>{filtersActive ? 'Aucune transaction pour ces filtres.' : "Aucune transaction pour l'instant."}</Text>
+          ) : (
+            sections.map((section) => (
+              <View key={section.title}>
+                <Text style={styles.dayHeader}>{section.title}</Text>
+                {section.data.map((item) => {
+                  const positive = item.amount >= 0;
+                  const budgetLabel = item.budgetId ? (budgetLabelById[item.budgetId] ?? 'Budget') : null;
+                  const planLabel = item.financialPlanId ? (planLabelById[item.financialPlanId] ?? 'Plan') : null;
+                  const attachLabel = planLabel ?? budgetLabel;
+                  const label = item.label ?? KIND_LABEL[item.displayKind] ?? item.kind;
+                  const statusLabel = STATUS_LABEL[item.displayKind] ?? null;
+                  const amountText = `${positive ? '+' : ''}${item.amount.toLocaleString('fr-FR')} DH`;
+                  const openDetail = () => navigation.navigate('TransactionDetail', { kind: item.kind, id: item.id });
+
+                  if (compactRows) {
+                    return (
+                      <TouchableOpacity
+                        key={`${item.kind}-${item.id}`}
+                        testID={`web-transaction-row-${item.kind}-${item.id}`}
+                        style={styles.compactRow}
+                        onPress={openDetail}
+                      >
+                        <View style={styles.compactTopLine}>
+                          <Text style={styles.compactLabel} numberOfLines={1}>
+                            {label}
+                          </Text>
+                          <Text style={[styles.compactAmount, positive ? styles.amountPositive : styles.amountNegative]}>{amountText}</Text>
+                        </View>
+                        <Text style={styles.compactMeta} numberOfLines={1}>
+                          {formatShortDate(item.occurredAt)} · {item.accountName}
+                        </Text>
+                        <Text style={styles.compactMeta} numberOfLines={1}>
+                          {item.categoryName ?? '—'}
+                          {statusLabel ? ` · ${statusLabel}` : ''}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  }
+
+                  return (
+                    <TouchableOpacity
+                      key={`${item.kind}-${item.id}`}
+                      testID={`web-transaction-row-${item.kind}-${item.id}`}
+                      style={styles.tableRow}
+                      onPress={openDetail}
+                    >
+                      <Text style={[styles.td, styles.colDate]}>{formatShortDate(item.occurredAt)}</Text>
+                      <Text style={[styles.td, styles.colLabel]} numberOfLines={1}>
+                        {label}
+                      </Text>
+                      <Text style={[styles.td, styles.colCategory]} numberOfLines={1}>
+                        {item.categoryName ?? '—'}
+                      </Text>
+                      <Text style={[styles.td, styles.colAccount]} numberOfLines={1}>
+                        {item.accountName}
+                        {attachLabel ? ` / ${attachLabel}` : ''}
+                      </Text>
+                      <View style={styles.colStatus}>
+                        {statusLabel && <Text style={styles.statusBadge}>{statusLabel}</Text>}
+                      </View>
+                      <Text style={[styles.td, styles.colAmount, positive ? styles.amountPositive : styles.amountNegative]}>{amountText}</Text>
+                      <TouchableOpacity
+                        testID={`web-transaction-actions-${item.kind}-${item.id}`}
+                        style={styles.colActions}
+                        onPress={openDetail}
+                      >
+                        <Ionicons name="ellipsis-horizontal" size={16} color={webColors.textSecondary} />
+                      </TouchableOpacity>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ))
+          )}
+        </View>
       </View>
 
       {/* Tiroir latéral Filtres — mêmes 7 champs que la modal mobile. */}
@@ -675,6 +726,7 @@ const styles = StyleSheet.create({
   deadlineLabel: { fontSize: 13, fontWeight: '700', color: webColors.textPrimary },
   deadlineAmount: { fontSize: 12, color: webColors.textSecondary, marginTop: 2 },
 
+  listWrap: { width: '100%', maxWidth: LIST_MAX_WIDTH, alignSelf: 'center' },
   listHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: webSpacing.sm },
   listTitle: { fontSize: 15, fontWeight: '700', color: webColors.textPrimary },
   filterButton: { backgroundColor: webColors.surface, borderRadius: webRadius.pill, paddingHorizontal: webSpacing.md, paddingVertical: 8, borderWidth: 1, borderColor: webColors.borderStrong },
@@ -682,21 +734,39 @@ const styles = StyleSheet.create({
   limitWarning: { fontSize: 11, color: webColors.textSecondary, marginBottom: webSpacing.sm, fontStyle: 'italic' },
 
   table: { backgroundColor: webColors.surface, borderRadius: webRadius.lg, borderWidth: 1, borderColor: webColors.border, overflow: 'hidden' },
-  tableHeaderRow: { flexDirection: 'row', backgroundColor: webColors.tableHeaderBg, paddingHorizontal: webSpacing.md, paddingVertical: 8 },
+  tableHeaderRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: webColors.tableHeaderBg, paddingHorizontal: webSpacing.md, paddingVertical: 8 },
   tableRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: webSpacing.md, paddingVertical: 9, borderTopWidth: 1, borderTopColor: webColors.tableRowBorder },
   th: { fontSize: 11, fontWeight: '700', color: webColors.textSecondary, textTransform: 'uppercase' },
   td: { fontSize: 12, color: webColors.textPrimary },
-  colDate: { width: 90 },
+  colDate: { width: 64 },
   colLabel: { flex: 2, paddingRight: webSpacing.sm },
-  colAccount: { flex: 1, paddingRight: webSpacing.sm },
   colCategory: { flex: 1, paddingRight: webSpacing.sm },
-  colAttach: { flex: 1, paddingRight: webSpacing.sm },
-  colAmount: { width: 110, textAlign: 'right', fontWeight: '700' },
+  colAccount: { flex: 1.4, paddingRight: webSpacing.sm },
+  colStatus: { width: 84, alignItems: 'flex-start' },
+  colAmount: { width: 100, textAlign: 'right', fontWeight: '700' },
+  colActions: { width: 28, alignItems: 'center', justifyContent: 'center' },
   amountPositive: { color: webColors.success },
   amountNegative: { color: webColors.danger },
-  attachBadge: { fontSize: 10, fontWeight: '700', color: webColors.textSecondary, backgroundColor: webColors.surfaceMuted, borderRadius: webRadius.sm, paddingHorizontal: 6, paddingVertical: 2 },
-  monthHeader: { fontSize: 11, fontWeight: '700', color: webColors.textSecondary, textTransform: 'uppercase', paddingHorizontal: webSpacing.md, paddingTop: webSpacing.sm, paddingBottom: 4, backgroundColor: webColors.surfaceMuted },
+  statusBadge: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: webColors.textSecondary,
+    backgroundColor: webColors.surfaceMuted,
+    borderRadius: webRadius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    overflow: 'hidden',
+  },
+  dayHeader: { fontSize: 11, fontWeight: '700', color: webColors.textSecondary, textTransform: 'uppercase', paddingHorizontal: webSpacing.md, paddingTop: webSpacing.sm, paddingBottom: 4, backgroundColor: webColors.surfaceMuted },
   empty: { color: webColors.textSecondary, textAlign: 'center', padding: webSpacing.xl, fontSize: 13 },
+
+  // Ligne compacte mobile (§ refonte liste Web) — même composant, seule la
+  // présentation change en dessous du seuil "mobile" de useResponsiveLayout.
+  compactRow: { paddingHorizontal: webSpacing.md, paddingVertical: webSpacing.sm, borderTopWidth: 1, borderTopColor: webColors.tableRowBorder },
+  compactTopLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  compactLabel: { fontSize: 13, fontWeight: '600', color: webColors.textPrimary, flexShrink: 1, paddingRight: webSpacing.sm },
+  compactAmount: { fontSize: 13, fontWeight: '700' },
+  compactMeta: { fontSize: 11, color: webColors.textSecondary, marginTop: 2 },
 
   drawerOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, flexDirection: 'row', justifyContent: 'flex-end', zIndex: 30 },
   drawerBackdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15,26,41,0.35)' },

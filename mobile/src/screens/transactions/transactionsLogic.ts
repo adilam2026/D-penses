@@ -120,6 +120,24 @@ export function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+// Refonte liste Transactions Web — format court ("28 sept.") pour la colonne
+// Date d'une liste dense, jamais recalculé différemment ailleurs.
+export function formatShortDate(iso: string) {
+  return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+}
+
+// Refonte liste Transactions Web — libellé de statut, dérivé UNIQUEMENT du
+// displayKind déjà renvoyé par le backend (DISPLAY_KIND, transactions.service.ts) :
+// aucune donnée ni règle métier nouvelle, un pur habillage d'affichage. Clés
+// alignées sur les valeurs réelles de displayKind (avec l'accent sur "dépense").
+export const STATUS_LABEL: Record<string, string> = {
+  paiement: 'Payée',
+  dépense: 'Payée',
+  revenu: 'Reçu',
+  transfert: 'Versé',
+  ajustement: 'Ajusté',
+};
+
 export function monthKey(occurredAtIso: string): string {
   return occurredAtIso.slice(0, 7);
 }
@@ -222,6 +240,33 @@ export function groupByMonthAndPlan(entries: LedgerEntry[], planLabelById: Recor
       }
       return { title: monthSectionTitle(monthKeyValue), data };
     });
+}
+
+// Refonte liste Transactions Web — regroupement visuel par jour exact
+// (Aujourd'hui / Hier / date précise), en plus de groupByMonth (toujours
+// utilisé tel quel par TransactionsScreen.tsx natif, non modifié ici) : même
+// tri (sortLedgerEntries, §13), jamais un second ordre parallèle.
+export function daySectionTitle(occurredAtIso: string): string {
+  const day = occurredAtIso.slice(0, 10);
+  const now = new Date();
+  const todayKey = now.toISOString().slice(0, 10);
+  const yesterdayKey = new Date(now.getTime() - 86400000).toISOString().slice(0, 10);
+  if (day === todayKey) return "Aujourd'hui";
+  if (day === yesterdayKey) return 'Hier';
+  return new Date(occurredAtIso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+export function groupByDay(entries: LedgerEntry[]): { title: string; data: LedgerEntry[] }[] {
+  const sorted = sortLedgerEntries(entries);
+  const byDay = new Map<string, LedgerEntry[]>();
+  for (const e of sorted) {
+    const key = e.occurredAt.slice(0, 10);
+    if (!byDay.has(key)) byDay.set(key, []);
+    byDay.get(key)!.push(e);
+  }
+  return Array.from(byDay.entries())
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    .map(([, data]) => ({ title: daySectionTitle(data[0].occurredAt), data }));
 }
 
 export const DEFAULT_LIST_LIMIT = 200;
