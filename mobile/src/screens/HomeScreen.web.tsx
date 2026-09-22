@@ -7,7 +7,7 @@ import { ChoiceSheet } from '../ui/ChoiceSheet';
 import { accountCardPalette } from '../ui/theme';
 import { CardGrid } from '../web/ui/CardGrid.web';
 import { useWebBreakpoint } from '../web/useWebBreakpoint';
-import { MAX_CONTENT_WIDTH, webColors, webRadius, webSpacing } from '../web/webTheme';
+import { MAX_CONTENT_WIDTH, webColors, webElevation, webRadius, webSpacing } from '../web/webTheme';
 import { toNum } from './envelopes/envelopesLogic';
 import { DashboardSummary, essentialPrerequisitesMet, formatShortDate, isFullyEmpty, isPartiallyConfigured } from './homeLogic';
 
@@ -148,7 +148,7 @@ export function HomeScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
       {showConfigBanner && (
         <View style={styles.configBanner}>
-          <TouchableOpacity style={{ flex: 1 }} onPress={() => navigation.getParent()?.navigate('Onboarding')} testID="config-banner">
+          <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Onboarding')} testID="config-banner">
             <Text style={styles.configBannerText}>Terminer ma configuration →</Text>
           </TouchableOpacity>
           <TouchableOpacity testID="config-banner-close" style={styles.configBannerClose} onPress={() => setDismissChoiceOpen(true)}>
@@ -193,7 +193,7 @@ export function HomeScreen() {
                 <TouchableOpacity
                   key={a.id}
                   testID={`home-account-card-${a.id}`}
-                  style={[styles.accountCard, { width: ACCOUNT_CARD_WIDTH, backgroundColor: accountCardPalette[i % accountCardPalette.length] }]}
+                  style={[styles.accountCard, { width: ACCOUNT_CARD_WIDTH }]}
                   onPress={() => navigation.getParent()?.navigate('AccountDetail', { id: a.id })}
                 >
                   <View style={styles.accountCardTopRow}>
@@ -215,10 +215,10 @@ export function HomeScreen() {
                           testID={`account-reveal-${a.id}`}
                           onPress={() => setRevealedAccountIds((prev) => ({ ...prev, [a.id]: !prev[a.id] }))}
                         >
-                          <Ionicons name={masked ? 'eye-outline' : 'eye-off-outline'} size={15} color="#fff" />
+                          <Ionicons name={masked ? 'eye-outline' : 'eye-off-outline'} size={15} color={webColors.textSecondary} />
                         </TouchableOpacity>
                       )}
-                      <Text style={styles.accountCardBadge}>{badge}</Text>
+                      <Text style={[styles.accountCardBadge, a.isDedicated && styles.accountCardBadgeAccent]}>{badge}</Text>
                     </View>
                   </View>
 
@@ -226,19 +226,25 @@ export function HomeScreen() {
 
                   {a.envelopes.length > 1 && (
                     <View style={styles.accountCardTrack}>
-                      {a.envelopes.map((e) => (
-                        <View key={e.id} style={{ width: `${Math.max(0, Math.min(100, (e.amount / total) * 100))}%`, height: '100%', backgroundColor: 'rgba(255,255,255,0.85)' }} />
+                      {a.envelopes.map((e, ei) => (
+                        <View
+                          key={e.id}
+                          style={{ width: `${Math.max(0, Math.min(100, (e.amount / total) * 100))}%`, height: '100%', backgroundColor: accountCardPalette[ei % accountCardPalette.length] }}
+                        />
                       ))}
                     </View>
                   )}
 
                   {a.envelopes.length > 0 && (
                     <View style={styles.accountCardEnvelopes}>
-                      {a.envelopes.map((e) => (
+                      {a.envelopes.map((e, ei) => (
                         <View key={e.id} style={styles.accountCardEnvelopeRow}>
-                          <Text style={styles.accountCardEnvelopeName} numberOfLines={1}>
-                            {e.name}
-                          </Text>
+                          <View style={styles.accountCardEnvelopeLeft}>
+                            <View style={[styles.accountCardSwatch, { backgroundColor: accountCardPalette[ei % accountCardPalette.length] }]} />
+                            <Text style={styles.accountCardEnvelopeName} numberOfLines={1}>
+                              {e.name}
+                            </Text>
+                          </View>
                           <Text style={styles.accountCardEnvelopeAmount}>{e.amount.toLocaleString('fr-FR')} DH</Text>
                         </View>
                       ))}
@@ -325,9 +331,19 @@ const styles = StyleSheet.create({
   welcomeButton: { backgroundColor: webColors.surface, borderRadius: webRadius.pill, paddingHorizontal: webSpacing.xxl, paddingVertical: webSpacing.md, marginTop: webSpacing.lg },
   welcomeButtonText: { color: webColors.textPrimary, fontWeight: '700', fontSize: 14 },
 
-  configBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: webColors.surfaceActive, borderRadius: webRadius.lg, padding: 12, marginBottom: webSpacing.md },
-  configBannerText: { color: webColors.textPrimary, fontSize: 13, fontWeight: '700', textAlign: 'center' },
-  configBannerClose: { paddingLeft: webSpacing.md, paddingVertical: webSpacing.xs },
+  configBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: webColors.surfaceActive,
+    borderRadius: webRadius.pill,
+    paddingHorizontal: webSpacing.md,
+    paddingVertical: 8,
+    marginBottom: webSpacing.md,
+    maxWidth: '100%',
+  },
+  configBannerText: { color: webColors.textSecondary, fontSize: 12, fontWeight: '700' },
+  configBannerClose: { paddingLeft: webSpacing.sm, paddingVertical: webSpacing.xs },
 
   sec: { marginBottom: webSpacing.xl },
   sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: webSpacing.sm },
@@ -335,19 +351,38 @@ const styles = StyleSheet.create({
   sectionLink: { fontSize: 12, fontWeight: '600', color: webColors.success },
   empty: { fontSize: 13, color: webColors.textSecondary },
 
-  accountCard: { borderRadius: webRadius.lg, padding: webSpacing.md },
+  accountCard: {
+    backgroundColor: webColors.surface,
+    borderWidth: 1,
+    borderColor: webColors.border,
+    borderRadius: webRadius.lg,
+    padding: webSpacing.md,
+    ...webElevation.card,
+  },
   accountCardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   accountCardTopRight: { alignItems: 'flex-end', gap: 6 },
-  accountCardOwner: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.75)' },
-  accountCardName: { fontSize: 13, color: '#fff', fontWeight: '800', marginTop: 2 },
-  accountCardBadge: { fontSize: 9, fontWeight: '800', color: '#fff', backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3, overflow: 'hidden' },
-  accountCardAmount: { fontSize: 22, fontWeight: '900', color: '#fff', marginTop: webSpacing.sm },
-  accountCardTrack: { marginTop: webSpacing.sm, height: 5, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.25)', overflow: 'hidden', flexDirection: 'row' },
-  accountCardEnvelopes: { marginTop: webSpacing.sm, paddingTop: webSpacing.sm, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.2)' },
+  accountCardOwner: { fontSize: 11, fontWeight: '700', color: webColors.textSecondary },
+  accountCardName: { fontSize: 13, color: webColors.textPrimary, fontWeight: '800', marginTop: 2 },
+  accountCardBadge: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: webColors.textSecondary,
+    backgroundColor: webColors.surfaceMuted,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    overflow: 'hidden',
+  },
+  accountCardBadgeAccent: { color: webColors.primary, backgroundColor: 'rgba(23,36,54,0.08)' },
+  accountCardAmount: { fontSize: 22, fontWeight: '900', color: webColors.textPrimary, marginTop: webSpacing.sm },
+  accountCardTrack: { marginTop: webSpacing.sm, height: 5, borderRadius: 999, backgroundColor: webColors.surfaceMuted, overflow: 'hidden', flexDirection: 'row' },
+  accountCardEnvelopes: { marginTop: webSpacing.sm, paddingTop: webSpacing.sm, borderTopWidth: 1, borderTopColor: webColors.border },
   accountCardEnvelopeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 3 },
-  accountCardEnvelopeName: { fontSize: 11, color: 'rgba(255,255,255,0.9)', fontWeight: '600', flexShrink: 1, marginRight: webSpacing.xs },
-  accountCardEnvelopeAmount: { fontSize: 11, color: '#fff', fontWeight: '700' },
-  accountCardNote: { fontSize: 10, color: 'rgba(255,255,255,0.8)', marginTop: webSpacing.sm },
+  accountCardEnvelopeLeft: { flexDirection: 'row', alignItems: 'center', flexShrink: 1, marginRight: webSpacing.xs, gap: 7 },
+  accountCardSwatch: { width: 7, height: 7, borderRadius: 4 },
+  accountCardEnvelopeName: { fontSize: 11, color: webColors.textPrimary, fontWeight: '600', flexShrink: 1 },
+  accountCardEnvelopeAmount: { fontSize: 11, color: webColors.textPrimary, fontWeight: '700' },
+  accountCardNote: { fontSize: 10, color: webColors.textSecondary, marginTop: webSpacing.sm },
 
   todoCard: { backgroundColor: webColors.surface, borderRadius: webRadius.lg, borderWidth: 1, borderColor: webColors.borderStrong, paddingHorizontal: webSpacing.md, maxWidth: 760 },
   todoCardNarrow: { maxWidth: undefined },
