@@ -250,11 +250,6 @@ function AccountCard({
         </View>
       )}
 
-      {!account.isDedicated && account.envelopes.length === 0 && (
-        <View style={styles.sourceNote}>
-          <Text style={styles.sourceNoteText}>Aucune enveloppe associée.</Text>
-        </View>
-      )}
     </TouchableOpacity>
   );
 }
@@ -270,19 +265,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.v6Surface,
     borderWidth: 1,
     borderColor: colors.v6Line,
-    borderRadius: radius.xl,
-    padding: spacing.md + 2,
-    marginBottom: spacing.md,
+    borderRadius: radius.lg,
+    padding: spacing.sm + 4,
+    marginBottom: spacing.sm + 2,
     ...elevation.card,
   },
   accountHead: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm, alignItems: 'flex-start' },
-  accountBank: { fontSize: 12, color: colors.v6Muted, fontWeight: '700' },
-  accountName: { fontSize: 14, fontWeight: '800', marginTop: 2, color: colors.v6Text },
-  accountBalance: { fontSize: 28, fontWeight: '900', letterSpacing: -0.8, marginTop: 8, color: colors.v6Text },
+  accountBank: { fontSize: 10, color: colors.v6Muted, fontWeight: '700' },
+  accountName: { fontSize: 13, fontWeight: '800', marginTop: 1, color: colors.v6Text },
+  accountBalance: { fontSize: 22, fontWeight: '900', letterSpacing: -0.6, marginTop: 4, color: colors.v6Text },
   accountBadge: { fontSize: 10, fontWeight: '800', paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: 999, backgroundColor: colors.v6BlueSoft, color: colors.v6Blue },
-  miniTrack: { marginTop: spacing.md, height: 6, borderRadius: 999, backgroundColor: '#EDF0F4', overflow: 'hidden', flexDirection: 'row' },
-  accountBody: { marginTop: spacing.md, paddingTop: spacing.sm + 2, borderTopWidth: 1, borderTopColor: colors.v6Line },
-  allocRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, paddingVertical: 7 },
+  miniTrack: { marginTop: spacing.sm, height: 5, borderRadius: 999, backgroundColor: '#EDF0F4', overflow: 'hidden', flexDirection: 'row' },
+  accountBody: { marginTop: spacing.sm, paddingTop: spacing.xs + 2, borderTopWidth: 1, borderTopColor: colors.v6Line },
+  allocRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, paddingVertical: 4 },
   allocLeft: { flexDirection: 'row', alignItems: 'center', gap: 9, flexShrink: 1 },
   swatch: { width: 8, height: 8, borderRadius: 4 },
   allocName: { fontSize: 13, fontWeight: '700', color: colors.v6Text },

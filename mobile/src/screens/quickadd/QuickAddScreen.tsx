@@ -96,10 +96,18 @@ export function QuickAddScreen() {
   const bottomInset = useBottomInset();
   const topInset = useTopInset();
   const { scrollRef, handleFocus } = useKeyboardAwareScroll();
-  // Vague 3 §3 — la bottom sheet "+" peut présélectionner l'action (Dépense/Revenu/
-  // Payer une échéance/Transfert) ; sans paramètre, comportement inchangé (Dépense).
-  const initialMode = (route.params?.mode as Mode | undefined) ?? 'depense';
+  // Vague 3 §3 — la bottom sheet "+" présélectionne toujours l'action (Dépense/
+  // Revenu/Transfert) ; sans paramètre explicite (ex. accès direct pour "Payer
+  // une échéance"), comportement inchangé (Dépense, sélecteur de mode visible).
+  // Convergence V6 §4 — quand la bottom sheet "+" a fourni un mode explicite,
+  // ce mode est VERROUILLÉ : plus de sélecteur "ancien style" permettant de
+  // dériver vers un autre mode, chaque action ouvre un formulaire à usage
+  // unique cohérent avec le langage validé, sans dupliquer la logique
+  // métier (même formulaire, présentation resserrée à une seule action).
+  const presetMode = route.params?.mode as Mode | undefined;
+  const initialMode = presetMode ?? 'depense';
   const [mode, setMode] = useState<Mode>(initialMode);
+  const modeLocked = presetMode != null;
   // M3 §5 — arrivée depuis Budget > Fiche > "+ Ajouter une dépense" : réutilise
   // ce même formulaire (jamais un second écran/objet financier), le rattachement
   // au budget est explicite (variableBudgetId) — la catégorie/le type ne sont
@@ -413,11 +421,15 @@ export function QuickAddScreen() {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingTop: topInset, paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>{presetBudget ? 'Ajouter une dépense' : 'Ajouter'}</Text>
+        <Text style={styles.title}>
+          {presetBudget ? 'Ajouter une dépense' : modeLocked ? MODE_LABEL[mode].replace(/^\+ /, '') : 'Ajouter'}
+        </Text>
 
         {/* M3 §5 — rattaché à un budget précis : un seul type d'objet possible
-            (une dépense), jamais de choix Revenu/Échéance/Transfert ici. */}
-        {!presetBudget && (
+            (une dépense), jamais de choix Revenu/Échéance/Transfert ici.
+            Convergence V6 §4 — idem quand le mode arrive verrouillé depuis la
+            bottom sheet "+" : aucun sélecteur de mode, formulaire à usage unique. */}
+        {!presetBudget && !modeLocked && (
           <View style={styles.modeRow}>
             {(Object.keys(MODE_LABEL) as Mode[]).map((m) => (
               <TouchableOpacity key={m} style={[styles.modeChip, mode === m && styles.modeChipActive]} onPress={() => setMode(m)}>

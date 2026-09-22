@@ -39,11 +39,11 @@ describe('HamburgerMenuScreen — CTA "Rejoindre un foyer"', () => {
     expect(screen.getByText('Rejoindre un foyer')).toBeTruthy();
   });
 
-  it('affiche le CTA avant la section "Mon foyer"', async () => {
+  it('affiche le CTA avant la première section ("Gestion")', async () => {
     const view = await render(<HamburgerMenuScreen />);
     const allTexts = view.getAllByText(/.*/).map((node) => node.props.children);
     const ctaIndex = allTexts.findIndex((t) => t === 'Rejoindre un foyer');
-    const sectionIndex = allTexts.findIndex((t) => t === 'Mon foyer');
+    const sectionIndex = allTexts.findIndex((t) => t === 'Gestion');
     expect(ctaIndex).toBeGreaterThanOrEqual(0);
     expect(sectionIndex).toBeGreaterThanOrEqual(0);
     expect(ctaIndex).toBeLessThan(sectionIndex);

@@ -16,7 +16,30 @@ export interface PlanningRow {
   label: string;
   section: PlanningSection;
   valuesByMonth: Record<string, number>;
+  // Convergence V6 §7/§8 — quand la charge appartient à un plan financier
+  // (regroupement simple de charges, RIEN d'autre : pas d'objectif d'épargne,
+  // pas de couverture), ce champ permet de nicher la ligne sous le total du
+  // plan dans CHARGES CONNUES, jamais recalculé ici (déjà exposé par le
+  // backend sur MonthlyLineItem.financialPlanId).
+  financialPlanId?: string | null;
 }
+
+export interface FinancialPlanRef {
+  id: string;
+  label: string;
+}
+
+/** Ligne synthétique = total mensuel du plan (somme de ses charges). */
+export interface PlanningPlanTotalRow {
+  key: string;
+  label: string;
+  section: PlanningSection;
+  valuesByMonth: Record<string, number>;
+  financialPlanId: string;
+  children: PlanningRow[];
+}
+
+export type PlanningTreeItem = { kind: 'standalone'; row: PlanningRow } | { kind: 'plan'; row: PlanningPlanTotalRow };
 
 export interface PlanningProvision {
   id: string;
@@ -39,11 +62,11 @@ export interface PlanningProvision {
 export function buildPlanningRows(months: MonthBucketApi[], provisions: PlanningProvision[] = []): PlanningRow[] {
   const rows = new Map<string, PlanningRow>();
 
-  function addRow(section: PlanningSection, rowKey: string, label: string, month: string, amount: number) {
+  function addRow(section: PlanningSection, rowKey: string, label: string, month: string, amount: number, financialPlanId?: string | null) {
     const key = `${section}:${rowKey}`;
     let row = rows.get(key);
     if (!row) {
-      row = { key, label, section, valuesByMonth: {} };
+      row = { key, label, section, valuesByMonth: {}, financialPlanId: financialPlanId ?? null };
       rows.set(key, row);
     }
     row.valuesByMonth[month] = (row.valuesByMonth[month] ?? 0) + amount;
@@ -55,7 +78,7 @@ export function buildPlanningRows(months: MonthBucketApi[], provisions: Planning
     }
     for (const item of m.expense_items) {
       const section: PlanningSection = item.category === 'projet' ? 'exceptionnel' : 'charges';
-      addRow(section, `${item.entityType}:${item.label}`, item.label, m.month, item.amount);
+      addRow(section, `${item.entityType}:${item.label}`, item.label, m.month, item.amount, item.financialPlanId);
     }
     for (const b of m.budget_items_this_period) {
       addRow('enveloppes', b.budget_id, b.label, m.month, b.amount);
@@ -72,6 +95,53 @@ export function buildPlanningRows(months: MonthBucketApi[], provisions: Planning
     if (a.section !== b.section) return SECTION_ORDER.indexOf(a.section) - SECTION_ORDER.indexOf(b.section);
     return a.label.localeCompare(b.label, 'fr');
   });
+}
+
+/**
+ * Convergence V6 §8 — regroupe, à l'intérieur de chaque section, les lignes
+ * portant le même financialPlanId sous une ligne totalisée dépliable ([+]/[-]),
+ * triée avant les lignes autonomes. Le total du plan = somme, mois par mois,
+ * des charges qui lui appartiennent (jamais un second calcul de montant).
+ */
+export function groupRowsByPlan(rows: PlanningRow[], plans: FinancialPlanRef[]): PlanningTreeItem[] {
+  const planLabel = new Map(plans.map((p) => [p.id, p.label]));
+  const byPlan = new Map<string, PlanningRow[]>();
+  const standalone: PlanningRow[] = [];
+
+  for (const row of rows) {
+    if (row.financialPlanId) {
+      const list = byPlan.get(row.financialPlanId) ?? [];
+      list.push(row);
+      byPlan.set(row.financialPlanId, list);
+    } else {
+      standalone.push(row);
+    }
+  }
+
+  const planItems: PlanningTreeItem[] = Array.from(byPlan.entries()).map(([planId, children]) => {
+    const valuesByMonth: Record<string, number> = {};
+    for (const child of children) {
+      for (const [month, amount] of Object.entries(child.valuesByMonth)) {
+        valuesByMonth[month] = (valuesByMonth[month] ?? 0) + amount;
+      }
+    }
+    const label = planLabel.get(planId) ?? 'Plan financier';
+    return {
+      kind: 'plan',
+      row: {
+        key: `plan:${planId}`,
+        label,
+        section: children[0].section,
+        valuesByMonth,
+        financialPlanId: planId,
+        children: children.slice().sort((a, b) => a.label.localeCompare(b.label, 'fr')),
+      },
+    };
+  });
+
+  const standaloneItems: PlanningTreeItem[] = standalone.map((row) => ({ kind: 'standalone', row }));
+
+  return [...planItems, ...standaloneItems].sort((a, b) => a.row.label.localeCompare(b.row.label, 'fr'));
 }
 
 export function rowsBySection(rows: PlanningRow[]): Array<{ section: PlanningSection; rows: PlanningRow[] }> {

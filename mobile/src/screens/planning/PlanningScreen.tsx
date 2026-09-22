@@ -1,33 +1,51 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as api from '../../api/client';
 import { colors, spacing } from '../../ui/theme';
 import { useTopInset } from '../../ui/useTopInset';
 import { useBottomInset } from '../../ui/useBottomInset';
-import { useResponsiveLayout, DeviceClass, Orientation } from '../../ui/useResponsiveLayout';
 import { formatDh } from '../../ui/formatMoney';
-import { buildPlanningRows, rowsBySection, isCurrentMonth, SECTION_LABEL, PlanningRow, PlanningProvision } from './planningLogic';
+import {
+  buildPlanningRows,
+  rowsBySection,
+  groupRowsByPlan,
+  isCurrentMonth,
+  SECTION_LABEL,
+  PlanningRow,
+  PlanningPlanTotalRow,
+  PlanningProvision,
+  FinancialPlanRef,
+} from './planningLogic';
 
 const LABEL_COL_WIDTH = 152;
 const MONTH_COL_WIDTH = 110;
 const ROW_HEIGHT = 40;
 
-type GridLine = { kind: 'section'; label: string } | { kind: 'row'; row: PlanningRow };
+type GridLine =
+  | { kind: 'section'; label: string }
+  | { kind: 'plan'; row: PlanningPlanTotalRow }
+  | { kind: 'child'; row: PlanningRow }
+  | { kind: 'row'; row: PlanningRow };
 
-/**
- * Refonte maquette V6B §5/§17/§20 — horizon (nombre de mois RÉCUPÉRÉS, pas
- * seulement affichés) croissant avec la largeur disponible : 3 en portrait
- * mobile, 6 en paysage mobile/tablette, 12 en desktop — sur un écran large,
- * aller chercher plus de mois profite réellement de l'espace plutôt que de
- * laisser du vide à droite d'un horizon toujours fixé à 6. Valeur toujours
- * choisie dans l'enum accepté par GET /projection/monthly (3/6/12/24/36/60) —
- * une valeur hors enum (ex. 7) fait échouer l'appel en 400.
- */
-function horizonMonthsFor(deviceClass: DeviceClass, orientation: Orientation): number {
-  if (deviceClass === 'desktop') return 12;
-  if (deviceClass === 'tablet') return 6;
-  return orientation === 'landscape' ? 6 : 3;
+// Convergence V6 §6 — VISIBLE MONTH COUNT != DATA HORIZON. "2 à 3 mois visibles
+// sur téléphone" décrivait le rendu (colonnes de largeur fixe + défilement
+// horizontal, déjà géré par la ScrollView ci-dessous), jamais le nombre de
+// mois RÉCUPÉRÉS : l'horizon de données reste au minimum 12 mois glissants
+// sur toutes les tailles d'écran. Un utilisateur qui veut voir plus loin
+// avance/recule par fenêtre de 12 mois (boutons ci-dessous, via le paramètre
+// `at`) plutôt que de charger une infinité de colonnes d'un coup.
+const DATA_HORIZON_MONTHS = 12;
+
+function shiftMonths(iso: string, months: number): string {
+  const d = new Date(iso + 'T00:00:00Z');
+  d.setUTCMonth(d.getUTCMonth() + months);
+  return d.toISOString().slice(0, 10);
+}
+
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 /**
@@ -46,16 +64,23 @@ function horizonMonthsFor(deviceClass: DeviceClass, orientation: Orientation): n
 export function PlanningScreen() {
   const top = useTopInset();
   const bottom = useBottomInset();
-  const { deviceClass, orientation } = useResponsiveLayout();
-  const horizonMonths = horizonMonthsFor(deviceClass, orientation);
+  const [windowStart, setWindowStart] = useState<string>(todayIso());
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<api.MonthlyProjectionApi | null>(null);
   const [provisions, setProvisions] = useState<PlanningProvision[]>([]);
+  const [financialPlans, setFinancialPlans] = useState<FinancialPlanRef[]>([]);
+  // Convergence V6 §8 — plans financiers repliés par défaut ([+] Scolarité
+  // 27 145 DH ... seul le total est visible tant que non déplié).
+  const [expandedPlans, setExpandedPlans] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [res, provisionList] = await Promise.all([api.getMonthlyProjection({ horizonMonths }), api.listProvisions()]);
+      const [res, provisionList, plans] = await Promise.all([
+        api.getMonthlyProjection({ at: windowStart, horizonMonths: DATA_HORIZON_MONTHS }),
+        api.listProvisions(),
+        api.listFinancialPlans(),
+      ]);
       setData(res);
       const withCalendar = await Promise.all(
         provisionList.map(async (p: any) => {
@@ -64,10 +89,11 @@ export function PlanningScreen() {
         }),
       );
       setProvisions(withCalendar);
+      setFinancialPlans((plans as any[]).map((p) => ({ id: p.id, label: p.label })));
     } finally {
       setLoading(false);
     }
-  }, [horizonMonths]);
+  }, [windowStart]);
 
   useFocusEffect(
     useCallback(() => {
@@ -75,16 +101,38 @@ export function PlanningScreen() {
     }, [load]),
   );
 
-  const groups = useMemo(() => (data ? rowsBySection(buildPlanningRows(data.months, provisions)) : []), [data, provisions]);
+  const groups = useMemo(() => {
+    if (!data) return [];
+    const rows = buildPlanningRows(data.months, provisions);
+    return rowsBySection(rows).map((g) => ({ section: g.section, items: groupRowsByPlan(g.rows, financialPlans) }));
+  }, [data, provisions, financialPlans]);
+
+  function togglePlan(planId: string) {
+    setExpandedPlans((prev) => {
+      const next = new Set(prev);
+      if (next.has(planId)) next.delete(planId);
+      else next.add(planId);
+      return next;
+    });
+  }
 
   const lines: GridLine[] = useMemo(() => {
     const out: GridLine[] = [];
     for (const group of groups) {
       out.push({ kind: 'section', label: SECTION_LABEL[group.section] });
-      for (const row of group.rows) out.push({ kind: 'row', row });
+      for (const item of group.items) {
+        if (item.kind === 'plan') {
+          out.push({ kind: 'plan', row: item.row });
+          if (expandedPlans.has(item.row.financialPlanId)) {
+            for (const child of item.row.children) out.push({ kind: 'child', row: child });
+          }
+        } else {
+          out.push({ kind: 'row', row: item.row });
+        }
+      }
     }
     return out;
-  }, [groups]);
+  }, [groups, expandedPlans]);
 
   if (loading && !data) {
     return (
@@ -99,7 +147,27 @@ export function PlanningScreen() {
     <View style={[styles.container, { paddingTop: top }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Planning</Text>
-        <Text style={styles.subtitle}>Revenus, charges et enveloppes sur {data.months.length} mois.</Text>
+        <View style={styles.windowRow}>
+          <TouchableOpacity
+            testID="planning-window-prev"
+            style={styles.windowButton}
+            onPress={() => setWindowStart((w) => shiftMonths(w, -DATA_HORIZON_MONTHS))}
+          >
+            <Ionicons name="chevron-back" size={16} color={colors.v6Text} />
+            <Text style={styles.windowButtonText}>12 mois</Text>
+          </TouchableOpacity>
+          <Text style={styles.subtitle} numberOfLines={1}>
+            {data.months[0]?.label} → {data.months[data.months.length - 1]?.label}
+          </Text>
+          <TouchableOpacity
+            testID="planning-window-next"
+            style={styles.windowButton}
+            onPress={() => setWindowStart((w) => shiftMonths(w, DATA_HORIZON_MONTHS))}
+          >
+            <Text style={styles.windowButtonText}>12 mois</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.v6Text} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: bottom }}>
@@ -111,6 +179,27 @@ export function PlanningScreen() {
                 {line.kind === 'section' && <Text style={styles.sectionText}>{line.label.toUpperCase()}</Text>}
                 {line.kind === 'row' && (
                   <Text style={styles.rowLabel} numberOfLines={1}>
+                    {line.row.label}
+                  </Text>
+                )}
+                {line.kind === 'plan' && (
+                  <TouchableOpacity
+                    testID={`planning-plan-toggle-${line.row.financialPlanId}`}
+                    style={styles.planLabelRow}
+                    onPress={() => togglePlan(line.row.financialPlanId)}
+                  >
+                    <Ionicons
+                      name={expandedPlans.has(line.row.financialPlanId) ? 'remove-circle-outline' : 'add-circle-outline'}
+                      size={16}
+                      color={colors.v6Text}
+                    />
+                    <Text style={styles.rowLabelPlan} numberOfLines={1}>
+                      {line.row.label}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                {line.kind === 'child' && (
+                  <Text style={styles.rowLabelChild} numberOfLines={1}>
                     {line.row.label}
                   </Text>
                 )}
@@ -166,7 +255,10 @@ const styles = StyleSheet.create({
   center: { alignItems: 'center', justifyContent: 'center' },
   header: { paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
   title: { fontSize: 22, fontWeight: '800', color: colors.v6Text },
-  subtitle: { fontSize: 12, color: colors.v6Muted, marginTop: 3 },
+  subtitle: { fontSize: 12, color: colors.v6Muted, flexShrink: 1, textAlign: 'center' },
+  windowRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6, gap: 6 },
+  windowButton: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  windowButtonText: { fontSize: 11, fontWeight: '700', color: colors.v6Text },
   gridRow: { flexDirection: 'row' },
   rowLine: { flexDirection: 'row' },
   cell: {
@@ -181,6 +273,9 @@ const styles = StyleSheet.create({
   sectionCell: { backgroundColor: colors.v6SurfaceSoft },
   sectionText: { fontSize: 10, fontWeight: '850' as any, color: colors.v6Muted, letterSpacing: 0.4 },
   rowLabel: { fontSize: 12, color: colors.v6Text, fontWeight: '600' },
+  planLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  rowLabelPlan: { fontSize: 12, color: colors.v6Text, fontWeight: '700', flexShrink: 1 },
+  rowLabelChild: { fontSize: 11, color: colors.v6Muted, fontWeight: '500', paddingLeft: 20 },
   monthHeaderCell: { backgroundColor: colors.v6SurfaceSoft, alignItems: 'center' },
   monthHeaderText: { fontSize: 11, fontWeight: '800', color: colors.v6Muted },
   currentMonthHeader: { backgroundColor: colors.v6BlueSoft },

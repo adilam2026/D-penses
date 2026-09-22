@@ -169,57 +169,35 @@ export function EnvelopesScreen() {
           );
         })}
 
-        {claimsSummary && (
-          <TouchableOpacity
-            testID="envelope-card-mutuelle"
-            style={[styles.card, cardWidthStyle]}
-            onPress={() => navigation.navigate('MedicalClaims')}
-          >
-            <View style={styles.cardHead}>
-              <View style={styles.cardHeadLeft}>
-                <Text style={styles.cardTitle}>Santé / Mutuelle</Text>
-                <Text style={styles.cardSubtitle}>Dossiers de remboursement</Text>
-              </View>
-              <View style={styles.cardRight}>
-                <Text style={styles.cardRightValue}>{claimsSummary.pendingCount}</Text>
-                <Text style={styles.cardRightLabel}>dossiers</Text>
-              </View>
-            </View>
-            <View style={styles.progressTrack}>
-              <View
-                style={[
-                  styles.progressFill,
-                  {
-                    width: `${claimsSummary.totalEngaged > 0 ? Math.round((claimsSummary.totalReimbursed / claimsSummary.totalEngaged) * 100) : 0}%`,
-                    backgroundColor: colors.v6Gold,
-                  },
-                ]}
-              />
-            </View>
-            <View style={styles.metricsRow}>
-              <View style={styles.metric}>
-                <Text style={styles.metricLabel}>Engagé</Text>
-                <Text style={styles.metricValue}>{formatDh(claimsSummary.totalEngaged)}</Text>
-              </View>
-              <View style={styles.metric}>
-                <Text style={styles.metricLabel}>Remboursé</Text>
-                <Text style={styles.metricValue}>{formatDh(claimsSummary.totalReimbursed)}</Text>
-              </View>
-              <View style={styles.metric}>
-                <Text style={styles.metricLabel}>En attente</Text>
-                <Text style={styles.metricValue}>{claimsSummary.pendingCount}</Text>
-              </View>
-              <View style={styles.metric}>
-                <Text style={styles.metricLabel}>Statut</Text>
-                <Text style={styles.metricValue}>{claimsSummary.pendingCount > 0 ? 'À suivre' : 'À jour'}</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-        )}
       </View>
 
+      {/* Convergence V6 §11 — Santé/Mutuelle n'est JAMAIS l'enveloppe principale
+          du système : ce n'est pas une carte "enveloppe" (progress bar +
+          4 métriques pleine largeur), mais une entrée secondaire compacte,
+          affichée qu'il y ait ou non de vraies enveloppes, sans jamais
+          dominer l'écran ni se substituer à l'état vide ci-dessous. */}
+      {claimsSummary && (
+        <TouchableOpacity testID="envelope-card-mutuelle" style={styles.mutuelleRow} onPress={() => navigation.navigate('MedicalClaims')}>
+          <View style={styles.mutuelleIcon}>
+            <Text style={styles.mutuelleIconText}>+</Text>
+          </View>
+          <View style={styles.mutuelleTextCol}>
+            <Text style={styles.mutuelleTitle}>Suivi mutuelle</Text>
+            <Text style={styles.mutuelleSubtitle}>
+              {claimsSummary.pendingCount > 0 ? `${claimsSummary.pendingCount} dossier(s) en attente` : 'À jour — aucun dossier en attente'}
+            </Text>
+          </View>
+          <Text style={styles.mutuelleAmount}>{formatDh(claimsSummary.totalReimbursed)}</Text>
+        </TouchableOpacity>
+      )}
+
       {!loading && pockets.length === 0 && provisionCards.length === 0 && (
-        <Text style={styles.empty}>Aucune enveloppe pour l'instant.</Text>
+        <View style={styles.emptyState}>
+          <Text style={styles.empty}>Aucune enveloppe pour l'instant.</Text>
+          <TouchableOpacity testID="envelopes-empty-create" style={styles.emptyCta} onPress={() => navigation.navigate('CreatePocket')}>
+            <Text style={styles.emptyCtaText}>Créer une enveloppe</Text>
+          </TouchableOpacity>
+        </View>
       )}
     </ScrollView>
   );
@@ -255,5 +233,33 @@ const styles = StyleSheet.create({
   metricLabel: { fontSize: 10, color: colors.v6Muted },
   metricValue: { fontSize: 13, fontWeight: '700', color: colors.v6Text, marginTop: 4 },
   note: { marginTop: spacing.sm + 2, padding: spacing.sm + 3, borderRadius: radius.md, backgroundColor: colors.v6SurfaceSoft, color: '#5E6C7F', fontSize: 11 },
-  empty: { textAlign: 'center', color: colors.v6Muted, marginTop: spacing.xl, fontSize: 13 },
+  mutuelleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.v6Surface,
+    borderWidth: 1,
+    borderColor: colors.v6Line,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.sm + 4,
+    paddingHorizontal: spacing.md,
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  mutuelleIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.v6Gold + '22',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mutuelleIconText: { fontSize: 16, fontWeight: '800', color: colors.v6Gold },
+  mutuelleTextCol: { flex: 1 },
+  mutuelleTitle: { fontSize: 13, fontWeight: '700', color: colors.v6Text },
+  mutuelleSubtitle: { fontSize: 11, color: colors.v6Muted, marginTop: 2 },
+  mutuelleAmount: { fontSize: 12, fontWeight: '700', color: colors.v6Text },
+  emptyState: { alignItems: 'center', marginTop: spacing.xl, gap: spacing.md },
+  empty: { textAlign: 'center', color: colors.v6Muted, fontSize: 13 },
+  emptyCta: { backgroundColor: colors.v6Blue, borderRadius: radius.md, paddingVertical: 10, paddingHorizontal: 20 },
+  emptyCtaText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 });

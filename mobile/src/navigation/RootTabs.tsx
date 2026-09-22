@@ -5,6 +5,7 @@ import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { HomeScreen } from '../screens/HomeScreen';
 import { PlanningScreen } from '../screens/planning/PlanningScreen';
 import { EnvelopesScreen } from '../screens/envelopes/EnvelopesScreen';
+import { HamburgerMenuScreen } from '../screens/HamburgerMenuScreen';
 import { useQuickActions } from '../state/QuickActionsContext';
 
 const Tab = createBottomTabNavigator();
@@ -15,6 +16,7 @@ const TAB_ICONS: Record<string, { active: IconName; inactive: IconName }> = {
   Accueil: { active: 'home', inactive: 'home-outline' },
   Planning: { active: 'grid', inactive: 'grid-outline' },
   Enveloppes: { active: 'wallet', inactive: 'wallet-outline' },
+  Plus: { active: 'menu', inactive: 'menu-outline' },
 };
 
 // Jamais rendu : `tabBarButton` remplace entièrement le bouton par défaut de cet
@@ -36,13 +38,12 @@ function CentralPlusButton() {
 }
 
 /**
- * Refonte maquette V6B §19 — navigation principale mandatée : Accueil /
- * Planning / [+] / Enveloppes, 4 positions symétriques (le bouton central
- * occupe le 3e des 4 emplacements). Transactions/Calendrier/Projection/
- * Budgets/Objectifs et le reste de l'app existante restent entièrement
- * fonctionnels et atteignables depuis le menu ☰ (HamburgerMenuScreen,
- * menuSections.ts) — rien n'est supprimé, seule la barre du bas change pour
- * suivre la maquette. Le bouton central n'est jamais un écran réel.
+ * Convergence V6 — navigation principale à 5 positions : Accueil / Planning /
+ * [+] / Enveloppes / Plus (le bouton central "+" occupe la 3e position). Le
+ * "Plus" est désormais un onglet direct de la barre du bas (plus jamais caché
+ * derrière un ☰ à part), pointant vers le même HamburgerMenuScreen
+ * (menuSections.ts) — rien n'est supprimé, seul l'accès devient immédiat. Le
+ * bouton central "+" n'est jamais un écran réel.
  */
 export function RootTabs() {
   return (
@@ -66,6 +67,7 @@ export function RootTabs() {
         options={{ tabBarButton: () => <CentralPlusButton />, tabBarLabel: () => null }}
       />
       <Tab.Screen name="Enveloppes" component={EnvelopesScreen} />
+      <Tab.Screen name="Plus" component={HamburgerMenuScreen} />
     </Tab.Navigator>
   );
 }
