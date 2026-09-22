@@ -31,8 +31,10 @@ import {
 // de saisie "Nouvelle transaction" ni le tiroir de filtres, toujours sur
 // MAX_CONTENT_WIDTH=1600 comme les 14 autres écrans web) : un tableau étiré
 // sur 1600px laisse un vide énorme entre une date sur 2 caractères et un
-// montant aligné à droite. 1120px reste dans la fourchette 1000-1200 demandée.
-const LIST_MAX_WIDTH = 1120;
+// montant aligné à droite. Ajusté à 1260px (fourchette 1200-1300 demandée
+// après retour visuel grand écran) pour mieux exploiter les 7 colonnes sans
+// revenir à un tableau étiré jusqu'aux bords.
+const LIST_MAX_WIDTH = 1260;
 
 // Portail Web v4 §1 (règle "ne rien inventer") — EXACTEMENT les 4 actions déjà
 // réellement supportées par QuickAddScreen (mobile), mêmes endpoints, mêmes
