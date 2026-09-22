@@ -87,7 +87,10 @@ export function EnvelopesScreen() {
               <View style={styles.cardHead}>
                 <View style={styles.cardHeadLeft}>
                   <Text style={styles.cardTitle}>{provision.name}</Text>
-                  <Text style={styles.cardSubtitle}>{accountName ? `${accountName} • ` : ''}Plan financier</Text>
+                  {/* Convergence V6 §5 — une enveloppe est UNIQUEMENT une
+                      réserve d'argent : jamais le mot "Plan financier"
+                      (concept désormais distinct, cf. Plans financiers). */}
+                  <Text style={styles.cardSubtitle}>{accountName ? `${accountName} • ` : ''}Réserve à échéances</Text>
                 </View>
                 <View style={styles.cardRight}>
                   <Text style={styles.cardRightValue}>{view.percent}%</Text>
@@ -117,9 +120,6 @@ export function EnvelopesScreen() {
                   <Text style={styles.metricValue}>{formatDh(toNum(sufficiency.versementMensuelRecommande))}</Text>
                 </View>
               </View>
-              {toNum(sufficiency.versementMensuelRecommande) > 0 && (
-                <Text style={styles.note}>Cotisation recalculée après un versement inférieur au montant prévu.</Text>
-              )}
             </TouchableOpacity>
           );
         })}

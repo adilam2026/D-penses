@@ -77,7 +77,13 @@ export function buildPlanningRows(months: MonthBucketApi[], provisions: Planning
       addRow('revenus', `${item.entityType}:${item.label}`, item.label, m.month, item.amount);
     }
     for (const item of m.expense_items) {
-      const section: PlanningSection = item.category === 'projet' ? 'exceptionnel' : 'charges';
+      // Convergence V6 §3 — un plan financier (regroupement de charges) doit
+      // TOUJOURS apparaître dans CHARGES CONNUES, jamais en EXCEPTIONNEL :
+      // le backend classe toute charge rattachée à un plan en category=
+      // 'projet' (monthly-projection.util.ts classify()), ce qui l'envoyait
+      // ici à tort en 'exceptionnel'. financialPlanId prime désormais sur
+      // category pour le choix de section.
+      const section: PlanningSection = item.financialPlanId ? 'charges' : item.category === 'projet' ? 'exceptionnel' : 'charges';
       addRow(section, `${item.entityType}:${item.label}`, item.label, m.month, item.amount, item.financialPlanId);
     }
     for (const b of m.budget_items_this_period) {

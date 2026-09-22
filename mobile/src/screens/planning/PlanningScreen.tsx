@@ -148,23 +148,27 @@ export function PlanningScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Planning</Text>
         <View style={styles.windowRow}>
+          {/* Convergence V6 §7 — wording explicite (jamais "‹ 12 mois"/"12 mois
+              ›", qui ne communiquait pas la navigation précédente/suivante) :
+              "Précédent"/"Suivant" + la période affichée au centre, compact
+              pour ne jamais surcharger l'écran mobile. */}
           <TouchableOpacity
             testID="planning-window-prev"
             style={styles.windowButton}
             onPress={() => setWindowStart((w) => shiftMonths(w, -DATA_HORIZON_MONTHS))}
           >
             <Ionicons name="chevron-back" size={16} color={colors.v6Text} />
-            <Text style={styles.windowButtonText}>12 mois</Text>
+            <Text style={styles.windowButtonText}>Précédent</Text>
           </TouchableOpacity>
           <Text style={styles.subtitle} numberOfLines={1}>
-            {data.months[0]?.label} → {data.months[data.months.length - 1]?.label}
+            {data.months[0]?.label} — {data.months[data.months.length - 1]?.label}
           </Text>
           <TouchableOpacity
             testID="planning-window-next"
             style={styles.windowButton}
             onPress={() => setWindowStart((w) => shiftMonths(w, DATA_HORIZON_MONTHS))}
           >
-            <Text style={styles.windowButtonText}>12 mois</Text>
+            <Text style={styles.windowButtonText}>Suivant</Text>
             <Ionicons name="chevron-forward" size={16} color={colors.v6Text} />
           </TouchableOpacity>
         </View>

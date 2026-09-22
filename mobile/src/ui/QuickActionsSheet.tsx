@@ -115,7 +115,7 @@ export function QuickActionsSheet() {
             ? envelopeChoices.map((e) => ({
                 key: `${e.kind}-${e.id}`,
                 label: e.name,
-                description: e.kind === 'provision' ? 'Plan financier' : 'Réserve permanente',
+                description: e.kind === 'provision' ? 'Réserve à échéances' : 'Réserve permanente',
                 icon: 'wallet-outline' as IconName,
                 onPress: () => navigation.navigate('EnvelopeDetail', { kind: e.kind, id: e.id }),
               }))

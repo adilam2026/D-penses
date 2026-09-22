@@ -16,6 +16,11 @@ interface Category {
   kind: 'income' | 'expense' | 'both';
 }
 
+interface FinancialPlanOption {
+  id: string;
+  label: string;
+}
+
 interface Account {
   id: string;
   name: string;
@@ -40,6 +45,11 @@ export function CreateChargeScreen() {
   const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [categories, setCategories] = useState<Category[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [financialPlans, setFinancialPlans] = useState<FinancialPlanOption[]>([]);
+  // Convergence V6 §9 — "Plan financier : Aucun / Scolarité / Vacances / etc."
+  // à la création d'une charge connue : rattache simplement la charge à un
+  // regroupement (financialPlanId), jamais un second moteur.
+  const [financialPlanId, setFinancialPlanId] = useState<string | null>(null);
 
   const [label, setLabel] = useState('');
   const [recurrence, setRecurrence] = useState('mensuel');
@@ -57,6 +67,7 @@ export function CreateChargeScreen() {
     useCallback(() => {
       api.listCategories().then((list: Category[]) => setCategories(list.filter((c) => c.kind === 'expense' || c.kind === 'both')));
       api.listAccounts().then((list: Array<{ id: string; name: string }>) => setAccounts(list));
+      api.listFinancialPlans().then((list: FinancialPlanOption[]) => setFinancialPlans(list));
     }, []),
   );
 
@@ -82,6 +93,7 @@ export function CreateChargeScreen() {
         recurrenceAnchorDate: recurrence === 'ponctuel' ? undefined : dueDate,
         categoryId: categoryId ?? undefined,
         defaultAccountId: defaultAccountId ?? undefined,
+        financialPlanId: financialPlanId ?? undefined,
       });
       await api.createDeadline(plan.id, {
         dueDate,
@@ -140,6 +152,17 @@ export function CreateChargeScreen() {
             value={categoryId}
             options={categories.map((c) => ({ value: c.id, label: c.name }))}
             onChange={setCategoryId}
+          />
+        )}
+
+        {financialPlans.length > 0 && (
+          <Select
+            testID="charge-financial-plan-select"
+            label="Plan financier (facultatif)"
+            placeholder="Aucun"
+            value={financialPlanId ?? ''}
+            onChange={(v) => setFinancialPlanId(v || null)}
+            options={[{ value: '', label: 'Aucun' }, ...financialPlans.map((p) => ({ value: p.id, label: p.label }))]}
           />
         )}
 

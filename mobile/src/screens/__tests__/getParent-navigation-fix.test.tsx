@@ -38,6 +38,7 @@ jest.mock('../../api/client', () => {
   return {
     ...actual,
     listFinancialPlans: jest.fn(),
+    createFinancialPlan: jest.fn(),
     listChildren: jest.fn(),
     getChildCosts: jest.fn(),
     listVariableBudgets: jest.fn(),
@@ -51,26 +52,30 @@ beforeEach(() => {
 });
 
 describe('FinancialPlansScreen', () => {
-  it('bouton "+" → choix "Frais scolaires" navigue réellement vers SchoolWizard', async () => {
+  // Convergence V6C §1/§2 — le bouton "+" ouvre désormais directement le
+  // formulaire Nom/Description (jamais un choix de type de plan/wizard) ;
+  // la création navigue réellement vers FinancialPlanDetail (plain
+  // `navigate`, jamais `getParent()?.navigate` — même garde-fou que ci-dessous).
+  it('créer un plan (Nom/Description) navigue réellement vers FinancialPlanDetail', async () => {
     mockedApi.listFinancialPlans.mockResolvedValue([]);
+    mockedApi.createFinancialPlan.mockResolvedValue({ id: 'new-plan' });
     await render(<FinancialPlansScreen />);
     await waitFor(() => screen.getByTestId('financial-plans-add-button'));
     await fireEvent.press(screen.getByTestId('financial-plans-add-button'));
-    await waitFor(() => expect(screen.getByTestId('plan-type-choice-option-scolaire')).toBeTruthy());
+    await waitFor(() => screen.getByTestId('financial-plan-create-label'));
 
-    await fireEvent.press(screen.getByTestId('plan-type-choice-option-scolaire'));
+    await fireEvent.changeText(screen.getByTestId('financial-plan-create-label'), 'École 2026/2027');
+    await fireEvent.press(screen.getByTestId('financial-plan-create-save'));
 
-    expect(mockNavigate).toHaveBeenCalledWith('SchoolWizard');
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('FinancialPlanDetail', { id: 'new-plan' }));
   });
 
-  it('taper un plan navigue réellement vers FinancialPlanDetail', async () => {
-    mockedApi.listFinancialPlans.mockResolvedValue([
-      { id: 'p1', label: 'École', planType: 'school', destination: null, knownPlanCost: 1000, paidAmount: 200, provisionCoverage: 300, remainingDue: 500, completude: 'complet' },
-    ]);
+  it('taper "[Voir]" sur un plan navigue réellement vers FinancialPlanDetail', async () => {
+    mockedApi.listFinancialPlans.mockResolvedValue([{ id: 'p1', label: 'École', description: null, active: true, chargeCount: 3 }]);
     await render(<FinancialPlansScreen />);
-    await waitFor(() => screen.getByText(/École/));
+    await waitFor(() => screen.getByText('École'));
 
-    await fireEvent.press(screen.getByText(/École/));
+    await fireEvent.press(screen.getByTestId('financial-plan-view-p1'));
 
     expect(mockNavigate).toHaveBeenCalledWith('FinancialPlanDetail', { id: 'p1' });
   });

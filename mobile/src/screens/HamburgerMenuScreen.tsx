@@ -1,7 +1,8 @@
-import React from 'react';
-import { useNavigation } from '@react-navigation/native';
+import React, { useCallback, useState } from 'react';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as api from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { useBottomInset } from '../ui/useBottomInset';
 import { useTopInset } from '../ui/useTopInset';
@@ -20,24 +21,37 @@ export function HamburgerMenuScreen() {
   const bottomInset = useBottomInset();
   const topInset = useTopInset();
   const { signOut } = useAuth();
+  // Convergence V6 §8 — "Rejoindre un foyer" ne doit apparaître que si cela a
+  // du sens pour l'utilisateur courant, jamais inconditionnellement : un
+  // utilisateur qui jongle déjà entre plusieurs foyers connaît déjà le
+  // parcours (accessible via "Mes foyers" ci-dessous) — le CTA reste
+  // pertinent surtout pour qui n'a encore qu'un seul foyer (≤1 membership),
+  // même logique que le "Vos foyers" conditionnel de JoinHouseholdScreen.
+  const [showJoinCta, setShowJoinCta] = useState(true);
+
+  useFocusEffect(
+    useCallback(() => {
+      api
+        .listHouseholdMemberships()
+        .then((memberships: unknown[]) => setShowJoinCta(memberships.length <= 1))
+        .catch(() => setShowJoinCta(true));
+    }, []),
+  );
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingTop: topInset, paddingBottom: bottomInset }}>
       <Text style={styles.title}>Menu</Text>
 
-      {/* CTA UX §18 — "Rejoindre un foyer" mis en avant en action principale,
-          au-dessus de "Mon foyer" : réutilise la route "JoinHousehold"
-          existante (formulaire "Rejoindre un nouveau foyer"), jamais de
-          logique métier dupliquée. Toujours visible, même avec un foyer déjà
-          actif (multi-foyers). */}
-      <TouchableOpacity
-        testID="menu-join-household-cta"
-        style={styles.joinHouseholdCta}
-        onPress={() => navigation.navigate('JoinHousehold')}
-      >
-        <Ionicons name="person-add" size={20} color={colors.textOnPrimary} style={styles.rowIcon} />
-        <Text style={styles.joinHouseholdCtaText}>Rejoindre un foyer</Text>
-      </TouchableOpacity>
+      {showJoinCta && (
+        <TouchableOpacity
+          testID="menu-join-household-cta"
+          style={styles.joinHouseholdCta}
+          onPress={() => navigation.navigate('JoinHousehold')}
+        >
+          <Ionicons name="person-add" size={20} color={colors.textOnPrimary} style={styles.rowIcon} />
+          <Text style={styles.joinHouseholdCtaText}>Rejoindre un foyer</Text>
+        </TouchableOpacity>
+      )}
 
       {SECTIONS.map((section) => (
         <View key={section.title} style={styles.section}>
@@ -52,9 +66,15 @@ export function HamburgerMenuScreen() {
         </View>
       ))}
 
-      <TouchableOpacity style={styles.logout} onPress={signOut}>
-        <Text style={styles.logoutText}>Se déconnecter</Text>
-      </TouchableOpacity>
+      {/* Convergence V6 §8 — Déconnexion doit être une entrée de menu visible
+          en bas (même gabarit que les autres lignes), jamais un simple lien
+          flottant centré. */}
+      <View style={styles.section}>
+        <TouchableOpacity testID="menu-logout-row" style={[styles.row, styles.logoutRow]} onPress={signOut}>
+          <Ionicons name="log-out-outline" size={20} color={colors.danger} style={styles.rowIcon} />
+          <Text style={styles.logoutRowText}>Déconnexion</Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
@@ -85,6 +105,6 @@ const styles = StyleSheet.create({
   },
   rowIcon: { marginRight: 12 },
   rowText: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.textPrimary },
-  logout: { marginTop: spacing.sm, marginBottom: spacing.xxl, alignItems: 'center' },
-  logoutText: { color: colors.danger, fontSize: 13, fontWeight: '600' },
+  logoutRow: { marginBottom: spacing.xxl },
+  logoutRowText: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.danger },
 });

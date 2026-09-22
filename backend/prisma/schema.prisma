@@ -1307,6 +1307,13 @@ model FinancialPlan {
   id                String            @id @default(uuid())
   householdId       String            @map("household_id")
   label             String
+  // Convergence V6 §1 — nouveau modèle : le plan devient un simple regroupement
+  // logique de charges (id/label/description/active). description/active sont
+  // additifs, jamais destructifs pour les plans existants créés par les wizards
+  // (planType/destination/schoolYear/periodStart/periodEnd/vehicleId/housingId
+  // restent en base, ne pilotent plus la nouvelle UI mais ne sont jamais supprimés).
+  description       String?
+  active            Boolean           @default(true)
   // Lot 11 (§9/§11 cadrage V1) : distinction explicite du type de plan pour l'UI mobile
   // (assistant scolaire vs assistant voyage vs plan libre) — jamais déduite du texte de
   // `label`. Purement informatif, aucune logique métier ne branche dessus.

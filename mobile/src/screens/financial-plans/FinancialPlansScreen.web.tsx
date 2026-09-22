@@ -1,30 +1,39 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { PageHeader } from '../../web/ui/PageHeader.web';
-import { TwoColumnLayout } from '../../web/ui/TwoColumnLayout.web';
 import { MAX_CONTENT_WIDTH, webColors, webRadius, webSpacing } from '../../web/webTheme';
-import { formatDate } from '../transactions/transactionsLogic';
-import { COMPLETUDE_LABEL, FinancialPlan, PLAN_TYPE_ICON, upcomingDeadlines } from './financialPlansLogic';
+
+interface SimplePlan {
+  id: string;
+  label: string;
+  description: string | null;
+  active: boolean;
+  chargeCount: number;
+}
 
 /**
- * Portail Web v4 §1/§3/§6 (WEB-V4.2 révisé) — Plans financiers desktop :
- * blocs riches (montants + jusqu'à 5 "Prochaines échéances" non soldées,
- * retard d'abord) en colonne principale ; colonne d'action limitée aux 2
- * actions déjà réelles (École/Voyage) — aucun formulaire générique de plan,
- * aucun nouveau type. `deadlinesCertain` provient déjà de GET /financial-plans
- * (aucun appel/endpoint supplémentaire).
+ * Convergence V6C §1/§2 — Plans financiers desktop : même modèle simple que
+ * mobile (liste "Nom / N charges / Voir" + "+ Ajouter un plan"), plus aucun
+ * bloc de couverture/objectif/prochaines échéances/wizards École-Voyage.
  */
 export function FinancialPlansScreen() {
   const navigation = useNavigation<any>();
-  const [plans, setPlans] = useState<FinancialPlan[]>([]);
+  const [plans, setPlans] = useState<SimplePlan[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [createOpen, setCreateOpen] = useState(false);
+  const [label, setLabel] = useState('');
+  const [description, setDescription] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setPlans(await api.listFinancialPlans());
+      const all = (await api.listFinancialPlans()) as SimplePlan[];
+      setPlans(all.filter((p) => p.active !== false).sort((a, b) => a.label.localeCompare(b.label, 'fr', { sensitivity: 'base' })));
     } finally {
       setLoading(false);
     }
@@ -36,94 +45,96 @@ export function FinancialPlansScreen() {
     }, [load]),
   );
 
-  const mainContent =
-    loading && plans.length === 0 ? (
-      <ActivityIndicator style={{ marginTop: 24 }} />
-    ) : plans.length === 0 ? (
-      <Text style={styles.empty}>Aucun plan financier pour l'instant.</Text>
-    ) : (
-      <View style={styles.blockList}>
-        {plans.map((item) => {
-          const cost = item.knownPlanCost;
-          const paidPct = cost > 0 ? Math.max(0, Math.min(100, (item.paidAmount / cost) * 100)) : 0;
-          const provPct = cost > 0 ? Math.max(0, Math.min(100 - paidPct, (item.provisionCoverage / cost) * 100)) : 0;
-          const deadlines = upcomingDeadlines(item);
-          const now = Date.now();
-          return (
-            <View key={item.id} style={styles.block}>
-              <View style={styles.blockHeader}>
-                <Text style={styles.planIcon}>{PLAN_TYPE_ICON[item.planType]}</Text>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.blockTitle} numberOfLines={1}>
-                    {item.label}
-                    {item.destination ? ` · ${item.destination}` : ''}
-                  </Text>
-                  <Text style={styles.blockMeta}>{COMPLETUDE_LABEL[item.completude]}</Text>
-                </View>
-                <Text style={styles.blockAmount}>{cost.toLocaleString('fr-FR')} DH</Text>
-              </View>
+  function openCreate() {
+    setLabel('');
+    setDescription('');
+    setError(null);
+    setCreateOpen(true);
+  }
 
-              <View style={styles.figuresRow}>
-                <Text style={styles.figureText}>Payé {item.paidAmount.toLocaleString('fr-FR')} DH</Text>
-                <Text style={styles.figureText}>Provisionné {item.provisionCoverage.toLocaleString('fr-FR')} DH</Text>
-                {item.remainingDue > 0 && <Text style={styles.figureRemaining}>Reste à financer {item.remainingDue.toLocaleString('fr-FR')} DH</Text>}
-              </View>
-
-              {cost > 0 && (paidPct > 0 || provPct > 0) && (
-                <View style={styles.planTrack}>
-                  <View style={[styles.planTrackPaid, { width: `${paidPct}%` }]} />
-                  <View style={[styles.planTrackProv, { width: `${provPct}%` }]} />
-                </View>
-              )}
-
-              <View style={styles.deadlinesSection}>
-                <Text style={styles.deadlinesTitle}>Prochaines échéances</Text>
-                {deadlines.length === 0 ? (
-                  <Text style={styles.activityEmpty}>Aucune échéance non soldée.</Text>
-                ) : (
-                  deadlines.map((d) => {
-                    const overdue = new Date(d.dueDate).getTime() < now;
-                    return (
-                      <TouchableOpacity key={d.id} style={styles.deadlineRow} onPress={() => navigation.navigate('DeadlineDetail', { id: d.id })}>
-                        <Text style={[styles.deadlineDate, overdue && styles.deadlineOverdueText]}>
-                          {formatDate(d.dueDate)}
-                          {overdue ? ' · En retard' : ''}
-                        </Text>
-                        <Text style={styles.deadlineLabel} numberOfLines={1}>
-                          {d.chargePlanLabel}
-                        </Text>
-                        <Text style={styles.deadlineAmount}>{d.resteAPayer !== null ? `${d.resteAPayer.toLocaleString('fr-FR')} DH` : 'Montant inconnu'}</Text>
-                      </TouchableOpacity>
-                    );
-                  })
-                )}
-              </View>
-
-              <TouchableOpacity testID={`web-plan-card-${item.id}`} style={styles.viewPlanLink} onPress={() => navigation.navigate('FinancialPlanDetail', { id: item.id })}>
-                <Text style={styles.viewPlanLinkText}>Voir le plan →</Text>
-              </TouchableOpacity>
-            </View>
-          );
-        })}
-      </View>
-    );
-
-  const panel = (
-    <View style={styles.panelCard}>
-      <Text style={styles.panelTitle}>Nouveau plan</Text>
-      <TouchableOpacity testID="web-plan-new-school" style={styles.actionButton} onPress={() => navigation.navigate('SchoolWizard')}>
-        <Text style={styles.actionButtonText}>🎓 Frais scolaires</Text>
-      </TouchableOpacity>
-      <TouchableOpacity testID="web-plan-new-travel" style={styles.actionButton} onPress={() => navigation.navigate('TravelWizard')}>
-        <Text style={styles.actionButtonText}>✈️ Voyage</Text>
-      </TouchableOpacity>
-    </View>
-  );
+  async function onCreate() {
+    if (!label.trim()) {
+      setError('Le nom du plan est obligatoire');
+      return;
+    }
+    setCreating(true);
+    setError(null);
+    try {
+      const created = await api.createFinancialPlan({ label: label.trim(), description: description.trim() || undefined });
+      setCreateOpen(false);
+      await load();
+      navigation.navigate('FinancialPlanDetail', { id: created.id });
+    } catch (err) {
+      setError(err instanceof api.ApiError ? err.message : 'Création impossible');
+    } finally {
+      setCreating(false);
+    }
+  }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
-      <PageHeader title="Plans financiers" />
-      <TwoColumnLayout main={mainContent} panel={panel} />
+      <PageHeader
+        title="Plans financiers"
+        actions={
+          <TouchableOpacity testID="web-financial-plan-add" style={styles.addButton} onPress={openCreate}>
+            <Text style={styles.addButtonText}>+ Ajouter un plan</Text>
+          </TouchableOpacity>
+        }
+      />
+
+      {loading && plans.length === 0 ? (
+        <ActivityIndicator style={{ marginTop: 24 }} />
+      ) : plans.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.empty}>Aucun plan financier pour l'instant.</Text>
+          <TouchableOpacity testID="web-financial-plan-empty-create" style={styles.addButton} onPress={openCreate}>
+            <Text style={styles.addButtonText}>+ Ajouter un plan</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.grid}>
+          {plans.map((item) => (
+            <View key={item.id} style={styles.card} testID={`web-financial-plan-card-${item.id}`}>
+              <Text style={styles.cardTitle} numberOfLines={1}>
+                {item.label}
+              </Text>
+              <Text style={styles.cardMeta}>{item.chargeCount} charge{item.chargeCount > 1 ? 's' : ''}</Text>
+              <TouchableOpacity
+                testID={`web-financial-plan-view-${item.id}`}
+                style={styles.viewButton}
+                onPress={() => navigation.navigate('FinancialPlanDetail', { id: item.id })}
+              >
+                <Text style={styles.viewButtonText}>Voir →</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      )}
+
+      <Modal visible={createOpen} transparent animationType="fade" onRequestClose={() => setCreateOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard} testID="web-financial-plan-create-form">
+            <Text style={styles.modalTitle}>Nouveau plan</Text>
+            <TextInput style={styles.modalInput} value={label} onChangeText={setLabel} placeholder="Nom *" testID="web-financial-plan-create-label" />
+            <TextInput
+              style={styles.modalInput}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Description facultative"
+              testID="web-financial-plan-create-description"
+            />
+            {error && <Text style={styles.error}>{error}</Text>}
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalButtonSecondary} onPress={() => setCreateOpen(false)}>
+                <Text style={styles.modalButtonSecondaryText}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity testID="web-financial-plan-create-save" style={styles.modalButton} onPress={onCreate} disabled={creating}>
+                {creating ? <ActivityIndicator color={webColors.textOnPrimary} /> : <Text style={styles.modalButtonText}>Enregistrer</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -132,37 +143,39 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: webColors.background },
   scroll: { padding: webSpacing.xl, maxWidth: MAX_CONTENT_WIDTH, width: '100%', alignSelf: 'center' },
   empty: { color: webColors.textSecondary, fontSize: 13, lineHeight: 20 },
-
-  blockList: { gap: webSpacing.md },
-  block: { backgroundColor: webColors.surface, borderRadius: webRadius.lg, padding: webSpacing.md, borderWidth: 1, borderColor: webColors.borderStrong },
-  blockHeader: { flexDirection: 'row', alignItems: 'center' },
-  planIcon: { fontSize: 22, marginRight: webSpacing.sm },
-  blockTitle: { fontSize: 15, fontWeight: '700', color: webColors.textPrimary },
-  blockMeta: { fontSize: 11, color: webColors.warning, marginTop: 2 },
-  blockAmount: { fontSize: 18, fontWeight: '800', color: webColors.textPrimary, marginLeft: webSpacing.sm },
-
-  figuresRow: { flexDirection: 'row', flexWrap: 'wrap', gap: webSpacing.md, marginTop: webSpacing.sm },
-  figureText: { fontSize: 11, color: webColors.textSecondary },
-  figureRemaining: { fontSize: 11, color: webColors.textPrimary, fontWeight: '700' },
-
-  planTrack: { height: 7, borderRadius: 4, backgroundColor: webColors.surfaceMuted, overflow: 'hidden', flexDirection: 'row', marginTop: webSpacing.sm },
-  planTrackPaid: { height: '100%', backgroundColor: webColors.success },
-  planTrackProv: { height: '100%', backgroundColor: '#7089DF' },
-
-  deadlinesSection: { marginTop: webSpacing.md, borderTopWidth: 1, borderTopColor: webColors.border, paddingTop: webSpacing.sm },
-  deadlinesTitle: { fontSize: 10, fontWeight: '700', color: webColors.textSecondary, textTransform: 'uppercase', marginBottom: 4 },
-  activityEmpty: { fontSize: 12, color: webColors.textSecondary, paddingVertical: 4 },
-  deadlineRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 5 },
-  deadlineDate: { fontSize: 11, color: webColors.textSecondary, width: 130 },
-  deadlineOverdueText: { color: webColors.danger, fontWeight: '700' },
-  deadlineLabel: { fontSize: 12, color: webColors.textPrimary, flex: 1, paddingRight: webSpacing.sm },
-  deadlineAmount: { fontSize: 12, fontWeight: '700', color: webColors.textPrimary, width: 110, textAlign: 'right' },
-
-  viewPlanLink: { marginTop: webSpacing.sm, alignSelf: 'flex-start' },
-  viewPlanLinkText: { fontSize: 12, fontWeight: '700', color: webColors.primary },
-
-  panelCard: { backgroundColor: webColors.surface, borderRadius: webRadius.xl, padding: webSpacing.lg, borderWidth: 1, borderColor: webColors.borderStrong },
-  panelTitle: { fontSize: 15, fontWeight: '700', color: webColors.textPrimary, marginBottom: webSpacing.md },
-  actionButton: { backgroundColor: webColors.primary, borderRadius: webRadius.pill, paddingVertical: 10, alignItems: 'center', marginBottom: webSpacing.sm },
-  actionButtonText: { color: webColors.textOnPrimary, fontSize: 13, fontWeight: '700' },
+  emptyState: { alignItems: 'center', marginTop: webSpacing.xl, gap: webSpacing.md },
+  addButton: { backgroundColor: webColors.primary, borderRadius: webRadius.pill, paddingVertical: 8, paddingHorizontal: 16 },
+  addButtonText: { color: webColors.textOnPrimary, fontSize: 13, fontWeight: '700' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: webSpacing.md },
+  card: {
+    backgroundColor: webColors.surface,
+    borderRadius: webRadius.lg,
+    padding: webSpacing.md,
+    borderWidth: 1,
+    borderColor: webColors.borderStrong,
+    width: 260,
+  },
+  cardTitle: { fontSize: 15, fontWeight: '700', color: webColors.textPrimary },
+  cardMeta: { fontSize: 12, color: webColors.textSecondary, marginTop: 4, marginBottom: webSpacing.sm },
+  viewButton: { alignSelf: 'flex-start' },
+  viewButtonText: { fontSize: 12, fontWeight: '700', color: webColors.primary },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)', alignItems: 'center', justifyContent: 'center', padding: webSpacing.xl },
+  modalCard: { backgroundColor: webColors.surface, borderRadius: webRadius.xl, padding: webSpacing.xl, width: 420 },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: webColors.textPrimary, marginBottom: webSpacing.md },
+  modalInput: {
+    backgroundColor: webColors.background,
+    borderRadius: webRadius.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: webColors.border,
+    marginBottom: 10,
+  },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: webSpacing.md },
+  modalButton: { backgroundColor: webColors.primary, borderRadius: webRadius.sm, paddingHorizontal: 18, paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
+  modalButtonText: { color: webColors.textOnPrimary, fontWeight: '600', fontSize: 13 },
+  modalButtonSecondary: { paddingHorizontal: 14, paddingVertical: 10, marginRight: 8 },
+  modalButtonSecondaryText: { color: webColors.textSecondary, fontWeight: '600', fontSize: 13 },
+  error: { color: webColors.danger, fontSize: 12, marginTop: 4, marginBottom: 4 },
 });

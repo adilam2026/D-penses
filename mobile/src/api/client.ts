@@ -646,7 +646,9 @@ export const listFinancialPlans = () => apiFetch('/financial-plans');
 
 export const getFinancialPlan = (id: string) => apiFetch(`/financial-plans/${id}`);
 
-export const createFinancialPlan = (data: { label: string; periodStart: string; periodEnd: string }) =>
+// Convergence V6C §1/§2 — un plan financier est un simple regroupement de
+// charges : Nom* + description facultative, jamais de période/objectif.
+export const createFinancialPlan = (data: { label: string; description?: string }) =>
   apiFetch('/financial-plans', { method: 'POST', body: data });
 
 export const addFinancialPlanBeneficiary = (planId: string, data: { beneficiaryType: 'user' | 'child'; userId?: string; childId?: string }) =>
@@ -654,9 +656,13 @@ export const addFinancialPlanBeneficiary = (planId: string, data: { beneficiaryT
 
 export const listFinancialPlanBeneficiaries = (planId: string) => apiFetch(`/financial-plans/${planId}/beneficiaries`);
 
-// R5 §2 — Modifier / Supprimer.
-export const updateFinancialPlan = (id: string, data: { label?: string; periodStart?: string; periodEnd?: string; destination?: string }) =>
-  apiFetch(`/financial-plans/${id}`, { method: 'PATCH', body: data });
+// R5 §2 — Modifier / Supprimer. Convergence V6C §1 — label/description/active
+// pilotent la nouvelle UI ; periodStart/periodEnd/destination restent
+// acceptés (compatibilité anciens plans wizard), jamais envoyés par elle.
+export const updateFinancialPlan = (
+  id: string,
+  data: { label?: string; description?: string; active?: boolean; periodStart?: string; periodEnd?: string; destination?: string },
+) => apiFetch(`/financial-plans/${id}`, { method: 'PATCH', body: data });
 
 export const deleteFinancialPlan = (id: string) => apiFetch(`/financial-plans/${id}`, { method: 'DELETE' });
 

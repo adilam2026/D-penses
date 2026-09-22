@@ -4,172 +4,40 @@ import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInpu
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { ChoiceSheet } from '../../ui/ChoiceSheet';
-import { MultiSelect } from '../../ui/MultiSelect';
 import { DateField } from '../../ui/DateField';
 import { Select } from '../../ui/Select';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
 
-const AMOUNT_STATUS_OPTIONS = [
-  { value: 'confirme', label: 'Confirmé' },
-  { value: 'estime', label: 'Estimé' },
-  { value: 'inconnu', label: 'Inconnu' },
-];
-
-// Point 14.3 — périodicités déjà supportées par le moteur de récurrence
-// existant (common/ledger/recurrence.util.ts, RecurrenceRule) : jamais un
-// nouveau moteur, jamais une valeur non gérée côté backend.
-type Periodicity = 'ponctuel' | 'hebdomadaire' | 'mensuel' | 'trimestriel' | 'semestriel' | 'annuel';
-const PERIODICITY_OPTIONS: Array<{ value: Periodicity; label: string }> = [
-  { value: 'ponctuel', label: 'Ponctuel' },
-  { value: 'hebdomadaire', label: 'Hebdomadaire' },
-  { value: 'mensuel', label: 'Mensuel' },
-  { value: 'trimestriel', label: 'Trimestriel' },
-  { value: 'semestriel', label: 'Semestriel' },
-  { value: 'annuel', label: 'Annuel' },
-];
-const PERIODICITY_LABEL: Record<Periodicity, string> = {
-  ponctuel: 'Ponctuel',
-  hebdomadaire: 'Hebdomadaire',
-  mensuel: 'Mensuel',
-  trimestriel: 'Trimestriel',
-  semestriel: 'Semestriel',
-  annuel: 'Annuel',
-};
-
-interface Child {
-  id: string;
-  firstName: string;
-  lastName: string;
-}
-
-type CoverageStatus = 'couverte' | 'partielle' | 'non_couverte' | 'sans_objet';
-
-interface DeadlineRow {
-  id: string;
-  // Point 7 — cible du poste (ChargePlan) sous-jacent, déjà renvoyé par le
-  // backend (spread de la Deadline) : permet de regrouper l'affichage par
-  // poste (un poste récurrent apparaît UNE SEULE FOIS, jamais une carte par
-  // échéance) et de naviguer vers "Modifier le poste" (ChargePlanDetail).
-  chargePlanId: string;
-  dueDate: string;
-  chargePlanLabel: string;
-  amountCurrent: string | number | null;
-  amountStatus: 'inconnu' | 'estime' | 'confirme';
-  resteAPayer: number | null;
-  financialStatus: 'ouverte' | 'partiellement_payee' | 'soldee' | 'annulee';
-  provisionId: string | null;
-  coverageAffectee: number;
-  engagementNonCouvert: number;
-  coverageStatus: CoverageStatus;
-  // Point 14.3 — présent uniquement pour un poste récurrent (auto_frequence,
-  // ≠ ponctuel) : sert à afficher "Mensuel" etc. à côté de l'échéance, jamais
-  // à créer une carte "poste" séparée (le poste reste unique, cf. affichage).
-  recurrenceRule?: 'hebdomadaire' | 'mensuel' | 'trimestriel' | 'semestriel' | 'annuel' | 'ponctuel' | null;
-  // Point 7 (révision) — additifs côté backend (déjà chargés pour labelOf,
-  // jamais une seconde requête) : affichés une seule fois sur l'en-tête du
-  // poste, jamais répétés échéance par échéance.
-  categoryName?: string | null;
-  defaultAccountId?: string | null;
-  status?: 'actif' | 'inactif';
-}
-
-// R6.3 (point H) — les échéances certaines d'un plan (ex. École T1 sept./T2
-// janv./T3 avril) s'étalent souvent sur deux années civiles : l'année doit
-// toujours être explicite dans cette liste, jamais seulement jour/mois.
 function formatShortDate(iso: string) {
   return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-// Point 7 (révision) — "Modifier le plan" doit afficher une liste de POSTES,
-// jamais une répétition d'échéances : un poste récurrent avec plusieurs
-// échéances ouvertes simultanément apparaît ICI une seule fois (regroupement
-// par chargePlanId), ses échéances restant listées dessous son en-tête.
-// Jamais un second calcul métier — uniquement un regroupement d'affichage
-// des mêmes lignes déjà renvoyées par le backend (deadlinesCertain).
-interface ChargePlanGroup {
+interface ChargeRow {
+  id: string;
   chargePlanId: string;
   chargePlanLabel: string;
-  categoryName: string | null;
-  defaultAccountId: string | null;
-  status: 'actif' | 'inactif';
-  recurrenceRule: DeadlineRow['recurrenceRule'];
-  deadlines: DeadlineRow[];
-  // Correction (Plan financier — montant affiché ambigu) : le montant de la
-  // SEULE prochaine échéance (nextDueDate), jamais la somme de toutes les
-  // échéances ouvertes du poste (un poste mensuel sur 23 échéances affichait
-  // un total trompeur, ex. 23 × montant, jamais réellement dû en une fois).
-  // Correction (montant vs reste à payer) : amountCurrent (montant de
-  // l'échéance), jamais resteAPayer — ce résumé n'affiche jamais de suivi de
-  // paiement partiel, réservé à ChargePlanDetail (carte = résumé seulement).
-  nextAmount: number;
-  nextDueDate: string | null;
-}
-
-function groupDeadlinesByChargePlan(rows: DeadlineRow[]): ChargePlanGroup[] {
-  const byPlan = new Map<string, DeadlineRow[]>();
-  for (const d of rows) {
-    if (!byPlan.has(d.chargePlanId)) byPlan.set(d.chargePlanId, []);
-    byPlan.get(d.chargePlanId)!.push(d);
-  }
-  const groups: ChargePlanGroup[] = Array.from(byPlan.entries()).map(([chargePlanId, deadlines]) => {
-    const sorted = deadlines.slice().sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1));
-    const first = sorted[0];
-    const openOnes = sorted.filter((d) => d.financialStatus === 'ouverte' || d.financialStatus === 'partiellement_payee');
-    return {
-      chargePlanId,
-      chargePlanLabel: first.chargePlanLabel,
-      categoryName: first.categoryName ?? null,
-      defaultAccountId: first.defaultAccountId ?? null,
-      status: first.status ?? 'actif',
-      recurrenceRule: first.recurrenceRule,
-      deadlines: sorted,
-      nextAmount: openOnes.length > 0 && openOnes[0].amountCurrent !== null ? Number(openOnes[0].amountCurrent) : 0,
-      nextDueDate: openOnes.length > 0 ? openOnes[0].dueDate : null,
-    };
-  });
-  // Un poste apparaît UNE SEULE FOIS, ordre alphabétique du libellé (même
-  // convention que le reste de l'app, insensible casse/accents).
-  return groups.sort((a, b) => a.chargePlanLabel.localeCompare(b.chargePlanLabel, 'fr', { sensitivity: 'base' }));
-}
-
-interface UnknownItem {
-  chargePlanId: string;
-  label: string;
-  deadlineId: string;
-}
-
-interface EnvisagedItem {
-  chargePlanId: string;
-  label: string;
-  amountKnown: boolean;
+  amountCurrent: number | string | null;
+  amountStatus: 'inconnu' | 'estime' | 'confirme';
+  dueDate: string;
 }
 
 interface FinancialPlanDetail {
   id: string;
   label: string;
-  periodStart: string;
-  periodEnd: string;
-  planType: 'school' | 'travel' | 'vehicle' | 'housing' | 'subscriptions' | 'other';
-  knownPlanCost: number;
-  paidAmount: number;
-  remainingDue: number;
-  provisionCoverage: number;
-  remainingToFund: number;
-  tauxCouverture: number | null;
-  completude: 'complet' | 'contient_estimations' | 'contient_inconnues';
-  deadlinesCertain: DeadlineRow[];
-  envisagedItems: EnvisagedItem[];
-  envisagedTotal: number;
-  unknownItems: UnknownItem[];
+  description: string | null;
+  active: boolean;
+  deadlinesCertain: ChargeRow[];
 }
 
-const COMPLETUDE_LABEL: Record<FinancialPlanDetail['completude'], string> = {
-  complet: 'Budget total : complet',
-  contient_estimations: 'Contient des estimations — total non définitif',
-  contient_inconnues: 'Au moins ce montant identifié — budget incomplet',
-};
-
-/** Vue plan financier (§15) — jamais une grille de tableur, jamais un faux total définitif. */
+/**
+ * Convergence V6C §1/§2 — Plan financier = simple regroupement de charges.
+ * Détail volontairement minimal : nom + liste des charges (libellé, montant,
+ * date) + "+ Ajouter une charge". Plus aucune trace de l'ancien moteur
+ * (budget connu/payé/reste à financer/taux de couverture/options
+ * envisagées/wizard). "+ Ajouter une charge" réutilise le mécanisme déjà
+ * existant et sain (POST /charge-plans + POST /charge-plans/:id/deadlines,
+ * financialPlanId=ce plan), inchangé côté backend.
+ */
 export function FinancialPlanDetailScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
@@ -178,46 +46,21 @@ export function FinancialPlanDetailScreen() {
   const [detail, setDetail] = useState<FinancialPlanDetail | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // R5 §2 — menu "..." (Modifier/Dupliquer/Supprimer), pattern réutilisable (§19).
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editLabel, setEditLabel] = useState('');
-  const [editPeriodStart, setEditPeriodStart] = useState('');
-  const [editPeriodEnd, setEditPeriodEnd] = useState('');
+  const [editDescription, setEditDescription] = useState('');
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
-
-  // R5 clôture §10 — duplication en 2 étapes (formulaire puis récapitulatif
-  // explicite) : jamais une duplication silencieuse dès le choix de l'enfant,
-  // l'utilisateur doit voir et confirmer ce qui va être créé.
-  const [duplicateOpen, setDuplicateOpen] = useState(false);
-  const [duplicateStep, setDuplicateStep] = useState<'form' | 'recap'>('form');
-  const [duplicateLabel, setDuplicateLabel] = useState('');
-  const [children, setChildren] = useState<Child[]>([]);
-  const [duplicateChildIds, setDuplicateChildIds] = useState<string[]>([]);
-  const [duplicating, setDuplicating] = useState(false);
-  const [duplicateError, setDuplicateError] = useState<string | null>(null);
 
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // R6.4 (§2) — "+ Ajouter une échéance" : un nouveau ChargePlan (ponctuel,
-  // calendrier_manuel, financialPlanId=ce plan) + 1 Deadline.
-  // Point 14.3 — même modal, périodicité désormais choisie explicitement :
-  // Ponctuel garde le comportement ci-dessus ; une périodicité récurrente
-  // crée un ChargePlan auto_frequence (recurrenceAnchorDate = date de
-  // début), toujours financialPlanId=ce plan — le backend impose alors
-  // automatiquement endDate = periodEnd du plan (garde-fou, jamais redemandé
-  // ici) et refuse une date de début postérieure à periodEnd.
   const [addOpen, setAddOpen] = useState(false);
   const [addLabel, setAddLabel] = useState('');
-  const [addCategoryId, setAddCategoryId] = useState<string | null>(null);
-  const [addPeriodicity, setAddPeriodicity] = useState<Periodicity>('ponctuel');
   const [addAmountStatus, setAddAmountStatus] = useState<'confirme' | 'estime' | 'inconnu'>('confirme');
   const [addAmount, setAddAmount] = useState('');
   const [addDueDate, setAddDueDate] = useState('');
-  const [addChildIds, setAddChildIds] = useState<string[]>([]);
-  const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
@@ -225,8 +68,6 @@ export function FinancialPlanDetailScreen() {
     setLoading(true);
     try {
       const d: FinancialPlanDetail = await api.getFinancialPlan(id);
-      // Tri chronologique (§26 cadrage V1) : dueDate ASC, id en départage — jamais
-      // l'ordre de création des ChargePlan, purement un affichage mobile.
       d.deadlinesCertain = [...d.deadlinesCertain].sort((a, b) => {
         const byDate = a.dueDate.localeCompare(b.dueDate);
         return byDate !== 0 ? byDate : a.id.localeCompare(b.id);
@@ -243,24 +84,13 @@ export function FinancialPlanDetailScreen() {
     }, [load]),
   );
 
-  const loadChildren = useCallback(async () => {
-    setChildren(await api.listChildren());
-  }, []);
-
   function openAdd() {
     setMenuOpen(false);
     setAddLabel('');
-    setAddCategoryId(null);
-    setAddPeriodicity('ponctuel');
     setAddAmountStatus('confirme');
     setAddAmount('');
     setAddDueDate('');
-    setAddChildIds([]);
     setAddError(null);
-    loadChildren();
-    api.listCategories().then((all: Array<{ id: string; name: string; kind: string }>) =>
-      setCategories(all.filter((c) => c.kind === 'expense' || c.kind === 'both')),
-    );
     setAddOpen(true);
   }
 
@@ -270,7 +100,7 @@ export function FinancialPlanDetailScreen() {
       return;
     }
     if (!addDueDate) {
-      setAddError(addPeriodicity === 'ponctuel' ? "La date d'échéance est obligatoire" : 'La date de début est obligatoire');
+      setAddError("La date d'échéance est obligatoire");
       return;
     }
     if (addAmountStatus !== 'inconnu' && (!addAmount.trim() || Number(addAmount.replace(',', '.')) <= 0)) {
@@ -280,26 +110,11 @@ export function FinancialPlanDetailScreen() {
     setAdding(true);
     setAddError(null);
     try {
-      const isRecurring = addPeriodicity !== 'ponctuel';
       const newPlan = await api.createChargePlan({
         label: addLabel.trim(),
         startDate: addDueDate,
-        categoryId: addCategoryId ?? undefined,
-        childIds: addChildIds,
         financialPlanId: id,
-        // Point 14.3 — CAS 2 (récurrent) : generationMode='auto_frequence' +
-        // recurrenceRule choisi + recurrenceAnchorDate=date de début. Le
-        // backend impose seul endDate=periodEnd (jamais redemandé ici) et
-        // refuse une date de début postérieure à periodEnd (erreur affichée
-        // ci-dessous, cf. addError). CAS 1 (ponctuel) : comportement inchangé.
-        generationMode: isRecurring ? 'auto_frequence' : 'calendrier_manuel',
-        recurrenceRule: isRecurring ? addPeriodicity : undefined,
-        recurrenceAnchorDate: isRecurring ? addDueDate : undefined,
-        // R6.4 (§2/§3) — 'optionnelle_souscrite' compte comme 'obligatoire' dans le coût
-        // connu/reste à financer du plan (financial-plans.service detailOnTx), mais reste
-        // une échéance dont la date peut encore être corrigée (DeadlinesService.update
-        // bloque ce champ uniquement pour 'obligatoire', réservé aux charges contractuelles
-        // générées automatiquement) — cohérent avec l'exigence "Modifier ... la date".
+        generationMode: 'calendrier_manuel',
         obligationStatus: 'optionnelle_souscrite',
       });
       await api.createDeadline(newPlan.id, {
@@ -320,8 +135,7 @@ export function FinancialPlanDetailScreen() {
     if (!detail) return;
     setMenuOpen(false);
     setEditLabel(detail.label);
-    setEditPeriodStart(detail.periodStart.slice(0, 10));
-    setEditPeriodEnd(detail.periodEnd.slice(0, 10));
+    setEditDescription(detail.description ?? '');
     setEditError(null);
     setEditOpen(true);
   }
@@ -334,47 +148,13 @@ export function FinancialPlanDetailScreen() {
     setEditSaving(true);
     setEditError(null);
     try {
-      await api.updateFinancialPlan(id, { label: editLabel.trim(), periodStart: editPeriodStart, periodEnd: editPeriodEnd });
+      await api.updateFinancialPlan(id, { label: editLabel.trim(), description: editDescription.trim() || undefined });
       setEditOpen(false);
       await load();
     } catch (err) {
       setEditError(err instanceof api.ApiError ? err.message : 'Modification impossible');
     } finally {
       setEditSaving(false);
-    }
-  }
-
-  function openDuplicate() {
-    if (!detail) return;
-    setMenuOpen(false);
-    setDuplicateStep('form');
-    setDuplicateLabel(`${detail.label} (copie)`);
-    setDuplicateChildIds([]);
-    setDuplicateError(null);
-    loadChildren();
-    setDuplicateOpen(true);
-  }
-
-  function onGoToRecap() {
-    if (!duplicateLabel.trim()) {
-      setDuplicateError('Le nom de la copie est obligatoire');
-      return;
-    }
-    setDuplicateError(null);
-    setDuplicateStep('recap');
-  }
-
-  async function onConfirmDuplicate() {
-    setDuplicating(true);
-    setDuplicateError(null);
-    try {
-      const copy = await api.duplicateFinancialPlan(id, { label: duplicateLabel.trim(), childIds: duplicateChildIds });
-      setDuplicateOpen(false);
-      navigation.replace('FinancialPlanDetail', { id: copy.id });
-    } catch (err) {
-      setDuplicateError(err instanceof api.ApiError ? err.message : 'Duplication impossible');
-    } finally {
-      setDuplicating(false);
     }
   }
 
@@ -394,8 +174,6 @@ export function FinancialPlanDetailScreen() {
       await api.deleteFinancialPlan(id);
       navigation.goBack();
     } catch (err) {
-      // §2 — jamais un DELETE silencieux : le backend refuse dès qu'un paiement
-      // existe déjà sous ce plan (historique financier réel), affiché ici en clair.
       setDeleteError(err instanceof api.ApiError ? err.message : 'Suppression impossible');
     } finally {
       setDeleting(false);
@@ -413,117 +191,39 @@ export function FinancialPlanDetailScreen() {
   return (
     <ScrollView testID="plan-detail-scroll" style={styles.container} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]}>
       <View style={styles.headerRow}>
-        <Text style={styles.title}>{detail.label}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>{detail.label}</Text>
+          {detail.description ? <Text style={styles.description}>{detail.description}</Text> : null}
+        </View>
         <TouchableOpacity testID="plan-menu-button" style={styles.menuButton} onPress={() => setMenuOpen(true)}>
           <Text style={styles.menuButtonText}>•••</Text>
         </TouchableOpacity>
       </View>
       {deleteError && <Text style={styles.error}>{deleteError}</Text>}
-      <Text style={styles.completude}>{COMPLETUDE_LABEL[detail.completude]}</Text>
 
-      <View style={styles.figuresGrid}>
-        <Figure label="Budget connu" value={detail.knownPlanCost} />
-        <Figure label="Payé" value={detail.paidAmount} />
-        <Figure label="Reste à payer" value={detail.remainingDue} />
-        <Figure label="Provisionné" value={detail.provisionCoverage} />
-        <Figure label="Reste à financer" value={detail.remainingToFund} highlight />
-      </View>
-
-      {detail.tauxCouverture !== null && (
-        <View style={styles.coverageCard}>
-          <View style={styles.coverageHeaderRow}>
-            <Text style={styles.coverageTitle}>TAUX DE COUVERTURE</Text>
-            <Text style={styles.coveragePercent}>{Math.round(detail.tauxCouverture)}%</Text>
-          </View>
-          <View style={styles.coverageTrack}>
-            <View style={[styles.coverageFill, { width: `${Math.min(100, detail.tauxCouverture)}%` }]} />
-          </View>
-          <Text style={styles.coverageSub}>
-            {detail.provisionCoverage.toLocaleString('fr-FR')} DH provisionnés sur {detail.remainingDue.toLocaleString('fr-FR')} DH restant dû
-          </Text>
-        </View>
-      )}
-
-      <Text style={styles.sectionTitle}>Postes</Text>
+      <Text style={styles.sectionTitle}>Liste des charges</Text>
       {detail.deadlinesCertain.length === 0 ? (
-        <Text style={styles.empty}>Aucune échéance certaine pour l'instant.</Text>
+        <Text style={styles.empty}>Aucune charge pour l'instant.</Text>
       ) : (
-        groupDeadlinesByChargePlan(detail.deadlinesCertain).map((g) => (
-          // Correction UX (Plan financier trop chargé) — 1 poste = 1 carte
-          // RÉSUMÉ, entièrement tappable, SANS aucune action exposée ici
-          // (Modifier/Voir les échéances/Ajouter une échéance/Retirer du
-          // plan sont toutes déjà dans ChargePlanDetailScreen, jamais
-          // réimplémentées) : hiérarchie simple Plan → poste → échéance,
-          // jamais toutes les actions sur l'écran principal.
-          // Correction UX (alignement Transactions) — montant en vert sur la
-          // 1ère ligne à droite (même disposition que TransactionsScreen),
-          // jamais un libellé "Montant de l'échéance" séparé. Le compteur
-          // d'échéances ouvertes n'apporte rien ici (détail dans
-          // ChargePlanDetailScreen) ; la périodicité rejoint la ligne
-          // "Prochaine échéance" plutôt que la ligne catégorie.
+        detail.deadlinesCertain.map((d) => (
           <TouchableOpacity
-            key={g.chargePlanId}
-            style={styles.posteCard}
-            testID={`poste-${g.chargePlanId}`}
-            onPress={() => navigation.navigate('ChargePlanDetail', { id: g.chargePlanId })}
+            key={d.id}
+            testID={`plan-charge-${d.id}`}
+            style={styles.chargeRow}
+            onPress={() => navigation.navigate('ChargePlanDetail', { id: d.chargePlanId })}
           >
-            <View style={styles.posteHeaderRow}>
-              <Text style={styles.posteLabel}>{g.chargePlanLabel}</Text>
-              {g.nextDueDate ? <Text style={styles.posteAmount}>{g.nextAmount.toLocaleString('fr-FR')} DH</Text> : null}
-            </View>
-            {(g.categoryName || g.status === 'inactif') && (
-              <Text style={styles.posteMeta}>
-                {g.categoryName ?? ''}
-                {g.categoryName && g.status === 'inactif' ? ' · ' : ''}
-                {g.status === 'inactif' ? 'Récurrence arrêtée' : ''}
-              </Text>
-            )}
-            <Text style={styles.posteMeta}>
-              {g.nextDueDate ? `Prochaine échéance : ${formatShortDate(g.nextDueDate)}` : 'Aucune échéance ouverte'}
-              {' · '}
-              {g.recurrenceRule && g.recurrenceRule !== 'ponctuel' ? PERIODICITY_LABEL[g.recurrenceRule] : 'Ponctuel'}
+            <Text style={styles.chargeLabel} numberOfLines={1}>
+              {d.chargePlanLabel}
             </Text>
+            <Text style={styles.chargeDate}>{formatShortDate(d.dueDate)}</Text>
+            <Text style={styles.chargeAmount}>{d.amountStatus === 'inconnu' ? '—' : `${Number(d.amountCurrent).toLocaleString('fr-FR')} DH`}</Text>
           </TouchableOpacity>
         ))
       )}
 
-      <Text style={styles.sectionTitle}>Options envisagées</Text>
-      {detail.envisagedItems.length === 0 ? (
-        <Text style={styles.empty}>Aucune option envisagée.</Text>
-      ) : (
-        <>
-          {detail.envisagedItems.map((i) => (
-            <TouchableOpacity
-              key={i.chargePlanId}
-              style={styles.rowSimple}
-              testID={`plan-envisaged-${i.chargePlanId}`}
-              onPress={() => navigation.navigate('ChargePlanDetail', { id: i.chargePlanId })}
-            >
-              <Text style={styles.rowLabel}>{i.label}</Text>
-              <Text style={styles.rowMeta}>{i.amountKnown ? 'Montant connu' : 'À décider'} · Modifier →</Text>
-            </TouchableOpacity>
-          ))}
-          <Text style={styles.optionTotal}>Options envisagées : {detail.envisagedTotal.toLocaleString('fr-FR')} DH (jamais inclus ci-dessus)</Text>
-        </>
-      )}
-
-      <Text style={styles.sectionTitle}>Éléments inconnus</Text>
-      {detail.unknownItems.length === 0 ? (
-        <Text style={styles.empty}>Aucun montant inconnu.</Text>
-      ) : (
-        detail.unknownItems.map((i) => (
-          <TouchableOpacity key={i.deadlineId} style={styles.rowSimple} onPress={() => navigation.navigate('ConfirmDeadline', { id: i.deadlineId })}>
-            <Text style={styles.rowLabel}>{i.label}</Text>
-            <Text style={styles.rowMeta}>À confirmer</Text>
-            <TouchableOpacity
-              testID={`edit-charge-plan-${i.chargePlanId}`}
-              onPress={() => navigation.navigate('ChargePlanDetail', { id: i.chargePlanId })}
-            >
-              <Text style={styles.editPosteLink}>Modifier le poste →</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        ))
-      )}
+      <TouchableOpacity testID="plan-add-charge-button" style={styles.addChargeButton} onPress={openAdd}>
+        <Text style={styles.addChargeButtonText}>+ Ajouter une charge</Text>
+      </TouchableOpacity>
 
       <ChoiceSheet
         testID="plan-menu"
@@ -531,47 +231,27 @@ export function FinancialPlanDetailScreen() {
         title={detail.label}
         onClose={() => setMenuOpen(false)}
         options={[
-          { key: 'ajouter', label: 'Ajouter une échéance', icon: 'add-circle-outline', onPress: openAdd },
+          { key: 'ajouter', label: 'Ajouter une charge', icon: 'add-circle-outline', onPress: openAdd },
           { key: 'modifier', label: 'Modifier', icon: 'create-outline', onPress: openEdit },
-          { key: 'dupliquer', label: 'Dupliquer', icon: 'copy-outline', onPress: openDuplicate },
           { key: 'supprimer', label: 'Supprimer', icon: 'trash-outline', onPress: onRequestDelete },
         ]}
       />
 
       <Modal visible={addOpen} transparent animationType="fade" onRequestClose={() => setAddOpen(false)}>
         <View style={styles.modalOverlay}>
-          {/* Point 6b — style sur le ScrollView lui-même (pas seulement son
-              contentContainerStyle) : sinon la largeur 100% de modalCard se
-              résout contre un ScrollView sans largeur propre (parent en
-              alignItems:'center'), et la carte se réduit au shrink-to-fit. */}
           <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalCard} testID="plan-add-deadline-form">
-            <Text style={styles.modalTitle}>Ajouter un poste</Text>
+            <Text style={styles.modalTitle}>Ajouter une charge</Text>
             <TextInput style={styles.modalInput} value={addLabel} onChangeText={setAddLabel} placeholder="Libellé" testID="plan-add-deadline-label" />
-            {categories.length > 0 && (
-              <Select
-                testID="plan-add-deadline-category"
-                label="Catégorie"
-                placeholder="Sélectionner une catégorie"
-                value={addCategoryId}
-                onChange={setAddCategoryId}
-                options={categories.map((c) => ({ value: c.id, label: c.name }))}
-              />
-            )}
-            {/* Point 14.3 — Ponctuel (comportement historique) ou une récurrence
-                déjà supportée par le moteur existant, jamais un nouveau mécanisme. */}
-            <Select
-              testID="plan-add-deadline-periodicity"
-              label="Périodicité"
-              value={addPeriodicity}
-              onChange={(v) => setAddPeriodicity(v as Periodicity)}
-              options={PERIODICITY_OPTIONS}
-            />
             <Select
               testID="plan-add-deadline-amount-status"
               label="Montant"
               value={addAmountStatus}
               onChange={(v) => setAddAmountStatus(v as 'confirme' | 'estime' | 'inconnu')}
-              options={AMOUNT_STATUS_OPTIONS}
+              options={[
+                { value: 'confirme', label: 'Confirmé' },
+                { value: 'estime', label: 'Estimé' },
+                { value: 'inconnu', label: 'Inconnu' },
+              ]}
             />
             {addAmountStatus !== 'inconnu' && (
               <TextInput
@@ -583,25 +263,7 @@ export function FinancialPlanDetailScreen() {
                 testID="plan-add-deadline-amount"
               />
             )}
-            <DateField label={addPeriodicity === 'ponctuel' ? "Date d'échéance" : 'Date de début'} value={addDueDate} onChange={setAddDueDate} />
-            {addPeriodicity !== 'ponctuel' && detail && (
-              // Jamais redemandée : la date de fin est automatiquement celle du
-              // plan (endDate=periodEnd imposé côté backend, garde-fou 14.3).
-              <Text style={styles.help}>Se termine automatiquement à la fin du plan : {formatShortDate(detail.periodEnd)}</Text>
-            )}
-            {/* Point 6a — uniquement pour un plan scolaire (seul type dont les
-                postes sont réellement rattachables à un enfant côté backend,
-                cf. school-wizard.service.ts) : jamais sur Voiture/Maison/
-                Abonnements, et basé sur planType, jamais sur le libellé. */}
-            {detail.planType === 'school' && children.length > 0 && (
-              <MultiSelect
-                testID="plan-add-deadline-children"
-                label="Enfant(s) bénéficiaire(s)"
-                value={addChildIds}
-                onChange={setAddChildIds}
-                options={children.map((c) => ({ value: c.id, label: `${c.firstName} ${c.lastName}` }))}
-              />
-            )}
+            <DateField label="Date" value={addDueDate} onChange={setAddDueDate} />
             {addError && <Text style={styles.error}>{addError}</Text>}
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.modalButtonSecondary} onPress={() => setAddOpen(false)}>
@@ -620,8 +282,13 @@ export function FinancialPlanDetailScreen() {
           <View style={styles.modalCard} testID="plan-edit-form">
             <Text style={styles.modalTitle}>Modifier le plan</Text>
             <TextInput style={styles.modalInput} value={editLabel} onChangeText={setEditLabel} placeholder="Nom du plan" testID="plan-edit-label" />
-            <DateField label="Début" value={editPeriodStart} onChange={setEditPeriodStart} />
-            <DateField label="Fin" value={editPeriodEnd} onChange={setEditPeriodEnd} />
+            <TextInput
+              style={styles.modalInput}
+              value={editDescription}
+              onChangeText={setEditDescription}
+              placeholder="Description facultative"
+              testID="plan-edit-description"
+            />
             {editError && <Text style={styles.error}>{editError}</Text>}
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.modalButtonSecondary} onPress={() => setEditOpen(false)}>
@@ -634,81 +301,7 @@ export function FinancialPlanDetailScreen() {
           </View>
         </View>
       </Modal>
-
-      <Modal visible={duplicateOpen} transparent animationType="fade" onRequestClose={() => setDuplicateOpen(false)}>
-        <View style={styles.modalOverlay}>
-          {duplicateStep === 'form' ? (
-            <View style={styles.modalCard} testID="plan-duplicate-form">
-              <Text style={styles.modalTitle}>Dupliquer le plan</Text>
-              <TextInput style={styles.modalInput} value={duplicateLabel} onChangeText={setDuplicateLabel} placeholder="Nom de la copie" testID="plan-duplicate-label" />
-              {children.length > 0 && (
-                <MultiSelect
-                  testID="plan-duplicate-children-select"
-                  label="Enfant(s) bénéficiaire(s) de la copie"
-                  value={duplicateChildIds}
-                  onChange={setDuplicateChildIds}
-                  options={children.map((c) => ({ value: c.id, label: `${c.firstName} ${c.lastName}` }))}
-                />
-              )}
-              {duplicateError && <Text style={styles.error}>{duplicateError}</Text>}
-              <View style={styles.modalActions}>
-                <TouchableOpacity style={styles.modalButtonSecondary} onPress={() => setDuplicateOpen(false)}>
-                  <Text style={styles.modalButtonSecondaryText}>Annuler</Text>
-                </TouchableOpacity>
-                <TouchableOpacity testID="plan-duplicate-next" style={styles.modalButton} onPress={onGoToRecap}>
-                  <Text style={styles.modalButtonText}>Suivant</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : (
-            // R5 clôture §10 — récapitulatif explicite avant toute écriture : l'utilisateur
-            // voit exactement ce qui va être créé (un NOUVEAU plan indépendant), et peut
-            // encore revenir ajuster le formulaire — jamais une duplication silencieuse.
-            <View style={styles.modalCard} testID="plan-duplicate-recap">
-              <Text style={styles.modalTitle}>Confirmer la duplication</Text>
-              <Text style={styles.recapIntro}>Vous allez créer un NOUVEAU plan indépendant :</Text>
-              <View style={styles.recapCard}>
-                <View style={styles.recapRow}>
-                  <Text style={styles.recapLabel}>Nom de la copie</Text>
-                  <Text style={styles.recapValue}>{duplicateLabel.trim()}</Text>
-                </View>
-                <View style={styles.recapRow}>
-                  <Text style={styles.recapLabel}>Enfant(s) bénéficiaire(s)</Text>
-                  <Text style={styles.recapValue}>
-                    {duplicateChildIds.length === 0
-                      ? 'Aucun'
-                      : children.filter((c) => duplicateChildIds.includes(c.id)).map((c) => `${c.firstName} ${c.lastName}`).join(', ')}
-                  </Text>
-                </View>
-                <View style={[styles.recapRow, styles.recapRowLast]}>
-                  <Text style={styles.recapLabel}>Échéances copiées</Text>
-                  <Text style={styles.recapValue}>{detail.deadlinesCertain.length}</Text>
-                </View>
-              </View>
-              <Text style={styles.help}>La copie ne reprend jamais les paiements ni l'historique — un échéancier neuf, indépendant de l'original.</Text>
-              {duplicateError && <Text style={styles.error}>{duplicateError}</Text>}
-              <View style={styles.modalActions}>
-                <TouchableOpacity testID="plan-duplicate-back" style={styles.modalButtonSecondary} onPress={() => setDuplicateStep('form')}>
-                  <Text style={styles.modalButtonSecondaryText}>Retour</Text>
-                </TouchableOpacity>
-                <TouchableOpacity testID="plan-duplicate-confirm" style={styles.modalButton} onPress={onConfirmDuplicate} disabled={duplicating}>
-                  {duplicating ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.modalButtonText}>Confirmer la duplication</Text>}
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-        </View>
-      </Modal>
     </ScrollView>
-  );
-}
-
-function Figure({ label, value, highlight }: { label: string; value: number; highlight?: boolean }) {
-  return (
-    <View style={styles.figure}>
-      <Text style={styles.figureLabel}>{label}</Text>
-      <Text style={[styles.figureValue, highlight && styles.figureValueHighlight]}>{value.toLocaleString('fr-FR')} DH</Text>
-    </View>
   );
 }
 
@@ -717,71 +310,39 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
   scroll: { padding: spacing.xl, paddingTop: spacing.lg },
   title: { fontSize: 20, fontWeight: '700', color: colors.textPrimary },
-  completude: { fontSize: 12, color: colors.warning, marginTop: 4, marginBottom: spacing.lg, fontStyle: 'italic' },
-  figuresGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: spacing.md },
-  figure: { width: '50%', backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm },
-  figureLabel: { fontSize: 11, color: colors.textSecondary },
-  figureValue: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginTop: 4 },
-  figureValueHighlight: { color: colors.danger },
-  coverageCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: 14,
-    marginBottom: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    ...elevation.raised,
-  },
-  coverageHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
-  coverageTitle: { fontSize: 11, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.5 },
-  coveragePercent: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
-  coverageTrack: { height: 8, backgroundColor: colors.surfaceSecondary, borderRadius: 4, overflow: 'hidden' },
-  coverageFill: { height: '100%', backgroundColor: colors.success },
-  coverageSub: { fontSize: 11, color: colors.textSecondary, marginTop: spacing.sm },
+  description: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },
   sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.lg, marginBottom: spacing.sm },
   empty: { color: colors.textSecondary, fontSize: 13 },
-  row: {
+  chargeRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: colors.surface,
     borderRadius: radius.md,
     padding: spacing.md,
     marginBottom: spacing.sm,
-  },
-  rowSimple: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm },
-  rowLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
-  rowMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
-  editPosteLink: { fontSize: 11, fontWeight: '600', color: colors.primary, marginTop: 6 },
-  // Point 7 (révision) — carte "poste" (un poste = une carte, jamais une par
-  // échéance) : mêmes tokens de surface que `row`, en conteneur englobant.
-  posteCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  // Correction UX (alignement Transactions) — libellé + montant sur la même
-  // ligne, comme TransactionsScreen (rowLeft/rowRight).
-  posteHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  posteLabel: { flexShrink: 1, marginRight: spacing.sm, fontSize: 14, fontWeight: '700', color: colors.textPrimary },
-  posteMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
-  posteAmount: { fontSize: 14, fontWeight: '700', color: colors.success },
-  optionTotal: { fontSize: 11, color: colors.textSecondary, marginTop: 4, marginBottom: 4, fontStyle: 'italic' },
+  chargeLabel: { flex: 1, fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginRight: spacing.sm },
+  chargeDate: { fontSize: 12, color: colors.textSecondary, marginRight: spacing.md },
+  chargeAmount: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, minWidth: 80, textAlign: 'right' },
+  addChargeButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.surfaceActive,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 10,
+    marginTop: spacing.md,
+  },
+  addChargeButtonText: { fontSize: 13, fontWeight: '700', color: colors.primary },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   menuButton: { paddingHorizontal: 10, paddingVertical: 4 },
   menuButtonText: { fontSize: 18, fontWeight: '700', color: colors.textSecondary },
   error: { color: colors.danger, fontSize: 12, marginTop: 8, marginBottom: 4 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)', alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
-  // Point 6b — largeur propre portée par le ScrollView (jamais seulement par
-  // son contentContainerStyle), pour que la carte occupe bien toute la
-  // largeur disponible sous le parent en alignItems:'center'.
   modalScroll: { width: '100%', alignSelf: 'stretch' },
   modalCard: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.xl, width: '100%' },
   modalTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.md },
-  modalSubLabel: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginTop: 4, marginBottom: 6 },
   modalInput: {
     backgroundColor: colors.background,
     borderRadius: radius.sm,
@@ -797,16 +358,4 @@ const styles = StyleSheet.create({
   modalButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 13 },
   modalButtonSecondary: { paddingHorizontal: 14, paddingVertical: 10, marginRight: 8 },
   modalButtonSecondaryText: { color: colors.textSecondary, fontWeight: '600', fontSize: 13 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
-  chip: { backgroundColor: colors.background, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, marginRight: 8, marginBottom: 8, borderWidth: 1, borderColor: colors.border },
-  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  chipText: { fontSize: 12, color: colors.textPrimary },
-  chipTextActive: { color: colors.textOnPrimary, fontWeight: '600' },
-  help: { fontSize: 11, color: colors.textSecondary, fontStyle: 'italic', marginTop: 4, marginBottom: 4 },
-  recapIntro: { fontSize: 13, color: colors.textPrimary, fontWeight: '600', marginBottom: spacing.md },
-  recapCard: { backgroundColor: colors.background, borderRadius: radius.sm, marginBottom: spacing.md },
-  recapRow: { paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.divider },
-  recapRowLast: { borderBottomWidth: 0 },
-  recapLabel: { fontSize: 11, color: colors.textSecondary, textTransform: 'uppercase', fontWeight: '700' },
-  recapValue: { fontSize: 14, color: colors.textPrimary, fontWeight: '600', marginTop: 3 },
 });

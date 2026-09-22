@@ -20,7 +20,14 @@ jest.mock('@react-navigation/native', () => ({
 
 jest.mock('../../../api/client', () => {
   const actual = jest.requireActual('../../../api/client');
-  return { ...actual, listCategories: jest.fn(), listAccounts: jest.fn(), createChargePlan: jest.fn(), createDeadline: jest.fn() };
+  return {
+    ...actual,
+    listCategories: jest.fn(),
+    listAccounts: jest.fn(),
+    listFinancialPlans: jest.fn(),
+    createChargePlan: jest.fn(),
+    createDeadline: jest.fn(),
+  };
 });
 
 const mockedApi = api as jest.Mocked<typeof api>;
@@ -32,6 +39,7 @@ beforeEach(() => {
     { id: 'cat2', name: 'Loisirs', kind: 'expense' },
   ]);
   mockedApi.listAccounts.mockResolvedValue([{ id: 'acc1', name: 'Compte SG' }]);
+  mockedApi.listFinancialPlans.mockResolvedValue([]);
 });
 
 it('catégorie via sélecteur compact (jamais des chips permanentes)', async () => {
@@ -111,4 +119,45 @@ it('corrections consolidées §8 — permet de choisir un compte d\'imputation p
   await waitFor(() =>
     expect(mockedApi.createChargePlan).toHaveBeenCalledWith(expect.objectContaining({ defaultAccountId: 'acc2' })),
   );
+});
+
+// Convergence V6 §9 — "Plan financier : Aucun / Scolarité / Vacances / etc."
+it('§9 — permet de rattacher la charge à un plan financier existant (facultatif)', async () => {
+  mockedApi.listFinancialPlans.mockResolvedValue([
+    { id: 'plan-scolarite', label: 'Scolarité 2026-2027' },
+    { id: 'plan-vacances', label: 'Vacances été 2027' },
+  ]);
+  mockedApi.createChargePlan.mockResolvedValue({ id: 'cp1' });
+  mockedApi.createDeadline.mockResolvedValue({ id: 'd1' });
+  await render(<CreateChargeScreen />);
+  await waitFor(() => screen.getByTestId('charge-financial-plan-select'));
+
+  await fireEvent.press(screen.getByTestId('charge-financial-plan-select'));
+  await waitFor(() => screen.getByTestId('charge-financial-plan-select-option-plan-scolarite'));
+  await fireEvent.press(screen.getByTestId('charge-financial-plan-select-option-plan-scolarite'));
+
+  await fireEvent.changeText(screen.getByPlaceholderText('Ex. Internet, Loyer, École'), 'Scolarité T2');
+  await fireEvent.press(screen.getByText('Confirmé'));
+  await fireEvent.changeText(screen.getByPlaceholderText('Montant (DH)'), '21800');
+  await fireEvent.press(screen.getByTestId('create-charge-submit'));
+
+  await waitFor(() =>
+    expect(mockedApi.createChargePlan).toHaveBeenCalledWith(expect.objectContaining({ financialPlanId: 'plan-scolarite' })),
+  );
+});
+
+it('§9 — laisse "Aucun" par défaut : aucun financialPlanId envoyé si non choisi', async () => {
+  mockedApi.listFinancialPlans.mockResolvedValue([{ id: 'plan-scolarite', label: 'Scolarité 2026-2027' }]);
+  mockedApi.createChargePlan.mockResolvedValue({ id: 'cp1' });
+  mockedApi.createDeadline.mockResolvedValue({ id: 'd1' });
+  await render(<CreateChargeScreen />);
+  await waitFor(() => screen.getByTestId('charge-financial-plan-select'));
+
+  await fireEvent.changeText(screen.getByPlaceholderText('Ex. Internet, Loyer, École'), 'Internet');
+  await fireEvent.press(screen.getByText('Confirmé'));
+  await fireEvent.changeText(screen.getByPlaceholderText('Montant (DH)'), '299');
+  await fireEvent.press(screen.getByTestId('create-charge-submit'));
+
+  await waitFor(() => expect(mockedApi.createChargePlan).toHaveBeenCalled());
+  expect(mockedApi.createChargePlan.mock.calls[0][0].financialPlanId).toBeUndefined();
 });

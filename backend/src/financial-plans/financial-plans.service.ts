@@ -33,8 +33,14 @@ export class FinancialPlansService {
         data: {
           householdId,
           label: dto.label,
-          periodStart: new Date(dto.periodStart),
-          periodEnd: new Date(dto.periodEnd),
+          description: dto.description,
+          // Convergence V6C §1 — la nouvelle UI ne demande plus de période
+          // globale (le plan n'est qu'un regroupement de charges, chacune
+          // portant sa propre date) : periodStart/periodEnd restent en base
+          // (colonnes NOT NULL héritées de l'ancien moteur, jamais lues par
+          // la nouvelle UI) avec une plage large par défaut quand absents.
+          periodStart: dto.periodStart ? new Date(dto.periodStart) : new Date(),
+          periodEnd: dto.periodEnd ? new Date(dto.periodEnd) : new Date('2099-12-31'),
           linkedProvisionId: dto.linkedProvisionId,
         },
       }),
@@ -226,6 +232,11 @@ export class FinancialPlansService {
       // M9B — liste minimale des postes (id+label), additive : sert au formulaire de
       // prévision pluriannuelle (un poste par ligne, jamais fusionné).
       chargePlans: chargePlans.map((cp) => ({ id: cp.id, label: labelOf(cp) })),
+      // Convergence V6C §1/§2 — champ additif pour la nouvelle UI simple
+      // (liste "N charges") : jamais un second calcul, dérivé du même
+      // chargePlans déjà chargé ci-dessus. description/active sont déjà
+      // exposés via le spread `...plan` en tête de cet objet.
+      chargeCount: chargePlans.length,
     };
   }
 
@@ -284,6 +295,8 @@ export class FinancialPlansService {
         where: { id },
         data: {
           label: dto.label,
+          description: dto.description,
+          active: dto.active,
           periodStart: dto.periodStart ? new Date(dto.periodStart) : undefined,
           periodEnd: dto.periodEnd ? new Date(dto.periodEnd) : undefined,
           destination: dto.destination,

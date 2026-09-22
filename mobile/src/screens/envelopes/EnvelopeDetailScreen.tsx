@@ -141,7 +141,8 @@ function ProvisionDetail({ pocket, sufficiency, accountName }: { pocket: any; su
   return (
     <View>
       <Text style={styles.title}>{pocket.name}</Text>
-      <Text style={styles.subtitle}>{accountName ? `${accountName} • ` : ''}Plan financier</Text>
+      {/* Convergence V6 §5 — jamais "Plan financier" pour une enveloppe. */}
+      <Text style={styles.subtitle}>{accountName ? `${accountName} • ` : ''}Réserve à échéances</Text>
 
       {view.hasOpenSteps && (
         <View style={styles.headlineCard}>
