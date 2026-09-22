@@ -7,7 +7,7 @@ import { useTopInset } from '../../ui/useTopInset';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 import { Donut } from '../../ui/Donut';
-import { formatDh, formatFullDate } from '../../ui/formatMoney';
+import { formatDh, formatFullDate, formatMonthLabel } from '../../ui/formatMoney';
 import { computePocketCardView, computeProvisionCardView, toNum } from './envelopesLogic';
 
 type Kind = 'savings_pocket' | 'provision';
@@ -157,9 +157,20 @@ function ProvisionDetail({ pocket, sufficiency, accountName }: { pocket: any; su
             <View style={styles.ringMetrics}>
               <Metric label="Disponible" value={formatDh(toNum(sufficiency.currentAmount))} />
               <Metric label="Reste" value={formatDh(reste)} />
-              <Metric label="Mensualité recommandée" value={formatDh(toNum(sufficiency.versementMensuelRecommande))} />
             </View>
           </View>
+        </View>
+      )}
+
+      {Array.isArray(sufficiency.monthlyCalendar) && sufficiency.monthlyCalendar.length > 0 && (
+        <View style={styles.calendarCard} testID="provision-monthly-calendar">
+          <Text style={styles.calendarTitle}>Calendrier de versement recommandé</Text>
+          {sufficiency.monthlyCalendar.map((m: { month: string; recommendedAmount: number }) => (
+            <View key={m.month} style={styles.calendarRow}>
+              <Text style={styles.calendarMonth}>{formatMonthLabel(m.month)}</Text>
+              <Text style={styles.calendarAmount}>{formatDh(m.recommendedAmount)}</Text>
+            </View>
+          ))}
         </View>
       )}
 
@@ -230,6 +241,25 @@ const styles = StyleSheet.create({
   metricLabel: { fontSize: 10, color: colors.v6Muted },
   metricValue: { fontSize: 13, fontWeight: '700', color: colors.v6Text, marginTop: 4 },
   emptyNote: { color: colors.v6Muted, fontSize: 13, marginTop: spacing.md },
+  calendarCard: {
+    marginTop: spacing.md,
+    backgroundColor: colors.v6Surface,
+    borderWidth: 1,
+    borderColor: colors.v6Line,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    ...elevation.card,
+  },
+  calendarTitle: { fontSize: 13, fontWeight: '800', color: colors.v6Text, marginBottom: spacing.sm },
+  calendarRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.v6Line,
+  },
+  calendarMonth: { fontSize: 12, color: colors.v6Text, fontWeight: '600' },
+  calendarAmount: { fontSize: 12, color: colors.v6Text, fontWeight: '800' },
   tensionCard: { marginTop: spacing.md, backgroundColor: colors.v6RedSoft, borderRadius: radius.md, padding: spacing.md },
   tensionText: { color: colors.v6Red, fontSize: 12, fontWeight: '600' },
   contributeCard: {

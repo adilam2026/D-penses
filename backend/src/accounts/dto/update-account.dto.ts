@@ -54,6 +54,11 @@ export class UpdateAccountDto {
   @IsString()
   bankName?: string;
 
+  /** Refonte maquette V6B §5 — propriétaire affiché ("CIH • Lamiaa"), simple libellé dérivé de User.firstName. */
+  @IsOptional()
+  @IsUUID()
+  ownerUserId?: string;
+
   /** Refonte maquette V6B §2C — voir CreateAccountDto.isDedicated. */
   @IsOptional()
   @IsBoolean()

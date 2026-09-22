@@ -19,6 +19,8 @@ export interface Account {
   // casser un appelant existant (ex. HomeScreen.web.tsx) qui ne les lit pas.
   hideBalanceByDefault?: boolean;
   showOnHome?: boolean;
+  bankName?: string | null;
+  ownerLabel?: string | null;
 }
 
 export interface DeadlineItem {

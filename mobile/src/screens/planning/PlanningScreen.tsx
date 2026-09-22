@@ -5,13 +5,13 @@ import * as api from '../../api/client';
 import { colors, spacing } from '../../ui/theme';
 import { useTopInset } from '../../ui/useTopInset';
 import { useBottomInset } from '../../ui/useBottomInset';
+import { useResponsiveLayout, DeviceClass, Orientation } from '../../ui/useResponsiveLayout';
 import { formatDh } from '../../ui/formatMoney';
-import { buildPlanningRows, rowsBySection, isCurrentMonth, SECTION_LABEL, PlanningRow } from './planningLogic';
+import { buildPlanningRows, rowsBySection, isCurrentMonth, SECTION_LABEL, PlanningRow, PlanningProvision } from './planningLogic';
 
 const LABEL_COL_WIDTH = 152;
 const MONTH_COL_WIDTH = 110;
 const ROW_HEIGHT = 40;
-const HORIZON_MONTHS = 6;
 
 type GridLine =
   | { kind: 'section'; label: string }
@@ -19,31 +19,58 @@ type GridLine =
   | { kind: 'total' };
 
 /**
+ * Refonte maquette V6B §5/§17/§20 — horizon (nombre de mois RÉCUPÉRÉS, pas
+ * seulement affichés) croissant avec la largeur disponible : 3 en portrait
+ * mobile, 6 en paysage mobile/tablette, 12 en desktop — sur un écran large,
+ * aller chercher plus de mois profite réellement de l'espace plutôt que de
+ * laisser du vide à droite d'un horizon toujours fixé à 6. Valeur toujours
+ * choisie dans l'enum accepté par GET /projection/monthly (3/6/12/24/36/60) —
+ * une valeur hors enum (ex. 7) fait échouer l'appel en 400.
+ */
+function horizonMonthsFor(deviceClass: DeviceClass, orientation: Orientation): number {
+  if (deviceClass === 'desktop') return 12;
+  if (deviceClass === 'tablet') return 6;
+  return orientation === 'landscape' ? 6 : 3;
+}
+
+/**
  * Refonte maquette V6B §5 — Planning : véritable tableau façon Excel, 1re
  * colonne figée (libellés de série), défilement HORIZONTAL pour les mois
  * (largeur de colonne fixe : ~2-3 visibles en portrait mobile, davantage en
  * paysage/tablette/web par simple effet de largeur d'écran disponible —
  * jamais un carrousel mono-mois). Les montants proviennent exclusivement de
- * GET /projection/monthly (déjà calculé côté backend), jamais recalculés ici.
- * Les 2 colonnes (libellés figés / mois défilants) sont construites à partir
- * de la MÊME liste `lines`, ligne par ligne, pour garantir leur alignement
- * vertical sans dépendre d'un ajustement de marge fragile.
+ * GET /projection/monthly (déjà calculé côté backend), jamais recalculés ici,
+ * plus le calendrier mensuel réel de chaque plan financier (GET
+ * /provisions/:id/sufficiency → monthlyCalendar, section ENVELOPPES). Les 2
+ * colonnes (libellés figés / mois défilants) sont construites à partir de la
+ * MÊME liste `lines`, ligne par ligne, pour garantir leur alignement vertical
+ * sans dépendre d'un ajustement de marge fragile.
  */
 export function PlanningScreen() {
   const top = useTopInset();
   const bottom = useBottomInset();
+  const { deviceClass, orientation } = useResponsiveLayout();
+  const horizonMonths = horizonMonthsFor(deviceClass, orientation);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<api.MonthlyProjectionApi | null>(null);
+  const [provisions, setProvisions] = useState<PlanningProvision[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.getMonthlyProjection({ horizonMonths: HORIZON_MONTHS });
+      const [res, provisionList] = await Promise.all([api.getMonthlyProjection({ horizonMonths }), api.listProvisions()]);
       setData(res);
+      const withCalendar = await Promise.all(
+        provisionList.map(async (p: any) => {
+          const sufficiency = await api.getProvisionSufficiency(p.id);
+          return { id: p.id, name: p.name, monthlyCalendar: sufficiency.monthlyCalendar ?? [] };
+        }),
+      );
+      setProvisions(withCalendar);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [horizonMonths]);
 
   useFocusEffect(
     useCallback(() => {
@@ -51,7 +78,7 @@ export function PlanningScreen() {
     }, [load]),
   );
 
-  const groups = useMemo(() => (data ? rowsBySection(buildPlanningRows(data.months)) : []), [data]);
+  const groups = useMemo(() => (data ? rowsBySection(buildPlanningRows(data.months, provisions)) : []), [data, provisions]);
 
   const lines: GridLine[] = useMemo(() => {
     const out: GridLine[] = [];

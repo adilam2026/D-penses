@@ -72,6 +72,30 @@ describe('buildPlanningRows', () => {
     expect(rows[0].valuesByMonth).toEqual({ '2026-09': 2000, '2026-10': 2200 });
   });
 
+  it('ajoute le calendrier mensuel réel des plans financiers (provisions) en ENVELOPPES', () => {
+    const months = [bucket({ month: '2026-10' }), bucket({ month: '2026-11' })];
+    const rows = buildPlanningRows(months, [
+      {
+        id: 'prov1',
+        name: 'Scolarité',
+        monthlyCalendar: [
+          { month: '2026-10', recommendedAmount: 4500 },
+          { month: '2026-11', recommendedAmount: 4500 },
+        ],
+      },
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].section).toBe('enveloppes');
+    expect(rows[0].label).toBe('Scolarité');
+    expect(rows[0].valuesByMonth).toEqual({ '2026-10': 4500, '2026-11': 4500 });
+  });
+
+  it('un mois à 0 DH dans le calendrier de la provision ne crée pas de ligne', () => {
+    const months = [bucket({ month: '2026-10' })];
+    const rows = buildPlanningRows(months, [{ id: 'prov1', name: 'Voyage', monthlyCalendar: [{ month: '2026-10', recommendedAmount: 0 }] }]);
+    expect(rows).toHaveLength(0);
+  });
+
   it('trie les sections dans l\'ordre revenus/charges/enveloppes/exceptionnel', () => {
     const months = [
       bucket({

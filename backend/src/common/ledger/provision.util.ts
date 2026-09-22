@@ -145,12 +145,90 @@ export interface SufficiencyStep {
   tauxRequis: number | null; // gap / moisRestants — null si moisRestants < 1 (RG-032ter, non actionnable)
 }
 
+export interface MonthlyRecommendation {
+  month: string; // "YYYY-MM"
+  recommendedAmount: number;
+}
+
 export interface ProvisionSufficiency {
   provisionId: string;
   currentAmount: number;
   steps: SufficiencyStep[];
   versementMensuelRecommande: number; // max_i(tauxRequis) sur les paliers où gap > 0 et moisRestants >= 1
   tensionAlert: { deadlineId: string; dueDate: Date; manque: number } | null; // RG-032ter
+  monthlyCalendar: MonthlyRecommendation[]; // RG-032bis étendu — calendrier mensuel nommé, cf. buildMonthlyRecommendationCalendar
+}
+
+function monthStart(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+}
+
+function addMonths(d: Date, n: number): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, 1));
+}
+
+function monthKey(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function monthsBetweenInclusive(start: Date, end: Date): string[] {
+  const months: string[] = [];
+  let cur = start;
+  while (cur.getTime() <= end.getTime()) {
+    months.push(monthKey(cur));
+    cur = addMonths(cur, 1);
+  }
+  return months;
+}
+
+/**
+ * Calendrier mensuel de recommandation (extension RG-032bis, refonte maquette
+ * V6B §8) — jamais un montant unique : produit une recommandation PAR MOIS
+ * nommé, à partir UNIQUEMENT du disponible réel (currentAmount, issu des seuls
+ * versements confirmés) et des paliers déjà calculés par computeProvisionSufficiency
+ * (jamais un second moteur de calcul, jamais de mensualité stockée en base —
+ * toujours recalculée). Pour chaque palier, le besoin incrémental (au-delà de
+ * ce que le palier précédent devait déjà couvrir) est réparti sur les mois
+ * calendaires allant du mois suivant le palier précédent (ou le mois suivant
+ * referenceDate pour le premier palier) jusqu'au mois de l'échéance inclus —
+ * le dernier mois du segment reçoit le reliquat d'arrondi ("le solde restant").
+ * Une fois un palier échu, son montant cumulatif devient la nouvelle base : le
+ * palier suivant ne finance que son propre delta, jamais une redite du
+ * précédent (§ "après paiement d'une échéance, bascule automatique").
+ */
+export function buildMonthlyRecommendationCalendar(
+  currentAmount: number,
+  steps: { dueDate: Date; cumulativeNeed: number }[],
+  referenceDate: Date,
+): MonthlyRecommendation[] {
+  const result: MonthlyRecommendation[] = [];
+  let segmentStart = addMonths(monthStart(referenceDate), 1);
+  let baseline = currentAmount;
+
+  for (const step of steps) {
+    const dueMonth = monthStart(step.dueDate);
+    const start = segmentStart.getTime() <= dueMonth.getTime() ? segmentStart : dueMonth;
+    const months = monthsBetweenInclusive(start, dueMonth);
+    const gap = round2(Math.max(step.cumulativeNeed - baseline, 0));
+
+    if (gap <= 0) {
+      for (const m of months) result.push({ month: m, recommendedAmount: 0 });
+    } else {
+      const per = Math.floor((gap / months.length) * 100) / 100;
+      let allocated = 0;
+      months.forEach((m, idx) => {
+        const isLast = idx === months.length - 1;
+        const amount = isLast ? round2(gap - allocated) : per;
+        allocated = round2(allocated + amount);
+        result.push({ month: m, recommendedAmount: amount });
+      });
+    }
+
+    baseline = step.cumulativeNeed;
+    segmentStart = addMonths(dueMonth, 1);
+  }
+
+  return result;
 }
 
 /**
@@ -189,5 +267,11 @@ export async function computeProvisionSufficiency(tx: TxClient, provisionId: str
     steps.push({ deadlineId: d.id, dueDate: d.dueDate, resteAPayer: d.resteAPayer, cumulativeNeed: cumulative, moisRestants, gap, tauxRequis });
   }
 
-  return { provisionId, currentAmount, steps, versementMensuelRecommande: round2(versementMensuelRecommande), tensionAlert };
+  const monthlyCalendar = buildMonthlyRecommendationCalendar(
+    currentAmount,
+    steps.map((s) => ({ dueDate: s.dueDate, cumulativeNeed: s.cumulativeNeed })),
+    ref,
+  );
+
+  return { provisionId, currentAmount, steps, versementMensuelRecommande: round2(versementMensuelRecommande), tensionAlert, monthlyCalendar };
 }

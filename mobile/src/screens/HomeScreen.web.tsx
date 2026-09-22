@@ -8,6 +8,7 @@ import { accountCardPalette } from '../ui/theme';
 import { Donut } from '../ui/Donut';
 import { CardGrid } from '../web/ui/CardGrid.web';
 import { KpiTile } from '../web/ui/KpiTile.web';
+import { useWebBreakpoint } from '../web/useWebBreakpoint';
 import { MAX_CONTENT_WIDTH, webColors, webRadius, webSpacing } from '../web/webTheme';
 // Portail Web v4 §11/§12 — mêmes types + fonctions pures que HomeScreen.tsx
 // (homeLogic.ts, source unique) : cette variante Web ne recalcule RIEN, elle
@@ -41,6 +42,8 @@ const PLAN_CARD_WIDTH = 240;
  */
 export function HomeScreen() {
   const navigation = useNavigation<any>();
+  const { breakpoint } = useWebBreakpoint();
+  const narrow = breakpoint === 'narrow';
 
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -135,9 +138,13 @@ export function HomeScreen() {
         ]}
       />
 
-      {/* LIGNE 1 — bande héro compacte : montant à gauche, KPI à droite. */}
-      <View style={styles.hero}>
-        <View style={styles.heroLeft}>
+      {/* LIGNE 1 — bande héro : montant + KPI. Sur desktop/laptop, montant à
+          gauche et KPI à droite sur une ligne ; en narrow (<900px, incl. les
+          gabarits téléphone/tablette portrait), empilés verticalement et les
+          tuiles KPI passent en grille 2 colonnes pour ne jamais chevaucher le
+          montant ni déborder de l'écran. */}
+      <View style={[styles.hero, narrow && styles.heroNarrow]}>
+        <View style={[styles.heroLeft, narrow && styles.heroLeftNarrow]}>
           <Text style={styles.heroLabel}>SITUATION PILOTÉE AUJOURD'HUI</Text>
           <Text style={styles.heroAmount}>{summary.operational_treasury.toLocaleString('fr-FR')} DH</Text>
           <Text style={styles.heroSubtitle}>Comptes inclus dans votre pilotage financier</Text>
@@ -145,10 +152,15 @@ export function HomeScreen() {
             <Text style={styles.heroWarning}>⚠ Calcul incomplet — {summary.unknown_commitments_count} montant(s) encore inconnu(s).</Text>
           )}
         </View>
-        <View style={styles.heroKpis}>
-          <KpiTile label="Fin de période" value={`${summary.next_30_days.closing_physical_treasury.toLocaleString('fr-FR')} DH`} />
+        <View style={[styles.heroKpis, narrow && styles.heroKpisNarrow]}>
+          <KpiTile
+            width={narrow ? '48%' : undefined}
+            label="Fin de période"
+            value={`${summary.next_30_days.closing_physical_treasury.toLocaleString('fr-FR')} DH`}
+          />
           <KpiTile
             testID="home-engaged-row"
+            width={narrow ? '48%' : undefined}
             label="Disponible après engagements"
             value={`${summary.free_available.toLocaleString('fr-FR')} DH`}
             onPress={() =>
@@ -161,8 +173,14 @@ export function HomeScreen() {
               })
             }
           />
-          <KpiTile label="Patrimoine total" value={`${summary.patrimoine_liquide_total.toLocaleString('fr-FR')} DH`} testID="home-global-total" />
           <KpiTile
+            width={narrow ? '48%' : undefined}
+            label="Patrimoine total"
+            value={`${summary.patrimoine_liquide_total.toLocaleString('fr-FR')} DH`}
+            testID="home-global-total"
+          />
+          <KpiTile
+            width={narrow ? '48%' : undefined}
             label="Point bas prévu (30j)"
             value={`${summary.next_30_days.physical_low_point.toLocaleString('fr-FR')} DH`}
             sub={`le ${formatLongDate(summary.next_30_days.physical_low_point_date)}`}
@@ -185,6 +203,7 @@ export function HomeScreen() {
               return (
                 <TouchableOpacity
                   key={a.id}
+                  testID={`home-account-card-${a.id}`}
                   style={[styles.accountCard, { width: ACCOUNT_CARD_WIDTH, backgroundColor: accountCardPalette[i % accountCardPalette.length] }]}
                   onPress={() => navigation.getParent()?.navigate('AccountDetail', { id: a.id })}
                 >
@@ -201,6 +220,13 @@ export function HomeScreen() {
                       </TouchableOpacity>
                     )}
                   </View>
+                  {(a.bankName || a.ownerLabel) && (
+                    <Text style={styles.accountCardOwner} numberOfLines={1}>
+                      {(a.bankName ?? '').toUpperCase()}
+                      {a.bankName && a.ownerLabel ? ' • ' : ''}
+                      {a.ownerLabel ?? ''}
+                    </Text>
+                  )}
                   <Text style={styles.accountCardAmount}>{masked ? '•••••• DH' : `${a.soldeCourant.toLocaleString('fr-FR')} DH`}</Text>
                   <Text style={styles.accountCardStatus}>{a.includeInOperationalTreasury ? 'Piloté' : 'Hors pilotage'}</Text>
                 </TouchableOpacity>
@@ -296,10 +322,10 @@ export function HomeScreen() {
         </View>
       )}
 
-      {/* LIGNE 5 — Échéances importantes + Projection côte à côte. */}
-      <View style={styles.dashRow}>
+      {/* LIGNE 5 — Échéances importantes + Projection côte à côte (empilées en narrow). */}
+      <View style={[styles.dashRow, narrow && styles.dashRowNarrow]}>
         {upcomingDeadlines.length > 0 && (
-          <View style={[styles.dashColWide, styles.sec]}>
+          <View style={[styles.dashColWide, narrow && styles.dashColNarrow, styles.sec]}>
             <View style={styles.sectionHead}>
               <Text style={styles.sectionTitle}>Échéances importantes</Text>
               <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Charges')}>
@@ -328,7 +354,7 @@ export function HomeScreen() {
           </View>
         )}
 
-        <View style={[styles.dashColThird, styles.sec]}>
+        <View style={[styles.dashColThird, narrow && styles.dashColNarrow, styles.sec]}>
           <View style={styles.sectionHead}>
             <Text style={styles.sectionTitle}>Projection</Text>
           </View>
@@ -400,13 +426,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  heroNarrow: { flexDirection: 'column', alignItems: 'stretch' },
   heroLeft: { flexShrink: 0, maxWidth: 300, marginRight: webSpacing.xl },
+  heroLeftNarrow: { maxWidth: undefined, marginRight: 0, marginBottom: webSpacing.lg },
   heroLabel: { fontSize: 11, fontWeight: '700', color: webColors.sidebarTextMuted, letterSpacing: 0.5 },
   heroAmount: { fontSize: 32, fontWeight: '900', color: webColors.textOnPrimary, marginTop: 2 },
   heroSubtitle: { fontSize: 12, color: webColors.sidebarTextMuted, marginTop: 4 },
   heroWarning: { fontSize: 11, color: '#FFD79A', marginTop: webSpacing.sm, fontWeight: '600' },
   heroWarningInline: { fontSize: 11, color: webColors.danger, marginTop: webSpacing.sm, fontWeight: '600' },
   heroKpis: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', gap: webSpacing.sm, justifyContent: 'flex-end' },
+  heroKpisNarrow: { flex: undefined, justifyContent: 'space-between' },
 
   sec: { marginBottom: webSpacing.lg },
   sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: webSpacing.sm },
@@ -416,6 +445,7 @@ const styles = StyleSheet.create({
   accountCard: { borderRadius: webRadius.lg, padding: webSpacing.md },
   accountCardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   accountCardName: { fontSize: 12, color: 'rgba(255,255,255,0.85)', fontWeight: '600', flexShrink: 1, marginRight: webSpacing.xs },
+  accountCardOwner: { fontSize: 10, fontWeight: '700', color: 'rgba(255,255,255,0.7)', marginTop: 2 },
   accountCardAmount: { fontSize: 18, fontWeight: '900', color: '#fff', marginTop: webSpacing.sm },
   accountCardStatus: { fontSize: 10, color: 'rgba(255,255,255,0.85)', marginTop: 2 },
 
@@ -449,8 +479,10 @@ const styles = StyleSheet.create({
   planRemaining: { fontSize: 10, color: webColors.textSecondary, marginTop: webSpacing.xs },
 
   dashRow: { flexDirection: 'row', gap: webSpacing.lg },
+  dashRowNarrow: { flexDirection: 'column' },
   dashColWide: { flexGrow: 0, flexBasis: '62%', maxWidth: 900, minWidth: 0 },
   dashColThird: { flexGrow: 0, flexBasis: '34%', maxWidth: 480, minWidth: 0 },
+  dashColNarrow: { flexBasis: 'auto', maxWidth: undefined, width: '100%' },
 
   datePill: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: webSpacing.sm },
   datePillDay: { fontSize: 13, fontWeight: '900', color: '#fff', lineHeight: 15 },

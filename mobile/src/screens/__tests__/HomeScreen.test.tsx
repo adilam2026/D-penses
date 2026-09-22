@@ -47,6 +47,7 @@ function account(overrides: Partial<api.AccountApi>): api.AccountApi {
     envelopes: [],
     bankName: 'CIH',
     ownerUserId: null,
+    ownerLabel: null,
     isDedicated: false,
     dedicatedCategoryId: null,
     dedicatedFeed: null,
@@ -80,6 +81,13 @@ it('affiche le solde, la banque et les enveloppes affectées d\'un compte (jamai
   await waitFor(() => expect(screen.getByTestId('home-account-card-acc1')).toBeTruthy());
   expect(screen.getByText('12 000 DH')).toBeTruthy();
   expect(screen.getByText('Vacances')).toBeTruthy();
+});
+
+it('affiche "Banque • Propriétaire" quand les deux sont connus', async () => {
+  mockedApi.listAccounts.mockResolvedValue([account({ bankName: 'CIH', ownerLabel: 'Lamiaa' })]);
+  await render(<HomeScreen />);
+
+  await waitFor(() => expect(screen.getByText('CIH • Lamiaa')).toBeTruthy());
 });
 
 it('affiche la note "compte dédié" avec son alimentation récurrente', async () => {

@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { useNavigation } from '@react-navigation/native';
+import React, { useCallback, useState } from 'react';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { accountCreatedBus } from '../../state/events';
 import { FormField } from '../../ui/FormField';
+import { Select } from '../../ui/Select';
 import { colors, radius, spacing } from '../../ui/theme';
 
 type AccountType = 'courant' | 'especes' | 'epargne' | 'autre';
@@ -27,10 +28,21 @@ export function QuickCreateAccountScreen() {
   const bottomInset = useBottomInset();
   const [name, setName] = useState('');
   const [type, setType] = useState<AccountType>('courant');
+  const [bankName, setBankName] = useState('');
   const [initialBalance, setInitialBalance] = useState('');
   const [includeInPilotage, setIncludeInPilotage] = useState(true);
+  const [members, setMembers] = useState<Array<{ value: string; label: string }>>([]);
+  const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      api.getMyHousehold().then((h: any) => {
+        setMembers((h.memberships ?? []).map((m: any) => ({ value: m.user.id, label: m.user.firstName })));
+      });
+    }, []),
+  );
 
   async function onCreate() {
     setError(null);
@@ -41,7 +53,14 @@ export function QuickCreateAccountScreen() {
     setSubmitting(true);
     try {
       const balance = initialBalance.trim() ? Number(initialBalance.replace(',', '.')) : 0;
-      const account = await api.createAccount({ name: name.trim(), type, initialBalance: balance, includeInOperationalTreasury: includeInPilotage });
+      const account = await api.createAccount({
+        name: name.trim(),
+        type,
+        initialBalance: balance,
+        includeInOperationalTreasury: includeInPilotage,
+        bankName: bankName.trim() || undefined,
+        ownerUserId: ownerUserId ?? undefined,
+      });
       accountCreatedBus.emit({ id: account.id, name: account.name, type });
       navigation.goBack();
     } catch (err) {
@@ -67,6 +86,19 @@ export function QuickCreateAccountScreen() {
         </View>
 
         <FormField testID="quickcreate-account-name-input" label="Nom" placeholder="ex. Compte principal" value={name} onChangeText={setName} autoFocus />
+
+        <FormField testID="quickcreate-account-bank-input" label="Banque (facultatif)" placeholder="ex. CIH" value={bankName} onChangeText={setBankName} />
+
+        {members.length > 0 && (
+          <Select
+            testID="quickcreate-account-owner-select"
+            label="Propriétaire (facultatif)"
+            placeholder="Choisir un membre du foyer"
+            value={ownerUserId}
+            onChange={(v) => setOwnerUserId(ownerUserId === v ? null : v)}
+            options={members}
+          />
+        )}
 
         <FormField
           testID="quickcreate-account-balance-input"

@@ -39,6 +39,7 @@ jest.mock('../../../api/client', () => {
     listTransactions: jest.fn(),
     updateAccount: jest.fn(),
     createTransfer: jest.fn(),
+    getMyHousehold: jest.fn(),
   };
 });
 
@@ -55,6 +56,7 @@ const ACTIVE_ACCOUNT = {
   envelopes: [],
   bankName: null,
   ownerUserId: null,
+  ownerLabel: null,
   isDedicated: false,
   dedicatedCategoryId: null,
   dedicatedFeed: null,
@@ -71,6 +73,7 @@ const OTHER_ACCOUNT = {
   envelopes: [],
   bankName: null,
   ownerUserId: null,
+  ownerLabel: null,
   isDedicated: false,
   dedicatedCategoryId: null,
   dedicatedFeed: null,
@@ -89,6 +92,7 @@ beforeEach(() => {
   mockedApi.listAccounts.mockResolvedValue([]);
   mockedApi.listReconciliations.mockResolvedValue([]);
   mockedApi.listTransactions.mockResolvedValue([]);
+  mockedApi.getMyHousehold.mockResolvedValue({ memberships: [] });
 });
 
 it('affiche le menu "..." avec Modifier et Archiver pour un compte actif', async () => {

@@ -10,7 +10,8 @@ interface Props {
   testID?: string;
   /** Fond sombre (héro) vs. clair (carte blanche, ex. Projection) — jamais une 3e variante inventée. */
   variant?: 'dark' | 'light';
-  width?: number;
+  /** Nombre (px) sur desktop/laptop, ou pourcentage (ex. "47%") pour une grille 2 colonnes en narrow. */
+  width?: number | `${number}%`;
 }
 
 /**

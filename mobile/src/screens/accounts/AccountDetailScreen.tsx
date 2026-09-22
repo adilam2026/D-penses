@@ -87,6 +87,12 @@ export function AccountDetailScreen() {
   // masquage du solde par défaut à l'ouverture, visibilité sur l'Accueil.
   const [editHideBalanceByDefault, setEditHideBalanceByDefault] = useState(false);
   const [editShowOnHome, setEditShowOnHome] = useState(true);
+  // Refonte maquette V6B §5 — banque + propriétaire ("CIH • Lamiaa"), simples
+  // champs éditables ici (jamais un système de membres dédié : réutilise la
+  // liste déjà fournie par getMyHousehold().memberships).
+  const [editBankName, setEditBankName] = useState('');
+  const [editOwnerUserId, setEditOwnerUserId] = useState<string | null>(null);
+  const [members, setMembers] = useState<Array<{ value: string; label: string }>>([]);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [archiveError, setArchiveError] = useState<string | null>(null);
@@ -174,7 +180,7 @@ export function AccountDetailScreen() {
     }
   }
 
-  function openEdit() {
+  async function openEdit() {
     if (!account) return;
     setMenuOpen(false);
     setEditName(account.name);
@@ -182,8 +188,12 @@ export function AccountDetailScreen() {
     setEditIncludeInPilotage(account.includeInOperationalTreasury);
     setEditHideBalanceByDefault(account.hideBalanceByDefault ?? false);
     setEditShowOnHome(account.showOnHome ?? true);
+    setEditBankName((account as any).bankName ?? '');
+    setEditOwnerUserId((account as any).ownerUserId ?? null);
     setEditError(null);
     setEditOpen(true);
+    const household = await api.getMyHousehold();
+    setMembers((household.memberships ?? []).map((m: any) => ({ value: m.user.id, label: m.user.firstName })));
   }
 
   async function onSaveEdit() {
@@ -197,6 +207,8 @@ export function AccountDetailScreen() {
       await api.updateAccount(accountId, {
         name: editName.trim(),
         type: editType,
+        bankName: editBankName.trim() || undefined,
+        ownerUserId: editOwnerUserId ?? undefined,
         includeInOperationalTreasury: editIncludeInPilotage,
         hideBalanceByDefault: editHideBalanceByDefault,
         showOnHome: editShowOnHome,
@@ -400,6 +412,17 @@ export function AccountDetailScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+            <FormField label="Banque (facultatif)" value={editBankName} onChangeText={setEditBankName} placeholder="ex. CIH" testID="account-edit-bank" />
+            {members.length > 0 && (
+              <Select
+                testID="account-edit-owner-select"
+                label="Propriétaire (facultatif)"
+                placeholder="Choisir un membre du foyer"
+                value={editOwnerUserId}
+                onChange={(v) => setEditOwnerUserId(editOwnerUserId === v ? null : v)}
+                options={members}
+              />
+            )}
             {/* R6.1 §8 — bascule accessible aussi en modification. */}
             <View style={styles.pilotageRow}>
               <View style={{ flex: 1, marginRight: spacing.sm }}>

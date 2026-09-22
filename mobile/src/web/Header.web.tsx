@@ -5,6 +5,7 @@ import type { NavigationContainerRefWithCurrent } from '@react-navigation/native
 import * as api from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { WEB_SIDEBAR_PRIMARY } from '../navigation/menuSections';
+import { useWebBreakpoint } from './useWebBreakpoint';
 import { webColors, webSpacing } from './webTheme';
 
 interface Props {
@@ -24,6 +25,9 @@ const EXTRA_TITLES: Record<string, string> = {
   FinancialPlanDetail: 'Plan financier',
   ChargePlanDetail: 'Charge récurrente',
   DeadlineDetail: 'Échéance',
+  EnvelopeDetail: 'Enveloppe',
+  MedicalClaims: 'Mutuelle',
+  PocketDetail: 'Épargne',
 };
 
 function titleForRoute(routeName: string | undefined): string {
@@ -40,6 +44,8 @@ function titleForRoute(routeName: string | undefined): string {
  */
 export function Header({ navigationRef, currentRouteName, onToggleSidebar }: Props) {
   const { signOut } = useAuth();
+  const { breakpoint } = useWebBreakpoint();
+  const narrow = breakpoint === 'narrow';
   const [householdName, setHouseholdName] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,11 +66,13 @@ export function Header({ navigationRef, currentRouteName, onToggleSidebar }: Pro
             <Ionicons name="menu-outline" size={22} color={webColors.textPrimary} />
           </TouchableOpacity>
         )}
-        <Text style={styles.title}>{titleForRoute(currentRouteName)}</Text>
+        <Text style={styles.title} numberOfLines={1}>
+          {titleForRoute(currentRouteName)}
+        </Text>
       </View>
 
       <View style={styles.right}>
-        {householdName && <Text style={styles.household}>{householdName}</Text>}
+        {householdName && !narrow && <Text style={styles.household}>{householdName}</Text>}
         <TouchableOpacity
           testID="web-header-settings"
           style={styles.iconButton}
@@ -72,9 +80,13 @@ export function Header({ navigationRef, currentRouteName, onToggleSidebar }: Pro
         >
           <Ionicons name="settings-outline" size={18} color={webColors.textSecondary} />
         </TouchableOpacity>
-        <TouchableOpacity testID="web-header-logout" style={styles.logoutButton} onPress={signOut}>
+        <TouchableOpacity
+          testID="web-header-logout"
+          style={[styles.logoutButton, narrow && styles.logoutButtonNarrow]}
+          onPress={signOut}
+        >
           <Ionicons name="log-out-outline" size={16} color={webColors.textOnPrimary} />
-          <Text style={styles.logoutText}>Déconnexion</Text>
+          {!narrow && <Text style={styles.logoutText}>Déconnexion</Text>}
         </TouchableOpacity>
       </View>
     </View>
@@ -93,7 +105,7 @@ const styles = StyleSheet.create({
     borderBottomColor: webColors.border,
     flexShrink: 0,
   },
-  left: { flexDirection: 'row', alignItems: 'center' },
+  left: { flexDirection: 'row', alignItems: 'center', flexShrink: 1, minWidth: 0 },
   title: { fontSize: 17, fontWeight: '700', color: webColors.textPrimary },
   right: { flexDirection: 'row', alignItems: 'center', gap: webSpacing.md },
   household: { fontSize: 12, fontWeight: '600', color: webColors.textSecondary, marginRight: webSpacing.xs },
@@ -106,5 +118,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: webSpacing.md,
     paddingVertical: 8,
   },
+  logoutButtonNarrow: { paddingHorizontal: 8 },
   logoutText: { color: webColors.textOnPrimary, fontSize: 12, fontWeight: '600', marginLeft: 6 },
 });

@@ -10,3 +10,11 @@ export function formatShortDate(iso: string): string {
 export function formatFullDate(iso: string): string {
   return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
 }
+
+/** "2026-10" → "Octobre 2026" (calendrier mensuel des plans financiers, Planning). */
+export function formatMonthLabel(monthKey: string): string {
+  const [year, month] = monthKey.split('-').map(Number);
+  const d = new Date(Date.UTC(year, month - 1, 1));
+  const label = d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}

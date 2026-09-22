@@ -183,6 +183,8 @@ export interface AccountApi {
   envelopes: AccountEnvelope[];
   bankName: string | null;
   ownerUserId: string | null;
+  /** Refonte maquette V6B §5 — libellé du propriétaire ("Lamiaa"), dérivé de User.firstName côté backend. */
+  ownerLabel: string | null;
   isDedicated: boolean;
   dedicatedCategoryId: string | null;
   dedicatedFeed: { fromAccountName: string; amount: number; recurrenceRule: string } | null;
@@ -208,6 +210,7 @@ export const updateAccount = (
     hideBalanceByDefault?: boolean;
     showOnHome?: boolean;
     bankName?: string;
+    ownerUserId?: string;
     isDedicated?: boolean;
     dedicatedCategoryId?: string;
   },

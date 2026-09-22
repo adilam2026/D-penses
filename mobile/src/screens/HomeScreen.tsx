@@ -197,7 +197,11 @@ function AccountCard({
     <TouchableOpacity testID={`home-account-card-${account.id}`} style={[styles.accountCard, style]} onPress={onPress}>
       <View style={styles.accountHead}>
         <View style={{ flexShrink: 1 }}>
-          <Text style={styles.accountBank}>{(account.bankName ?? '').toUpperCase()}</Text>
+          <Text style={styles.accountBank}>
+            {(account.bankName ?? '').toUpperCase()}
+            {account.bankName && account.ownerLabel ? ' • ' : ''}
+            {account.ownerLabel ?? ''}
+          </Text>
           <Text style={styles.accountName}>{account.name}</Text>
           <Text style={styles.accountBalance}>{formatDh(account.soldeCourant)}</Text>
         </View>

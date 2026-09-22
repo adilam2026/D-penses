@@ -18,6 +18,12 @@ export interface PlanningRow {
   valuesByMonth: Record<string, number>;
 }
 
+export interface PlanningProvision {
+  id: string;
+  name: string;
+  monthlyCalendar: { month: string; recommendedAmount: number }[];
+}
+
 /**
  * Refonte maquette V6B §5 — transforme la projection mensuelle (déjà calculée
  * côté backend, jamais recalculée ici) en une grille façon tableur : chaque
@@ -25,8 +31,12 @@ export interface PlanningRow {
  * montant par mois, pour permettre un tableau multi-mois avec 1re colonne
  * figée. Les postes "projet" (rattachés à un plan financier à échéances)
  * vont en EXCEPTIONNEL, jamais mélangés aux charges récurrentes connues.
+ * `provisions` (optionnel) exploite le calendrier mensuel de recommandation
+ * (buildMonthlyRecommendationCalendar côté backend, cf. GET
+ * /provisions/:id/sufficiency) : chaque plan financier apparaît en ENVELOPPES
+ * avec son montant recommandé RÉEL par mois, jamais un second calcul.
  */
-export function buildPlanningRows(months: MonthBucketApi[]): PlanningRow[] {
+export function buildPlanningRows(months: MonthBucketApi[], provisions: PlanningProvision[] = []): PlanningRow[] {
   const rows = new Map<string, PlanningRow>();
 
   function addRow(section: PlanningSection, rowKey: string, label: string, month: string, amount: number) {
@@ -49,6 +59,12 @@ export function buildPlanningRows(months: MonthBucketApi[]): PlanningRow[] {
     }
     for (const b of m.budget_items_this_period) {
       addRow('enveloppes', b.budget_id, b.label, m.month, b.amount);
+    }
+  }
+
+  for (const p of provisions) {
+    for (const c of p.monthlyCalendar) {
+      if (c.recommendedAmount > 0) addRow('enveloppes', `provision:${p.id}`, p.name, c.month, c.recommendedAmount);
     }
   }
 

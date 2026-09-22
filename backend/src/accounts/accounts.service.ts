@@ -42,7 +42,8 @@ export class AccountsService {
         },
       });
       const balance = await this.getBalance(account.id);
-      return { ...account, soldeCourant: balance };
+      const owner = dto.ownerUserId ? await tx.user.findUnique({ where: { id: dto.ownerUserId } }) : null;
+      return { ...account, soldeCourant: balance, ownerLabel: owner?.firstName ?? null };
     });
   }
 
@@ -59,6 +60,7 @@ export class AccountsService {
       const accounts = await tx.financialAccount.findMany({
         where: includeArchived ? { householdId } : { householdId, status: 'actif' },
         orderBy: { createdAt: 'asc' },
+        include: { owner: true },
       });
       return Promise.all(
         accounts.map(async (a) => {
@@ -66,7 +68,8 @@ export class AccountsService {
           const { reservedByEnvelopes } = await computeAccountEnvelopeCoverage(tx, a.id);
           const envelopes = await computeAccountEnvelopeBreakdown(tx, a.id);
           const dedicatedFeed = await this.getDedicatedFeedInfo(tx, a);
-          return { ...a, soldeCourant, reservedByEnvelopes, envelopes, dedicatedFeed };
+          const { owner, ...rest } = a;
+          return { ...rest, soldeCourant, reservedByEnvelopes, envelopes, dedicatedFeed, ownerLabel: owner?.firstName ?? null };
         }),
       );
     });
@@ -75,13 +78,14 @@ export class AccountsService {
   async findOne(userId: string, householdId: string, id: string) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
-      const account = await tx.financialAccount.findFirst({ where: { id, householdId } });
+      const account = await tx.financialAccount.findFirst({ where: { id, householdId }, include: { owner: true } });
       if (!account) throw new NotFoundException('Compte introuvable');
       const soldeCourant = await this.getBalance(account.id);
       const { reservedByEnvelopes } = await computeAccountEnvelopeCoverage(tx, account.id);
       const envelopes = await computeAccountEnvelopeBreakdown(tx, account.id);
       const dedicatedFeed = await this.getDedicatedFeedInfo(tx, account);
-      return { ...account, soldeCourant, reservedByEnvelopes, envelopes, dedicatedFeed };
+      const { owner, ...rest } = account;
+      return { ...rest, soldeCourant, reservedByEnvelopes, envelopes, dedicatedFeed, ownerLabel: owner?.firstName ?? null };
     });
   }
 
@@ -107,11 +111,14 @@ export class AccountsService {
           hideBalanceByDefault: dto.hideBalanceByDefault,
           showOnHome: dto.showOnHome,
           bankName: dto.bankName,
+          ownerUserId: dto.ownerUserId,
           isDedicated: dto.isDedicated,
           dedicatedCategoryId: dto.dedicatedCategoryId,
         },
+        include: { owner: true },
       });
-      return { ...updated, soldeCourant: await this.getBalance(id) };
+      const { owner, ...rest } = updated;
+      return { ...rest, soldeCourant: await this.getBalance(id), ownerLabel: owner?.firstName ?? null };
     });
   }
 
