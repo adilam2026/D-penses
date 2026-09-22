@@ -2,31 +2,37 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
 import { QuickActionsSheet } from '../QuickActionsSheet';
 import { QuickActionsProvider, useQuickActions } from '../../state/QuickActionsContext';
+import * as api from '../../api/client';
 
 jest.mock('../useBottomInset', () => ({ useBottomInset: () => 16 }));
 
 /**
- * Tests de la bottom sheet "+" (TXT réf. §M1) : les 6 actions exactes
- * (Dépense/Revenu/Transfert/Charge récurrente/Budget/Plan), ouverture/fermeture,
- * et le chooser interne du Plan (École/Voyage disponibles, Maison/Voiture non
- * disponibles — jamais un faux parcours vers un écran non fonctionnel).
+ * Refonte maquette V6B §11 — tests de la bottom sheet "+" : exactement 4
+ * actions (Dépense/Revenu/Versement enveloppe/Transfert), ouverture/fermeture,
+ * et le chooser interne "Versement enveloppe" (liste les provisions/poches
+ * réelles du foyer, jamais un Alert natif).
  */
 const mockNavigate = jest.fn();
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({ navigate: mockNavigate }),
 }));
 
-// expo-font/expo-asset ne résolvent pas sous Jest dans cet environnement (jamais
-// exercé avant Vague 3, aucun test précédent ne rendait un composant impliquant
-// @expo/vector-icons) — on mocke la frontière du module, pas son comportement :
-// seule l'icône réellement affichée nous importe ici, jamais le rendu de police.
 jest.mock('@expo/vector-icons', () => {
   const { Text } = require('react-native');
   return { Ionicons: (props: any) => Text != null && require('react').createElement(Text, null, props.name) };
 });
 
-// Harnais minimal : ouvre la sheet automatiquement pour tester son contenu,
-// sans dépendre de RootTabs (déjà testé séparément pour l'ouverture depuis l'onglet central).
+jest.mock('../../api/client', () => {
+  const actual = jest.requireActual('../../api/client');
+  return {
+    ...actual,
+    listPockets: jest.fn(),
+    listProvisions: jest.fn(),
+  };
+});
+
+const mockedApi = api as jest.Mocked<typeof api>;
+
 function OpenSheetHarness() {
   const { open } = useQuickActions();
   React.useEffect(() => {
@@ -47,22 +53,22 @@ async function renderOpenSheet() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockedApi.listPockets.mockResolvedValue([]);
+  mockedApi.listProvisions.mockResolvedValue([]);
 });
 
-describe('QuickActionsSheet — les 6 actions (TXT réf. §M1)', () => {
-  it('affiche exactement les 6 actions prescrites : Dépense/Revenu/Transfert/Charge récurrente/Budget/Plan', async () => {
+describe('QuickActionsSheet — les 4 actions (refonte maquette V6B §11)', () => {
+  it('affiche exactement les 4 actions prescrites : Dépense/Revenu/Versement enveloppe/Transfert', async () => {
     await renderOpenSheet();
     expect(screen.getByTestId('quick-action-depense')).toBeTruthy();
     expect(screen.getByTestId('quick-action-revenu')).toBeTruthy();
+    expect(screen.getByTestId('quick-action-versement')).toBeTruthy();
     expect(screen.getByTestId('quick-action-transfert')).toBeTruthy();
-    expect(screen.getByTestId('quick-action-charge')).toBeTruthy();
-    expect(screen.getByTestId('quick-action-budget')).toBeTruthy();
-    expect(screen.getByTestId('quick-action-plan')).toBeTruthy();
-    // §M1 — "Alimenter une enveloppe" et "Payer une échéance" ne sont plus des
-    // entrées de premier niveau (le moteur Provision reste, mais n'est plus
-    // exposé ici comme un concept générique).
-    expect(screen.queryByTestId('quick-action-alimenter')).toBeNull();
-    expect(screen.queryByTestId('quick-action-paiement')).toBeNull();
+    // §11 — création de charge/budget/plan ne sont plus des entrées de premier
+    // niveau : elles restent fonctionnelles depuis leur propre écran de liste.
+    expect(screen.queryByTestId('quick-action-charge')).toBeNull();
+    expect(screen.queryByTestId('quick-action-budget')).toBeNull();
+    expect(screen.queryByTestId('quick-action-plan')).toBeNull();
   });
 
   it('"Dépense" navigue directement vers QuickAdd en mode dépense', async () => {
@@ -77,18 +83,6 @@ describe('QuickActionsSheet — les 6 actions (TXT réf. §M1)', () => {
     expect(mockNavigate).toHaveBeenCalledWith('QuickAdd', { mode: 'transfert' });
   });
 
-  it('"Charge récurrente" navigue directement vers CreateCharge', async () => {
-    await renderOpenSheet();
-    await fireEvent.press(screen.getByTestId('quick-action-charge'));
-    expect(mockNavigate).toHaveBeenCalledWith('CreateCharge');
-  });
-
-  it('"Budget" navigue directement vers CreateBudget', async () => {
-    await renderOpenSheet();
-    await fireEvent.press(screen.getByTestId('quick-action-budget'));
-    expect(mockNavigate).toHaveBeenCalledWith('CreateBudget');
-  });
-
   it('"Annuler" ferme la sheet', async () => {
     await renderOpenSheet();
     await fireEvent.press(screen.getByText('Annuler'));
@@ -96,54 +90,26 @@ describe('QuickActionsSheet — les 6 actions (TXT réf. §M1)', () => {
   });
 });
 
-describe('QuickActionsSheet — chooser "Plan" (TXT réf. §M1/M7+M8)', () => {
-  it('propose École/Voyage/Maison/Voiture/Abonnements via un modal interne (jamais un Alert natif)', async () => {
+describe('QuickActionsSheet — chooser "Versement enveloppe"', () => {
+  it('liste les provisions et poches réelles du foyer, puis navigue vers EnvelopeDetail', async () => {
+    mockedApi.listProvisions.mockResolvedValue([{ id: 'prov1', name: 'Scolarité' }]);
+    mockedApi.listPockets.mockResolvedValue([{ id: 'pock1', name: 'Vacances' }]);
     await renderOpenSheet();
-    await fireEvent.press(screen.getByTestId('quick-action-plan'));
 
-    await waitFor(() => screen.getByTestId('plan-type-choice-option-scolaire'));
-    expect(screen.getByTestId('plan-type-choice-option-voyage')).toBeTruthy();
-    expect(screen.getByTestId('plan-type-choice-option-maison')).toBeTruthy();
-    expect(screen.getByTestId('plan-type-choice-option-voiture')).toBeTruthy();
-    expect(screen.getByTestId('plan-type-choice-option-abonnements')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('quick-action-versement'));
+    await waitFor(() => screen.getByTestId('envelope-choice-option-provision-prov1'));
+    expect(screen.getByTestId('envelope-choice-option-savings_pocket-pock1')).toBeTruthy();
 
-    await fireEvent.press(screen.getByTestId('plan-type-choice-option-scolaire'));
-    expect(mockNavigate).toHaveBeenCalledWith('SchoolWizard');
+    await fireEvent.press(screen.getByTestId('envelope-choice-option-provision-prov1'));
+    expect(mockNavigate).toHaveBeenCalledWith('EnvelopeDetail', { kind: 'provision', id: 'prov1' });
   });
 
-  it('"Voyage" navigue vers TravelWizard', async () => {
+  it("sans aucune enveloppe, propose d'en créer une", async () => {
     await renderOpenSheet();
-    await fireEvent.press(screen.getByTestId('quick-action-plan'));
-    await waitFor(() => screen.getByTestId('plan-type-choice-option-voyage'));
+    await fireEvent.press(screen.getByTestId('quick-action-versement'));
 
-    await fireEvent.press(screen.getByTestId('plan-type-choice-option-voyage'));
-    expect(mockNavigate).toHaveBeenCalledWith('TravelWizard');
-  });
-
-  it('M7+M8 — "Maison" navigue vers HousingWizard, "Voiture" vers VehicleWizard (référentiels construits, jamais un faux parcours)', async () => {
-    await renderOpenSheet();
-    await fireEvent.press(screen.getByTestId('quick-action-plan'));
-    await waitFor(() => screen.getByTestId('plan-type-choice-option-maison'));
-
-    await fireEvent.press(screen.getByTestId('plan-type-choice-option-maison'));
-    expect(mockNavigate).toHaveBeenCalledWith('HousingWizard');
-  });
-
-  it('M7+M8 — "Voiture" navigue vers VehicleWizard', async () => {
-    await renderOpenSheet();
-    await fireEvent.press(screen.getByTestId('quick-action-plan'));
-    await waitFor(() => screen.getByTestId('plan-type-choice-option-voiture'));
-
-    await fireEvent.press(screen.getByTestId('plan-type-choice-option-voiture'));
-    expect(mockNavigate).toHaveBeenCalledWith('VehicleWizard');
-  });
-
-  it('M7+M8 — "Abonnements" navigue vers SubscriptionsWizard', async () => {
-    await renderOpenSheet();
-    await fireEvent.press(screen.getByTestId('quick-action-plan'));
-    await waitFor(() => screen.getByTestId('plan-type-choice-option-abonnements'));
-
-    await fireEvent.press(screen.getByTestId('plan-type-choice-option-abonnements'));
-    expect(mockNavigate).toHaveBeenCalledWith('SubscriptionsWizard');
+    await waitFor(() => screen.getByTestId('envelope-choice-option-aucune'));
+    await fireEvent.press(screen.getByTestId('envelope-choice-option-aucune'));
+    expect(mockNavigate).toHaveBeenCalledWith('CreatePocket');
   });
 });

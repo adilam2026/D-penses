@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import { Modal, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as api from '../api/client';
 import { useQuickActions } from '../state/QuickActionsContext';
 import { ChoiceSheet } from './ChoiceSheet';
 import { useBottomInset } from './useBottomInset';
@@ -15,17 +16,17 @@ interface QuickAction {
   icon: IconName;
 }
 
-// TXT réf. §M1 — 6 actions exactes : Dépense/Revenu/Transfert/Charge récurrente/
-// Budget/Plan. "Alimenter une enveloppe" et "Payer une échéance" ne sont plus des
-// entrées de premier niveau (le moteur Provision reste, mais n'est plus exposé ici
-// comme un concept générique) ; le paiement d'une échéance se fait depuis son détail.
+// Refonte maquette V6B §11 — exactement 4 actions rapides : Dépense/Revenu/
+// Versement enveloppe/Transfert. Les créations de charge prévisionnelle,
+// budget et plan financier restent entièrement fonctionnelles (aucune perte),
+// mais ne sont plus une entrée de la bottom sheet "+" : chacune a déjà son
+// propre "+" dans son écran de liste (ChargesScreen/BudgetsScreen/
+// FinancialPlansScreen), atteignable depuis le menu ☰.
 const ACTIONS: QuickAction[] = [
   { key: 'depense', label: 'Dépense', description: 'Une dépense réelle', icon: 'remove-circle-outline' },
   { key: 'revenu', label: 'Revenu', description: 'Un revenu reçu', icon: 'add-circle-outline' },
+  { key: 'versement', label: 'Versement enveloppe', description: 'Alimenter une réserve', icon: 'wallet-outline' },
   { key: 'transfert', label: 'Transfert', description: 'Entre deux comptes', icon: 'swap-horizontal-outline' },
-  { key: 'charge', label: 'Charge prévisionnelle', description: 'Un engagement régulier', icon: 'receipt-outline' },
-  { key: 'budget', label: 'Budget', description: 'Un seuil de contrôle', icon: 'pie-chart-outline' },
-  { key: 'plan', label: 'Plan', description: 'École, voyage...', icon: 'folder-outline' },
 ];
 
 /**
@@ -33,10 +34,17 @@ const ACTIONS: QuickAction[] = [
  * de l'écran. Chaque action anticipe ses prérequis (§4) : jamais une impasse —
  * même pattern que QuickAddScreen.promptCreateAccount() (Alert + CTA de création).
  */
+interface EnvelopeChoice {
+  kind: 'savings_pocket' | 'provision';
+  id: string;
+  name: string;
+}
+
 export function QuickActionsSheet() {
   const navigation = useNavigation<any>();
   const { visible, close } = useQuickActions();
-  const [planChoiceOpen, setPlanChoiceOpen] = useState(false);
+  const [envelopeChoiceOpen, setEnvelopeChoiceOpen] = useState(false);
+  const [envelopeChoices, setEnvelopeChoices] = useState<EnvelopeChoice[]>([]);
   // R6.3 (point I safe-area) — jamais un paddingBottom codé en dur : la barre
   // système Android (gestes ou 3 boutons) doit toujours être évitée.
   const bottomInset = useBottomInset(12);
@@ -46,23 +54,18 @@ export function QuickActionsSheet() {
     navigation.navigate('QuickAdd', { mode });
   }
 
-  function onCreerCharge() {
+  const onVersementEnveloppe = useCallback(async () => {
     close();
-    navigation.navigate('CreateCharge');
-  }
-
-  function onCreerBudget() {
-    close();
-    navigation.navigate('CreateBudget');
-  }
-
-  function onCreerPlan() {
-    close();
-    // §12 : un choix métier (type de plan) ne passe jamais par un Alert natif —
-    // le ChoiceSheet interne s'ouvre APRÈS la fermeture du bottom sheet "+"
-    // (deux modals React Native simultanées se marchent dessus sur Android).
-    setTimeout(() => setPlanChoiceOpen(true), 300);
-  }
+    const [pockets, provisions] = await Promise.all([api.listPockets(), api.listProvisions()]);
+    setEnvelopeChoices([
+      ...provisions.map((p: any) => ({ kind: 'provision' as const, id: p.id, name: p.name })),
+      ...pockets.map((p: any) => ({ kind: 'savings_pocket' as const, id: p.id, name: p.name })),
+    ]);
+    // §12 : un choix métier ne passe jamais par un Alert natif — le ChoiceSheet
+    // interne s'ouvre APRÈS la fermeture du bottom sheet "+" (deux modals React
+    // Native simultanées se marchent dessus sur Android).
+    setTimeout(() => setEnvelopeChoiceOpen(true), 300);
+  }, [close]);
 
   function onPress(key: string) {
     switch (key) {
@@ -72,12 +75,8 @@ export function QuickActionsSheet() {
         return goToQuickAdd('revenu');
       case 'transfert':
         return goToQuickAdd('transfert');
-      case 'charge':
-        return onCreerCharge();
-      case 'budget':
-        return onCreerBudget();
-      case 'plan':
-        return onCreerPlan();
+      case 'versement':
+        return onVersementEnveloppe();
     }
   }
 
@@ -107,47 +106,29 @@ export function QuickActionsSheet() {
         </View>
       </Modal>
       <ChoiceSheet
-        visible={planChoiceOpen}
-        title="Créer un plan"
-        testID="plan-type-choice"
-        onClose={() => setPlanChoiceOpen(false)}
-        options={[
-          {
-            key: 'scolaire',
-            label: 'Frais scolaires',
-            description: 'Échéances de scolarité et services associés',
-            icon: 'school-outline',
-            onPress: () => navigation.navigate('SchoolWizard'),
-          },
-          {
-            key: 'voyage',
-            label: 'Voyage',
-            description: "Budget et dépenses d'un voyage",
-            icon: 'airplane-outline',
-            onPress: () => navigation.navigate('TravelWizard'),
-          },
-          {
-            key: 'maison',
-            label: 'Maison',
-            description: 'Charges liées à un logement',
-            icon: 'home-outline',
-            onPress: () => navigation.navigate('HousingWizard'),
-          },
-          {
-            key: 'voiture',
-            label: 'Voiture',
-            description: 'Charges liées à un véhicule',
-            icon: 'car-outline',
-            onPress: () => navigation.navigate('VehicleWizard'),
-          },
-          {
-            key: 'abonnements',
-            label: 'Abonnements',
-            description: 'Vue regroupée de vos abonnements',
-            icon: 'repeat-outline',
-            onPress: () => navigation.navigate('SubscriptionsWizard'),
-          },
-        ]}
+        visible={envelopeChoiceOpen}
+        title="Verser sur une enveloppe"
+        testID="envelope-choice"
+        onClose={() => setEnvelopeChoiceOpen(false)}
+        options={
+          envelopeChoices.length > 0
+            ? envelopeChoices.map((e) => ({
+                key: `${e.kind}-${e.id}`,
+                label: e.name,
+                description: e.kind === 'provision' ? 'Plan financier' : 'Réserve permanente',
+                icon: 'wallet-outline' as IconName,
+                onPress: () => navigation.navigate('EnvelopeDetail', { kind: e.kind, id: e.id }),
+              }))
+            : [
+                {
+                  key: 'aucune',
+                  label: 'Aucune enveloppe',
+                  description: 'Créez-en une depuis l\'onglet Enveloppes',
+                  icon: 'add-circle-outline' as IconName,
+                  onPress: () => navigation.navigate('CreatePocket'),
+                },
+              ]
+        }
       />
     </>
   );
@@ -165,7 +146,7 @@ const styles = StyleSheet.create({
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D9D5CC', alignSelf: 'center', marginBottom: 12 },
   title: { fontSize: 16, fontWeight: '700', color: '#172436', marginBottom: 16 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  action: { width: '31%', alignItems: 'center', marginBottom: 20 },
+  action: { width: '47%', alignItems: 'center', marginBottom: 20 },
   iconCircle: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
   actionLabel: { fontSize: 12, fontWeight: '600', color: '#172436', textAlign: 'center' },
   actionDescription: { fontSize: 10, color: '#6B747C', textAlign: 'center', marginTop: 2 },

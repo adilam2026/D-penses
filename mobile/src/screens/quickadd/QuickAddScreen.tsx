@@ -7,6 +7,7 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -137,6 +138,11 @@ export function QuickAddScreen() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState<string | null>(presetBudget?.categoryId ?? null);
   const [budgetHint, setBudgetHint] = useState<string | null>(null);
+  // Refonte maquette V6B §9 — visible uniquement pour une dépense réelle de
+  // catégorie Santé : coche "Remboursable par mutuelle" → crée automatiquement
+  // un dossier MedicalClaim côté backend (jamais un revenu tant que non clôturé).
+  const [remboursableMutuelle, setRemboursableMutuelle] = useState(false);
+  const [expenseLabel, setExpenseLabel] = useState('');
 
   // Vague 2 §1/§4 — Type filtré par Catégorie, Sous-type filtré par Type, tous deux facultatifs.
   const [categoryTypes, setCategoryTypes] = useState<CategoryType[]>([]);
@@ -348,12 +354,14 @@ export function QuickAddScreen() {
           await api.createExpense({
             amount: numericAmount,
             accountId: accountId!,
+            label: expenseLabel.trim() || undefined,
             categoryId: presetBudget ? presetBudget.categoryId : categoryId ?? undefined,
             categoryTypeId: presetBudget ? presetBudget.categoryTypeId : categoryTypeId ?? undefined,
             categorySubtypeId: presetBudget ? undefined : categorySubtypeId ?? undefined,
             variableBudgetId: presetBudget?.variableBudgetId,
             spentDate: spentDate || today,
             notes: notes || undefined,
+            remboursableMutuelle: isSanteCategory ? remboursableMutuelle : undefined,
           });
         }
       } else if (mode === 'revenu') {
@@ -400,6 +408,7 @@ export function QuickAddScreen() {
   }
 
   const expenseCategories = categories.filter((c) => c.kind === 'expense' || c.kind === 'both');
+  const isSanteCategory = categories.find((c) => c.id === categoryId)?.name === 'Santé';
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -510,6 +519,27 @@ export function QuickAddScreen() {
                   options={expenseCategories.map((c) => ({ value: c.id, label: c.name }))}
                 />
                 {budgetHint ? <Text style={styles.hint}>{budgetHint}</Text> : null}
+
+                <FormField
+                  testID="quickadd-expense-label-input"
+                  label="Libellé (facultatif)"
+                  placeholder="Ex. Consultation pédiatre"
+                  value={expenseLabel}
+                  onChangeText={setExpenseLabel}
+                  onFocus={handleFocus}
+                />
+
+                {isSanteCategory && (
+                  <View style={styles.mutuelleRow} testID="quickadd-mutuelle-row">
+                    <View style={{ flex: 1, marginRight: spacing.sm }}>
+                      <Text style={styles.pilotageLabel}>Remboursable par mutuelle</Text>
+                      <Text style={styles.pilotageHelp}>
+                        Crée automatiquement un dossier de suivi (Santé/Mutuelle) — le remboursement ne compte jamais comme un revenu tant qu'il n'est pas clôturé.
+                      </Text>
+                    </View>
+                    <Switch testID="quickadd-mutuelle-switch" value={remboursableMutuelle} onValueChange={setRemboursableMutuelle} />
+                  </View>
+                )}
 
                 {/* NOUVELLE ÉVOLUTION — une dépense "à venir" crée un ChargePlan
                     (categoryId uniquement) : Type/Sous-type n'existent pas sur ce
@@ -800,6 +830,19 @@ export function QuickAddScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   scroll: { padding: spacing.xxl },
+  mutuelleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  pilotageLabel: { fontSize: 12, fontWeight: '600', color: colors.textPrimary },
+  pilotageHelp: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
   segment: { flexDirection: 'row', backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: 4, marginBottom: spacing.sm },
   segmentItem: { flex: 1, paddingVertical: 10, borderRadius: radius.sm, alignItems: 'center' },
   segmentActive: { backgroundColor: colors.surface },
