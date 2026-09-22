@@ -16,7 +16,15 @@ interface Props {
 // Titre de page = libellé déjà validé dans la Sidebar (source unique, jamais un
 // second jeu de libellés) ; "HamburgerMenu" reste l'unique exception (accessible
 // via "Plus", pas dans la nav primaire).
-const EXTRA_TITLES: Record<string, string> = { HamburgerMenu: 'Menu' };
+const EXTRA_TITLES: Record<string, string> = {
+  HamburgerMenu: 'Menu',
+  AccountDetail: 'Compte',
+  TransactionDetail: 'Transaction',
+  BudgetDetail: 'Budget',
+  FinancialPlanDetail: 'Plan financier',
+  ChargePlanDetail: 'Charge récurrente',
+  DeadlineDetail: 'Échéance',
+};
 
 function titleForRoute(routeName: string | undefined): string {
   if (!routeName) return 'D-Penses+';
