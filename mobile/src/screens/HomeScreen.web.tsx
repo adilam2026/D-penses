@@ -5,40 +5,42 @@ import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { ChoiceSheet } from '../ui/ChoiceSheet';
 import { accountCardPalette } from '../ui/theme';
-import { Donut } from '../ui/Donut';
 import { CardGrid } from '../web/ui/CardGrid.web';
-import { KpiTile } from '../web/ui/KpiTile.web';
 import { useWebBreakpoint } from '../web/useWebBreakpoint';
 import { MAX_CONTENT_WIDTH, webColors, webRadius, webSpacing } from '../web/webTheme';
-// Portail Web v4 §11/§12 — mêmes types + fonctions pures que HomeScreen.tsx
-// (homeLogic.ts, source unique) : cette variante Web ne recalcule RIEN, elle
-// réagence seulement l'affichage des mêmes données pour un usage desktop.
-import {
-  Account,
-  DashboardSummary,
-  PLAN_TYPE_ICON,
-  PROJECTION_STATUS_COLOR,
-  PROJECTION_STATUS_LABEL,
-  essentialPrerequisitesMet,
-  formatLongDate,
-  isFullyEmpty,
-  isPartiallyConfigured,
-  prioritizeBudgets,
-  prioritizePlans,
-  urgencyColor,
-} from './homeLogic';
+import { toNum } from './envelopes/envelopesLogic';
+import { DashboardSummary, essentialPrerequisitesMet, formatShortDate, isFullyEmpty, isPartiallyConfigured } from './homeLogic';
 
-const ACCOUNT_CARD_WIDTH = 220;
-const BUDGET_CARD_WIDTH = 260;
-const PLAN_CARD_WIDTH = 240;
+const ACCOUNT_CARD_WIDTH = 260;
+
+interface TodoCharge {
+  kind: 'charge';
+  deadlineId: string;
+  label: string;
+  amount: number;
+  dueDate: string;
+  accountName: string | null;
+}
+interface TodoEnvelope {
+  kind: 'envelope';
+  provisionId: string;
+  label: string;
+  amount: number;
+}
+type TodoItem = TodoCharge | TodoEnvelope;
 
 /**
- * Portail Web v4 §2 — Home desktop repensée à zéro (aucune référence à la
- * Maquette 3 mobile) : bande héro compacte (montant + KPI), puis Comptes /
- * Budgets / Plans en grilles à largeur de carte FIXE (CardGrid, max 5/ligne,
- * jamais une carte étirée), puis Échéances + Projection. Mêmes deux appels
- * réseau que mobile (GET /dashboard/summary + GET /accounts) — même donnée,
- * jamais un second calcul.
+ * Refonte maquette V6B §3 — équivalent Web de HomeScreen.tsx (mêmes deux
+ * blocs, même métier, mêmes appels réseau : GET /accounts, GET /deadlines,
+ * GET /provisions + sufficiency) : Comptes d'abord (banque/propriétaire,
+ * solde réel, enveloppes affectées jamais additives au solde, "alimenté
+ * depuis…" pour un compte dédié), puis "À faire". JAMAIS de dashboard
+ * financier consolidé ici (plus de bande "Situation pilotée", plus de KPI,
+ * plus de grilles Budgets/Plans financiers) — ces écrans restent accessibles
+ * depuis la sidebar/le menu "Plus", pas dupliqués sur l'Accueil.
+ * getDashboardSummary() reste appelé UNIQUEMENT pour les signaux d'état
+ * (foyer vide / partiellement configuré, bandeau onboarding) — jamais un
+ * de ses champs n'est affiché.
  */
 export function HomeScreen() {
   const navigation = useNavigation<any>();
@@ -46,7 +48,8 @@ export function HomeScreen() {
   const narrow = breakpoint === 'narrow';
 
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accounts, setAccounts] = useState<api.AccountApi[]>([]);
+  const [todos, setTodos] = useState<TodoItem[]>([]);
   const [incomeSourcesCount, setIncomeSourcesCount] = useState(0);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [dismissChoiceOpen, setDismissChoiceOpen] = useState(false);
@@ -56,16 +59,45 @@ export function HomeScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, a, incomeSources, household] = await Promise.all([
+      const [s, accountList, deadlines, provisions, incomeSources, household] = await Promise.all([
         api.getDashboardSummary(),
         api.listAccounts(),
+        api.listOpenDeadlines(),
+        api.listProvisions(),
         api.listIncomeSources(),
         api.getMyHousehold(),
       ]);
       setSummary(s);
-      setAccounts(a);
+      setAccounts(accountList);
       setIncomeSourcesCount(incomeSources.length);
       setBannerDismissed(!!household?.settings?.homeBannerDismissed);
+
+      const accountNameById = Object.fromEntries(accountList.map((a: api.AccountApi) => [a.id, a.name]));
+      const now = Date.now();
+      const horizon = now + 14 * 86400000;
+      const charges: TodoCharge[] = deadlines
+        .filter((d: any) => d.amountStatus !== 'inconnu' && d.resteAPayer !== null && new Date(d.dueDate).getTime() <= horizon)
+        .sort((a: any, b: any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+        .slice(0, 5)
+        .map((d: any) => ({
+          kind: 'charge' as const,
+          deadlineId: d.id,
+          label: d.chargePlan?.label ?? 'Échéance',
+          amount: toNum(d.resteAPayer),
+          dueDate: d.dueDate,
+          accountName: d.chargePlan?.defaultAccountId ? (accountNameById[d.chargePlan.defaultAccountId] ?? null) : null,
+        }));
+
+      const envelopeTodos: TodoEnvelope[] = [];
+      for (const p of provisions) {
+        const sufficiency = await api.getProvisionSufficiency(p.id);
+        const amount = toNum(sufficiency.versementMensuelRecommande);
+        if (amount > 0) {
+          envelopeTodos.push({ kind: 'envelope', provisionId: p.id, label: p.name, amount });
+        }
+      }
+
+      setTodos([...charges, ...envelopeTodos]);
     } finally {
       setLoading(false);
     }
@@ -96,10 +128,7 @@ export function HomeScreen() {
   const fullyEmpty = isFullyEmpty(summary, accounts);
   const partiallyConfigured = isPartiallyConfigured(summary, accounts);
   const showConfigBanner = partiallyConfigured && !essentialPrerequisitesMet(accounts, incomeSourcesCount) && !bannerDismissed;
-  const upcomingDeadlines = summary.topDeadlines;
-  const topPlans = prioritizePlans(summary.financialPlansResume).slice(0, 10);
-  const topBudgets = prioritizeBudgets(summary.budgetsResume).slice(0, 10);
-  const topAccounts = accounts.slice(0, 10);
+  const homeAccounts = accounts.filter((a) => a.showOnHome !== false);
 
   if (fullyEmpty) {
     return (
@@ -138,58 +167,8 @@ export function HomeScreen() {
         ]}
       />
 
-      {/* LIGNE 1 — bande héro : montant + KPI. Sur desktop/laptop, montant à
-          gauche et KPI à droite sur une ligne ; en narrow (<900px, incl. les
-          gabarits téléphone/tablette portrait), empilés verticalement et les
-          tuiles KPI passent en grille 2 colonnes pour ne jamais chevaucher le
-          montant ni déborder de l'écran. */}
-      <View style={[styles.hero, narrow && styles.heroNarrow]}>
-        <View style={[styles.heroLeft, narrow && styles.heroLeftNarrow]}>
-          <Text style={styles.heroLabel}>SITUATION PILOTÉE AUJOURD'HUI</Text>
-          <Text style={styles.heroAmount}>{summary.operational_treasury.toLocaleString('fr-FR')} DH</Text>
-          <Text style={styles.heroSubtitle}>Comptes inclus dans votre pilotage financier</Text>
-          {!summary.is_complete && (
-            <Text style={styles.heroWarning}>⚠ Calcul incomplet — {summary.unknown_commitments_count} montant(s) encore inconnu(s).</Text>
-          )}
-        </View>
-        <View style={[styles.heroKpis, narrow && styles.heroKpisNarrow]}>
-          <KpiTile
-            width={narrow ? '48%' : undefined}
-            label="Fin de période"
-            value={`${summary.next_30_days.closing_physical_treasury.toLocaleString('fr-FR')} DH`}
-          />
-          <KpiTile
-            testID="home-engaged-row"
-            width={narrow ? '48%' : undefined}
-            label="Disponible après engagements"
-            value={`${summary.free_available.toLocaleString('fr-FR')} DH`}
-            onPress={() =>
-              navigation.getParent()?.navigate('EngagedDetail', {
-                committedAmount: summary.committed_amount,
-                deadlineItems: summary.deadlineItems,
-                variableBudgetItems: summary.variableBudgetItems,
-                horizonDate: summary.horizon_date,
-                horizonIsFallback: summary.horizon_is_fallback,
-              })
-            }
-          />
-          <KpiTile
-            width={narrow ? '48%' : undefined}
-            label="Patrimoine total"
-            value={`${summary.patrimoine_liquide_total.toLocaleString('fr-FR')} DH`}
-            testID="home-global-total"
-          />
-          <KpiTile
-            width={narrow ? '48%' : undefined}
-            label="Point bas prévu (30j)"
-            value={`${summary.next_30_days.physical_low_point.toLocaleString('fr-FR')} DH`}
-            sub={`le ${formatLongDate(summary.next_30_days.physical_low_point_date)}`}
-          />
-        </View>
-      </View>
-
-      {/* LIGNE 2 — Comptes, grille à largeur fixe, max 5/ligne (validé §2). */}
-      {topAccounts.length > 0 && (
+      {/* Comptes — où est l'argent et à quoi il est affecté (jamais un total consolidé ici). */}
+      {homeAccounts.length > 0 && (
         <View style={styles.sec}>
           <View style={styles.sectionHead}>
             <Text style={styles.sectionTitle}>Mes comptes</Text>
@@ -197,9 +176,19 @@ export function HomeScreen() {
               <Text style={styles.sectionLink}>Gérer</Text>
             </TouchableOpacity>
           </View>
-          <CardGrid cardWidth={ACCOUNT_CARD_WIDTH} maxColumns={5}>
-            {topAccounts.map((a, i) => {
+          <CardGrid cardWidth={ACCOUNT_CARD_WIDTH} maxColumns={4}>
+            {homeAccounts.map((a, i) => {
               const masked = !a.includeInOperationalTreasury && !revealedAccountIds[a.id];
+              const total = a.soldeCourant || 1;
+              const badge = a.isDedicated
+                ? 'Dédié'
+                : a.envelopes.length > 0
+                  ? `${a.envelopes.length} enveloppe${a.envelopes.length > 1 ? 's' : ''}`
+                  : a.type === 'courant'
+                    ? 'Courant'
+                    : a.type === 'epargne'
+                      ? 'Épargne'
+                      : 'Compte';
               return (
                 <TouchableOpacity
                   key={a.id}
@@ -208,194 +197,117 @@ export function HomeScreen() {
                   onPress={() => navigation.getParent()?.navigate('AccountDetail', { id: a.id })}
                 >
                   <View style={styles.accountCardTopRow}>
-                    <Text style={styles.accountCardName} numberOfLines={1}>
-                      {a.name}
-                    </Text>
-                    {!a.includeInOperationalTreasury && (
-                      <TouchableOpacity
-                        testID={`account-reveal-${a.id}`}
-                        onPress={() => setRevealedAccountIds((prev) => ({ ...prev, [a.id]: !prev[a.id] }))}
-                      >
-                        <Ionicons name={masked ? 'eye-outline' : 'eye-off-outline'} size={15} color="#fff" />
-                      </TouchableOpacity>
-                    )}
+                    <View style={{ flexShrink: 1 }}>
+                      {(a.bankName || a.ownerLabel) && (
+                        <Text style={styles.accountCardOwner} numberOfLines={1}>
+                          {(a.bankName ?? '').toUpperCase()}
+                          {a.bankName && a.ownerLabel ? ' • ' : ''}
+                          {a.ownerLabel ?? ''}
+                        </Text>
+                      )}
+                      <Text style={styles.accountCardName} numberOfLines={1}>
+                        {a.name}
+                      </Text>
+                    </View>
+                    <View style={styles.accountCardTopRight}>
+                      {!a.includeInOperationalTreasury && (
+                        <TouchableOpacity
+                          testID={`account-reveal-${a.id}`}
+                          onPress={() => setRevealedAccountIds((prev) => ({ ...prev, [a.id]: !prev[a.id] }))}
+                        >
+                          <Ionicons name={masked ? 'eye-outline' : 'eye-off-outline'} size={15} color="#fff" />
+                        </TouchableOpacity>
+                      )}
+                      <Text style={styles.accountCardBadge}>{badge}</Text>
+                    </View>
                   </View>
-                  {(a.bankName || a.ownerLabel) && (
-                    <Text style={styles.accountCardOwner} numberOfLines={1}>
-                      {(a.bankName ?? '').toUpperCase()}
-                      {a.bankName && a.ownerLabel ? ' • ' : ''}
-                      {a.ownerLabel ?? ''}
+
+                  <Text style={styles.accountCardAmount}>{masked ? '•••••• DH' : `${a.soldeCourant.toLocaleString('fr-FR')} DH`}</Text>
+
+                  {a.envelopes.length > 1 && (
+                    <View style={styles.accountCardTrack}>
+                      {a.envelopes.map((e) => (
+                        <View key={e.id} style={{ width: `${Math.max(0, Math.min(100, (e.amount / total) * 100))}%`, height: '100%', backgroundColor: 'rgba(255,255,255,0.85)' }} />
+                      ))}
+                    </View>
+                  )}
+
+                  {a.envelopes.length > 0 && (
+                    <View style={styles.accountCardEnvelopes}>
+                      {a.envelopes.map((e) => (
+                        <View key={e.id} style={styles.accountCardEnvelopeRow}>
+                          <Text style={styles.accountCardEnvelopeName} numberOfLines={1}>
+                            {e.name}
+                          </Text>
+                          <Text style={styles.accountCardEnvelopeAmount}>{e.amount.toLocaleString('fr-FR')} DH</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  {a.isDedicated && (
+                    <Text style={styles.accountCardNote} numberOfLines={2}>
+                      {a.dedicatedFeed
+                        ? `Alimenté depuis ${a.dedicatedFeed.fromAccountName} • ${a.dedicatedFeed.amount.toLocaleString('fr-FR')} DH / mois`
+                        : "Compte dédié — aucun virement récurrent configuré."}
                     </Text>
                   )}
-                  <Text style={styles.accountCardAmount}>{masked ? '•••••• DH' : `${a.soldeCourant.toLocaleString('fr-FR')} DH`}</Text>
-                  <Text style={styles.accountCardStatus}>{a.includeInOperationalTreasury ? 'Piloté' : 'Hors pilotage'}</Text>
+                  {!a.isDedicated && a.envelopes.length === 0 && <Text style={styles.accountCardNote}>Aucune enveloppe associée.</Text>}
                 </TouchableOpacity>
               );
             })}
           </CardGrid>
         </View>
       )}
+      {homeAccounts.length === 0 && <Text style={styles.empty}>Aucun compte pour l'instant.</Text>}
 
-      {/* LIGNE 3 — Budgets, grille à largeur fixe, max 5/ligne. */}
-      {topBudgets.length > 0 && (
-        <View style={styles.sec}>
-          <View style={styles.sectionHead}>
-            <Text style={styles.sectionTitle}>Mes budgets</Text>
-            <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Budgets')}>
-              <Text style={styles.sectionLink}>Voir tous</Text>
-            </TouchableOpacity>
-          </View>
-          <CardGrid cardWidth={BUDGET_CARD_WIDTH} maxColumns={5}>
-            {topBudgets.map((b) => {
-              const pct = b.status.budgetPeriode > 0 ? (b.status.consommeADate / b.status.budgetPeriode) * 100 : 0;
-              const warn = b.status.healthStatus === 'depasse' || b.status.healthStatus === 'proche_limite';
-              return (
-                <TouchableOpacity
-                  key={b.id}
-                  testID={`home-budget-${b.id}`}
-                  style={[styles.budgetCard, { width: BUDGET_CARD_WIDTH }]}
-                  onPress={() => navigation.getParent()?.navigate('BudgetDetail', { id: b.id })}
-                >
-                  <View style={styles.budgetCardTop}>
-                    <Donut size={44} pct={pct} warn={warn} />
-                    <View style={{ flex: 1, marginLeft: webSpacing.sm }}>
-                      <Text style={styles.budgetLabel} numberOfLines={1}>
-                        {b.categoryName}
-                      </Text>
-                      <Text style={styles.budgetAmounts}>
-                        {b.status.consommeADate.toLocaleString('fr-FR')} / {b.status.budgetPeriode.toLocaleString('fr-FR')} DH
-                      </Text>
-                    </View>
-                  </View>
-                  {b.status.rythmeAlerte ? (
-                    <Text style={styles.rythmeAlertBadge} testID={`home-budget-rythme-alerte-${b.id}`}>
-                      ⚠ Rythme élevé
+      {/* À faire — prochaines actions (charges proches à payer, enveloppes à compléter ce mois). */}
+      <View style={styles.sec}>
+        <View style={styles.sectionHead}>
+          <Text style={styles.sectionTitle}>À faire</Text>
+        </View>
+        {todos.length === 0 ? (
+          <Text style={styles.empty}>Rien à faire pour le moment.</Text>
+        ) : (
+          <View style={[styles.todoCard, narrow && styles.todoCardNarrow]}>
+            {todos.map((item, idx) => (
+              <View key={item.kind === 'charge' ? item.deadlineId : item.provisionId} style={[styles.todoRow, idx > 0 && styles.todoRowBorder]}>
+                <View style={styles.todoIcon}>
+                  <Text style={styles.todoIconText}>{String(idx + 1).padStart(2, '0')}</Text>
+                </View>
+                <View style={styles.todoMain}>
+                  <Text style={styles.todoTitle}>{item.label}</Text>
+                  {item.kind === 'charge' ? (
+                    <Text style={styles.todoSub}>
+                      {formatShortDate(item.dueDate)}
+                      {item.accountName ? ` • ${item.accountName}` : ''}
                     </Text>
                   ) : (
-                    <Text style={styles.budgetRemaining}>{b.status.budgetContractuelRestant.toLocaleString('fr-FR')} DH restants</Text>
+                    <Text style={styles.todoSub}>Compléter la provision du mois</Text>
                   )}
-                </TouchableOpacity>
-              );
-            })}
-          </CardGrid>
-        </View>
-      )}
-
-      {/* LIGNE 4 — Plans financiers, même logique. */}
-      {topPlans.length > 0 && (
-        <View style={styles.sec}>
-          <View style={styles.sectionHead}>
-            <Text style={styles.sectionTitle}>Mes plans financiers</Text>
-            <TouchableOpacity onPress={() => navigation.getParent()?.navigate('FinancialPlans')}>
-              <Text style={styles.sectionLink}>Voir tous</Text>
-            </TouchableOpacity>
-          </View>
-          <CardGrid cardWidth={PLAN_CARD_WIDTH} maxColumns={5}>
-            {topPlans.map((p) => {
-              const cost = p.knownPlanCost;
-              const paidPct = cost > 0 ? Math.max(0, Math.min(100, (p.paidAmount / cost) * 100)) : 0;
-              const provPct = cost > 0 ? Math.max(0, Math.min(100 - paidPct, (p.provisionCoverage / cost) * 100)) : 0;
-              return (
-                <TouchableOpacity
-                  key={p.id}
-                  testID={`home-plan-${p.id}`}
-                  style={[styles.planCard, { width: PLAN_CARD_WIDTH }]}
-                  onPress={() => navigation.getParent()?.navigate('FinancialPlanDetail', { id: p.id })}
-                >
-                  <Text style={styles.planIcon}>{PLAN_TYPE_ICON[p.planType] ?? PLAN_TYPE_ICON.other}</Text>
-                  <Text style={styles.planLabel} numberOfLines={1}>
-                    {p.label}
-                  </Text>
-                  <Text style={styles.planAmount}>{cost.toLocaleString('fr-FR')} DH</Text>
-                  <Text style={styles.planSub}>Payé {p.paidAmount.toLocaleString('fr-FR')} DH · Provisionné {p.provisionCoverage.toLocaleString('fr-FR')} DH</Text>
-                  {cost > 0 && (paidPct > 0 || provPct > 0) && (
-                    <View style={styles.planTrack}>
-                      <View style={[styles.planTrackPaid, { width: `${paidPct}%` }]} />
-                      <View style={[styles.planTrackProv, { width: `${provPct}%` }]} />
-                    </View>
-                  )}
-                  {p.remainingDue > 0 && <Text style={styles.planRemaining}>Reste à financer : {p.remainingDue.toLocaleString('fr-FR')} DH</Text>}
-                </TouchableOpacity>
-              );
-            })}
-          </CardGrid>
-        </View>
-      )}
-
-      {/* LIGNE 5 — Échéances importantes + Projection côte à côte (empilées en narrow). */}
-      <View style={[styles.dashRow, narrow && styles.dashRowNarrow]}>
-        {upcomingDeadlines.length > 0 && (
-          <View style={[styles.dashColWide, narrow && styles.dashColNarrow, styles.sec]}>
-            <View style={styles.sectionHead}>
-              <Text style={styles.sectionTitle}>Échéances importantes</Text>
-              <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Charges')}>
-                <Text style={styles.sectionLink}>Voir toutes</Text>
-              </TouchableOpacity>
-            </View>
-            {upcomingDeadlines.map((d) => {
-              const date = new Date(d.dueDate);
-              const color = urgencyColor(d.dueDate, summary.seuil_a_payer_days);
-              return (
-                <TouchableOpacity key={d.id} style={styles.timelineItem} onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: d.id })}>
-                  <View style={styles.timelineLeft}>
-                    <View testID={`deadline-date-pill-${d.id}`} style={[styles.datePill, { backgroundColor: color }]}>
-                      <Text style={styles.datePillDay}>{date.getDate()}</Text>
-                      <Text style={styles.datePillMonth}>{date.toLocaleDateString('fr-FR', { month: 'short' }).toUpperCase()}</Text>
-                    </View>
-                    <View style={{ flexShrink: 1 }}>
-                      <Text style={styles.timelineLabel}>{d.chargePlanLabel}</Text>
-                      {d.coverageStatus === 'couverte' && <Text style={styles.coveredBadge}>✓ Couvert</Text>}
-                    </View>
-                  </View>
-                  <Text style={styles.timelineAmount}>{d.resteAPayer !== null ? `${d.resteAPayer.toLocaleString('fr-FR')} DH` : 'À confirmer'}</Text>
-                </TouchableOpacity>
-              );
-            })}
+                </View>
+                <Text style={styles.todoAmount}>{item.amount.toLocaleString('fr-FR')} DH</Text>
+                {item.kind === 'charge' ? (
+                  <TouchableOpacity
+                    testID={`home-todo-pay-${item.deadlineId}`}
+                    style={styles.primaryButton}
+                    onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: item.deadlineId })}
+                  >
+                    <Text style={styles.primaryButtonText}>Payer</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    testID={`home-todo-verser-${item.provisionId}`}
+                    style={styles.softButton}
+                    onPress={() => navigation.getParent()?.navigate('EnvelopeDetail', { kind: 'provision', id: item.provisionId })}
+                  >
+                    <Text style={styles.softButtonText}>Verser</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ))}
           </View>
         )}
-
-        <View style={[styles.dashColThird, narrow && styles.dashColNarrow, styles.sec]}>
-          <View style={styles.sectionHead}>
-            <Text style={styles.sectionTitle}>Projection</Text>
-          </View>
-          <TouchableOpacity testID="home-projection-card" style={styles.projectionCard} onPress={() => navigation.getParent()?.navigate('Projection')}>
-            <View style={styles.projKpiGrid}>
-              <KpiTile
-                variant="light"
-                width={150}
-                label="Trésorerie prévue"
-                value={`${summary.next_30_days.closing_physical_treasury.toLocaleString('fr-FR')} DH`}
-              />
-              <KpiTile
-                variant="light"
-                width={150}
-                label="Disponible libre"
-                value={`${summary.next_30_days.closing_free_capacity.toLocaleString('fr-FR')} DH`}
-              />
-              <KpiTile
-                variant="light"
-                width={150}
-                label="Point bas"
-                value={`${summary.next_30_days.physical_low_point.toLocaleString('fr-FR')} DH`}
-                sub={`le ${formatLongDate(summary.next_30_days.physical_low_point_date)}`}
-              />
-              <KpiTile
-                variant="light"
-                width={150}
-                label="Statut"
-                value={PROJECTION_STATUS_LABEL[summary.next_30_days.status]}
-              />
-            </View>
-            {summary.next_30_days.status === 'DEFICIT_PHYSIQUE' && summary.next_30_days.first_negative_date && (
-              <Text style={styles.heroWarningInline}>
-                Risque de déficit le {formatLongDate(summary.next_30_days.first_negative_date)}
-                {summary.next_30_days.deficit_at_first_negative !== null
-                  ? ` (${summary.next_30_days.deficit_at_first_negative.toLocaleString('fr-FR')} DH)`
-                  : ''}
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
       </View>
     </ScrollView>
   );
@@ -417,99 +329,38 @@ const styles = StyleSheet.create({
   configBannerText: { color: webColors.textPrimary, fontSize: 13, fontWeight: '700', textAlign: 'center' },
   configBannerClose: { paddingLeft: webSpacing.md, paddingVertical: webSpacing.xs },
 
-  hero: {
-    backgroundColor: webColors.sidebarBg,
-    borderRadius: webRadius.xl,
-    padding: webSpacing.lg,
-    marginBottom: webSpacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  heroNarrow: { flexDirection: 'column', alignItems: 'stretch' },
-  heroLeft: { flexShrink: 0, maxWidth: 300, marginRight: webSpacing.xl },
-  heroLeftNarrow: { maxWidth: undefined, marginRight: 0, marginBottom: webSpacing.lg },
-  heroLabel: { fontSize: 11, fontWeight: '700', color: webColors.sidebarTextMuted, letterSpacing: 0.5 },
-  heroAmount: { fontSize: 32, fontWeight: '900', color: webColors.textOnPrimary, marginTop: 2 },
-  heroSubtitle: { fontSize: 12, color: webColors.sidebarTextMuted, marginTop: 4 },
-  heroWarning: { fontSize: 11, color: '#FFD79A', marginTop: webSpacing.sm, fontWeight: '600' },
-  heroWarningInline: { fontSize: 11, color: webColors.danger, marginTop: webSpacing.sm, fontWeight: '600' },
-  heroKpis: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', gap: webSpacing.sm, justifyContent: 'flex-end' },
-  heroKpisNarrow: { flex: undefined, justifyContent: 'space-between' },
-
-  sec: { marginBottom: webSpacing.lg },
+  sec: { marginBottom: webSpacing.xl },
   sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: webSpacing.sm },
   sectionTitle: { fontSize: 15, fontWeight: '700', color: webColors.textPrimary },
   sectionLink: { fontSize: 12, fontWeight: '600', color: webColors.success },
+  empty: { fontSize: 13, color: webColors.textSecondary },
 
   accountCard: { borderRadius: webRadius.lg, padding: webSpacing.md },
-  accountCardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  accountCardName: { fontSize: 12, color: 'rgba(255,255,255,0.85)', fontWeight: '600', flexShrink: 1, marginRight: webSpacing.xs },
-  accountCardOwner: { fontSize: 10, fontWeight: '700', color: 'rgba(255,255,255,0.7)', marginTop: 2 },
-  accountCardAmount: { fontSize: 18, fontWeight: '900', color: '#fff', marginTop: webSpacing.sm },
-  accountCardStatus: { fontSize: 10, color: 'rgba(255,255,255,0.85)', marginTop: 2 },
+  accountCardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  accountCardTopRight: { alignItems: 'flex-end', gap: 6 },
+  accountCardOwner: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.75)' },
+  accountCardName: { fontSize: 13, color: '#fff', fontWeight: '800', marginTop: 2 },
+  accountCardBadge: { fontSize: 9, fontWeight: '800', color: '#fff', backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3, overflow: 'hidden' },
+  accountCardAmount: { fontSize: 22, fontWeight: '900', color: '#fff', marginTop: webSpacing.sm },
+  accountCardTrack: { marginTop: webSpacing.sm, height: 5, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.25)', overflow: 'hidden', flexDirection: 'row' },
+  accountCardEnvelopes: { marginTop: webSpacing.sm, paddingTop: webSpacing.sm, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.2)' },
+  accountCardEnvelopeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 3 },
+  accountCardEnvelopeName: { fontSize: 11, color: 'rgba(255,255,255,0.9)', fontWeight: '600', flexShrink: 1, marginRight: webSpacing.xs },
+  accountCardEnvelopeAmount: { fontSize: 11, color: '#fff', fontWeight: '700' },
+  accountCardNote: { fontSize: 10, color: 'rgba(255,255,255,0.8)', marginTop: webSpacing.sm },
 
-  budgetCard: {
-    backgroundColor: webColors.surface,
-    borderRadius: webRadius.lg,
-    padding: webSpacing.md,
-    borderWidth: 1,
-    borderColor: webColors.borderStrong,
-  },
-  budgetCardTop: { flexDirection: 'row', alignItems: 'center' },
-  budgetLabel: { fontSize: 13, fontWeight: '700', color: webColors.textPrimary },
-  budgetAmounts: { fontSize: 12, fontWeight: '700', color: webColors.textPrimary, marginTop: 2 },
-  budgetRemaining: { fontSize: 11, color: webColors.textSecondary, marginTop: webSpacing.xs },
-  rythmeAlertBadge: { fontSize: 11, fontWeight: '700', color: webColors.warning, marginTop: webSpacing.xs },
-
-  planCard: {
-    backgroundColor: webColors.surface,
-    borderRadius: webRadius.lg,
-    padding: webSpacing.md,
-    borderWidth: 1,
-    borderColor: webColors.borderStrong,
-  },
-  planIcon: { fontSize: 18, marginBottom: 4 },
-  planLabel: { fontSize: 13, fontWeight: '700', color: webColors.textPrimary },
-  planAmount: { fontSize: 15, fontWeight: '800', color: webColors.textPrimary, marginTop: 2 },
-  planSub: { fontSize: 10, color: webColors.textSecondary, marginTop: 2 },
-  planTrack: { height: 6, borderRadius: 3, backgroundColor: webColors.surfaceMuted, overflow: 'hidden', flexDirection: 'row', marginTop: webSpacing.sm },
-  planTrackPaid: { height: '100%', backgroundColor: webColors.success },
-  planTrackProv: { height: '100%', backgroundColor: '#7089DF' },
-  planRemaining: { fontSize: 10, color: webColors.textSecondary, marginTop: webSpacing.xs },
-
-  dashRow: { flexDirection: 'row', gap: webSpacing.lg },
-  dashRowNarrow: { flexDirection: 'column' },
-  dashColWide: { flexGrow: 0, flexBasis: '62%', maxWidth: 900, minWidth: 0 },
-  dashColThird: { flexGrow: 0, flexBasis: '34%', maxWidth: 480, minWidth: 0 },
-  dashColNarrow: { flexBasis: 'auto', maxWidth: undefined, width: '100%' },
-
-  datePill: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: webSpacing.sm },
-  datePillDay: { fontSize: 13, fontWeight: '900', color: '#fff', lineHeight: 15 },
-  datePillMonth: { fontSize: 8, fontWeight: '800', color: '#fff', lineHeight: 10 },
-
-  timelineItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: webColors.surface,
-    borderRadius: webRadius.lg,
-    padding: webSpacing.sm,
-    marginBottom: webSpacing.xs,
-    borderWidth: 1,
-    borderColor: webColors.borderStrong,
-  },
-  timelineLeft: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },
-  timelineLabel: { fontSize: 13, fontWeight: '600', color: webColors.textPrimary },
-  coveredBadge: { fontSize: 10, color: webColors.success, fontWeight: '700', marginTop: 2 },
-  timelineAmount: { fontSize: 14, fontWeight: '800', color: webColors.textPrimary },
-
-  projectionCard: {
-    backgroundColor: webColors.surface,
-    borderRadius: webRadius.lg,
-    padding: webSpacing.sm,
-    borderWidth: 1,
-    borderColor: webColors.borderStrong,
-  },
-  projKpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: webSpacing.sm },
+  todoCard: { backgroundColor: webColors.surface, borderRadius: webRadius.lg, borderWidth: 1, borderColor: webColors.borderStrong, paddingHorizontal: webSpacing.md, maxWidth: 760 },
+  todoCardNarrow: { maxWidth: undefined },
+  todoRow: { flexDirection: 'row', alignItems: 'center', gap: webSpacing.md, paddingVertical: 13 },
+  todoRowBorder: { borderTopWidth: 1, borderTopColor: webColors.border },
+  todoIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: webColors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
+  todoIconText: { color: webColors.textPrimary, fontWeight: '800', fontSize: 11 },
+  todoMain: { flex: 1, minWidth: 0 },
+  todoTitle: { fontSize: 13, fontWeight: '700', color: webColors.textPrimary },
+  todoSub: { fontSize: 11, color: webColors.textSecondary, marginTop: 2 },
+  todoAmount: { fontSize: 13, fontWeight: '800', color: webColors.textPrimary, marginRight: webSpacing.sm },
+  primaryButton: { backgroundColor: webColors.primary, borderRadius: webRadius.md, paddingHorizontal: webSpacing.md, paddingVertical: webSpacing.sm },
+  primaryButtonText: { color: webColors.textOnPrimary, fontWeight: '800', fontSize: 12 },
+  softButton: { backgroundColor: webColors.surfaceActive, borderRadius: webRadius.md, paddingHorizontal: webSpacing.md, paddingVertical: webSpacing.sm },
+  softButtonText: { color: webColors.primary, fontWeight: '800', fontSize: 12 },
 });

@@ -13,10 +13,7 @@ const LABEL_COL_WIDTH = 152;
 const MONTH_COL_WIDTH = 110;
 const ROW_HEIGHT = 40;
 
-type GridLine =
-  | { kind: 'section'; label: string }
-  | { kind: 'row'; row: PlanningRow }
-  | { kind: 'total' };
+type GridLine = { kind: 'section'; label: string } | { kind: 'row'; row: PlanningRow };
 
 /**
  * Refonte maquette V6B §5/§17/§20 — horizon (nombre de mois RÉCUPÉRÉS, pas
@@ -86,7 +83,6 @@ export function PlanningScreen() {
       out.push({ kind: 'section', label: SECTION_LABEL[group.section] });
       for (const row of group.rows) out.push({ kind: 'row', row });
     }
-    out.push({ kind: 'total' });
     return out;
   }, [groups]);
 
@@ -111,17 +107,13 @@ export function PlanningScreen() {
           <View style={{ width: LABEL_COL_WIDTH }}>
             <View style={[styles.cell, styles.cornerCell]} />
             {lines.map((line, idx) => (
-              <View
-                key={idx}
-                style={[styles.cell, line.kind === 'section' && styles.sectionCell, line.kind === 'total' && styles.totalCell]}
-              >
+              <View key={idx} style={[styles.cell, line.kind === 'section' && styles.sectionCell]}>
                 {line.kind === 'section' && <Text style={styles.sectionText}>{line.label.toUpperCase()}</Text>}
                 {line.kind === 'row' && (
                   <Text style={styles.rowLabel} numberOfLines={1}>
                     {line.row.label}
                   </Text>
                 )}
-                {line.kind === 'total' && <Text style={styles.totalLabelText}>Solde du mois</Text>}
               </View>
             ))}
           </View>
@@ -150,16 +142,6 @@ export function PlanningScreen() {
                           key={m.month}
                           style={[styles.cell, styles.sectionCell, { width: MONTH_COL_WIDTH }, isCurrentMonth(m.month) && styles.currentMonthCol]}
                         />
-                      );
-                    }
-                    if (line.kind === 'total') {
-                      return (
-                        <View
-                          key={m.month}
-                          style={[styles.cell, styles.totalCell, { width: MONTH_COL_WIDTH }, isCurrentMonth(m.month) && styles.currentMonthCol]}
-                        >
-                          <Text style={[styles.valueText, styles.totalText, m.balance < 0 && styles.negativeText]}>{formatDh(m.balance)}</Text>
-                        </View>
                       );
                     }
                     const value = line.row.valuesByMonth[m.month];
@@ -205,8 +187,4 @@ const styles = StyleSheet.create({
   currentMonthHeaderText: { color: colors.v6Blue },
   currentMonthCol: { backgroundColor: '#F6FAFF' },
   valueText: { fontSize: 12, color: colors.v6Text, textAlign: 'right', fontWeight: '600' },
-  totalCell: { backgroundColor: colors.v6SurfaceSoft, borderTopWidth: 1, borderTopColor: colors.v6Line },
-  totalText: { fontWeight: '850' as any },
-  negativeText: { color: colors.v6Red },
-  totalLabelText: { fontSize: 11, fontWeight: '700', color: colors.v6Muted },
 });

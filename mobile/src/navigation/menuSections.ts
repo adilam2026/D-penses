@@ -76,23 +76,18 @@ export interface WebNavItem extends MenuItem {
 }
 
 /**
- * Architecture Web v3 §3/§13 — navigation primaire de la Sidebar Web. Sous-
- * ensemble DÉDIÉ Web (jamais forcé dans HAMBURGER_SECTIONS) : reprend
- * uniquement les écrans déjà atteignables aujourd'hui depuis la bottom bar
- * mobile (Accueil/Transactions/Projection/Calendrier) + les entrées listées
- * par la maquette Sidebar validée (Comptes/Budgets/Plans financiers/
- * Charges·Échéances). Aucune route inventée — toutes existent déjà dans
- * RootNavigator/RootTabs.
+ * Refonte maquette V6B §6 — navigation PRIMAIRE de la Sidebar Web réduite au
+ * strict noyau que l'utilisateur voit en premier (Accueil/Planning/
+ * Enveloppes/Transactions), jamais pollué par les anciens modules. Tout le
+ * reste (Comptes, Budgets, Plans financiers, Projection, Charges/Échéances,
+ * Calendrier…) reste entièrement fonctionnel et atteignable via "Plus"
+ * (HamburgerMenuScreen, HAMBURGER_SECTIONS ci-dessus, déjà exhaustif) — rien
+ * n'est supprimé, seule la liste vue en premier est simplifiée. Aucune route
+ * inventée — toutes existent déjà dans RootNavigator/RootTabs.
  */
 export const WEB_SIDEBAR_PRIMARY: WebNavItem[] = [
   { label: 'Accueil', icon: 'home-outline', route: 'Accueil', parent: 'Tabs' },
   { label: 'Planning', icon: 'grid-outline', route: 'Planning', parent: 'Tabs' },
   { label: 'Enveloppes', icon: 'wallet-outline', route: 'Enveloppes', parent: 'Tabs' },
   { label: 'Transactions', icon: 'swap-horizontal-outline', route: 'Transactions', parent: 'Tabs' },
-  { label: 'Comptes', icon: 'card-outline', route: 'Accounts' },
-  { label: 'Budgets', icon: 'pie-chart-outline', route: 'Budgets' },
-  { label: 'Plans financiers', icon: 'folder-outline', route: 'FinancialPlans' },
-  { label: 'Projection', icon: 'analytics-outline', route: 'Projection' },
-  { label: 'Charges / Échéances', icon: 'receipt-outline', route: 'Charges' },
-  { label: 'Calendrier', icon: 'calendar-outline', route: 'Calendrier', parent: 'Tabs' },
 ];
