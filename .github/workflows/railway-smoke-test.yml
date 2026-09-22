@@ -203,6 +203,15 @@ jobs:
           test -n "$CAT_A" -a "$CAT_A" != "null"
           echo "DML via API (creation compte/categorie foyer A) : OK"
 
+          echo "--- Non-regression : transfert compte source = compte destination (commit 390af7d) ---"
+          SELF_TRANSFER=$(curl -sS -o self_transfer.json -w "%{http_code}" -X POST "$API/accounts/transfers" \
+            -H "Authorization: Bearer $HTOKEN_A" -H "Content-Type: application/json" \
+            -d "{\"fromAccountId\":\"$ACC_A\",\"toAccountId\":\"$ACC_A\",\"amount\":100}")
+          echo "transfert compte A -> compte A : HTTP $SELF_TRANSFER (attendu 400)"; cat self_transfer.json; echo
+          if [ "$SELF_TRANSFER" != "400" ]; then echo "REGRESSION — transfert vers le meme compte accepte !"; exit 1; fi
+          grep -q "doivent être différents" self_transfer.json || (echo "message d'erreur inattendu" && exit 1)
+          echo "Protection transfert compte->meme compte : OK (backend 390af7d+ confirme en production)"
+
           echo "--- Isolation inter-foyers (substitution d'ID) ---"
           CODE1=$(curl -sS -o /dev/null -w "%{http_code}" -X POST "$API/expenses" -H "Authorization: Bearer $HTOKEN_B" -H "Content-Type: application/json" \
             -d "{\"amount\":50,\"accountId\":\"$ACC_A\"}")
