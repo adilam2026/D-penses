@@ -186,6 +186,9 @@ export class AccountsService {
     if (!dto.fromAccountId && !dto.toAccountId) {
       throw new BadRequestException('fromAccountId ou toAccountId est requis (RG-085)');
     }
+    if (dto.fromAccountId && dto.toAccountId && dto.fromAccountId === dto.toAccountId) {
+      throw new BadRequestException('Le compte source et le compte destination doivent être différents.');
+    }
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
 

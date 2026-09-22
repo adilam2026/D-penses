@@ -118,6 +118,23 @@ describe('R5 clôture — gaps corrigés (e2e)', () => {
       await http.post('/accounts/transfers').set(...auth()).send({ fromAccountId: active, toAccountId: archived, amount: 100 }).expect(400);
     });
 
+    it("D bis. un transfert dont la source et la destination sont le même compte (Compte A → Compte A) est refusé, sans mouvement créé ni solde modifié", async () => {
+      const { auth } = await newHousehold();
+      const accountId = await createAccount(auth, 'Compte A', 2000);
+
+      const before = await http.get(`/accounts/${accountId}`).set(...auth()).expect(200);
+      expect(before.body.soldeCourant).toBe(2000);
+
+      const res = await http.post('/accounts/transfers').set(...auth()).send({ fromAccountId: accountId, toAccountId: accountId, amount: 500 }).expect(400);
+      expect(res.body.message).toMatch(/compte source.*compte destination.*différents/i);
+
+      const after = await http.get(`/accounts/${accountId}`).set(...auth()).expect(200);
+      expect(after.body.soldeCourant).toBe(2000);
+
+      const transfers = await http.get('/accounts/transfers').set(...auth()).expect(200);
+      expect(transfers.body.find((t: any) => t.fromAccountId === accountId && t.toAccountId === accountId)).toBeUndefined();
+    });
+
     it("E. l'historique d'un compte archivé (transactions passées) reste intact et consultable", async () => {
       const { auth } = await newHousehold();
       const account = await createAccount(auth, 'Compte historique archivé', 3000);
