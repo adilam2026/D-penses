@@ -5,13 +5,15 @@ import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { ChoiceSheet } from '../ui/ChoiceSheet';
 import { accountCardPalette } from '../ui/theme';
-import { CardGrid } from '../web/ui/CardGrid.web';
-import { useWebBreakpoint } from '../web/useWebBreakpoint';
-import { MAX_CONTENT_WIDTH, webColors, webElevation, webRadius, webSpacing } from '../web/webTheme';
+import { useResponsiveLayout } from '../ui/useResponsiveLayout';
+import { webColors, webElevation, webRadius, webSpacing } from '../web/webTheme';
 import { toNum } from './envelopes/envelopesLogic';
 import { DashboardSummary, essentialPrerequisitesMet, formatShortDate, isFullyEmpty, isPartiallyConfigured } from './homeLogic';
 
-const ACCOUNT_CARD_WIDTH = 260;
+// Largeur maximale du contenu de l'Accueil (au-delà, marge neutre des deux
+// côtés) — en dessous de ce plafond, le contenu occupe TOUJOURS toute la
+// largeur disponible (jamais de zone vide à droite en dessous de 1360px).
+const HOME_MAX_WIDTH = 1360;
 
 interface TodoCharge {
   kind: 'charge';
@@ -44,8 +46,7 @@ type TodoItem = TodoCharge | TodoEnvelope;
  */
 export function HomeScreen() {
   const navigation = useNavigation<any>();
-  const { breakpoint } = useWebBreakpoint();
-  const narrow = breakpoint === 'narrow';
+  const { columns } = useResponsiveLayout();
 
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [accounts, setAccounts] = useState<api.AccountApi[]>([]);
@@ -176,7 +177,7 @@ export function HomeScreen() {
               <Text style={styles.sectionLink}>Gérer</Text>
             </TouchableOpacity>
           </View>
-          <CardGrid cardWidth={ACCOUNT_CARD_WIDTH} maxColumns={4}>
+          <View style={styles.accountsGrid}>
             {homeAccounts.map((a, i) => {
               const masked = !a.includeInOperationalTreasury && !revealedAccountIds[a.id];
               const total = a.soldeCourant || 1;
@@ -190,10 +191,10 @@ export function HomeScreen() {
                       ? 'Épargne'
                       : 'Compte';
               return (
+                <View key={a.id} style={[styles.accountCardCell, { flexBasis: `${100 / columns}%`, maxWidth: `${100 / columns}%` }]}>
                 <TouchableOpacity
-                  key={a.id}
                   testID={`home-account-card-${a.id}`}
-                  style={[styles.accountCard, { width: ACCOUNT_CARD_WIDTH }]}
+                  style={styles.accountCard}
                   onPress={() => navigation.getParent()?.navigate('AccountDetail', { id: a.id })}
                 >
                   <View style={styles.accountCardTopRow}>
@@ -260,9 +261,10 @@ export function HomeScreen() {
                   )}
                   {!a.isDedicated && a.envelopes.length === 0 && <Text style={styles.accountCardNote}>Aucune enveloppe associée.</Text>}
                 </TouchableOpacity>
+                </View>
               );
             })}
-          </CardGrid>
+          </View>
         </View>
       )}
       {homeAccounts.length === 0 && <Text style={styles.empty}>Aucun compte pour l'instant.</Text>}
@@ -275,7 +277,7 @@ export function HomeScreen() {
         {todos.length === 0 ? (
           <Text style={styles.empty}>Rien à faire pour le moment.</Text>
         ) : (
-          <View style={[styles.todoCard, narrow && styles.todoCardNarrow]}>
+          <View style={styles.todoCard}>
             {todos.map((item, idx) => (
               <View key={item.kind === 'charge' ? item.deadlineId : item.provisionId} style={[styles.todoRow, idx > 0 && styles.todoRowBorder]}>
                 <View style={styles.todoIcon}>
@@ -322,7 +324,7 @@ export function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: webColors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: webColors.background },
-  scroll: { padding: webSpacing.xl, maxWidth: MAX_CONTENT_WIDTH, width: '100%', alignSelf: 'center' },
+  scroll: { padding: webSpacing.xl, maxWidth: HOME_MAX_WIDTH, width: '100%', alignSelf: 'center' },
   scrollEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: webSpacing.xxl },
 
   welcomeCard: { backgroundColor: webColors.primary, borderRadius: webRadius.xl, padding: webSpacing.xxl, alignItems: 'center', maxWidth: 480, width: '100%' },
@@ -351,7 +353,16 @@ const styles = StyleSheet.create({
   sectionLink: { fontSize: 12, fontWeight: '600', color: webColors.success },
   empty: { fontSize: 13, color: webColors.textSecondary },
 
+  // Grille responsive des cartes compte : le nombre de colonnes vient de
+  // useResponsiveLayout() (source unique, partagée avec le reste de l'app —
+  // jamais un seuil dupliqué ici). Technique padding+marge négative (au lieu
+  // d'un `gap` CSS combiné à des largeurs en %, qui déborderait) : la cellule
+  // porte la largeur en % de colonne, la carte à l'intérieur reste à 100% de
+  // sa cellule — jamais une largeur fixe en pixels qui laisserait un vide.
+  accountsGrid: { flexDirection: 'row', flexWrap: 'wrap', width: '100%', marginHorizontal: -(webSpacing.sm / 2) },
+  accountCardCell: { paddingHorizontal: webSpacing.sm / 2, marginBottom: webSpacing.md },
   accountCard: {
+    width: '100%',
     backgroundColor: webColors.surface,
     borderWidth: 1,
     borderColor: webColors.border,
@@ -384,8 +395,7 @@ const styles = StyleSheet.create({
   accountCardEnvelopeAmount: { fontSize: 11, color: webColors.textPrimary, fontWeight: '700' },
   accountCardNote: { fontSize: 10, color: webColors.textSecondary, marginTop: webSpacing.sm },
 
-  todoCard: { backgroundColor: webColors.surface, borderRadius: webRadius.lg, borderWidth: 1, borderColor: webColors.borderStrong, paddingHorizontal: webSpacing.md, maxWidth: 760 },
-  todoCardNarrow: { maxWidth: undefined },
+  todoCard: { width: '100%', backgroundColor: webColors.surface, borderRadius: webRadius.lg, borderWidth: 1, borderColor: webColors.borderStrong, paddingHorizontal: webSpacing.md },
   todoRow: { flexDirection: 'row', alignItems: 'center', gap: webSpacing.md, paddingVertical: 13 },
   todoRowBorder: { borderTopWidth: 1, borderTopColor: webColors.border },
   todoIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: webColors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
