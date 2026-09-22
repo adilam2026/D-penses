@@ -8,6 +8,7 @@ import { FormField } from '../../ui/FormField';
 import { MultiSelect } from '../../ui/MultiSelect';
 import { Select } from '../../ui/Select';
 import { frequencyOptions } from '../../ui/frequency';
+import { FORM_MAX_WIDTH_STANDARD, FormActions, FormContainer, FormGrid, FormGridItem } from '../../ui/FormLayout';
 import { useResponsiveLayout } from '../../ui/useResponsiveLayout';
 import { MAX_CONTENT_WIDTH, webColors, webRadius, webSpacing } from '../../web/webTheme';
 // Portail Web v4 §1 — même source que TransactionsScreen.tsx (mobile) pour les
@@ -296,8 +297,11 @@ export function TransactionsScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
-      {/* Zone de saisie — toujours visible, utile dès l'ouverture (§6). */}
-      <View style={styles.formCard}>
+      {/* Zone de saisie — toujours visible, utile dès l'ouverture (§6). Largeur
+          plafonnée (FormContainer, §"correction structurelle formulaires") :
+          jamais étirée sur toute la largeur de page comme la liste en dessous
+          (largeurs indépendantes, cf. FORM_MAX_WIDTH_STANDARD vs LIST_MAX_WIDTH). */}
+      <FormContainer maxWidth={FORM_MAX_WIDTH_STANDARD} style={styles.formCard}>
         <Text style={styles.formTitle}>Nouvelle transaction</Text>
         <View style={styles.modeRow}>
           {(Object.keys(MODE_LABEL) as Mode[]).map((m) => (
@@ -336,16 +340,20 @@ export function TransactionsScreen() {
           )
         ) : (
           <>
-            <View style={styles.fieldRow}>
+            {/* Grille compacte (mobile 1 colonne / tablette 2 / desktop 3) — le
+                champ Note prend 2 colonnes ; le bouton d'action suit dans la
+                même grille et se replace naturellement sur la place restante
+                (flexWrap), jamais isolé loin à droite d'une page large. */}
+            <FormGrid columns={{ mobile: 1, tablet: 2, desktop: 3 }}>
               {mode === 'revenu' && (
-                <View style={styles.field220}>
+                <FormGridItem>
                   <FormField testID="web-tx-label" label="Libellé" placeholder="ex. Salaire" value={label} onChangeText={setLabel} />
-                </View>
+                </FormGridItem>
               )}
-              <View style={styles.field160}>
+              <FormGridItem>
                 <FormField testID="web-tx-amount" label="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} />
-              </View>
-              <View style={styles.field200}>
+              </FormGridItem>
+              <FormGridItem>
                 <Select
                   testID="web-tx-account"
                   label={mode === 'transfert' ? 'Compte source' : 'Compte'}
@@ -354,11 +362,11 @@ export function TransactionsScreen() {
                   onChange={setAccountId}
                   options={formAccounts.map((a) => ({ value: a.id, label: a.name, sublabel: mode === 'transfert' ? `${a.soldeCourant.toLocaleString('fr-FR')} DH` : undefined }))}
                 />
-              </View>
+              </FormGridItem>
 
               {mode === 'depense' && (
                 <>
-                  <View style={styles.field200}>
+                  <FormGridItem>
                     <Select
                       testID="web-tx-category"
                       label="Catégorie"
@@ -367,9 +375,9 @@ export function TransactionsScreen() {
                       onChange={(v) => setCategoryId(categoryId === v ? null : v)}
                       options={expenseCategories.map((c) => ({ value: c.id, label: c.name }))}
                     />
-                  </View>
+                  </FormGridItem>
                   {categoryTypes.length > 0 && (
-                    <View style={styles.field180}>
+                    <FormGridItem>
                       <Select
                         testID="web-tx-type"
                         label="Type"
@@ -381,13 +389,13 @@ export function TransactionsScreen() {
                         }}
                         options={categoryTypes.filter((t) => t.active).map((t) => ({ value: t.id, label: t.name }))}
                       />
-                    </View>
+                    </FormGridItem>
                   )}
                   {categoryTypeId && (() => {
                     const subtypes = categoryTypes.find((t) => t.id === categoryTypeId)?.subtypes.filter((s) => s.active) ?? [];
                     if (subtypes.length === 0) return null;
                     return (
-                      <View style={styles.field180}>
+                      <FormGridItem>
                         <Select
                           testID="web-tx-subtype"
                           label="Sous-type"
@@ -396,17 +404,17 @@ export function TransactionsScreen() {
                           onChange={(v) => setCategorySubtypeId(categorySubtypeId === v ? null : v)}
                           options={subtypes.map((s) => ({ value: s.id, label: s.name }))}
                         />
-                      </View>
+                      </FormGridItem>
                     );
                   })()}
-                  <View style={styles.field220}>
+                  <FormGridItem span={2}>
                     <FormField testID="web-tx-notes" label="Note" placeholder="Facultatif" value={notes} onChangeText={setNotes} />
-                  </View>
+                  </FormGridItem>
                 </>
               )}
 
               {mode === 'transfert' && (
-                <View style={styles.field200}>
+                <FormGridItem>
                   <Select
                     testID="web-tx-dest-account"
                     label="Compte destination"
@@ -415,9 +423,19 @@ export function TransactionsScreen() {
                     onChange={setToAccountId}
                     options={formAccounts.filter((a) => a.id !== accountId).map((a) => ({ value: a.id, label: a.name, sublabel: `${a.soldeCourant.toLocaleString('fr-FR')} DH` }))}
                   />
-                </View>
+                </FormGridItem>
               )}
-            </View>
+
+              {mode !== 'transfert' && (
+                <FormGridItem>
+                  <Text style={styles.actionLabelSpacer}> </Text>
+                  {formError ? <Text style={styles.error}>{formError}</Text> : null}
+                  <TouchableOpacity testID="web-tx-submit" style={styles.submitButton} onPress={onSubmit} disabled={submitting}>
+                    {submitting ? <ActivityIndicator color={webColors.textOnPrimary} /> : <Text style={styles.submitButtonText}>Enregistrer</Text>}
+                  </TouchableOpacity>
+                </FormGridItem>
+              )}
+            </FormGrid>
 
             {mode === 'transfert' && (
               <>
@@ -435,11 +453,11 @@ export function TransactionsScreen() {
                 </View>
 
                 {transferKind === 'recurrent' ? (
-                  <View style={styles.fieldRow}>
-                    <View style={styles.field220}>
+                  <FormGrid columns={{ mobile: 1, tablet: 2, desktop: 3 }}>
+                    <FormGridItem>
                       <FormField testID="web-tx-transfer-label" label="Libellé" placeholder="ex. Épargne" value={transferLabel} onChangeText={setTransferLabel} />
-                    </View>
-                    <View style={styles.field180}>
+                    </FormGridItem>
+                    <FormGridItem>
                       <Select
                         testID="web-tx-transfer-frequency"
                         label="Fréquence"
@@ -447,50 +465,52 @@ export function TransactionsScreen() {
                         options={frequencyOptions(RECURRING_TRANSFER_RULES)}
                         onChange={setTransferRecurrenceRule}
                       />
-                    </View>
-                    <View style={styles.field180}>
+                    </FormGridItem>
+                    <FormGridItem>
                       <DateField label="Prochain transfert" value={transferAnchorDate} onChange={setTransferAnchorDate} />
-                    </View>
-                    <View style={styles.field220}>
+                    </FormGridItem>
+                    <FormGridItem span={2}>
                       <FormField testID="web-tx-transfer-note" label="Note" placeholder="Facultatif" value={transferNote} onChangeText={setTransferNote} />
-                    </View>
-                  </View>
+                    </FormGridItem>
+                    <FormGridItem>
+                      <Text style={styles.actionLabelSpacer}> </Text>
+                      {formError ? <Text style={styles.error}>{formError}</Text> : null}
+                      <TouchableOpacity testID="web-tx-submit" style={styles.submitButton} onPress={onSubmit} disabled={submitting}>
+                        {submitting ? <ActivityIndicator color={webColors.textOnPrimary} /> : <Text style={styles.submitButtonText}>Créer le transfert récurrent</Text>}
+                      </TouchableOpacity>
+                    </FormGridItem>
+                  </FormGrid>
                 ) : (
-                  (() => {
-                    const numericAmount = Number(amount.replace(',', '.'));
-                    const from = formAccounts.find((a) => a.id === accountId);
-                    const to = formAccounts.find((a) => a.id === toAccountId);
-                    if (!from || !to || !numericAmount || numericAmount <= 0) return null;
-                    return (
-                      <View style={styles.transferPreview} testID="web-transfer-preview">
-                        <Text style={styles.transferPreviewLine}>
-                          {from.name} : {from.soldeCourant.toLocaleString('fr-FR')} → {(from.soldeCourant - numericAmount).toLocaleString('fr-FR')} DH
-                        </Text>
-                        <Text style={styles.transferPreviewLine}>
-                          {to.name} : {to.soldeCourant.toLocaleString('fr-FR')} → {(to.soldeCourant + numericAmount).toLocaleString('fr-FR')} DH
-                        </Text>
-                      </View>
-                    );
-                  })()
+                  <>
+                    {(() => {
+                      const numericAmount = Number(amount.replace(',', '.'));
+                      const from = formAccounts.find((a) => a.id === accountId);
+                      const to = formAccounts.find((a) => a.id === toAccountId);
+                      if (!from || !to || !numericAmount || numericAmount <= 0) return null;
+                      return (
+                        <View style={styles.transferPreview} testID="web-transfer-preview">
+                          <Text style={styles.transferPreviewLine}>
+                            {from.name} : {from.soldeCourant.toLocaleString('fr-FR')} → {(from.soldeCourant - numericAmount).toLocaleString('fr-FR')} DH
+                          </Text>
+                          <Text style={styles.transferPreviewLine}>
+                            {to.name} : {to.soldeCourant.toLocaleString('fr-FR')} → {(to.soldeCourant + numericAmount).toLocaleString('fr-FR')} DH
+                          </Text>
+                        </View>
+                      );
+                    })()}
+                    <FormActions align="left">
+                      {formError ? <Text style={styles.error}>{formError}</Text> : null}
+                      <TouchableOpacity testID="web-tx-submit" style={styles.submitButton} onPress={onSubmit} disabled={submitting}>
+                        {submitting ? <ActivityIndicator color={webColors.textOnPrimary} /> : <Text style={styles.submitButtonText}>Confirmer le transfert</Text>}
+                      </TouchableOpacity>
+                    </FormActions>
+                  </>
                 )}
               </>
             )}
-
-            <View style={styles.formFooter}>
-              {formError ? <Text style={styles.error}>{formError}</Text> : <View />}
-              <TouchableOpacity testID="web-tx-submit" style={styles.submitButton} onPress={onSubmit} disabled={submitting}>
-                {submitting ? (
-                  <ActivityIndicator color={webColors.textOnPrimary} />
-                ) : (
-                  <Text style={styles.submitButtonText}>
-                    {mode === 'transfert' ? (transferKind === 'recurrent' ? 'Créer le transfert récurrent' : 'Confirmer le transfert') : 'Enregistrer'}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
           </>
         )}
-      </View>
+      </FormContainer>
 
       {/* Opérations — liste dense, groupée par jour (Aujourd'hui / Hier / date). */}
       <View style={styles.listWrap}>
@@ -702,11 +722,7 @@ const styles = StyleSheet.create({
   noAccountText: { fontSize: 13, color: webColors.textSecondary },
   noAccountLink: { fontSize: 13, fontWeight: '700', color: webColors.success },
 
-  fieldRow: { flexDirection: 'row', flexWrap: 'wrap', gap: webSpacing.md },
-  field160: { width: 160 },
-  field180: { width: 180 },
-  field200: { width: 200 },
-  field220: { width: 220 },
+  actionLabelSpacer: { fontSize: 13, fontWeight: '600', marginBottom: 6, opacity: 0 },
 
   transferKindRow: { flexDirection: 'row', backgroundColor: webColors.surfaceMuted, borderRadius: webRadius.md, padding: 3, marginTop: webSpacing.sm, width: 220 },
   segmentItem: { flex: 1, paddingVertical: 8, borderRadius: webRadius.sm, alignItems: 'center' },
@@ -716,10 +732,9 @@ const styles = StyleSheet.create({
   transferPreview: { marginTop: webSpacing.sm },
   transferPreviewLine: { fontSize: 12, color: webColors.textPrimary, fontWeight: '600', marginTop: 2 },
 
-  formFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: webSpacing.md },
-  submitButton: { backgroundColor: webColors.primary, borderRadius: webRadius.md, paddingHorizontal: 20, paddingVertical: 10 },
+  submitButton: { backgroundColor: webColors.primary, borderRadius: webRadius.md, paddingHorizontal: 20, paddingVertical: 10, alignSelf: 'flex-start' },
   submitButtonText: { color: webColors.textOnPrimary, fontWeight: '700', fontSize: 13 },
-  error: { color: webColors.danger, fontSize: 12, fontWeight: '600' },
+  error: { color: webColors.danger, fontSize: 12, fontWeight: '600', marginBottom: 6 },
 
   deadlineGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: webSpacing.sm },
   deadlineCard: { width: 220, backgroundColor: webColors.surfaceMuted, borderRadius: webRadius.md, padding: webSpacing.sm, borderWidth: 1, borderColor: webColors.border },

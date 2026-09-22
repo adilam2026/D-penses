@@ -6,6 +6,7 @@ import { colors, elevation, radius, spacing } from '../../ui/theme';
 import { useTopInset } from '../../ui/useTopInset';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
+import { FormContainer } from '../../ui/FormLayout';
 import { Select } from '../../ui/Select';
 import { DateField } from '../../ui/DateField';
 import { formatDh } from '../../ui/formatMoney';
@@ -87,7 +88,7 @@ export function CloseMedicalClaimScreen() {
         </TouchableOpacity>
         <Text style={styles.title}>Clôturer le remboursement</Text>
 
-        <View style={styles.form}>
+        <FormContainer style={styles.form}>
           <Field label="Dossier">
             <Text style={styles.readonly}>{claim.label}</Text>
           </Field>
@@ -138,7 +139,7 @@ export function CloseMedicalClaimScreen() {
           >
             <Text style={styles.submitText}>Valider</Text>
           </TouchableOpacity>
-        </View>
+        </FormContainer>
       </ScrollView>
     </KeyboardAvoidingView>
   );

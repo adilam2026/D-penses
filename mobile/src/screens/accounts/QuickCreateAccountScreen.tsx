@@ -4,6 +4,7 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleShe
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { accountCreatedBus } from '../../state/events';
+import { FormContainer } from '../../ui/FormLayout';
 import { FormField } from '../../ui/FormField';
 import { Select } from '../../ui/Select';
 import { colors, radius, spacing } from '../../ui/theme';
@@ -73,61 +74,63 @@ export function QuickCreateAccountScreen() {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Nouveau compte</Text>
-        <Text style={styles.subtitle}>Créez d'abord un compte — vous reviendrez ensuite exactement où vous étiez.</Text>
+        <FormContainer>
+          <Text style={styles.title}>Nouveau compte</Text>
+          <Text style={styles.subtitle}>Créez d'abord un compte — vous reviendrez ensuite exactement où vous étiez.</Text>
 
-        <Text style={styles.sectionLabel}>Type</Text>
-        <View style={styles.chipRow}>
-          {(Object.keys(TYPE_LABEL) as AccountType[]).map((t) => (
-            <TouchableOpacity key={t} style={[styles.chip, type === t && styles.chipActive]} onPress={() => setType(t)}>
-              <Text style={[styles.chipText, type === t && styles.chipTextActive]}>{TYPE_LABEL[t]}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <FormField testID="quickcreate-account-name-input" label="Nom" placeholder="ex. Compte principal" value={name} onChangeText={setName} autoFocus />
-
-        <FormField testID="quickcreate-account-bank-input" label="Banque (facultatif)" placeholder="ex. CIH" value={bankName} onChangeText={setBankName} />
-
-        {members.length > 0 && (
-          <Select
-            testID="quickcreate-account-owner-select"
-            label="Propriétaire (facultatif)"
-            placeholder="Choisir un membre du foyer"
-            value={ownerUserId}
-            onChange={(v) => setOwnerUserId(ownerUserId === v ? null : v)}
-            options={members}
-          />
-        )}
-
-        <FormField
-          testID="quickcreate-account-balance-input"
-          label="Solde initial (facultatif)"
-          placeholder="Montant (DH)"
-          keyboardType="decimal-pad"
-          value={initialBalance}
-          onChangeText={setInitialBalance}
-        />
-
-        {/* R6.1 §8 — bascule à la création, Oui par défaut. */}
-        <View style={styles.pilotageRow}>
-          <View style={{ flex: 1, marginRight: spacing.sm }}>
-            <Text style={styles.pilotageLabel}>Inclure ce compte dans ma situation financière</Text>
-            <Text style={styles.pilotageHelp}>
-              Si désactivé, ce compte reste visible mais n'est pas pris en compte dans les calculs de trésorerie et de projection.
-            </Text>
+          <Text style={styles.sectionLabel}>Type</Text>
+          <View style={styles.chipRow}>
+            {(Object.keys(TYPE_LABEL) as AccountType[]).map((t) => (
+              <TouchableOpacity key={t} style={[styles.chip, type === t && styles.chipActive]} onPress={() => setType(t)}>
+                <Text style={[styles.chipText, type === t && styles.chipTextActive]}>{TYPE_LABEL[t]}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
-          <Switch testID="quickcreate-account-pilotage-switch" value={includeInPilotage} onValueChange={setIncludeInPilotage} />
-        </View>
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+          <FormField testID="quickcreate-account-name-input" label="Nom" placeholder="ex. Compte principal" value={name} onChangeText={setName} autoFocus />
 
-        <TouchableOpacity style={styles.button} onPress={onCreate} disabled={submitting} testID="quickcreate-account-submit">
-          {submitting ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Créer le compte</Text>}
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.cancel}>Annuler</Text>
-        </TouchableOpacity>
+          <FormField testID="quickcreate-account-bank-input" label="Banque (facultatif)" placeholder="ex. CIH" value={bankName} onChangeText={setBankName} />
+
+          {members.length > 0 && (
+            <Select
+              testID="quickcreate-account-owner-select"
+              label="Propriétaire (facultatif)"
+              placeholder="Choisir un membre du foyer"
+              value={ownerUserId}
+              onChange={(v) => setOwnerUserId(ownerUserId === v ? null : v)}
+              options={members}
+            />
+          )}
+
+          <FormField
+            testID="quickcreate-account-balance-input"
+            label="Solde initial (facultatif)"
+            placeholder="Montant (DH)"
+            keyboardType="decimal-pad"
+            value={initialBalance}
+            onChangeText={setInitialBalance}
+          />
+
+          {/* R6.1 §8 — bascule à la création, Oui par défaut. */}
+          <View style={styles.pilotageRow}>
+            <View style={{ flex: 1, marginRight: spacing.sm }}>
+              <Text style={styles.pilotageLabel}>Inclure ce compte dans ma situation financière</Text>
+              <Text style={styles.pilotageHelp}>
+                Si désactivé, ce compte reste visible mais n'est pas pris en compte dans les calculs de trésorerie et de projection.
+              </Text>
+            </View>
+            <Switch testID="quickcreate-account-pilotage-switch" value={includeInPilotage} onValueChange={setIncludeInPilotage} />
+          </View>
+
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+
+          <TouchableOpacity style={styles.button} onPress={onCreate} disabled={submitting} testID="quickcreate-account-submit">
+            {submitting ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={styles.buttonText}>Créer le compte</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Text style={styles.cancel}>Annuler</Text>
+          </TouchableOpacity>
+        </FormContainer>
       </ScrollView>
     </KeyboardAvoidingView>
   );

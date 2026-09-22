@@ -4,6 +4,7 @@ import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, RefreshCon
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
+import { FormContainer } from '../../ui/FormLayout';
 import { Select } from '../../ui/Select';
 import { FormField } from '../../ui/FormField';
 import { colors, radius, spacing } from '../../ui/theme';
@@ -232,7 +233,7 @@ export function PocketDetailScreen() {
       {detail.allocationMode === 'virtual_allocation' && (
         <View style={styles.locationRow}>
           {editingAccount ? (
-            <View style={styles.formCard}>
+            <FormContainer style={styles.formCard}>
               <Select
                 testID="pocket-edit-account-select"
                 label="Localiser sur quel compte ?"
@@ -249,7 +250,7 @@ export function PocketDetailScreen() {
                   <Text style={[styles.buttonText, styles.buttonTextSecondary]}>Annuler</Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </FormContainer>
           ) : (
             <TouchableOpacity
               onPress={() => {
@@ -266,7 +267,7 @@ export function PocketDetailScreen() {
       )}
 
       {detail.allocationMode === 'virtual_allocation' ? (
-        <View style={styles.formCard}>
+        <FormContainer style={styles.formCard}>
           <FormField testID="pocket-contribute-amount-input" placeholder="Montant (DH)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} onFocus={handleFocus} />
           <FormField testID="pocket-intention-input" placeholder="Intention (facultatif)" value={intentionLabel} onChangeText={setIntentionLabel} onFocus={handleFocus} />
           {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -278,7 +279,7 @@ export function PocketDetailScreen() {
               <Text style={[styles.buttonText, styles.buttonTextSecondary]}>Retirer</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </FormContainer>
       ) : (
         <Text style={styles.help}>Utilisez un virement (écran Comptes) vers le compte dédié pour faire grandir cette provision — jamais une simple écriture logique.</Text>
       )}
