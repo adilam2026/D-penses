@@ -8,6 +8,8 @@ import { VerifyEmailScreen } from '../screens/auth/VerifyEmailScreen';
 import { HouseholdSetupScreen } from '../screens/household/HouseholdSetupScreen';
 import { QuickAddScreen } from '../screens/quickadd/QuickAddScreen';
 import { AccountsScreen } from '../screens/accounts/AccountsScreen';
+import { TransactionsScreen } from '../screens/transactions/TransactionsScreen';
+import { PlanningScreen } from '../screens/planning/PlanningScreen';
 import { AccountDetailScreen } from '../screens/accounts/AccountDetailScreen';
 import { QuickCreateAccountScreen } from '../screens/accounts/QuickCreateAccountScreen';
 import { IncomeScreen } from '../screens/income/IncomeScreen';
@@ -46,6 +48,9 @@ import { OnboardingWizardScreen } from '../screens/onboarding/OnboardingWizardSc
 import { EpargneScreen } from '../screens/savings/EpargneScreen';
 import { RecurringTransfersScreen } from '../screens/recurring-transfers/RecurringTransfersScreen';
 import { RecurringTransferDetailScreen } from '../screens/recurring-transfers/RecurringTransferDetailScreen';
+import { EnvelopeDetailScreen } from '../screens/envelopes/EnvelopeDetailScreen';
+import { MedicalClaimsScreen } from '../screens/health/MedicalClaimsScreen';
+import { CloseMedicalClaimScreen } from '../screens/health/CloseMedicalClaimScreen';
 import { HamburgerMenuScreen } from '../screens/HamburgerMenuScreen';
 import { HouseholdMembersScreen } from '../screens/household/HouseholdMembersScreen';
 import { JoinHouseholdScreen } from '../screens/household/JoinHouseholdScreen';
@@ -115,7 +120,16 @@ export function RootNavigator() {
       <Stack.Screen name="Preferences" component={PreferencesScreen} options={{ headerShown: true, title: 'Préférences' }} />
       <Stack.Screen name="HouseholdConfig" component={HouseholdConfigScreen} options={{ headerShown: true, title: 'Configuration du foyer' }} />
       <Stack.Screen name="ResetFinancialData" component={ResetFinancialDataScreen} options={{ headerShown: true, title: 'Réinitialiser mes données' }} />
-      <Stack.Screen name="Enveloppes" component={EpargneScreen} options={{ headerShown: true, title: 'Enveloppes' }} />
+      {/* Refonte maquette V6B §6 — "Enveloppes" désigne désormais l'onglet
+          principal (RootTabs, nouvel écran compact EnvelopesScreen). L'ancien
+          écran Épargne/Provisions (CAS 1/2/3, plus détaillé) reste atteignable
+          sous un nom distinct, aucune fonctionnalité perdue. */}
+      <Stack.Screen name="EnveloppesLegacy" component={EpargneScreen} options={{ headerShown: true, title: 'Enveloppes (détail)' }} />
+      <Stack.Screen name="EnvelopeDetail" component={EnvelopeDetailScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="MedicalClaims" component={MedicalClaimsScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="CloseMedicalClaim" component={CloseMedicalClaimScreen} options={{ headerShown: false, presentation: 'modal' }} />
+      <Stack.Screen name="Planning" component={PlanningScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Transactions" component={TransactionsScreen} options={{ headerShown: !isWeb, title: 'Transactions' }} />
       <Stack.Screen name="RecurringTransfers" component={RecurringTransfersScreen} options={{ headerShown: true, title: 'Transferts récurrents' }} />
       <Stack.Screen name="RecurringTransferDetail" component={RecurringTransferDetailScreen} options={{ headerShown: true, title: 'Transfert récurrent' }} />
       <Stack.Screen name="QuickAdd" component={QuickAddScreen} options={{ presentation: 'modal' }} />

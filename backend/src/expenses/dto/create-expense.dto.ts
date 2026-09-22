@@ -1,4 +1,4 @@
-import { IsISO8601, IsNumber, IsOptional, IsPositive, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsISO8601, IsNumber, IsOptional, IsPositive, IsString, IsUUID } from 'class-validator';
 
 /**
  * Saisie rapide « + Dépense » (§2/§8). Une dépense réelle ordinaire (courses,
@@ -12,6 +12,21 @@ export class CreateExpenseDto {
 
   @IsUUID()
   accountId!: string;
+
+  /** Refonte maquette V6B §12 — libellé libre (ex. "Consultation pédiatre"). */
+  @IsOptional()
+  @IsString()
+  label?: string;
+
+  /**
+   * Refonte maquette V6B §9 — coché uniquement pour une catégorie Santé : force
+   * la création d'une AdHocExpense (jamais une BudgetExpense, même si un budget
+   * variable correspondrait) pour garantir un enregistrement stable et traçable
+   * 1:1 avec le dossier MedicalClaim généré automatiquement (cf. ExpensesService.create).
+   */
+  @IsOptional()
+  @IsBoolean()
+  remboursableMutuelle?: boolean;
 
   @IsOptional()
   @IsUUID()

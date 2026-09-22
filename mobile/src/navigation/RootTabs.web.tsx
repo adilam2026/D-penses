@@ -4,6 +4,8 @@ import { HomeScreen } from '../screens/HomeScreen';
 import { TransactionsScreen } from '../screens/transactions/TransactionsScreen';
 import { CalendarScreen } from '../screens/calendar/CalendarScreen';
 import { ProjectionScreen } from '../screens/projection/ProjectionScreen';
+import { PlanningScreen } from '../screens/planning/PlanningScreen';
+import { EnvelopesScreen } from '../screens/envelopes/EnvelopesScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -24,6 +26,8 @@ export function RootTabs() {
   return (
     <Stack.Navigator initialRouteName="Accueil" screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Accueil" component={HomeScreen} />
+      <Stack.Screen name="Planning" component={PlanningScreen} />
+      <Stack.Screen name="Enveloppes" component={EnvelopesScreen} />
       <Stack.Screen name="Transactions" component={TransactionsScreen} />
       <Stack.Screen name="Projection" component={ProjectionScreen} />
       <Stack.Screen name="Calendrier" component={CalendarScreen} />

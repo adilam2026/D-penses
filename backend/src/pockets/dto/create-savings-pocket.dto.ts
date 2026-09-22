@@ -37,6 +37,12 @@ export class CreateSavingsPocketDto {
   @IsISO8601()
   targetDate?: string;
 
+  /** Refonte maquette V6B §7A — montant de référence affiché ("Versement mensuel"), jamais une écriture automatique. */
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  monthlyContribution?: number;
+
   /** RG-047 : déclare un versement récurrent pour cet enfant — déclenche is_protected=true par défaut. */
   @IsOptional()
   @IsBoolean()

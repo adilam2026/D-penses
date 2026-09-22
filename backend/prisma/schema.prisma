@@ -159,6 +159,13 @@ enum DeadlineFinancialStatus {
   annulee
 }
 
+// Refonte maquette V6B §10-11 — statut du dossier de remboursement mutuelle.
+enum MedicalClaimStatus {
+  en_attente
+  partiellement_rembourse
+  cloture
+}
+
 enum PaymentType {
   paiement
   remboursement
@@ -266,19 +273,19 @@ enum GoalContributionStatus {
 // ---------- SOCLE ----------
 
 model User {
-  id              String    @id @default(uuid())
-  email           String    @unique
-  passwordHash    String    @map("password_hash")
-  firstName       String    @map("first_name")
-  lastName        String    @map("last_name")
-  avatarUrl       String?   @map("avatar_url")
+  id                String     @id @default(uuid())
+  email             String     @unique
+  passwordHash      String     @map("password_hash")
+  firstName         String     @map("first_name")
+  lastName          String     @map("last_name")
+  avatarUrl         String?    @map("avatar_url")
   // M6 — couleur d'identification de l'initiateur (Transactions), jamais imposée à
   // la saisie : NULL = pas encore choisie, l'affichage retombe sur une couleur
   // déterministe dérivée de l'id (jamais un plantage, jamais une régression).
-  color           String?   @map("color")
+  color             String?    @map("color")
   // NULL = compte créé mais adresse email pas encore confirmée par code OTP —
   // aucun token de session émis avant que ce champ soit renseigné (signup).
-  emailVerifiedAt DateTime? @map("email_verified_at")
+  emailVerifiedAt   DateTime?  @map("email_verified_at")
   // Corrections consolidées §16 — foyer ACTIF explicite, persistant entre
   // connexions/rafraîchissements de token (auth.service.ts#activeHouseholdId).
   // NULL = jamais switché depuis un second foyer : repli sur le membership le
@@ -288,8 +295,8 @@ model User {
   // utilisateur bloqué — simple repli sur l'ancien calcul.
   activeHouseholdId String?    @map("active_household_id")
   activeHousehold   Household? @relation(fields: [activeHouseholdId], references: [id], onDelete: SetNull)
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
 
   memberships                HouseholdMembership[]
   sessions                   Session[]
@@ -321,32 +328,33 @@ model Household {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  memberships        HouseholdMembership[]
+  memberships         HouseholdMembership[]
   // Corrections consolidées §16 — utilisateurs pour qui CE foyer est le foyer
   // actif courant (User.activeHouseholdId) — jamais confondu avec `memberships`
   // (appartenance) : un utilisateur peut être membre d'un foyer sans qu'il soit
   // son foyer actif (cas d'un foyer quitté après un switch).
   usersWithThisActive User[]
-  children           Child[]
-  categories         Category[]
-  settings           HouseholdSettings?
-  invites            HouseholdInvite[]
-  accounts           FinancialAccount[]
-  transfers          AccountTransfer[]
-  recurringTransfers RecurringTransfer[]
-  incomeSources      IncomeSource[]
-  chargePlans        ChargePlan[]
-  variableBudgets    VariableBudget[]
-  adHocExpenses      AdHocExpense[]
-  financialPlans     FinancialPlan[]
-  savingsPockets     SavingsPocket[]
-  provisions         Provision[]
-  goals              Goal[]
-  categoryTypes      CategoryType[]
-  categorySubtypes   CategorySubtype[]
-  schoolProjections  SchoolProjection[]
-  vehicles           Vehicle[]
-  housings           Housing[]
+  children            Child[]
+  categories          Category[]
+  settings            HouseholdSettings?
+  invites             HouseholdInvite[]
+  accounts            FinancialAccount[]
+  transfers           AccountTransfer[]
+  recurringTransfers  RecurringTransfer[]
+  incomeSources       IncomeSource[]
+  chargePlans         ChargePlan[]
+  variableBudgets     VariableBudget[]
+  adHocExpenses       AdHocExpense[]
+  financialPlans      FinancialPlan[]
+  savingsPockets      SavingsPocket[]
+  provisions          Provision[]
+  goals               Goal[]
+  categoryTypes       CategoryType[]
+  categorySubtypes    CategorySubtype[]
+  schoolProjections   SchoolProjection[]
+  vehicles            Vehicle[]
+  housings            Housing[]
+  medicalClaims       MedicalClaim[]
 
   @@map("household")
 }
@@ -438,13 +446,14 @@ model Category {
   status      ReferentialStatus @default(active)
   createdAt   DateTime          @default(now()) @map("created_at")
 
-  household       Household?       @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  incomeSources   IncomeSource[]
-  chargePlans     ChargePlan[]
-  variableBudgets VariableBudget[]
-  budgetExpenses  BudgetExpense[]
-  adHocExpenses   AdHocExpense[]
-  types           CategoryType[]
+  household         Household?         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  incomeSources     IncomeSource[]
+  chargePlans       ChargePlan[]
+  variableBudgets   VariableBudget[]
+  budgetExpenses    BudgetExpense[]
+  adHocExpenses     AdHocExpense[]
+  types             CategoryType[]
+  dedicatedAccounts FinancialAccount[] @relation("AccountDedicatedCategory")
 
   @@index([householdId])
   @@map("category")
@@ -613,28 +622,42 @@ model FinancialAccount {
   // favori par foyer, imposé en base (cf. index unique partiel dans la migration).
   isFavorite                   Boolean       @default(false) @map("is_favorite")
   currency                     String        @default("MAD")
+  // Refonte maquette V6B — nom de banque affiché séparément du libellé du compte
+  // ("CIH • LAMIAA" / "Compte enveloppes"), jamais concaténé dans `name`.
+  bankName                     String?       @map("bank_name")
+  // Refonte maquette V6B §2C — un "compte dédié" est un compte réel consacré à UNE
+  // catégorie de dépense (ex. Courses), alimenté par un AccountTransfer/RecurringTransfer
+  // ordinaire vers ce compte (aucun nouveau moteur de mouvement) : ces 2 champs ne sont
+  // qu'un marqueur d'affichage ("Compte courses" / "Alimenté depuis X • Y DH/mois" lu
+  // depuis le RecurringTransfer existant dont toAccountId = ce compte), jamais une
+  // source de vérité financière.
+  isDedicated                  Boolean       @default(false) @map("is_dedicated")
+  dedicatedCategoryId          String?       @map("dedicated_category_id")
   createdAt                    DateTime      @default(now()) @map("created_at")
   updatedAt                    DateTime      @updatedAt @map("updated_at")
 
-  household              Household                @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  owner                  User?                    @relation(fields: [ownerUserId], references: [id])
-  snapshots              AccountBalanceSnapshot[]
-  reconciliations        Reconciliation[]
-  adjustments            Adjustment[]
-  transfersFrom          AccountTransfer[]        @relation("TransferFrom")
-  transfersTo            AccountTransfer[]        @relation("TransferTo")
-  recurringTransfersFrom RecurringTransfer[]      @relation("RecurringTransferFrom")
-  recurringTransfersTo   RecurringTransfer[]      @relation("RecurringTransferTo")
-  incomeSourcesAsDefault IncomeSource[]           @relation("IncomeSourceDefaultAccount")
-  incomeOccurrences      IncomeOccurrence[]       @relation("IncomeOccurrenceAccount")
-  chargePlansAsDefault   ChargePlan[]             @relation("ChargePlanDefaultAccount")
-  payments               Payment[]                @relation("PaymentAccount")
-  budgetExpenses         BudgetExpense[]          @relation("BudgetExpenseAccount")
-  adHocExpenses          AdHocExpense[]           @relation("AdHocExpenseAccount")
-  backedSavingsPockets   SavingsPocket[]          @relation("SavingsPocketLinkedAccount")
-  backedProvisions       Provision[]              @relation("ProvisionLinkedAccount")
+  household                    Household                @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  owner                        User?                    @relation(fields: [ownerUserId], references: [id])
+  dedicatedCategory            Category?                @relation("AccountDedicatedCategory", fields: [dedicatedCategoryId], references: [id])
+  snapshots                    AccountBalanceSnapshot[]
+  reconciliations              Reconciliation[]
+  adjustments                  Adjustment[]
+  transfersFrom                AccountTransfer[]        @relation("TransferFrom")
+  transfersTo                  AccountTransfer[]        @relation("TransferTo")
+  recurringTransfersFrom       RecurringTransfer[]      @relation("RecurringTransferFrom")
+  recurringTransfersTo         RecurringTransfer[]      @relation("RecurringTransferTo")
+  incomeSourcesAsDefault       IncomeSource[]           @relation("IncomeSourceDefaultAccount")
+  incomeOccurrences            IncomeOccurrence[]       @relation("IncomeOccurrenceAccount")
+  chargePlansAsDefault         ChargePlan[]             @relation("ChargePlanDefaultAccount")
+  payments                     Payment[]                @relation("PaymentAccount")
+  budgetExpenses               BudgetExpense[]          @relation("BudgetExpenseAccount")
+  adHocExpenses                AdHocExpense[]           @relation("AdHocExpenseAccount")
+  backedSavingsPockets         SavingsPocket[]          @relation("SavingsPocketLinkedAccount")
+  backedProvisions             Provision[]              @relation("ProvisionLinkedAccount")
+  medicalClaimsAsReimbursement MedicalClaim[]           @relation("MedicalClaimReimbursementAccount")
 
   @@index([householdId])
+  @@index([dedicatedCategoryId])
   @@map("financial_account")
 }
 
@@ -1167,6 +1190,9 @@ model BudgetExpense {
   accountId         String   @map("account_id")
   recordedById      String   @map("recorded_by_id")
   notes             String?
+  // Refonte maquette V6B §12 — voir AdHocExpense.label (même convention, même
+  // NULL = ancienne ligne, jamais requis).
+  label             String?
   createdAt         DateTime @default(now()) @map("created_at")
 
   // T3B — même patron que Payment (reste_a_payer) : `amount` reste toujours
@@ -1201,17 +1227,28 @@ model BudgetExpense {
 // Une dépense réelle sans budget variable actif correspondant (§7) — jamais de
 // Deadline ni de ChargePlan créés pour l'enregistrer (§2).
 model AdHocExpense {
-  id                String   @id @default(uuid())
-  householdId       String   @map("household_id")
-  categoryId        String?  @map("category_id")
-  categoryTypeId    String?  @map("category_type_id")
-  categorySubtypeId String?  @map("category_subtype_id")
-  amount            Decimal  @map("amount") @db.Decimal(14, 2)
-  spentDate         DateTime @map("spent_date")
-  accountId         String   @map("account_id")
-  recordedById      String   @map("recorded_by_id")
-  notes             String?
-  createdAt         DateTime @default(now()) @map("created_at")
+  id                   String   @id @default(uuid())
+  householdId          String   @map("household_id")
+  categoryId           String?  @map("category_id")
+  categoryTypeId       String?  @map("category_type_id")
+  categorySubtypeId    String?  @map("category_subtype_id")
+  amount               Decimal  @map("amount") @db.Decimal(14, 2)
+  spentDate            DateTime @map("spent_date")
+  accountId            String   @map("account_id")
+  recordedById         String   @map("recorded_by_id")
+  notes                String?
+  // Refonte maquette V6B §12 — "Libellé" est un champ de saisie à part entière
+  // du formulaire Dépense (ex. "Consultation pédiatre"), jamais dérivé de la
+  // catégorie : NULL = ancienne dépense créée avant cette évolution, l'affichage
+  // retombe alors sur Type · Sous-type (comportement historique inchangé).
+  label                String?
+  // Refonte maquette V6B §9 — coché uniquement pour une dépense de catégorie Santé :
+  // déclenche à la création la génération automatique d'un MedicalClaim lié (1:1, jamais
+  // dupliqué). Les 500 DH engagés restent une dépense réelle immédiate (jamais annulée
+  // par l'existence du dossier) ; le remboursement futur n'est JAMAIS un revenu tant que
+  // le dossier n'est pas clôturé (cf. MedicalClaim).
+  remboursableMutuelle Boolean  @default(false) @map("remboursable_mutuelle")
+  createdAt            DateTime @default(now()) @map("created_at")
 
   household       Household        @relation(fields: [householdId], references: [id], onDelete: Cascade)
   category        Category?        @relation(fields: [categoryId], references: [id])
@@ -1219,11 +1256,44 @@ model AdHocExpense {
   categorySubtype CategorySubtype? @relation(fields: [categorySubtypeId], references: [id])
   account         FinancialAccount @relation("AdHocExpenseAccount", fields: [accountId], references: [id])
   recordedBy      User             @relation("AdHocExpenseRecordedBy", fields: [recordedById], references: [id])
+  medicalClaim    MedicalClaim?    @relation("MedicalClaimSourceExpense")
 
   @@index([householdId])
   @@index([spentDate])
   @@index([accountId])
   @@map("adhoc_expense")
+}
+
+// Refonte maquette V6B §9-11 — dossier de suivi d'un remboursement mutuelle. Créé
+// automatiquement (1:1) avec l'AdHocExpense source quand remboursableMutuelle=true ;
+// amountReimbursed reste à 0 / status='en_attente' tant que l'utilisateur n'a pas
+// explicitement clôturé le dossier avec le montant réellement reçu — jamais un revenu
+// projeté (RG absente de toute projection tant que non clôturé).
+model MedicalClaim {
+  id                       String             @id @default(uuid())
+  householdId              String             @map("household_id")
+  label                    String
+  visitDate                DateTime           @map("visit_date") @db.Date
+  amountEngaged            Decimal            @map("amount_engaged") @db.Decimal(14, 2)
+  amountReimbursed         Decimal            @default(0) @map("amount_reimbursed") @db.Decimal(14, 2)
+  reimbursementDate        DateTime?          @map("reimbursement_date") @db.Date
+  reimbursementAccountId   String?            @map("reimbursement_account_id")
+  // Affectation optionnelle du montant reçu à une enveloppe (versement réel, jamais
+  // une dépense) — réutilise SavingsPocket, aucun nouveau moteur d'affectation.
+  allocatedSavingsPocketId String?            @map("allocated_savings_pocket_id")
+  sourceExpenseId          String             @unique @map("source_expense_id")
+  status                   MedicalClaimStatus @default(en_attente)
+  createdAt                DateTime           @default(now()) @map("created_at")
+  updatedAt                DateTime           @updatedAt @map("updated_at")
+
+  household              Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  reimbursementAccount   FinancialAccount? @relation("MedicalClaimReimbursementAccount", fields: [reimbursementAccountId], references: [id])
+  allocatedSavingsPocket SavingsPocket?    @relation("MedicalClaimAllocatedPocket", fields: [allocatedSavingsPocketId], references: [id])
+  sourceExpense          AdHocExpense      @relation("MedicalClaimSourceExpense", fields: [sourceExpenseId], references: [id], onDelete: Cascade)
+
+  @@index([householdId])
+  @@index([status])
+  @@map("medical_claim")
 }
 
 // ============================================================
@@ -1420,26 +1490,32 @@ model DeadlineChildAllocation {
 // renseigné avec un versement récurrent déclaré (hasRecurringContribution à la création) —
 // jamais mobilisée automatiquement par un moteur d'arbitrage (Lot 8, hors périmètre ici).
 model SavingsPocket {
-  id                 String         @id @default(uuid())
-  householdId        String         @map("household_id")
-  name               String
-  ownerUserId        String?        @map("owner_user_id") // nullable = épargne commune du foyer
-  beneficiaryChildId String?        @map("beneficiary_child_id") // RG-047 : épargne enfant
-  isProtected        Boolean        @default(false) @map("is_protected")
-  allocationMode     AllocationMode @map("allocation_mode")
+  id                  String         @id @default(uuid())
+  householdId         String         @map("household_id")
+  name                String
+  ownerUserId         String?        @map("owner_user_id") // nullable = épargne commune du foyer
+  beneficiaryChildId  String?        @map("beneficiary_child_id") // RG-047 : épargne enfant
+  isProtected         Boolean        @default(false) @map("is_protected")
+  allocationMode      AllocationMode @map("allocation_mode")
   // Requis (et UNIQUE, cf. migration) si allocationMode = backed_by_account, sinon NULL (RG-072/IF-14).
-  linkedAccountId    String?        @map("linked_account_id")
-  targetAmount       Decimal?       @map("target_amount") @db.Decimal(14, 2)
-  targetDate         DateTime?      @map("target_date") @db.Date
-  createdAt          DateTime       @default(now()) @map("created_at")
-  updatedAt          DateTime       @updatedAt @map("updated_at")
+  linkedAccountId     String?        @map("linked_account_id")
+  targetAmount        Decimal?       @map("target_amount") @db.Decimal(14, 2)
+  targetDate          DateTime?      @map("target_date") @db.Date
+  // Refonte maquette V6B §7A — "Versement mensuel" affiché sur une enveloppe permanente
+  // (Voiture : 2000 DH/mois) : montant de RÉFÉRENCE affiché uniquement, jamais une
+  // écriture automatique — chaque versement réel reste un PocketMovement explicite
+  // (RG-071 inchangée : current_amount ne dérive jamais de ce champ).
+  monthlyContribution Decimal?       @map("monthly_contribution") @db.Decimal(14, 2)
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
 
-  household        Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  owner            User?             @relation(fields: [ownerUserId], references: [id])
-  beneficiaryChild Child?            @relation(fields: [beneficiaryChildId], references: [id])
-  linkedAccount    FinancialAccount? @relation("SavingsPocketLinkedAccount", fields: [linkedAccountId], references: [id])
-  movements        PocketMovement[]  @relation("SavingsPocketMovements")
-  goals            Goal[]
+  household              Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  owner                  User?             @relation(fields: [ownerUserId], references: [id])
+  beneficiaryChild       Child?            @relation(fields: [beneficiaryChildId], references: [id])
+  linkedAccount          FinancialAccount? @relation("SavingsPocketLinkedAccount", fields: [linkedAccountId], references: [id])
+  movements              PocketMovement[]  @relation("SavingsPocketMovements")
+  goals                  Goal[]
+  medicalClaimsAllocated MedicalClaim[]    @relation("MedicalClaimAllocatedPocket")
 
   @@index([householdId])
   @@map("savings_pocket")

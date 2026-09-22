@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { getAccountBalance } from '../common/ledger/ledger.util';
-import { computeAccountEnvelopeCoverage, computeTreasurySummary } from '../common/ledger/treasury.util';
+import { computeAccountEnvelopeBreakdown, computeAccountEnvelopeCoverage, computeTreasurySummary } from '../common/ledger/treasury.util';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';
 import { CreateTransferDto } from './dto/create-transfer.dto';
@@ -28,6 +28,9 @@ export class AccountsService {
           includeInOperationalTreasury: dto.includeInOperationalTreasury ?? true,
           isProtected: dto.isProtected ?? false,
           ownerUserId: dto.ownerUserId,
+          bankName: dto.bankName,
+          isDedicated: dto.isDedicated ?? false,
+          dedicatedCategoryId: dto.dedicatedCategoryId,
         },
       });
       await tx.accountBalanceSnapshot.create({
@@ -61,7 +64,9 @@ export class AccountsService {
         accounts.map(async (a) => {
           const soldeCourant = await this.getBalance(a.id);
           const { reservedByEnvelopes } = await computeAccountEnvelopeCoverage(tx, a.id);
-          return { ...a, soldeCourant, reservedByEnvelopes };
+          const envelopes = await computeAccountEnvelopeBreakdown(tx, a.id);
+          const dedicatedFeed = await this.getDedicatedFeedInfo(tx, a);
+          return { ...a, soldeCourant, reservedByEnvelopes, envelopes, dedicatedFeed };
         }),
       );
     });
@@ -74,7 +79,9 @@ export class AccountsService {
       if (!account) throw new NotFoundException('Compte introuvable');
       const soldeCourant = await this.getBalance(account.id);
       const { reservedByEnvelopes } = await computeAccountEnvelopeCoverage(tx, account.id);
-      return { ...account, soldeCourant, reservedByEnvelopes };
+      const envelopes = await computeAccountEnvelopeBreakdown(tx, account.id);
+      const dedicatedFeed = await this.getDedicatedFeedInfo(tx, account);
+      return { ...account, soldeCourant, reservedByEnvelopes, envelopes, dedicatedFeed };
     });
   }
 
@@ -99,10 +106,34 @@ export class AccountsService {
           includeInOperationalTreasury: dto.includeInOperationalTreasury,
           hideBalanceByDefault: dto.hideBalanceByDefault,
           showOnHome: dto.showOnHome,
+          bankName: dto.bankName,
+          isDedicated: dto.isDedicated,
+          dedicatedCategoryId: dto.dedicatedCategoryId,
         },
       });
       return { ...updated, soldeCourant: await this.getBalance(id) };
     });
+  }
+
+  /**
+   * Refonte maquette V6B §2C — un "compte dédié" affiche "Alimenté depuis X •
+   * Y DH/mois" : lu depuis le RecurringTransfer actif (le plus récent) dont
+   * toAccountId = ce compte, aucun nouveau champ de solde/montant stocké ici.
+   * Retourne null si le compte n'est pas dédié ou n'a aucun virement récurrent
+   * entrant actif.
+   */
+  private async getDedicatedFeedInfo(
+    tx: ReturnType<RlsContextService['getClient']>,
+    account: { id: string; isDedicated: boolean },
+  ): Promise<{ fromAccountName: string; amount: number; recurrenceRule: string } | null> {
+    if (!account.isDedicated) return null;
+    const feed = await tx.recurringTransfer.findFirst({
+      where: { toAccountId: account.id, status: 'actif' },
+      include: { fromAccount: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!feed || !feed.fromAccount) return null;
+    return { fromAccountName: feed.fromAccount.name, amount: Number(feed.amount), recurrenceRule: feed.recurrenceRule };
   }
 
   /** Un seul compte favori par foyer (index unique partiel) — utilisé par la saisie rapide (§14). */

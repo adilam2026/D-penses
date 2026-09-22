@@ -1,4 +1,4 @@
-import { IsBoolean, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
 
 /**
  * R5 clôture §2 — Modifier/Archiver un compte. `status` est le seul levier
@@ -48,4 +48,18 @@ export class UpdateAccountDto {
   @IsOptional()
   @IsBoolean()
   showOnHome?: boolean;
+
+  /** Refonte maquette V6B — nom de banque affiché séparément. */
+  @IsOptional()
+  @IsString()
+  bankName?: string;
+
+  /** Refonte maquette V6B §2C — voir CreateAccountDto.isDedicated. */
+  @IsOptional()
+  @IsBoolean()
+  isDedicated?: boolean;
+
+  @IsOptional()
+  @IsUUID()
+  dedicatedCategoryId?: string;
 }

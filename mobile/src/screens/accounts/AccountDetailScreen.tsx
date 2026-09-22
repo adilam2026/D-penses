@@ -28,7 +28,13 @@ import { KIND_LABEL, LedgerEntry, formatDate, groupByMonth, initiatorColor } fro
 // de includeInOperationalTreasury (pilotage) : extension LOCALE (jamais dans
 // accountDetailLogic.ts, partagé avec le portail Web protégé WEB-V4.4A —
 // aucune modification de ce fichier partagé).
-type Account = BaseAccount & { hideBalanceByDefault?: boolean; showOnHome?: boolean };
+type Account = BaseAccount & {
+  hideBalanceByDefault?: boolean;
+  showOnHome?: boolean;
+  envelopes?: api.AccountEnvelope[];
+  isDedicated?: boolean;
+  dedicatedFeed?: { fromAccountName: string; amount: number; recurrenceRule: string } | null;
+};
 
 /**
  * Détail d'un compte (corrections UI/UX finales §4) — vue PRINCIPALE : nom +
@@ -294,8 +300,14 @@ export function AccountDetailScreen() {
 
             {account.reservedByEnvelopes > 0 && (
               <View style={[styles.card, account.reservedByEnvelopes > account.soldeCourant && styles.cardWarning]}>
-                <Text style={styles.cardTitle}>Enveloppes localisées sur ce compte</Text>
-                <Text style={styles.cardMeta}>Réservé : {account.reservedByEnvelopes.toLocaleString('fr-FR')} DH</Text>
+                <Text style={styles.cardTitle}>Répartition — enveloppes localisées sur ce compte</Text>
+                {(account.envelopes ?? []).map((e) => (
+                  <View key={e.id} style={styles.envelopeRow}>
+                    <Text style={styles.envelopeName}>{e.name}</Text>
+                    <Text style={styles.envelopeAmount}>{e.amount.toLocaleString('fr-FR')} DH</Text>
+                  </View>
+                ))}
+                <View style={styles.envelopeDivider} />
                 {account.reservedByEnvelopes > account.soldeCourant ? (
                   <Text style={styles.warningText}>
                     ⚠ Réservations insuffisamment couvertes : il manque {(account.reservedByEnvelopes - account.soldeCourant).toLocaleString('fr-FR')} DH
@@ -303,9 +315,20 @@ export function AccountDetailScreen() {
                   </Text>
                 ) : (
                   <Text style={styles.cardMeta}>
-                    Libre physiquement non affecté sur ce compte : {(account.soldeCourant - account.reservedByEnvelopes).toLocaleString('fr-FR')} DH
+                    Libre non affecté sur ce compte : {(account.soldeCourant - account.reservedByEnvelopes).toLocaleString('fr-FR')} DH
                   </Text>
                 )}
+              </View>
+            )}
+
+            {account.isDedicated && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Compte dédié</Text>
+                <Text style={styles.cardMeta}>
+                  {account.dedicatedFeed
+                    ? `Alimenté depuis ${account.dedicatedFeed.fromAccountName} • ${account.dedicatedFeed.amount.toLocaleString('fr-FR')} DH / mois`
+                    : "Aucun virement récurrent d'alimentation configuré."}
+                </Text>
               </View>
             )}
 
@@ -658,6 +681,10 @@ const styles = StyleSheet.create({
   cardWarning: { borderColor: colors.danger, backgroundColor: colors.dangerLight },
   cardTitle: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
   cardMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  envelopeRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
+  envelopeName: { fontSize: 12, color: colors.textPrimary },
+  envelopeAmount: { fontSize: 12, fontWeight: '700', color: colors.textPrimary },
+  envelopeDivider: { height: 1, backgroundColor: colors.border, marginVertical: 6 },
   warningText: { fontSize: 12, color: colors.danger, fontWeight: '600', marginTop: 4 },
   adjustBox: { marginTop: 10 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: spacing.sm },

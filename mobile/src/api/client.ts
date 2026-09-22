@@ -149,14 +149,30 @@ export const getAccountsSummary = () => apiFetch('/accounts/summary');
 
 export const getQuickAddDefaultAccount = (): Promise<{ accountId: string | null }> => apiFetch('/accounts/quick-add-default');
 
-export const createAccount = (data: { name: string; type: string; initialBalance?: number; includeInOperationalTreasury?: boolean }) =>
-  apiFetch('/accounts', { method: 'POST', body: data });
+export const createAccount = (data: {
+  name: string;
+  type: string;
+  initialBalance?: number;
+  includeInOperationalTreasury?: boolean;
+  /** Refonte maquette V6B — nom de banque affiché séparément ("CIH • LAMIAA"). */
+  bankName?: string;
+  ownerUserId?: string;
+  isDedicated?: boolean;
+  dedicatedCategoryId?: string;
+}) => apiFetch('/accounts', { method: 'POST', body: data });
 
 export const setAccountFavorite = (accountId: string) => apiFetch(`/accounts/${accountId}/favorite`, { method: 'POST' });
 
-export const getAccount = (
-  accountId: string,
-): Promise<{
+/** Refonte maquette V6B §3 — une enveloppe affectée à un compte (jamais additive au solde). */
+export interface AccountEnvelope {
+  id: string;
+  kind: 'savings_pocket' | 'provision';
+  name: string;
+  amount: number;
+  subtitle: 'plan_financier' | 'reserve';
+}
+
+export interface AccountApi {
   id: string;
   name: string;
   type: string;
@@ -164,10 +180,18 @@ export const getAccount = (
   includeInOperationalTreasury: boolean;
   soldeCourant: number;
   reservedByEnvelopes: number;
+  envelopes: AccountEnvelope[];
+  bankName: string | null;
+  ownerUserId: string | null;
+  isDedicated: boolean;
+  dedicatedCategoryId: string | null;
+  dedicatedFeed: { fromAccountName: string; amount: number; recurrenceRule: string } | null;
   // Corrections consolidées §5/§6 — préférences indépendantes du pilotage.
   hideBalanceByDefault?: boolean;
   showOnHome?: boolean;
-}> => apiFetch(`/accounts/${accountId}`);
+}
+
+export const getAccount = (accountId: string): Promise<AccountApi> => apiFetch(`/accounts/${accountId}`);
 
 // R5 clôture §2 — Modifier / Archiver (jamais de suppression physique).
 // R6.1 §8 — includeInOperationalTreasury bascule le pilotage (trésorerie/disponible
@@ -183,6 +207,9 @@ export const updateAccount = (
     includeInOperationalTreasury?: boolean;
     hideBalanceByDefault?: boolean;
     showOnHome?: boolean;
+    bankName?: string;
+    isDedicated?: boolean;
+    dedicatedCategoryId?: string;
   },
 ) => apiFetch(`/accounts/${id}`, { method: 'PATCH', body: data });
 
@@ -508,20 +535,55 @@ export const findActiveBudgetsForCategory = (categoryId: string) => apiFetch(`/v
 export const createExpense = (data: {
   amount: number;
   accountId: string;
+  /** Refonte maquette V6B §12 — libellé libre (ex. "Consultation pédiatre"). */
+  label?: string;
   categoryId?: string;
   categoryTypeId?: string;
   categorySubtypeId?: string;
   spentDate?: string;
   variableBudgetId?: string;
   notes?: string;
+  /** Refonte maquette V6B §9 — force AdHocExpense + crée un MedicalClaim lié. */
+  remboursableMutuelle?: boolean;
 }) => apiFetch('/expenses', { method: 'POST', body: data });
 
 // R5 clôture §1 — Modifier (description uniquement, jamais le montant).
 export const updateExpenseMetadata = (
   kind: 'adhoc_expense' | 'budget_expense',
   id: string,
-  data: { categoryId?: string; categoryTypeId?: string; categorySubtypeId?: string; notes?: string },
+  data: { label?: string; categoryId?: string; categoryTypeId?: string; categorySubtypeId?: string; notes?: string },
 ) => apiFetch(`/expenses/${kind}/${id}`, { method: 'PATCH', body: data });
+
+// ---------- Dossiers mutuelle (refonte maquette V6B §9-11) ----------
+export interface MedicalClaim {
+  id: string;
+  householdId: string;
+  label: string;
+  visitDate: string;
+  amountEngaged: number;
+  amountReimbursed: number;
+  resteACharge: number;
+  reimbursementDate: string | null;
+  reimbursementAccountId: string | null;
+  allocatedSavingsPocketId: string | null;
+  sourceExpenseId: string;
+  status: 'en_attente' | 'partiellement_rembourse' | 'cloture';
+}
+
+export const listMedicalClaims = (): Promise<{
+  summary: { pendingCount: number; totalEngaged: number; totalReimbursed: number };
+  claims: MedicalClaim[];
+}> => apiFetch('/medical-claims');
+
+export const getMedicalClaim = (id: string): Promise<MedicalClaim> => apiFetch(`/medical-claims/${id}`);
+
+export const updateMedicalClaim = (id: string, data: { label?: string; visitDate?: string }) =>
+  apiFetch(`/medical-claims/${id}`, { method: 'PATCH', body: data });
+
+export const closeMedicalClaim = (
+  id: string,
+  data: { amountReceived: number; reimbursementDate?: string; reimbursementAccountId: string; allocatedSavingsPocketId?: string },
+) => apiFetch(`/medical-claims/${id}/close`, { method: 'POST', body: data });
 
 // R5 clôture §1 — Corriger/Annuler (Adjustment), adhoc_expense uniquement (cf. rapport pour budget_expense).
 export const correctAdhocExpense = (id: string, data: { correctedAmount: number }) =>
@@ -768,13 +830,17 @@ export interface CreatePocketBody {
   hasRecurringContribution?: boolean;
   targetAmount?: number;
   targetDate?: string;
+  /** Refonte maquette V6B §7A — "Versement mensuel" affiché, jamais une écriture automatique. */
+  monthlyContribution?: number;
 }
 
 export const listPockets = () => apiFetch('/pockets');
 export const getPocket = (id: string) => apiFetch(`/pockets/${id}`);
 export const createPocket = (data: CreatePocketBody) => apiFetch('/pockets', { method: 'POST', body: data });
-export const updatePocket = (id: string, data: { name?: string; targetAmount?: number; targetDate?: string; isProtected?: boolean; linkedAccountId?: string }) =>
-  apiFetch(`/pockets/${id}`, { method: 'PATCH', body: data });
+export const updatePocket = (
+  id: string,
+  data: { name?: string; targetAmount?: number; targetDate?: string; monthlyContribution?: number; isProtected?: boolean; linkedAccountId?: string },
+) => apiFetch(`/pockets/${id}`, { method: 'PATCH', body: data });
 export const contributePocket = (id: string, data: { amount: number; date?: string; intentionLabel?: string; confirmed?: boolean }) =>
   apiFetch(`/pockets/${id}/contribute`, { method: 'POST', body: data });
 export const withdrawPocket = (id: string, data: { amount: number; date?: string; intentionLabel?: string }) =>

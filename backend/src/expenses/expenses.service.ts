@@ -39,32 +39,40 @@ export class ExpensesService {
 
       await this.validateCategoryHierarchy(tx, dto.categoryId, dto.categoryTypeId, dto.categorySubtypeId);
 
-      let variableBudgetId = dto.variableBudgetId;
-      if (variableBudgetId) {
-        const budget = await tx.variableBudget.findFirst({ where: { id: variableBudgetId, householdId } });
-        if (!budget) throw new NotFoundException('Budget introuvable dans ce foyer');
-        if (dto.categoryId && budget.categoryId !== dto.categoryId) {
-          throw new BadRequestException('Ce budget ne correspond pas à la catégorie indiquée');
+      let variableBudgetId: string | undefined;
+      // Refonte maquette V6B §9 — une dépense remboursable mutuelle ne doit
+      // jamais passer par un VariableBudget (ni explicite ni auto-matché) :
+      // elle a besoin d'un enregistrement AdHocExpense stable, 1:1 avec le
+      // MedicalClaim généré ci-dessous, jamais fondu dans la consommation
+      // agrégée d'un budget variable.
+      if (!dto.remboursableMutuelle) {
+        variableBudgetId = dto.variableBudgetId;
+        if (variableBudgetId) {
+          const budget = await tx.variableBudget.findFirst({ where: { id: variableBudgetId, householdId } });
+          if (!budget) throw new NotFoundException('Budget introuvable dans ce foyer');
+          if (dto.categoryId && budget.categoryId !== dto.categoryId) {
+            throw new BadRequestException('Ce budget ne correspond pas à la catégorie indiquée');
+          }
+        } else if (dto.categoryId) {
+          // Lot 2 — priorité explicite (ci-dessus) > type précis > catégorie parente > aucun.
+          // Le type précis n'est essayé que si la dépense porte elle-même un categoryTypeId —
+          // sans type sur la dépense, impossible de savoir lequel viser, on va directement
+          // à la catégorie parente (budgets scopés catégorie uniquement, categoryTypeId NULL).
+          let candidates: Awaited<ReturnType<VariableBudgetsService['findActiveBudgetsForScopeOnTx']>> = [];
+          if (dto.categoryTypeId) {
+            candidates = await this.variableBudgets.findActiveBudgetsForScopeOnTx(tx, householdId, dto.categoryId, dto.categoryTypeId, spentDate);
+          }
+          if (candidates.length === 0) {
+            candidates = await this.variableBudgets.findActiveBudgetsForScopeOnTx(tx, householdId, dto.categoryId, null, spentDate);
+          }
+          if (candidates.length > 1) {
+            throw new ConflictException({
+              message: 'Plusieurs budgets actifs correspondent à ce périmètre — précisez variableBudgetId',
+              candidates: candidates.map((c) => ({ id: c.id, referenceAmount: c.referenceAmount, referencePeriod: c.referencePeriod })),
+            });
+          }
+          if (candidates.length === 1) variableBudgetId = candidates[0].id;
         }
-      } else if (dto.categoryId) {
-        // Lot 2 — priorité explicite (ci-dessus) > type précis > catégorie parente > aucun.
-        // Le type précis n'est essayé que si la dépense porte elle-même un categoryTypeId —
-        // sans type sur la dépense, impossible de savoir lequel viser, on va directement
-        // à la catégorie parente (budgets scopés catégorie uniquement, categoryTypeId NULL).
-        let candidates: Awaited<ReturnType<VariableBudgetsService['findActiveBudgetsForScopeOnTx']>> = [];
-        if (dto.categoryTypeId) {
-          candidates = await this.variableBudgets.findActiveBudgetsForScopeOnTx(tx, householdId, dto.categoryId, dto.categoryTypeId, spentDate);
-        }
-        if (candidates.length === 0) {
-          candidates = await this.variableBudgets.findActiveBudgetsForScopeOnTx(tx, householdId, dto.categoryId, null, spentDate);
-        }
-        if (candidates.length > 1) {
-          throw new ConflictException({
-            message: 'Plusieurs budgets actifs correspondent à ce périmètre — précisez variableBudgetId',
-            candidates: candidates.map((c) => ({ id: c.id, referenceAmount: c.referenceAmount, referencePeriod: c.referencePeriod })),
-          });
-        }
-        if (candidates.length === 1) variableBudgetId = candidates[0].id;
       }
 
       if (variableBudgetId) {
@@ -73,6 +81,7 @@ export class ExpensesService {
             variableBudgetId,
             amount: dto.amount,
             spentDate,
+            label: dto.label,
             categoryId: dto.categoryId,
             categoryTypeId: dto.categoryTypeId,
             categorySubtypeId: dto.categorySubtypeId,
@@ -95,17 +104,38 @@ export class ExpensesService {
           householdId,
           amount: dto.amount,
           spentDate,
+          label: dto.label,
           categoryId: dto.categoryId,
           categoryTypeId: dto.categoryTypeId,
           categorySubtypeId: dto.categorySubtypeId,
           accountId: dto.accountId,
           recordedById: userId,
           notes: dto.notes,
+          remboursableMutuelle: dto.remboursableMutuelle ?? false,
         },
       });
+
+      let medicalClaim = null;
+      if (dto.remboursableMutuelle) {
+        // Refonte maquette V6B §9 — 1 dépense remboursable = 1 dossier créé
+        // atomiquement (même transaction), jamais un revenu projeté tant que
+        // non clôturé (cf. MedicalClaimsService.close). amountReimbursed reste
+        // à 0/status='en_attente' par défaut (valeurs par défaut du modèle).
+        medicalClaim = await tx.medicalClaim.create({
+          data: {
+            householdId,
+            label: dto.label ?? 'Dépense santé',
+            visitDate: spentDate,
+            amountEngaged: dto.amount,
+            sourceExpenseId: expense.id,
+          },
+        });
+      }
+
       return {
         kind: 'adhoc_expense' as const,
         expense,
+        medicalClaim,
         soldeCourant: await getAccountBalance(tx, dto.accountId),
       };
     });
@@ -143,7 +173,7 @@ export class ExpensesService {
       const tx = this.rlsContext.getClient();
       await this.validateCategoryHierarchy(tx, dto.categoryId, dto.categoryTypeId, dto.categorySubtypeId);
 
-      const data = { categoryId: dto.categoryId, categoryTypeId: dto.categoryTypeId, categorySubtypeId: dto.categorySubtypeId, notes: dto.notes };
+      const data = { label: dto.label, categoryId: dto.categoryId, categoryTypeId: dto.categoryTypeId, categorySubtypeId: dto.categorySubtypeId, notes: dto.notes };
       if (kind === 'adhoc_expense') {
         const existing = await tx.adHocExpense.findFirst({ where: { id, householdId } });
         if (!existing) throw new NotFoundException('Dépense introuvable');

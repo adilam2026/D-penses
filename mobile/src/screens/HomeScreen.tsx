@@ -1,83 +1,85 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../api/client';
 import { useBottomInset } from '../ui/useBottomInset';
 import { useTopInset } from '../ui/useTopInset';
-import { ChoiceSheet } from '../ui/ChoiceSheet';
+import { useResponsiveLayout } from '../ui/useResponsiveLayout';
 import { accountCardPalette, colors, elevation, radius, spacing } from '../ui/theme';
-import { Donut } from '../ui/Donut';
-// Architecture Web v3 §11 — types + fonctions pures extraits tels quels vers
-// homeLogic.ts (aucun changement de comportement), partagés avec
-// HomeScreen.web.tsx : jamais un second calcul métier parallèle (§12).
-import {
-  Account,
-  DashboardSummary,
-  PLAN_TYPE_ICON,
-  essentialPrerequisitesMet,
-  isFullyEmpty,
-  isPartiallyConfigured,
-  prioritizeBudgets,
-  sortPlansAlphabetically,
-  urgencyColor,
-} from './homeLogic';
-// Corrections consolidées §2 — réutilise EXACTEMENT le même type/libellés que
-// l'écran Transactions (jamais une seconde définition parallèle de KIND_LABEL).
-import { KIND_LABEL, LedgerEntry } from './transactions/transactionsLogic';
+import { formatDh, formatShortDate } from '../ui/formatMoney';
+import { toNum } from './envelopes/envelopesLogic';
+
+interface TodoCharge {
+  kind: 'charge';
+  deadlineId: string;
+  label: string;
+  amount: number;
+  dueDate: string;
+  accountName: string | null;
+}
+interface TodoEnvelope {
+  kind: 'envelope';
+  provisionId: string;
+  label: string;
+  amount: number;
+}
+type TodoItem = TodoCharge | TodoEnvelope;
 
 /**
- * Accueil = cockpit (Vague 3 §7-17, passe visuelle Maquette 3). 2 appels API au
- * chargement : GET /dashboard/summary (tout le financier) + GET /accounts (bloc
- * "Mes comptes", absent du résumé dashboard) — jamais de boucle N+1, jamais un
- * recalcul mobile de ce que le backend a déjà calculé.
+ * Refonte maquette V6B §3 — Accueil = comptes d'abord (jamais de dashboard
+ * global, jamais de total revenus/dépenses ici). 2 blocs : "Comptes" (avec
+ * enveloppes affectées, jamais additives au solde — §2B) puis "À faire"
+ * (charges à payer proches + enveloppes à compléter ce mois).
  */
 export function HomeScreen() {
   const navigation = useNavigation<any>();
-  const bottomInset = useBottomInset();
-  const topInset = useTopInset();
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [recentTransactions, setRecentTransactions] = useState<LedgerEntry[]>([]);
-  const [incomeSourcesCount, setIncomeSourcesCount] = useState(0);
-  const [bannerDismissed, setBannerDismissed] = useState(false);
-  const [dismissChoiceOpen, setDismissChoiceOpen] = useState(false);
+  const top = useTopInset();
+  const bottom = useBottomInset();
+  const { columns } = useResponsiveLayout();
   const [loading, setLoading] = useState(true);
-  // Corrections consolidées §4 — état local pur (jamais persisté ici : la
-  // préférence par défaut, elle, vit côté backend sur le compte, cf. §5), un
-  // override manuel TEMPORAIRE par compte (true = forcer visible, false =
-  // forcer masqué), réinitialisé à chaque chargement d'écran comme avant.
-  const [visibilityOverride, setVisibilityOverride] = useState<Record<string, boolean>>({});
+  const [accounts, setAccounts] = useState<api.AccountApi[]>([]);
+  const [todos, setTodos] = useState<TodoItem[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, a, incomeSources, household, transactions] = await Promise.all([
-        api.getDashboardSummary(),
+      const [accountList, deadlines, provisions] = await Promise.all([
         api.listAccounts(),
-        api.listIncomeSources(),
-        api.getMyHousehold(),
-        // Correction UX (Transactions) — un écart de rapprochement de solde
-        // n'est jamais une opération saisie par l'utilisateur : jamais affiché
-        // dans "Dernières transactions".
-        api.listTransactions({ limit: 4, excludeReconciliation: true }),
+        api.listOpenDeadlines(),
+        api.listProvisions(),
       ]);
-      setSummary(s);
-      setAccounts(a);
-      setIncomeSourcesCount(incomeSources.length);
-      setBannerDismissed(!!household?.settings?.homeBannerDismissed);
-      setRecentTransactions(transactions);
+      setAccounts(accountList);
+      const accountNameById = Object.fromEntries(accountList.map((a: api.AccountApi) => [a.id, a.name]));
+
+      const now = Date.now();
+      const horizon = now + 14 * 86400000;
+      const charges: TodoCharge[] = deadlines
+        .filter((d: any) => d.amountStatus !== 'inconnu' && d.resteAPayer !== null && new Date(d.dueDate).getTime() <= horizon)
+        .sort((a: any, b: any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+        .slice(0, 5)
+        .map((d: any) => ({
+          kind: 'charge' as const,
+          deadlineId: d.id,
+          label: d.chargePlan?.label ?? 'Échéance',
+          amount: toNum(d.resteAPayer),
+          dueDate: d.dueDate,
+          accountName: d.chargePlan?.defaultAccountId ? accountNameById[d.chargePlan.defaultAccountId] ?? null : null,
+        }));
+
+      const envelopeTodos: TodoEnvelope[] = [];
+      for (const p of provisions) {
+        const sufficiency = await api.getProvisionSufficiency(p.id);
+        const amount = toNum(sufficiency.versementMensuelRecommande);
+        if (amount > 0) {
+          envelopeTodos.push({ kind: 'envelope', provisionId: p.id, label: p.name, amount });
+        }
+      }
+
+      setTodos([...charges, ...envelopeTodos]);
     } finally {
       setLoading(false);
     }
   }, []);
-
-  async function onDismissBanner(permanent: boolean) {
-    setDismissChoiceOpen(false);
-    if (!permanent) return;
-    setBannerDismissed(true); // §13 — jamais réaffiché après ce choix, retour immédiat sans attendre le réseau.
-    await api.updateHouseholdSettings({ homeBannerDismissed: true });
-  }
 
   useFocusEffect(
     useCallback(() => {
@@ -85,478 +87,226 @@ export function HomeScreen() {
     }, [load]),
   );
 
-  if (loading && !summary) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
-  }
-  if (!summary) return null;
-
-  const fullyEmpty = isFullyEmpty(summary, accounts);
-  const partiallyConfigured = isPartiallyConfigured(summary, accounts);
-  // §13 — le bandeau ne s'affiche plus automatiquement dès que les prérequis
-  // essentiels sont satisfaits, et jamais après un "Ne plus afficher" explicite.
-  const showConfigBanner = partiallyConfigured && !essentialPrerequisitesMet(accounts, incomeSourcesCount) && !bannerDismissed;
-  const upcomingDeadlines = summary.topDeadlines;
-  // Corrections consolidées §3, révisé point 9 — jusqu'à 6 plans sur l'accueil
-  // (au-delà uniquement via "Voir tous"), triés par ordre alphabétique du
-  // libellé PUIS les 6 premiers — jamais une priorisation par urgence/retard,
-  // même règle que "Voir tous" (FinancialPlansScreen.tsx).
-  const topPlans = sortPlansAlphabetically(summary.financialPlansResume).slice(0, 6);
-  const topBudgets = prioritizeBudgets(summary.budgetsResume).slice(0, 3);
-  // Corrections consolidées §6 — showOnHome filtre "Mes comptes" (Accueil
-  // uniquement), INDÉPENDANT du pilotage : absent/true par défaut (comptes
-  // créés avant cette préférence, jamais masqués silencieusement).
-  const homeAccounts = accounts.filter((a) => a.showOnHome !== false);
+  const cardWidthStyle = columns > 1 ? { width: `${100 / columns - 2}%` as const } : { width: '100%' as const };
 
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={[styles.scroll, { paddingTop: topInset, paddingBottom: bottomInset }]}
+      contentContainerStyle={{ paddingTop: top, paddingBottom: bottom, paddingHorizontal: spacing.lg }}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
     >
       <View style={styles.headerRow}>
-        <TouchableOpacity testID="home-hamburger" style={styles.hamburgerButton} onPress={() => navigation.getParent()?.navigate('HamburgerMenu')}>
-          <Ionicons name="menu" size={24} color={colors.textPrimary} />
+        <View>
+          <Text style={styles.pageTitle}>Comptes</Text>
+          <Text style={styles.pageSubtitle}>Où est l'argent et à quoi il est affecté.</Text>
+        </View>
+        <TouchableOpacity onPress={() => navigation.getParent()?.navigate('QuickAdd', { mode: 'depense' })}>
+          <Text style={styles.headerAction}>Ajouter</Text>
         </TouchableOpacity>
-        <Text style={styles.brand}>D-Penses+</Text>
-        <View style={styles.headerRowSpacer} />
       </View>
 
-      {fullyEmpty ? (
-        <View style={styles.welcomeCard}>
-          <Text style={styles.welcomeTitle}>Bienvenue dans D-Penses+</Text>
-          <Text style={styles.welcomeText}>Commençons par configurer vos finances.</Text>
-          <TouchableOpacity style={styles.welcomeButton} onPress={() => navigation.getParent()?.navigate('Onboarding')}>
-            <Text style={styles.welcomeButtonText}>Commencer</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <>
-          {showConfigBanner && (
-            <View style={styles.configBanner}>
-              <TouchableOpacity style={{ flex: 1 }} onPress={() => navigation.getParent()?.navigate('Onboarding')} testID="config-banner">
-                <Text style={styles.configBannerText}>Terminer ma configuration →</Text>
-              </TouchableOpacity>
-              <TouchableOpacity testID="config-banner-close" style={styles.configBannerClose} onPress={() => setDismissChoiceOpen(true)}>
-                <Ionicons name="close" size={16} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-          )}
-          <ChoiceSheet
-            visible={dismissChoiceOpen}
-            title="Masquer ce rappel ?"
-            testID="dismiss-banner-choice"
-            onClose={() => setDismissChoiceOpen(false)}
-            options={[
-              { key: 'later', label: 'Pas maintenant', onPress: () => onDismissBanner(false) },
-              { key: 'forever', label: 'Ne plus afficher', onPress: () => onDismissBanner(true) },
-            ]}
-          />
+      <View style={styles.grid}>
+        {accounts
+          .filter((a) => a.showOnHome !== false)
+          .map((account, index) => (
+            <AccountCard
+              key={account.id}
+              account={account}
+              color={accountCardPalette[index % accountCardPalette.length]}
+              style={cardWidthStyle}
+              onPress={() => navigation.navigate('AccountDetail', { id: account.id })}
+            />
+          ))}
+      </View>
 
-          {/* Bloc 1 — Situation (corrections UI/UX finales §1 : premier bloc
-              fonctionnel après le titre, avant Mes comptes — aucun calcul
-              changé, uniquement sa position). Carte héro sombre, 3 niveaux
-              réellement distincts — Aujourd'hui (trésorerie pilotée réelle) /
-              Fin de période engagements connus (zéro budget) / Fin de période
-              budgets inclus (prudente). "Disponible après engagements"
-              (free_available) n'est plus un grand indicateur principal ici —
-              le champ reste disponible techniquement (EngagedDetail, etc.),
-              simplement découplé de cette présentation. Jamais de sparkline
-              fictive : aucune série historique réelle n'existe, l'espace est
-              simplement omis. */}
-          <View style={styles.hero}>
-            <Text style={styles.heroLabel}>AUJOURD'HUI</Text>
-            <Text style={styles.heroAmount}>{summary.operational_treasury.toLocaleString('fr-FR')} DH</Text>
-            <Text style={styles.heroSubtitle}>Comptes inclus dans votre pilotage financier</Text>
-            {!summary.is_complete && (
-              <Text style={styles.heroWarning}>⚠ Calcul incomplet — {summary.unknown_commitments_count} montant(s) encore inconnu(s).</Text>
-            )}
-            <View style={styles.heroMiniRow}>
-              {/* Fin de période — engagements connus : reste l'accès à EngagedDetail
-                  (ce qu'il montre — deadlineItems/variableBudgetItems — correspond
-                  précisément à ce niveau, jamais aux budgets). */}
-              <TouchableOpacity
-                style={styles.heroMini}
-                testID="home-engaged-row"
-                onPress={() =>
-                  navigation.getParent()?.navigate('EngagedDetail', {
-                    committedAmount: summary.committed_amount,
-                    deadlineItems: summary.deadlineItems,
-                    variableBudgetItems: summary.variableBudgetItems,
-                    horizonDate: summary.horizon_date,
-                    horizonIsFallback: summary.horizon_is_fallback,
-                  })
-                }
-              >
-                <Text style={styles.heroMiniLabel}>Fin de période — engagements connus</Text>
-                <Text style={styles.heroMiniValue}>{summary.next_30_days.fin_periode_engagements_connus.toLocaleString('fr-FR')} DH</Text>
-              </TouchableOpacity>
-              <View style={styles.heroMini}>
-                <Text style={styles.heroMiniLabel}>Fin de période — budgets inclus</Text>
-                <Text style={styles.heroMiniValue}>{summary.next_30_days.fin_periode_prudente.toLocaleString('fr-FR')} DH</Text>
-                {summary.next_30_days.ecart_prudentiel > 0 && (
-                  <Text style={styles.heroMiniNote} testID="home-ecart-prudentiel">
-                    dont {summary.next_30_days.ecart_prudentiel.toLocaleString('fr-FR')} DH de budgets encore disponibles
+      {!loading && accounts.length === 0 && <Text style={styles.empty}>Aucun compte pour l'instant.</Text>}
+
+      <View style={styles.sectionHead}>
+        <Text style={styles.sectionTitle}>À faire</Text>
+      </View>
+
+      {todos.length === 0 && !loading ? (
+        <Text style={styles.empty}>Rien à faire pour le moment.</Text>
+      ) : (
+        <View style={styles.todoCard}>
+          {todos.map((item, idx) => (
+            <View key={item.kind === 'charge' ? item.deadlineId : item.provisionId} style={[styles.todoRow, idx > 0 && styles.todoRowBorder]}>
+              <View style={styles.todoIcon}>
+                <Text style={styles.todoIconText}>{String(idx + 1).padStart(2, '0')}</Text>
+              </View>
+              <View style={styles.todoMain}>
+                <Text style={styles.todoTitle}>{item.label}</Text>
+                {item.kind === 'charge' ? (
+                  <Text style={styles.todoSub}>
+                    {formatShortDate(item.dueDate)}
+                    {item.accountName ? ` • ${item.accountName}` : ''}
                   </Text>
+                ) : (
+                  <Text style={styles.todoSub}>Compléter la provision du mois</Text>
                 )}
               </View>
-            </View>
-          </View>
-
-          {/* Bloc 2 — Mes comptes (Maquette 3 §2) : cartes colorées compactes,
-              montant masqué par défaut pour un compte hors pilotage (icône
-              œil, état purement local). */}
-          {homeAccounts.length > 0 && (
-            <View style={styles.sec}>
-              <View style={styles.sectionHead}>
-                <Text style={styles.sectionTitle}>Mes comptes</Text>
-                <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Accounts')}>
-                  <Text style={styles.sectionLink}>Gérer</Text>
+              <Text style={styles.todoAmount}>{formatDh(item.amount)}</Text>
+              {item.kind === 'charge' ? (
+                <TouchableOpacity
+                  testID={`home-todo-pay-${item.deadlineId}`}
+                  style={styles.primaryButton}
+                  onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: item.deadlineId })}
+                >
+                  <Text style={styles.primaryButtonText}>Payer</Text>
                 </TouchableOpacity>
-              </View>
-              <View style={styles.grid2}>
-                {homeAccounts.slice(0, 4).map((a, i) => {
-                  // Corrections consolidées §4/§5 — solde masqué par défaut = préférence
-                  // du compte (hideBalanceByDefault), jamais déduite du pilotage ;
-                  // l'œil reste un override TEMPORAIRE (jamais persisté) disponible sur
-                  // CHAQUE compte, dans les deux sens (afficher ↔ masquer).
-                  const defaultHidden = a.hideBalanceByDefault ?? false;
-                  const override = visibilityOverride[a.id];
-                  const masked = override !== undefined ? !override : defaultHidden;
-                  return (
-                    <TouchableOpacity
-                      key={a.id}
-                      style={[styles.accountCard, { backgroundColor: accountCardPalette[i % accountCardPalette.length] }]}
-                      onPress={() => navigation.getParent()?.navigate('AccountDetail', { id: a.id })}
-                    >
-                      <View style={styles.accountCardTopRow}>
-                        <Text style={styles.accountCardName} numberOfLines={1}>
-                          {a.name}
-                        </Text>
-                        <TouchableOpacity
-                          testID={`account-reveal-${a.id}`}
-                          onPress={() => setVisibilityOverride((prev) => ({ ...prev, [a.id]: masked }))}
-                        >
-                          <Ionicons name={masked ? 'eye-outline' : 'eye-off-outline'} size={16} color="#fff" />
-                        </TouchableOpacity>
-                      </View>
-                      <Text style={styles.accountCardAmount}>{masked ? '•••••• DH' : `${a.soldeCourant.toLocaleString('fr-FR')} DH`}</Text>
-                      <Text style={styles.accountCardStatus}>{a.includeInOperationalTreasury ? 'Piloté' : 'Hors pilotage'}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-              {/* Dernier cadrage Home — la ligne "Trésorerie pilotée" (doublon du
-                  montant déjà affiché en tête du héro) est retirée ici ; le
-                  patrimoine global reste affiché en secondaire, jamais recalculé. */}
-              <View style={styles.totalRowSecondary}>
-                <Text style={styles.totalLabelSecondary}>Patrimoine total (avec hors pilotage)</Text>
-                <Text style={styles.totalValueSecondary} testID="home-global-total">{summary.patrimoine_liquide_total.toLocaleString('fr-FR')} DH</Text>
-              </View>
-            </View>
-          )}
-
-          {/* Bloc 3 — Mes budgets (Maquette 3 §3, Lot 3). Donut réel (consommé/
-              plafond, déjà calculé), max 3, priorité déjà validée. */}
-          {topBudgets.length > 0 && (
-            <View style={styles.sec}>
-              <View style={styles.sectionHead}>
-                <Text style={styles.sectionTitle}>Mes budgets</Text>
-                <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Budgets')}>
-                  <Text style={styles.sectionLink}>Voir tous</Text>
+              ) : (
+                <TouchableOpacity
+                  testID={`home-todo-verser-${item.provisionId}`}
+                  style={styles.softButton}
+                  onPress={() => navigation.navigate('EnvelopeDetail', { kind: 'provision', id: item.provisionId })}
+                >
+                  <Text style={styles.softButtonText}>Verser</Text>
                 </TouchableOpacity>
-              </View>
-              {topBudgets.map((b) => {
-                const pct = b.status.budgetPeriode > 0 ? (b.status.consommeADate / b.status.budgetPeriode) * 100 : 0;
-                const warn = b.status.healthStatus === 'depasse' || b.status.healthStatus === 'proche_limite';
-                return (
-                  <TouchableOpacity
-                    key={b.id}
-                    testID={`home-budget-${b.id}`}
-                    style={styles.budgetCard}
-                    onPress={() => navigation.getParent()?.navigate('BudgetDetail', { id: b.id })}
-                  >
-                    <Donut size={64} pct={pct} warn={warn} />
-                    <View style={{ flex: 1, marginLeft: spacing.md }}>
-                      {/* M3 §11 — le LIBELLÉ devient le nom principal partout. */}
-                      <Text style={styles.budgetLabel}>{b.label || b.categoryName}</Text>
-                      <Text style={styles.budgetAmounts}>
-                        {b.status.consommeADate.toLocaleString('fr-FR')} / {b.status.budgetPeriode.toLocaleString('fr-FR')} DH
-                      </Text>
-                      {b.status.rythmeAlerte ? (
-                        <Text style={styles.rythmeAlertBadge} testID={`home-budget-rythme-alerte-${b.id}`}>
-                          ⚠ Rythme élevé pour la période
-                        </Text>
-                      ) : (
-                        <Text style={styles.budgetRemaining}>{b.status.budgetContractuelRestant.toLocaleString('fr-FR')} DH restent à consommer</Text>
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
+              )}
             </View>
-          )}
-
-          {/* Bloc 4 — Mes plans financiers (Maquette 3 §4) : cartes compactes,
-              icône selon planType (mapping strict), payé/provisionné déjà
-              exposés par le backend (passthrough), barre segmentée. */}
-          {topPlans.length > 0 && (
-            <View style={styles.sec}>
-              <View style={styles.sectionHead}>
-                <Text style={styles.sectionTitle}>Mes plans financiers</Text>
-                <TouchableOpacity onPress={() => navigation.getParent()?.navigate('FinancialPlans')}>
-                  <Text style={styles.sectionLink}>Voir tous</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.grid2}>
-                {topPlans.map((p) => {
-                  const cost = p.knownPlanCost;
-                  const paidPct = cost > 0 ? Math.max(0, Math.min(100, (p.paidAmount / cost) * 100)) : 0;
-                  const provPct = cost > 0 ? Math.max(0, Math.min(100 - paidPct, (p.provisionCoverage / cost) * 100)) : 0;
-                  return (
-                    <TouchableOpacity
-                      key={p.id}
-                      testID={`home-plan-${p.id}`}
-                      style={styles.planCard}
-                      onPress={() => navigation.getParent()?.navigate('FinancialPlanDetail', { id: p.id })}
-                    >
-                      <Text style={styles.planIcon}>{PLAN_TYPE_ICON[p.planType] ?? PLAN_TYPE_ICON.other}</Text>
-                      <Text style={styles.planLabel} numberOfLines={1}>
-                        {p.label}
-                      </Text>
-                      <Text style={styles.planAmount}>{cost.toLocaleString('fr-FR')} DH</Text>
-                      {/* Dernier cadrage Home — payé/provisionné sur 2 lignes distinctes
-                          plutôt qu'une seule ligne "·" (évite un retour à la ligne en
-                          plein milieu d'un montant sur les cartes étroites). */}
-                      <Text style={styles.planSub}>Payé {p.paidAmount.toLocaleString('fr-FR')} DH</Text>
-                      <Text style={styles.planSub}>Provisionné {p.provisionCoverage.toLocaleString('fr-FR')} DH</Text>
-                      {cost > 0 && (paidPct > 0 || provPct > 0) && (
-                        <View style={styles.planTrack}>
-                          <View style={[styles.planTrackPaid, { width: `${paidPct}%` }]} />
-                          <View style={[styles.planTrackProv, { width: `${provPct}%` }]} />
-                        </View>
-                      )}
-                      {p.remainingDue > 0 && <Text style={styles.planRemaining}>Reste à financer : {p.remainingDue.toLocaleString('fr-FR')} DH</Text>}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-          )}
-
-          {/* Bloc 5 — Échéances importantes (R5 clôture Home §1, Maquette 3 §5) :
-              sélection déjà triée par reste à payer décroissant + fenêtre 30 jours
-              fixe côté backend (summary.topDeadlines) — jamais retriée ici. Pastille
-              date, ligne entière tapable (le bouton Payer direct a été retiré, l'action
-              reste disponible dans DeadlineDetailScreen). Pas de contexte secondaire
-              inventé : seul chargePlanLabel est réellement exposé aujourd'hui. */}
-          {upcomingDeadlines.length > 0 && (
-            <View style={styles.sec}>
-              <View style={styles.sectionHead}>
-                <Text style={styles.sectionTitle}>Échéances importantes</Text>
-                {/* Corrections UI/UX finales §9 — "Voir toutes" ouvre le calendrier
-                    des échéances, jamais l'écran de création de charge récurrente. */}
-                <TouchableOpacity testID="home-deadlines-see-all" onPress={() => navigation.getParent()?.navigate('Calendrier')}>
-                  <Text style={styles.sectionLink}>Voir toutes</Text>
-                </TouchableOpacity>
-              </View>
-              {upcomingDeadlines.map((d) => {
-                const date = new Date(d.dueDate);
-                const color = urgencyColor(d.dueDate, summary.seuil_a_payer_days);
-                return (
-                  <TouchableOpacity key={d.id} style={styles.timelineItem} onPress={() => navigation.getParent()?.navigate('DeadlineDetail', { id: d.id })}>
-                    <View style={styles.timelineLeft}>
-                      <View testID={`deadline-date-pill-${d.id}`} style={[styles.datePill, { backgroundColor: color }]}>
-                        <Text style={styles.datePillDay}>{date.getDate()}</Text>
-                        <Text style={styles.datePillMonth}>{date.toLocaleDateString('fr-FR', { month: 'short' }).toUpperCase()}</Text>
-                      </View>
-                      <View style={{ flexShrink: 1 }}>
-                        <Text style={styles.timelineLabel}>{d.chargePlanLabel}</Text>
-                        {d.coverageStatus === 'couverte' && <Text style={styles.coveredBadge}>✓ Couvert</Text>}
-                      </View>
-                    </View>
-                    <Text style={styles.timelineAmount}>{d.resteAPayer !== null ? `${d.resteAPayer.toLocaleString('fr-FR')} DH` : 'À confirmer'}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
-
-          {/* Bloc 6 — Dernières transactions (corrections consolidées §2) : remplace
-              l'ancien bloc Projection en bas d'accueil. Aperçu rapide de l'activité
-              RÉELLEMENT enregistrée — réutilise directement le registre unifié
-              (ledger_entry, déjà "réel uniquement" par construction : jamais une
-              échéance prévue non payée, un budget ou une projection). Max 4 lignes,
-              déjà triées côté backend (occurred_at DESC). */}
-          <View style={styles.sec}>
-            <View style={styles.sectionHead}>
-              <Text style={styles.sectionTitle}>Dernières transactions</Text>
-              {/* Correction (point 3) — bug getParent() : 'Transactions' est un
-                  Tab.Screen SIBLING de 'Accueil' dans le même Tab.Navigator
-                  (RootTabs), jamais un Stack.Screen — getParent() renvoie le
-                  Stack racine, qui n'a aucune route 'Transactions', donc
-                  l'ancien appel était un no-op silencieux. navigate() direct,
-                  même correctif déjà appliqué ailleurs (getParent-navigation-fix). */}
-              <TouchableOpacity testID="home-transactions-see-all" onPress={() => navigation.navigate('Transactions')}>
-                <Text style={styles.sectionLink}>Voir toutes</Text>
-              </TouchableOpacity>
-            </View>
-            {recentTransactions.length === 0 ? (
-              <Text style={styles.emptyText}>Aucune transaction enregistrée pour l'instant.</Text>
-            ) : (
-              recentTransactions.map((t) => {
-                const positive = t.amount >= 0;
-                const date = new Date(t.occurredAt);
-                return (
-                  <TouchableOpacity
-                    key={`${t.kind}-${t.id}`}
-                    testID={`home-transaction-${t.kind}-${t.id}`}
-                    style={styles.timelineItem}
-                    onPress={() => navigation.getParent()?.navigate('TransactionDetail', { kind: t.kind, id: t.id })}
-                  >
-                    <View style={{ flexShrink: 1, marginRight: spacing.sm }}>
-                      <Text style={styles.timelineLabel} numberOfLines={1}>
-                        {t.label ?? KIND_LABEL[t.displayKind] ?? t.displayKind}
-                      </Text>
-                      <Text style={styles.transactionMeta} numberOfLines={1}>
-                        {date.toLocaleDateString('fr-FR')} · {t.accountName}
-                      </Text>
-                    </View>
-                    <Text style={[styles.timelineAmount, positive ? styles.amountPositive : styles.amountNegative]}>
-                      {positive ? '+' : ''}
-                      {t.amount.toLocaleString('fr-FR')} DH
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })
-            )}
-          </View>
-        </>
+          ))}
+        </View>
       )}
     </ScrollView>
   );
 }
 
+function AccountCard({
+  account,
+  color,
+  style,
+  onPress,
+}: {
+  account: api.AccountApi;
+  color: string;
+  style: any;
+  onPress: () => void;
+}) {
+  const total = account.soldeCourant || 1;
+  const badge = account.isDedicated
+    ? 'Dédié'
+    : account.envelopes.length > 0
+      ? `${account.envelopes.length} enveloppe${account.envelopes.length > 1 ? 's' : ''}`
+      : account.type === 'courant'
+        ? 'Courant'
+        : account.type === 'epargne'
+          ? 'Épargne'
+          : 'Compte';
+
+  return (
+    <TouchableOpacity testID={`home-account-card-${account.id}`} style={[styles.accountCard, style]} onPress={onPress}>
+      <View style={styles.accountHead}>
+        <View style={{ flexShrink: 1 }}>
+          <Text style={styles.accountBank}>{(account.bankName ?? '').toUpperCase()}</Text>
+          <Text style={styles.accountName}>{account.name}</Text>
+          <Text style={styles.accountBalance}>{formatDh(account.soldeCourant)}</Text>
+        </View>
+        <Text style={styles.accountBadge}>{badge}</Text>
+      </View>
+
+      {account.envelopes.length > 1 && (
+        <View style={styles.miniTrack}>
+          {account.envelopes.map((e, i) => (
+            <View
+              key={e.id}
+              style={{
+                width: `${Math.max(0, Math.min(100, (e.amount / total) * 100))}%`,
+                height: '100%',
+                backgroundColor: [colors.v6Blue, colors.v6Teal, colors.v6Purple, colors.v6Gold][i % 4],
+              }}
+            />
+          ))}
+        </View>
+      )}
+
+      {account.envelopes.length > 0 && (
+        <View style={styles.accountBody}>
+          {account.envelopes.map((e, i) => (
+            <View key={e.id} style={styles.allocRow}>
+              <View style={styles.allocLeft}>
+                <View style={[styles.swatch, { backgroundColor: [colors.v6Blue, colors.v6Teal, colors.v6Purple, colors.v6Gold][i % 4] }]} />
+                <View>
+                  <Text style={styles.allocName}>{e.name}</Text>
+                  <Text style={styles.allocSub}>{e.subtitle === 'plan_financier' ? 'Plan financier' : 'Réserve'}</Text>
+                </View>
+              </View>
+              <Text style={styles.allocAmount}>{formatDh(e.amount)}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {account.isDedicated && (
+        <View style={styles.sourceNote}>
+          <Text style={styles.sourceNoteText}>
+            {account.dedicatedFeed
+              ? `Alimenté depuis ${account.dedicatedFeed.fromAccountName} • ${formatDh(account.dedicatedFeed.amount)} / mois`
+              : "Compte dédié — aucun virement récurrent d'alimentation configuré."}
+          </Text>
+        </View>
+      )}
+
+      {!account.isDedicated && account.envelopes.length === 0 && (
+        <View style={styles.sourceNote}>
+          <Text style={styles.sourceNoteText}>Aucune enveloppe associée.</Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
-  scroll: { padding: spacing.xl },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
-  hamburgerButton: { width: 32, height: 32, alignItems: 'flex-start', justifyContent: 'center' },
-  headerRowSpacer: { width: 32, height: 32 },
-  brand: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
-
-  welcomeCard: { backgroundColor: colors.primary, borderRadius: 16, padding: spacing.xxl, alignItems: 'center' },
-  welcomeTitle: { color: colors.textOnPrimary, fontSize: 18, fontWeight: '700' },
-  welcomeText: { color: '#C9D2E0', fontSize: 13, marginTop: 6, textAlign: 'center' },
-  welcomeButton: { backgroundColor: colors.surface, borderRadius: radius.pill, paddingHorizontal: spacing.xxl, paddingVertical: spacing.md, marginTop: spacing.lg },
-  welcomeButtonText: { color: colors.textPrimary, fontWeight: '700', fontSize: 14 },
-
-  configBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceActive, borderRadius: radius.lg, padding: 14, marginBottom: spacing.lg },
-  configBannerText: { color: colors.textPrimary, fontSize: 13, fontWeight: '700', textAlign: 'center' },
-  configBannerClose: { paddingLeft: spacing.md, paddingVertical: spacing.xs },
-
-  // Bloc héro (Maquette 3 §1) — dégradé non disponible (pas de librairie native
-  // installable dans cet environnement) : couleur pleine `heroBackground`,
-  // approximation la plus proche du dégradé navy→teal de la maquette.
-  hero: {
-    backgroundColor: colors.heroBackground,
-    borderRadius: 24,
-    padding: spacing.xl,
-    marginBottom: spacing.lg,
-    ...elevation.raised,
-  },
-  heroLabel: { fontSize: 11, fontWeight: '700', color: colors.heroTextMuted, letterSpacing: 0.5 },
-  heroAmount: { fontSize: 32, fontWeight: '900', color: colors.textOnPrimary, marginTop: spacing.xs },
-  heroSubtitle: { fontSize: 12, color: colors.heroTextMuted, marginTop: 4 },
-  heroWarning: { fontSize: 12, color: '#FFD79A', marginTop: spacing.sm, fontWeight: '600' },
-  heroMiniRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
-  heroMini: { flex: 1, backgroundColor: 'rgba(255,255,255,0.10)', borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: 'rgba(255,255,255,0.13)' },
-  heroMiniLabel: { fontSize: 10, color: colors.heroTextMuted, fontWeight: '700' },
-  heroMiniValue: { fontSize: 16, fontWeight: '800', color: colors.textOnPrimary, marginTop: 4 },
-  heroMiniNote: { fontSize: 10, color: colors.heroTextMuted, marginTop: 3 },
-
-  // Structure de section (Maquette 3 §7) — titre en casse normale + lien aligné à
-  // droite, HORS carte (contrairement à l'ancien bloc englobant) : chaque élément
-  // de la section porte sa propre carte, comme dans la maquette.
-  sec: { marginBottom: spacing.xl },
-  sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
-  sectionLink: { fontSize: 12, fontWeight: '600', color: colors.success },
-
-  grid2: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-
-  accountCard: { width: '48%', borderRadius: radius.xl, padding: spacing.md, marginBottom: spacing.sm, ...elevation.card },
-  accountCardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  accountCardName: { fontSize: 11, color: 'rgba(255,255,255,0.85)', fontWeight: '600', flexShrink: 1, marginRight: spacing.xs },
-  accountCardAmount: { fontSize: 19, fontWeight: '900', color: '#fff', marginTop: spacing.sm },
-  accountCardStatus: { fontSize: 10, color: 'rgba(255,255,255,0.85)', marginTop: 2 },
-
-  totalRowSecondary: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 10 },
-  totalLabelSecondary: { fontSize: 11, color: colors.textSecondary },
-  totalValueSecondary: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
-
-  budgetCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
+  container: { flex: 1, backgroundColor: colors.v6Bg },
+  headerRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: spacing.md },
+  pageTitle: { fontSize: 26, fontWeight: '800', letterSpacing: -0.7, color: colors.v6Text },
+  pageSubtitle: { marginTop: 5, fontSize: 13, color: colors.v6Muted },
+  headerAction: { color: colors.v6Blue, fontWeight: '800' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
+  accountCard: {
+    backgroundColor: colors.v6Surface,
     borderWidth: 1,
-    borderColor: colors.borderStrong,
+    borderColor: colors.v6Line,
+    borderRadius: radius.xl,
+    padding: spacing.md + 2,
+    marginBottom: spacing.md,
     ...elevation.card,
   },
-  budgetLabel: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
-  budgetAmounts: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginTop: 2 },
-  budgetRemaining: { fontSize: 11, color: colors.textSecondary, marginTop: spacing.xs },
-  rythmeAlertBadge: { fontSize: 11, fontWeight: '700', color: colors.warning, marginTop: spacing.xs },
-
-  emptyText: { fontSize: 12, color: colors.textSecondary, fontStyle: 'italic' },
-
-  datePill: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md },
-  datePillDay: { fontSize: 14, fontWeight: '900', color: '#fff', lineHeight: 16 },
-  datePillMonth: { fontSize: 9, fontWeight: '800', color: '#fff', lineHeight: 11 },
-
-  timelineItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
+  accountHead: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm, alignItems: 'flex-start' },
+  accountBank: { fontSize: 12, color: colors.v6Muted, fontWeight: '700' },
+  accountName: { fontSize: 14, fontWeight: '800', marginTop: 2, color: colors.v6Text },
+  accountBalance: { fontSize: 28, fontWeight: '900', letterSpacing: -0.8, marginTop: 8, color: colors.v6Text },
+  accountBadge: { fontSize: 10, fontWeight: '800', paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: 999, backgroundColor: colors.v6BlueSoft, color: colors.v6Blue },
+  miniTrack: { marginTop: spacing.md, height: 6, borderRadius: 999, backgroundColor: '#EDF0F4', overflow: 'hidden', flexDirection: 'row' },
+  accountBody: { marginTop: spacing.md, paddingTop: spacing.sm + 2, borderTopWidth: 1, borderTopColor: colors.v6Line },
+  allocRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, paddingVertical: 7 },
+  allocLeft: { flexDirection: 'row', alignItems: 'center', gap: 9, flexShrink: 1 },
+  swatch: { width: 8, height: 8, borderRadius: 4 },
+  allocName: { fontSize: 13, fontWeight: '700', color: colors.v6Text },
+  allocSub: { fontSize: 10, color: colors.v6Muted, marginTop: 2 },
+  allocAmount: { fontSize: 13, fontWeight: '850' as any, color: colors.v6Text },
+  sourceNote: { marginTop: spacing.sm + 2, padding: spacing.sm + 1, borderRadius: radius.md, backgroundColor: colors.v6SurfaceSoft },
+  sourceNoteText: { color: '#59677A', fontSize: 11 },
+  empty: { textAlign: 'center', color: colors.v6Muted, marginTop: spacing.lg, fontSize: 13 },
+  sectionHead: { marginTop: spacing.xl, marginBottom: spacing.sm + 2 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.v6Text },
+  todoCard: {
+    backgroundColor: colors.v6Surface,
     borderWidth: 1,
-    borderColor: colors.borderStrong,
+    borderColor: colors.v6Line,
+    borderRadius: radius.xl,
+    paddingHorizontal: spacing.md + 2,
     ...elevation.card,
   },
-  timelineLeft: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },
-  timelineLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
-  coveredBadge: { fontSize: 10, color: colors.success, fontWeight: '700', marginTop: 2 },
-  timelineAmount: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
-  transactionMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
-  amountPositive: { color: colors.success },
-  amountNegative: { color: colors.danger },
-
-  planCard: {
-    width: '48%',
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    ...elevation.card,
-  },
-  planIcon: { fontSize: 20, marginBottom: spacing.sm },
-  planLabel: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
-  planAmount: { fontSize: 16, fontWeight: '800', color: colors.textPrimary, marginTop: 2 },
-  planSub: { fontSize: 10, color: colors.textSecondary, marginTop: 2 },
-  planTrack: { height: 8, borderRadius: 4, backgroundColor: colors.surfaceSecondary, overflow: 'hidden', flexDirection: 'row', marginTop: spacing.sm },
-  planTrackPaid: { height: '100%', backgroundColor: colors.success },
-  planTrackProv: { height: '100%', backgroundColor: '#7089DF' },
-  planRemaining: { fontSize: 10, color: colors.textSecondary, marginTop: spacing.xs },
+  todoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 13 },
+  todoRowBorder: { borderTopWidth: 1, borderTopColor: colors.v6Line },
+  todoIcon: { width: 38, height: 38, borderRadius: 10, backgroundColor: colors.v6SurfaceSoft, alignItems: 'center', justifyContent: 'center' },
+  todoIconText: { color: colors.v6Navy, fontWeight: '800', fontSize: 12 },
+  todoMain: { flex: 1, minWidth: 0 },
+  todoTitle: { fontSize: 13, fontWeight: '700', color: colors.v6Text },
+  todoSub: { fontSize: 10, color: colors.v6Muted, marginTop: 3 },
+  todoAmount: { fontSize: 13, fontWeight: '850' as any, color: colors.v6Text, marginRight: spacing.sm },
+  primaryButton: { backgroundColor: colors.v6Navy, borderRadius: radius.md, paddingHorizontal: spacing.sm + 3, paddingVertical: spacing.sm },
+  primaryButtonText: { color: '#fff', fontWeight: '800', fontSize: 12 },
+  softButton: { backgroundColor: colors.v6BlueSoft, borderRadius: radius.md, paddingHorizontal: spacing.sm + 3, paddingVertical: spacing.sm },
+  softButtonText: { color: colors.v6Blue, fontWeight: '800', fontSize: 12 },
 });

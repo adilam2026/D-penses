@@ -16,6 +16,12 @@ export class UpdateSavingsPocketDto {
   @IsISO8601()
   targetDate?: string;
 
+  /** Refonte maquette V6B §7A — voir CreateSavingsPocketDto.monthlyContribution. */
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  monthlyContribution?: number;
+
   @IsOptional()
   @IsBoolean()
   isProtected?: boolean;

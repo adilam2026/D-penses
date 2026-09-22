@@ -101,6 +101,39 @@ export async function computeAccountEnvelopeCoverage(tx: TxClient, accountId: st
   return { reservedByEnvelopes: round2(reservedByEnvelopes) };
 }
 
+export interface AccountEnvelopeBreakdownItem {
+  id: string;
+  kind: 'savings_pocket' | 'provision';
+  name: string;
+  amount: number;
+  /** 'plan_financier' pour une Provision (échéances), 'reserve' pour une SavingsPocket. */
+  subtitle: 'plan_financier' | 'reserve';
+}
+
+/**
+ * Refonte maquette V6B §3 — liste des enveloppes affectées à UN compte, pour la
+ * carte "CIH Lamiaa 1 : Scolarité 5000 / Voiture 1500 / Voyage 1500" de l'Accueil.
+ * §2B (jamais additif) : chaque montant vient de computePocketCurrentAmount
+ * (RG-071, déjà utilisé par computeAccountEnvelopeCoverage ci-dessus) — la somme
+ * des enveloppes d'un compte ne doit JAMAIS être ajoutée à son solde réel, elle
+ * l'explique seulement.
+ */
+export async function computeAccountEnvelopeBreakdown(tx: TxClient, accountId: string): Promise<AccountEnvelopeBreakdownItem[]> {
+  const pockets = await tx.savingsPocket.findMany({ where: { linkedAccountId: accountId, allocationMode: 'virtual_allocation' } });
+  const provisions = await tx.provision.findMany({ where: { linkedAccountId: accountId, allocationMode: 'virtual_allocation' } });
+
+  const items: AccountEnvelopeBreakdownItem[] = [];
+  for (const p of pockets) {
+    const amount = await computePocketCurrentAmount(tx, 'savings_pocket', p.id, p.allocationMode, p.linkedAccountId);
+    items.push({ id: p.id, kind: 'savings_pocket', name: p.name, amount: round2(amount), subtitle: 'reserve' });
+  }
+  for (const p of provisions) {
+    const amount = await computePocketCurrentAmount(tx, 'provision', p.id, p.allocationMode, p.linkedAccountId);
+    items.push({ id: p.id, kind: 'provision', name: p.name, amount: round2(amount), subtitle: 'plan_financier' });
+  }
+  return items;
+}
+
 // ---------- G.5 — Horizon (H*) ----------
 
 function toUtcMidnight(date: Date): Date {

@@ -51,6 +51,7 @@ export class PocketsService {
           linkedAccountId: dto.linkedAccountId ?? null,
           targetAmount: dto.targetAmount,
           targetDate: dto.targetDate ? new Date(dto.targetDate) : undefined,
+          monthlyContribution: dto.monthlyContribution,
           isProtected,
         },
       });
@@ -90,6 +91,7 @@ export class PocketsService {
           name: dto.name,
           targetAmount: dto.targetAmount,
           targetDate: dto.targetDate ? new Date(dto.targetDate) : undefined,
+          monthlyContribution: dto.monthlyContribution,
           isProtected: dto.isProtected,
           linkedAccountId: dto.linkedAccountId,
         },

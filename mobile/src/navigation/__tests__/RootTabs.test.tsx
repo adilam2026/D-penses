@@ -7,10 +7,12 @@ import { QuickActionsSheet } from '../../ui/QuickActionsSheet';
 import * as api from '../../api/client';
 
 /**
- * Navigation basse (TXT réf. §M1) : Accueil / Transactions / [+] / Budgets / Plus,
- * le bouton central ouvre la bottom sheet — jamais une navigation d'onglet réelle.
+ * Refonte maquette V6B §19 — navigation basse : Accueil / Planning / [+] /
+ * Enveloppes, le bouton central ouvre la bottom sheet — jamais une navigation
+ * d'onglet réelle.
  */
 jest.mock('../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
+jest.mock('../../ui/useTopInset', () => ({ useTopInset: () => 0 }));
 
 jest.mock('@expo/vector-icons', () => {
   const { Text } = require('react-native');
@@ -21,45 +23,15 @@ jest.mock('../../api/client', () => {
   const actual = jest.requireActual('../../api/client');
   return {
     ...actual,
-    getDashboardSummary: jest.fn().mockResolvedValue({
-      seuil_a_payer_days: 7,
-      operational_treasury: 0,
-      free_available: 0,
-      reserved_amount: 0,
-      committed_amount: 0,
-      safety_buffer: 0,
-      patrimoine_liquide_total: 0,
-      is_complete: true,
-      contains_estimates: false,
-      unknown_commitments_count: 0,
-      deadlineItems: [],
-      topDeadlines: [],
-      optionsEnvisagees: { total: 0, hasUnknown: false },
-      budgetsResume: [],
-      financialPlansResume: [],
-      provisionsResume: [],
-      next_30_days: {
-        closing_physical_treasury: 0,
-        closing_free_capacity: 0,
-        physical_low_point: 0,
-        physical_low_point_date: '2026-09-20',
-        free_capacity_low_point: 0,
-        free_capacity_low_point_date: '2026-09-20',
-        first_negative_date: null,
-        deficit_at_first_negative: null,
-        status: 'OK',
-        is_complete: true,
-      },
-    }),
     listAccounts: jest.fn().mockResolvedValue([]),
-    listIncomeSources: jest.fn().mockResolvedValue([]),
-    getMyHousehold: jest.fn().mockResolvedValue({ id: 'h1', settings: { homeBannerDismissed: false } }),
-    listTransactions: jest.fn().mockResolvedValue([]),
-    getCalendar: jest.fn().mockResolvedValue({ events: [] }),
+    listOpenDeadlines: jest.fn().mockResolvedValue([]),
+    listProvisions: jest.fn().mockResolvedValue([]),
+    listPockets: jest.fn().mockResolvedValue([]),
+    listMedicalClaims: jest.fn().mockResolvedValue({ summary: { pendingCount: 0, totalEngaged: 0, totalReimbursed: 0 }, claims: [] }),
     getMonthlyProjection: jest.fn().mockResolvedValue({
       reference_date: '2026-09-01',
-      horizon_end: '2027-08-31',
-      horizon_months: 12,
+      horizon_end: '2027-02-28',
+      horizon_months: 6,
       months: [],
       summary: {
         total_income: 0,
@@ -68,8 +40,11 @@ jest.mock('../../api/client', () => {
         deficit_months_count: 0,
         worst_month: null,
         max_monthly_deficit: null,
-        max_financing_need: null,
-        first_positive_cumulative_month: null,
+        opening_cash_balance: 0,
+        cash_low_point: null,
+        max_financing_need: 0,
+        first_positive_cash_balance_month: null,
+        treasury_account_ids: [],
         is_complete: true,
         incomplete_months_count: 0,
       },
@@ -89,23 +64,19 @@ async function renderApp() {
   );
 }
 
-it('corrections UI/UX finales §6 — la navigation basse propose 5 positions symétriques : Accueil, Transactions, [+], Calendrier, Projection', async () => {
+it('la navigation basse propose 4 positions symétriques : Accueil, Planning, [+], Enveloppes', async () => {
   await renderApp();
-  await waitFor(() => screen.getByText('Bienvenue dans D-Penses+'));
+  await waitFor(() => screen.getByText('Comptes'));
   expect(screen.getByText('Accueil')).toBeTruthy();
-  expect(screen.getByText('Transactions')).toBeTruthy();
+  expect(screen.getByText('Planning')).toBeTruthy();
   expect(screen.getByTestId('tab-quick-actions')).toBeTruthy();
-  // §6 — Budgets et le menu ☰ ("Plus") sortent de la barre basse : avec 5
-  // positions, le bouton central [+] occupe mathématiquement le 3e
-  // emplacement, donc le centre exact de la barre (contrairement à 4
-  // positions, jamais centré). Budgets reste accessible depuis le menu ☰
-  // (section "Mes finances") et son propre Stack.Screen racine ; le menu ☰
-  // se déplace vers un bouton dédié en haut à gauche de chaque écran racine.
-  expect(screen.getByText('Calendrier')).toBeTruthy();
-  expect(screen.getByText('Projection')).toBeTruthy();
-  expect(screen.queryByText('Budgets')).toBeNull();
-  expect(screen.queryByText('Plus')).toBeNull();
-  expect(screen.queryByText('Enveloppes')).toBeNull();
+  expect(screen.getByText('Enveloppes')).toBeTruthy();
+  // Transactions/Calendrier/Projection/Budgets restent atteignables depuis le
+  // menu ☰ (menuSections.ts) et leur propre Stack.Screen racine, mais ne sont
+  // plus des onglets de la barre basse.
+  expect(screen.queryByText('Transactions')).toBeNull();
+  expect(screen.queryByText('Calendrier')).toBeNull();
+  expect(screen.queryByText('Projection')).toBeNull();
 });
 
 it('le bouton central "+" ouvre la bottom sheet, jamais une navigation d\'onglet', async () => {

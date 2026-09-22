@@ -8,6 +8,10 @@ import { IsOptional, IsString, IsUUID } from 'class-validator';
  */
 export class UpdateExpenseMetadataDto {
   @IsOptional()
+  @IsString()
+  label?: string;
+
+  @IsOptional()
   @IsUUID()
   categoryId?: string;
 

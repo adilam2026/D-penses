@@ -52,6 +52,12 @@ const ACTIVE_ACCOUNT = {
   includeInOperationalTreasury: true,
   soldeCourant: 1000,
   reservedByEnvelopes: 0,
+  envelopes: [],
+  bankName: null,
+  ownerUserId: null,
+  isDedicated: false,
+  dedicatedCategoryId: null,
+  dedicatedFeed: null,
 };
 const ARCHIVED_ACCOUNT = { ...ACTIVE_ACCOUNT, status: 'archive' as const };
 const OTHER_ACCOUNT = {
@@ -62,6 +68,12 @@ const OTHER_ACCOUNT = {
   includeInOperationalTreasury: true,
   soldeCourant: 2000,
   reservedByEnvelopes: 0,
+  envelopes: [],
+  bankName: null,
+  ownerUserId: null,
+  isDedicated: false,
+  dedicatedCategoryId: null,
+  dedicatedFeed: null,
 };
 
 function mockConfirmAlert(buttonText = 'Archiver') {

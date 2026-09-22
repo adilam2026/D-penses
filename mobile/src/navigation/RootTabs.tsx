@@ -3,9 +3,8 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { HomeScreen } from '../screens/HomeScreen';
-import { TransactionsScreen } from '../screens/transactions/TransactionsScreen';
-import { CalendarScreen } from '../screens/calendar/CalendarScreen';
-import { ProjectionScreen } from '../screens/projection/ProjectionScreen';
+import { PlanningScreen } from '../screens/planning/PlanningScreen';
+import { EnvelopesScreen } from '../screens/envelopes/EnvelopesScreen';
 import { useQuickActions } from '../state/QuickActionsContext';
 
 const Tab = createBottomTabNavigator();
@@ -14,20 +13,17 @@ type IconName = keyof typeof Ionicons.glyphMap;
 
 const TAB_ICONS: Record<string, { active: IconName; inactive: IconName }> = {
   Accueil: { active: 'home', inactive: 'home-outline' },
-  Transactions: { active: 'swap-horizontal', inactive: 'swap-horizontal-outline' },
-  Calendrier: { active: 'calendar', inactive: 'calendar-outline' },
-  Projection: { active: 'analytics', inactive: 'analytics-outline' },
+  Planning: { active: 'grid', inactive: 'grid-outline' },
+  Enveloppes: { active: 'wallet', inactive: 'wallet-outline' },
 };
 
 // Jamais rendu : `tabBarButton` remplace entièrement le bouton par défaut de cet
 // onglet (CentralPlusButton, ci-dessous), qui ouvre la bottom sheet directement —
-// jamais une navigation réelle vers un écran "QuickActions" (§3).
+// jamais une navigation réelle vers un écran "QuickActions".
 function QuickActionsPlaceholder() {
   return null;
 }
 
-// Déclaré au niveau module (jamais à l'intérieur de RootTabs) — même règle que
-// partout ailleurs dans l'app depuis la correction du bug de remount (Vague 1).
 function CentralPlusButton() {
   const { open } = useQuickActions();
   return (
@@ -40,16 +36,13 @@ function CentralPlusButton() {
 }
 
 /**
- * Navigation basse (corrections UI/UX finales §6, remplace la disposition M1) :
- * Accueil / Transactions / [+] / Calendrier / Projection — 5 positions
- * symétriques, le bouton central [+] occupant mathématiquement le 3e des 5
- * emplacements (jamais un centrage approximatif sur 4). Budgets et le menu ☰
- * ("Plus") en sortent : Budgets reste atteignable depuis le menu ☰
- * (section "Mes finances", menuSections.ts) et son propre Stack.Screen racine
- * (header natif, inchangé) ; le menu ☰ se déplace vers un bouton dédié en
- * haut à gauche de chaque écran racine (HomeScreen/TransactionsScreen/
- * CalendarScreen/ProjectionScreen), jamais un onglet. Le bouton central n'est
- * jamais un écran réel : `tabPress` est intercepté.
+ * Refonte maquette V6B §19 — navigation principale mandatée : Accueil /
+ * Planning / [+] / Enveloppes, 4 positions symétriques (le bouton central
+ * occupe le 3e des 4 emplacements). Transactions/Calendrier/Projection/
+ * Budgets/Objectifs et le reste de l'app existante restent entièrement
+ * fonctionnels et atteignables depuis le menu ☰ (HamburgerMenuScreen,
+ * menuSections.ts) — rien n'est supprimé, seule la barre du bas change pour
+ * suivre la maquette. Le bouton central n'est jamais un écran réel.
  */
 export function RootTabs() {
   return (
@@ -66,14 +59,13 @@ export function RootTabs() {
       })}
     >
       <Tab.Screen name="Accueil" component={HomeScreen} />
-      <Tab.Screen name="Transactions" component={TransactionsScreen} />
+      <Tab.Screen name="Planning" component={PlanningScreen} />
       <Tab.Screen
         name="QuickActions"
         component={QuickActionsPlaceholder}
         options={{ tabBarButton: () => <CentralPlusButton />, tabBarLabel: () => null }}
       />
-      <Tab.Screen name="Calendrier" component={CalendarScreen} />
-      <Tab.Screen name="Projection" component={ProjectionScreen} />
+      <Tab.Screen name="Enveloppes" component={EnvelopesScreen} />
     </Tab.Navigator>
   );
 }

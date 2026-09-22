@@ -31,10 +31,12 @@ export const HAMBURGER_SECTIONS: { title: string; items: MenuItem[] }[] = [
   {
     title: 'Mes finances',
     items: [
+      { label: 'Transactions', icon: 'swap-horizontal-outline', route: 'Transactions' },
       { label: 'Revenus réguliers', icon: 'trending-up-outline', route: 'Income' },
       { label: 'Charges prévisionnelles', icon: 'receipt-outline', route: 'Charges' },
       { label: 'Budgets', icon: 'pie-chart-outline', route: 'Budgets' },
       { label: 'Objectifs', icon: 'flag-outline', route: 'Goals' },
+      { label: 'Enveloppes (détail)', icon: 'wallet-outline', route: 'EnveloppesLegacy' },
       { label: 'Transferts récurrents', icon: 'swap-horizontal-outline', route: 'RecurringTransfers' },
     ],
   },
@@ -84,6 +86,8 @@ export interface WebNavItem extends MenuItem {
  */
 export const WEB_SIDEBAR_PRIMARY: WebNavItem[] = [
   { label: 'Accueil', icon: 'home-outline', route: 'Accueil', parent: 'Tabs' },
+  { label: 'Planning', icon: 'grid-outline', route: 'Planning', parent: 'Tabs' },
+  { label: 'Enveloppes', icon: 'wallet-outline', route: 'Enveloppes', parent: 'Tabs' },
   { label: 'Transactions', icon: 'swap-horizontal-outline', route: 'Transactions', parent: 'Tabs' },
   { label: 'Comptes', icon: 'card-outline', route: 'Accounts' },
   { label: 'Budgets', icon: 'pie-chart-outline', route: 'Budgets' },

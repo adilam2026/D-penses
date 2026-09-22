@@ -16,6 +16,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { VariableBudgetsModule } from './variable-budgets/variable-budgets.module';
 import { ExpensesModule } from './expenses/expenses.module';
+import { MedicalClaimsModule } from './medical-claims/medical-claims.module';
 import { FinancialPlansModule } from './financial-plans/financial-plans.module';
 import { ActionsModule } from './actions/actions.module';
 import { SchoolWizardModule } from './school-wizard/school-wizard.module';
@@ -52,6 +53,7 @@ import { AppController } from './app.controller';
     TransactionsModule,
     VariableBudgetsModule,
     ExpensesModule,
+    MedicalClaimsModule,
     FinancialPlansModule,
     ActionsModule,
     SchoolWizardModule,

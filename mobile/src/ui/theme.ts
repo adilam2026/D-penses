@@ -55,6 +55,30 @@ export const colors = {
   heroTextMuted: '#B9C6D0',
   donutTrack: '#E9EEEC',
   donutTrackWarn: '#F2E9DC',
+
+  // Refonte maquette V6B — palette exacte de la maquette HTML de référence
+  // (finance_maison_maquette_v6b), utilisée par les écrans Accueil/Planning/
+  // Enveloppes/Mutuelle réécrits pour cette refonte. Tokens additifs — jamais
+  // de remplacement des valeurs ci-dessus, pour ne rien casser des écrans non
+  // encore migrés.
+  v6Bg: '#F5F7FA',
+  v6Surface: '#FFFFFF',
+  v6SurfaceSoft: '#F9FAFC',
+  v6Text: '#172235',
+  v6Muted: '#758196',
+  v6Line: '#E7EBF0',
+  v6LineStrong: '#D9DFE8',
+  v6Navy: '#15304A',
+  v6Blue: '#355DF7',
+  v6BlueSoft: '#EEF2FF',
+  v6Teal: '#178A72',
+  v6TealSoft: '#EAF7F3',
+  v6Amber: '#B47B18',
+  v6AmberSoft: '#FFF6E6',
+  v6Red: '#B94B4B',
+  v6RedSoft: '#FFF1F1',
+  v6Purple: '#8A68D6',
+  v6Gold: '#D49B37',
 } as const;
 
 /**
