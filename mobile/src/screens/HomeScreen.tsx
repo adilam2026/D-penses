@@ -130,6 +130,7 @@ export function HomeScreen() {
               account={account}
               accent={accountCardPalette[index % accountCardPalette.length]}
               onPress={() => navigation.navigate('AccountDetail', { id: account.id })}
+              onPressSubAccount={(e) => navigation.navigate('EnvelopeDetail', { kind: e.kind, id: e.id })}
             />
           ))}
         </View>
@@ -194,7 +195,17 @@ function todoUrgency(item: TodoItem): { solid: string; soft: string } {
   return { solid: colors.v6Blue, soft: colors.v6BlueSoft };
 }
 
-function AccountRow({ account, accent, onPress }: { account: api.AccountApi; accent: string; onPress: () => void }) {
+function AccountRow({
+  account,
+  accent,
+  onPress,
+  onPressSubAccount,
+}: {
+  account: api.AccountApi;
+  accent: string;
+  onPress: () => void;
+  onPressSubAccount: (envelope: api.AccountEnvelope) => void;
+}) {
   const total = account.soldeCourant || 1;
   const initial = (account.bankName || account.name || '?').trim().charAt(0).toUpperCase();
   const badge = account.isDedicated
@@ -241,14 +252,25 @@ function AccountRow({ account, accent, onPress }: { account: api.AccountApi; acc
               />
             ))}
           </View>
-          <View style={styles.chipRow}>
+          {/* Correction modèle fonctionnel §2 — chaque sous-compte est visible
+              DIRECTEMENT sous son compte bancaire ET cliquable en un seul geste
+              (jamais Accueil -> Compte -> liste -> Sous-compte). Le tap ailleurs
+              sur la carte ouvre toujours le détail du compte bancaire. */}
+          <View style={styles.subAccountStack}>
             {account.envelopes.map((e, i) => (
-              <View key={e.id} style={styles.chip}>
+              <TouchableOpacity
+                key={e.id}
+                testID={`home-subaccount-${e.id}`}
+                style={styles.subAccountRow}
+                onPress={() => onPressSubAccount(e)}
+              >
                 <View style={[styles.chipDot, { backgroundColor: [colors.v6Blue, colors.v6Teal, colors.v6Purple, colors.v6Gold][i % 4] }]} />
-                <Text style={styles.chipText} numberOfLines={1}>
-                  {e.name} · {formatDh(e.amount)}
+                <Text style={styles.subAccountName} numberOfLines={1}>
+                  {e.name}
                 </Text>
-              </View>
+                <Text style={styles.subAccountAmount}>{formatDh(e.amount)}</Text>
+                <Ionicons name="chevron-forward" size={14} color={colors.v6Muted} />
+              </TouchableOpacity>
             ))}
           </View>
         </>
@@ -309,10 +331,18 @@ const styles = StyleSheet.create({
     gap: 1,
   },
   repartitionSeg: { height: '100%' },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: spacing.sm },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.v6SurfaceSoft, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5, maxWidth: '100%' },
   chipDot: { width: 6, height: 6, borderRadius: 3 },
-  chipText: { fontSize: 11, fontWeight: '700', color: colors.v6Text, flexShrink: 1 },
+  subAccountStack: { marginTop: spacing.sm },
+  subAccountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 7,
+    borderTopWidth: 1,
+    borderTopColor: colors.v6Line,
+  },
+  subAccountName: { flex: 1, fontSize: 12, fontWeight: '700', color: colors.v6Text },
+  subAccountAmount: { fontSize: 12, fontWeight: '800', color: colors.v6Text },
   dedicatedNote: { fontSize: 10, color: colors.v6Muted, marginTop: spacing.sm },
 
   todoStack: { gap: 8 },

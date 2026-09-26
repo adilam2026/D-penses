@@ -144,7 +144,7 @@ describe('planningLogic — regroupement par plan financier (Convergence V6 §3/
     expect(Object.keys(planItem!.row.valuesByMonth)).toHaveLength(3);
   });
 
-  test('§3 — un plan financier apparaît dans CHARGES CONNUES, jamais en EXCEPTIONNEL (même si category backend="projet")', () => {
+  test('§6 — un plan financier apparaît dans DÉPENSES, jamais dans un bloc "Exceptionnel" séparé (même si category backend="projet")', () => {
     const months = [
       makeMonth('2026-09', 'Sept. 2026', [
         expenseItem({ label: 'Scolarité T1', amount: 21800, date: '2026-09-15', financialPlanId: PLAN_ID, category: 'projet' }),
@@ -153,7 +153,7 @@ describe('planningLogic — regroupement par plan financier (Convergence V6 §3/
     const rows = buildPlanningRows(months);
     expect(rows.find((r) => r.label === 'Scolarité T1')?.section).toBe('charges');
     const bySection = rowsBySection(rows);
-    expect(bySection.find((s) => s.section === 'exceptionnel')).toBeUndefined();
+    expect(bySection).toHaveLength(1);
     expect(bySection.find((s) => s.section === 'charges')).toBeDefined();
   });
 });

@@ -236,14 +236,23 @@ export function HomeScreen() {
                           />
                         ))}
                       </View>
-                      <View style={styles.chipRow}>
+                      {/* Correction modèle fonctionnel §2 — sous-compte cliquable
+                          directement depuis Accueil, jamais Accueil -> Compte -> liste. */}
+                      <View style={styles.subAccountStack}>
                         {a.envelopes.map((e, ei) => (
-                          <View key={e.id} style={styles.chip}>
+                          <TouchableOpacity
+                            key={e.id}
+                            testID={`home-subaccount-${e.id}`}
+                            style={styles.subAccountRow}
+                            onPress={() => navigation.getParent()?.navigate('EnvelopeDetail', { kind: e.kind, id: e.id })}
+                          >
                             <View style={[styles.chipDot, { backgroundColor: accountCardPalette[ei % accountCardPalette.length] }]} />
-                            <Text style={styles.chipText} numberOfLines={1}>
-                              {e.name} · {e.amount.toLocaleString('fr-FR')} DH
+                            <Text style={styles.subAccountName} numberOfLines={1}>
+                              {e.name}
                             </Text>
-                          </View>
+                            <Text style={styles.subAccountAmount}>{e.amount.toLocaleString('fr-FR')} DH</Text>
+                            <Ionicons name="chevron-forward" size={13} color={webColors.textSecondary} />
+                          </TouchableOpacity>
                         ))}
                       </View>
                     </>
@@ -367,10 +376,11 @@ const styles = StyleSheet.create({
 
   repartitionTrack: { flexDirection: 'row', height: 6, borderRadius: 999, backgroundColor: webColors.surfaceMuted, overflow: 'hidden', marginTop: webSpacing.sm, gap: 1 },
   repartitionSeg: { height: '100%' },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: webSpacing.sm - 2 },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: webColors.surfaceMuted, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 },
   chipDot: { width: 6, height: 6, borderRadius: 3 },
-  chipText: { fontSize: 11, fontWeight: '700', color: webColors.textPrimary },
+  subAccountStack: { marginTop: webSpacing.sm - 2 },
+  subAccountRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, borderTopWidth: 1, borderTopColor: webColors.border },
+  subAccountName: { flex: 1, fontSize: 12, fontWeight: '700', color: webColors.textPrimary },
+  subAccountAmount: { fontSize: 12, fontWeight: '800', color: webColors.textPrimary },
   dedicatedNote: { fontSize: 10, color: webColors.textSecondary, marginTop: webSpacing.sm },
 
   todoStack: { gap: 8 },

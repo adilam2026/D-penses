@@ -66,7 +66,10 @@ export function RootTabs() {
         component={QuickActionsPlaceholder}
         options={{ tabBarButton: () => <CentralPlusButton />, tabBarLabel: () => null }}
       />
-      <Tab.Screen name="Enveloppes" component={EnvelopesScreen} />
+      {/* Correction modèle fonctionnel §1 — route technique "Enveloppes"
+          inchangée (backend/navigation interne), mais le libellé VISIBLE est
+          désormais "Sous-comptes" (le concept utilisateur retenu). */}
+      <Tab.Screen name="Enveloppes" component={EnvelopesScreen} options={{ tabBarLabel: 'Sous-comptes' }} />
       <Tab.Screen name="Plus" component={HamburgerMenuScreen} />
     </Tab.Navigator>
   );

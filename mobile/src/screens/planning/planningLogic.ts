@@ -1,15 +1,24 @@
 import type { MonthBucketApi } from '../../api/client';
 
-export type PlanningSection = 'revenus' | 'charges' | 'enveloppes' | 'exceptionnel';
+/**
+ * Correction modèle fonctionnel §6 — 4 blocs demandés : REVENUS / DÉPENSES /
+ * ÉPARGNE-VERSEMENTS / SYNTHÈSE. Les 3 premiers sont des PlanningSection
+ * (lignes détaillées) ; SYNTHÈSE (Balance mensuelle/cumulée) n'est pas une
+ * section de lignes détaillées mais un bloc de calcul agrégé, produit par
+ * PlanningScreen à partir des totaux de section déjà calculés ici — jamais
+ * un 4e PlanningSection. "Exceptionnel" a disparu comme section VISIBLE :
+ * toute dépense (charge récurrente ou poste de plan financier) va dans
+ * DÉPENSES, jamais dans un bloc distinct que l'utilisateur ne comprend pas.
+ */
+export type PlanningSection = 'revenus' | 'charges' | 'enveloppes';
 
 export const SECTION_LABEL: Record<PlanningSection, string> = {
   revenus: 'Revenus',
-  charges: 'Charges connues',
-  enveloppes: 'Enveloppes',
-  exceptionnel: 'Exceptionnel',
+  charges: 'Dépenses',
+  enveloppes: 'Épargne / Versements',
 };
 
-export const SECTION_ORDER: PlanningSection[] = ['revenus', 'charges', 'enveloppes', 'exceptionnel'];
+export const SECTION_ORDER: PlanningSection[] = ['revenus', 'charges', 'enveloppes'];
 
 export interface PlanningRow {
   key: string;
@@ -77,14 +86,11 @@ export function buildPlanningRows(months: MonthBucketApi[], provisions: Planning
       addRow('revenus', `${item.entityType}:${item.label}`, item.label, m.month, item.amount);
     }
     for (const item of m.expense_items) {
-      // Convergence V6 §3 — un plan financier (regroupement de charges) doit
-      // TOUJOURS apparaître dans CHARGES CONNUES, jamais en EXCEPTIONNEL :
-      // le backend classe toute charge rattachée à un plan en category=
-      // 'projet' (monthly-projection.util.ts classify()), ce qui l'envoyait
-      // ici à tort en 'exceptionnel'. financialPlanId prime désormais sur
-      // category pour le choix de section.
-      const section: PlanningSection = item.financialPlanId ? 'charges' : item.category === 'projet' ? 'exceptionnel' : 'charges';
-      addRow(section, `${item.entityType}:${item.label}`, item.label, m.month, item.amount, item.financialPlanId);
+      // Correction modèle fonctionnel §6 — toute dépense va dans DÉPENSES,
+      // qu'elle soit rattachée à un plan financier (backend category=
+      // 'projet') ou non : jamais un bloc "Exceptionnel" séparé que
+      // l'utilisateur ne comprend pas.
+      addRow('charges', `${item.entityType}:${item.label}`, item.label, m.month, item.amount, item.financialPlanId);
     }
     for (const b of m.budget_items_this_period) {
       addRow('enveloppes', b.budget_id, b.label, m.month, b.amount);

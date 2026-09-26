@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as api from '../../api/client';
+import { cached } from '../../state/cache';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { useTopInset } from '../../ui/useTopInset';
 import { accountCreatedBus } from '../../state/events';
@@ -25,7 +26,7 @@ import { frequencyOptions } from '../../ui/frequency';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
 import { useResponsiveLayout } from '../../ui/useResponsiveLayout';
 
-type Mode = 'depense' | 'revenu' | 'paiement' | 'transfert';
+type Mode = 'depense' | 'revenu' | 'transfert' | 'versement';
 
 // NOUVELLE ÉVOLUTION — Réalisé vs à venir : une dépense/un revenu ponctuel(le)
 // est soit un fait immédiat (Réalisée/Reçu), soit un engagement futur (À venir).
@@ -41,10 +42,20 @@ type OperationStatus = 'reel' | 'a_venir';
 // reste le seul chemin pour un transfert sans répétition).
 const RECURRING_TRANSFER_RULES = ['hebdomadaire', 'mensuel', 'trimestriel', 'semestriel', 'annuel'] as const;
 
+// Correction modèle fonctionnel §5 — une dépense "à venir" (ChargePlan) peut
+// être récurrente (ex. Loyer tous les mois), jamais seulement ponctuelle.
+const CHARGE_RECURRENCE_RULES = ['ponctuel', 'hebdomadaire', 'mensuel', 'trimestriel', 'semestriel', 'annuel'] as const;
+
 interface Account {
   id: string;
   name: string;
   soldeCourant: number;
+}
+
+interface EnvelopeOption {
+  kind: 'savings_pocket' | 'provision';
+  id: string;
+  name: string;
 }
 
 interface Category {
@@ -66,23 +77,21 @@ interface CategoryType {
   subtypes: CategorySubtype[];
 }
 
-interface OpenDeadline {
-  id: string;
-  dueDate: string;
-  resteAPayer: number | null;
-  provisionId: string | null;
-  chargePlan: { label: string };
-}
-
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Correction modèle fonctionnel §3 — les 4 opérations RÉELLES uniquement
+// (jamais une prévision/échéance mélangée ici) : Dépense/Revenu/Transfert/
+// Versement, dans cet ordre, exactement celles de la bottom sheet "+"
+// (QuickActionsSheet.ACTIONS). "Payer une échéance" reste disponible depuis
+// Accueil/Calendrier/Plan financier → DeadlineDetailScreen (parcours dédié,
+// jamais dupliqué ici).
 const MODE_LABEL: Record<Mode, string> = {
   depense: '+ Dépense',
   revenu: '+ Revenu',
-  paiement: '+ Échéance',
   transfert: '+ Transfert',
+  versement: '+ Versement',
 };
 
 /** Refonte §9 — 4 modes immédiatement identifiables : tuiles icône+couleur au
@@ -90,9 +99,31 @@ const MODE_LABEL: Record<Mode, string> = {
 const MODE_META: Record<Mode, { icon: keyof typeof Ionicons.glyphMap; color: string; soft: string }> = {
   depense: { icon: 'arrow-down-circle', color: colors.v6Red, soft: colors.v6RedSoft },
   revenu: { icon: 'arrow-up-circle', color: colors.v6Teal, soft: colors.v6TealSoft },
-  paiement: { icon: 'calendar', color: colors.v6Amber, soft: colors.v6AmberSoft },
   transfert: { icon: 'swap-horizontal', color: colors.v6Blue, soft: colors.v6BlueSoft },
+  versement: { icon: 'archive-outline', color: colors.v6Amber, soft: colors.v6AmberSoft },
 };
+
+/** Correction modèle fonctionnel §4 — aide contextuelle explicite : le couple
+ * mode + Réalisé/À venir change le comportement réel (impact solde ou non),
+ * jamais une simple case à cocher sans explication. */
+function statusHelpText(mode: Mode, isAVenir: boolean): string | null {
+  if (mode === 'depense') {
+    return isAVenir
+      ? 'Crée une dépense prévue — aucun impact sur le solde tant que la date n\'est pas atteinte.'
+      : 'Crée une dépense réelle et modifie immédiatement le solde du compte.';
+  }
+  if (mode === 'revenu') {
+    return isAVenir
+      ? 'Crée un revenu prévu — aucun impact sur le solde tant qu\'il n\'est pas confirmé.'
+      : 'Crée un revenu réel et modifie immédiatement le solde du compte.';
+  }
+  if (mode === 'versement') {
+    return isAVenir
+      ? 'Planifie ce versement — le sous-compte ne sera mis à jour qu\'une fois confirmé.'
+      : 'Met réellement de côté cette somme dans le sous-compte choisi, dès maintenant.';
+  }
+  return null;
+}
 
 /**
  * Saisie rapide « + » (Lot 3 §2/§16). Quatre actions bien distinctes :
@@ -176,16 +207,25 @@ export function QuickAddScreen() {
   const [newSubtypeName, setNewSubtypeName] = useState('');
   const [creatingSubtype, setCreatingSubtype] = useState(false);
 
-  const [openDeadlines, setOpenDeadlines] = useState<OpenDeadline[]>([]);
+  // Correction modèle fonctionnel §5 — récurrence disponible pour une dépense
+  // "à venir" (ChargePlan), ex. Loyer tous les mois — jamais figée à ponctuel.
+  const [depenseRecurrence, setDepenseRecurrence] = useState<string>('ponctuel');
+
+  // Correction modèle fonctionnel §1/§3 — Versement = mettre réellement de côté
+  // (ou planifier) une somme dans un SOUS-COMPTE (SavingsPocket/Provision, déjà
+  // réutilisés tels quels côté backend) — jamais une nouvelle Deadline.
+  const [envelopeOptions, setEnvelopeOptions] = useState<EnvelopeOption[]>([]);
+  const [envelopeChoice, setEnvelopeChoice] = useState<string | null>(null);
+  const [versementDate, setVersementDate] = useState(todayIso());
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // NOUVELLE ÉVOLUTION — le segment Réalisé/À venir n'a de sens que pour Dépense
-  // (hors budget préréglé, toujours réalisé) et Revenu ; jamais pour Transfert
-  // ni la sélection d'échéance existante (mode 'paiement').
-  const showStatusToggle = (mode === 'depense' && !presetBudget) || mode === 'revenu';
+  // Correction modèle fonctionnel §4 — le segment Réalisé/À venir a un sens
+  // pour Dépense (hors budget préréglé), Revenu ET Versement (contribute()
+  // accepte déjà `confirmed` — jamais un second moteur) ; jamais pour Transfert.
+  const showStatusToggle = (mode === 'depense' && !presetBudget) || mode === 'revenu' || mode === 'versement';
   const isAVenir = showStatusToggle && operationStatus === 'a_venir';
   // Une dépense/un revenu "à venir" a besoin d'un libellé identifiant
   // l'échéance/l'occurrence future — exactement comme "Charge prévisionnelle".
@@ -198,11 +238,15 @@ export function QuickAddScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [accountList, quickDefault, categoryList, deadlines] = await Promise.all([
-        api.listAccounts(),
+      // Correction perf §13 — `accounts`/`categories` réutilisent la MÊME clé de
+      // cache que les autres écrans (Accueil/Sous-comptes/Planning) : arriver ici
+      // juste après les avoir déjà vus ne redéclenche jamais ces deux requêtes.
+      const [accountList, quickDefault, categoryList, pocketList, provisionList] = await Promise.all([
+        cached('accounts', () => api.listAccounts()),
         api.getQuickAddDefaultAccount(),
-        api.listCategories(),
-        api.listOpenDeadlines(),
+        cached('categories', () => api.listCategories()),
+        cached('pockets', () => api.listPockets()),
+        cached('provisions', () => api.listProvisions()),
       ]);
       setAccounts(accountList);
       // Corrections consolidées §7 — arrivée depuis "AJOUTER UNE TRANSACTION" sur la
@@ -210,7 +254,10 @@ export function QuickAddScreen() {
       const presetAccountId = route.params?.accountId as string | undefined;
       setAccountId(presetAccountId ?? quickDefault.accountId ?? (accountList[0]?.id ?? null));
       setCategories(categoryList);
-      setOpenDeadlines(deadlines);
+      setEnvelopeOptions([
+        ...pocketList.map((p: any) => ({ kind: 'savings_pocket' as const, id: p.id, name: p.name })),
+        ...provisionList.map((p: any) => ({ kind: 'provision' as const, id: p.id, name: p.name })),
+      ]);
       return accountList;
     } finally {
       setLoading(false);
@@ -315,26 +362,24 @@ export function QuickAddScreen() {
     }
   }
 
-  // §10 (recette téléphone réel) : un SEUL parcours de paiement partagé — DeadlineDetailScreen,
-  // le même que Accueil/Plan financier/Calendrier. "Ajouter > Échéance" n'est plus qu'une liste
-  // de sélection ; sélectionner une échéance ouvre directement l'écran de paiement dédié, jamais
-  // une sélection inline silencieuse sans retour visuel (bug bloquant corrigé).
-  function onSelectDeadline(d: OpenDeadline) {
-    navigation.navigate('DeadlineDetail', { id: d.id });
-  }
-
   async function onSubmit() {
-    // §10 — le paiement se fait désormais exclusivement sur DeadlineDetailScreen
-    // (parcours unique) : ce formulaire ne soumet jamais rien en mode 'paiement'.
-    if (mode === 'paiement') return;
     setError(null);
     const numericAmount = Number(amount.replace(',', '.'));
     if (!numericAmount || numericAmount <= 0) {
       setError('Montant invalide');
       return;
     }
-    if (mode !== 'transfert' && !accountId) {
+    // Correction modèle fonctionnel §3 — Versement cible un SOUS-COMPTE, jamais
+    // un compte bancaire : aucun accountId requis ici (cf. onSubmit plus bas,
+    // contributePocket/contributeProvision n'en prennent d'ailleurs aucun —
+    // le sous-compte est une répartition virtuelle DANS le compte, la somme
+    // réelle du compte bancaire ne bouge pas).
+    if (mode !== 'transfert' && mode !== 'versement' && !accountId) {
       promptCreateAccount();
+      return;
+    }
+    if (mode === 'versement' && !envelopeChoice) {
+      setError('Choisissez un sous-compte');
       return;
     }
     if (needsLabel && !label.trim()) {
@@ -365,6 +410,8 @@ export function QuickAddScreen() {
             startDate: spentDate,
             categoryId: categoryId ?? undefined,
             defaultAccountId: accountId ?? undefined,
+            recurrenceRule: depenseRecurrence,
+            recurrenceAnchorDate: depenseRecurrence !== 'ponctuel' ? spentDate : undefined,
           });
           await api.createDeadline(plan.id, {
             dueDate: spentDate,
@@ -399,6 +446,18 @@ export function QuickAddScreen() {
         const occurrence = await api.createIncomeOccurrence(source.id, { usualDate: incomeDate, plannedAmount: numericAmount });
         if (!isAVenir) {
           await api.confirmIncomeOccurrence(occurrence.id, { actualAmount: numericAmount, actualDate: incomeDate, accountId: accountId! });
+        }
+      } else if (mode === 'versement') {
+        // Correction modèle fonctionnel §1/§3/§9 — "mettre de côté" DANS un
+        // sous-compte (SavingsPocket/Provision) réutilise EXACTEMENT le moteur
+        // contribute() déjà en place (Épargne/Enveloppes) : aucune écriture sur
+        // financial_account, le compte bancaire réel ne change jamais de solde.
+        const [kind, envelopeId] = envelopeChoice!.split(':');
+        const payload = { amount: numericAmount, date: versementDate, confirmed: !isAVenir };
+        if (kind === 'savings_pocket') {
+          await api.contributePocket(envelopeId, payload);
+        } else {
+          await api.contributeProvision(envelopeId, payload);
         }
       } else {
         if (!toAccountId || toAccountId === accountId) {
@@ -495,6 +554,12 @@ export function QuickAddScreen() {
               </View>
             )}
 
+            {/* Correction modèle fonctionnel §4 — aide contextuelle explicite :
+                jamais une case à cocher sans explication de son impact réel. */}
+            {showStatusToggle && statusHelpText(mode, isAVenir) && (
+              <Text style={styles.statusHelp}>{statusHelpText(mode, isAVenir)}</Text>
+            )}
+
             {needsLabel && (
               <FormField
                 testID="quickadd-label-input"
@@ -505,46 +570,33 @@ export function QuickAddScreen() {
               />
             )}
 
-            {mode === 'paiement' ? (
-              // §10 — cette liste ne fait QUE sélectionner l'échéance : le paiement
-              // lui-même (montant, compte obligatoire, enveloppe facultative, partiel)
-              // se fait sur DeadlineDetailScreen, le même écran que partout ailleurs.
-              <>
-                <Text style={styles.sectionLabel}>Échéance à payer</Text>
-                {openDeadlines.length === 0 ? (
-                  <Text style={styles.empty}>Aucune échéance ouverte pour l'instant.</Text>
-                ) : (
-                  <View style={styles.pickList}>
-                    {openDeadlines.map((d) => (
-                      <TouchableOpacity key={d.id} testID={`pick-deadline-${d.id}`} style={styles.pickRow} onPress={() => onSelectDeadline(d)}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.pickRowLabel}>{d.chargePlan.label}</Text>
-                          <Text style={styles.pickRowMeta}>
-                            {d.resteAPayer !== null ? `${d.resteAPayer.toLocaleString('fr-FR')} DH restants` : 'Montant inconnu'}
-                          </Text>
-                        </View>
-                        <Text style={styles.pickRowChevron}>›</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-              </>
-            ) : (
-              // Refonte §9 — le montant est l'élément central d'une saisie rapide :
-              // carte teintée à la couleur du mode, jamais un champ texte anonyme
-              // perdu au milieu des autres champs.
-              <View style={[styles.amountCard, { backgroundColor: accent.soft, borderColor: accent.color }]} testID="quickadd-amount-card">
-                <Text style={[styles.amountCardLabel, { color: accent.color }]}>MONTANT</Text>
-                <FormField
-                  testID="quickadd-amount-input"
-                  placeholder="Montant (DH)"
-                  keyboardType="decimal-pad"
-                  value={amount}
-                  onChangeText={setAmount}
-                  onFocus={handleFocus}
-                  containerStyle={styles.amountFieldContainer}
-                />
-              </View>
+            {/* Refonte §9 — le montant est l'élément central d'une saisie rapide :
+                carte teintée à la couleur du mode, jamais un champ texte anonyme
+                perdu au milieu des autres champs. */}
+            <View style={[styles.amountCard, { backgroundColor: accent.soft, borderColor: accent.color }]} testID="quickadd-amount-card">
+              <Text style={[styles.amountCardLabel, { color: accent.color }]}>MONTANT</Text>
+              <FormField
+                testID="quickadd-amount-input"
+                placeholder="Montant (DH)"
+                keyboardType="decimal-pad"
+                value={amount}
+                onChangeText={setAmount}
+                onFocus={handleFocus}
+                containerStyle={styles.amountFieldContainer}
+              />
+            </View>
+
+            {mode === 'versement' && (
+              // Correction modèle fonctionnel §1/§3 — le sous-compte cible est le
+              // choix central de ce mode, jamais une simple case parmi d'autres.
+              <Select
+                testID="quickadd-envelope-select"
+                label="Sous-compte"
+                placeholder="Choisir un sous-compte"
+                value={envelopeChoice}
+                onChange={setEnvelopeChoice}
+                options={envelopeOptions.map((e) => ({ value: `${e.kind}:${e.id}`, label: e.name }))}
+              />
             )}
 
             {mode === 'depense' && presetBudget && (
@@ -591,6 +643,18 @@ export function QuickAddScreen() {
                     </View>
                     <Switch testID="quickadd-mutuelle-switch" value={remboursableMutuelle} onValueChange={setRemboursableMutuelle} />
                   </View>
+                )}
+
+                {/* Correction modèle fonctionnel §5 — une dépense "à venir" peut être
+                    récurrente (ex. Loyer chaque mois) : jamais figée à ponctuel. */}
+                {isAVenir && (
+                  <Select
+                    testID="quickadd-recurrence-select"
+                    label="Récurrence"
+                    value={depenseRecurrence}
+                    onChange={setDepenseRecurrence}
+                    options={frequencyOptions(CHARGE_RECURRENCE_RULES)}
+                  />
                 )}
 
                 {/* NOUVELLE ÉVOLUTION — une dépense "à venir" crée un ChargePlan
@@ -754,7 +818,16 @@ export function QuickAddScreen() {
                 </View>
               )}
 
-              {mode !== 'paiement' && (
+              {mode === 'versement' && (
+                <View style={wide ? styles.fieldRowItem : undefined}>
+                  <DateField label={isAVenir ? 'Date prévue' : 'Date du versement'} value={versementDate} onChange={setVersementDate} />
+                </View>
+              )}
+
+              {/* Correction modèle fonctionnel §3 — Versement cible un sous-compte,
+                  jamais un compte bancaire : pas de sélecteur Compte ici (le
+                  sous-compte est déjà choisi juste au-dessus, cf. amountCard). */}
+              {mode !== 'versement' && (
                 // R5 clôture §6 — sélecteur compact (comptes potentiellement nombreux),
                 // jamais un mur de chips permanent.
                 <View style={wide ? styles.fieldRowItem : undefined}>
@@ -862,27 +935,25 @@ export function QuickAddScreen() {
 
             {error ? <Text style={styles.error}>{error}</Text> : null}
 
-            {mode !== 'paiement' && (
-              <TouchableOpacity
-                style={[styles.button, { backgroundColor: accent.color }]}
-                onPress={onSubmit}
-                disabled={submitting}
-              >
-                {submitting ? (
-                  <ActivityIndicator color={colors.textOnPrimary} />
-                ) : (
-                  <Text style={styles.buttonText}>
-                    {mode === 'transfert'
-                      ? transferKind === 'recurrent'
-                        ? 'CRÉER LE TRANSFERT RÉCURRENT'
-                        : 'CONFIRMER LE TRANSFERT'
-                      : isAVenir
-                        ? 'Planifier'
-                        : 'Enregistrer'}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={[styles.button, { backgroundColor: accent.color }]}
+              onPress={onSubmit}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator color={colors.textOnPrimary} />
+              ) : (
+                <Text style={styles.buttonText}>
+                  {mode === 'transfert'
+                    ? transferKind === 'recurrent'
+                      ? 'CRÉER LE TRANSFERT RÉCURRENT'
+                      : 'CONFIRMER LE TRANSFERT'
+                    : isAVenir
+                      ? 'Planifier'
+                      : 'Enregistrer'}
+                </Text>
+              )}
+            </TouchableOpacity>
           </View>
         )}
 
@@ -969,35 +1040,8 @@ const styles = StyleSheet.create({
   transferPreviewName: { fontSize: 13, color: colors.textPrimary, fontWeight: '600' },
   transferPreviewValue: { fontSize: 13, color: colors.textPrimary, fontWeight: '700' },
   title: { fontSize: 22, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.lg, textAlign: 'center' },
-  modeRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginBottom: spacing.lg },
-  modeChip: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.pill,
-    paddingHorizontal: 12,
-    paddingVertical: spacing.sm,
-    marginHorizontal: 4,
-    marginBottom: spacing.sm,
-  },
-  modeChipActive: { backgroundColor: colors.v6Navy },
-  modeChipText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
-  modeChipTextActive: { color: colors.textOnPrimary },
+  statusHelp: { fontSize: 11, color: colors.textSecondary, marginTop: -4, marginBottom: spacing.sm, lineHeight: 15 },
   sectionLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm, marginTop: 4 },
-  empty: { color: colors.textSecondary, fontSize: 13, marginBottom: spacing.md },
-  pickList: { marginBottom: spacing.md },
-  pickRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    ...elevation.card,
-  },
-  pickRowLabel: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
-  pickRowMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  pickRowChevron: { fontSize: 20, color: colors.textPlaceholder, marginLeft: spacing.sm },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: spacing.md },
   chip: {
     backgroundColor: colors.surface,

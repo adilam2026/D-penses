@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
 import { QuickAddScreen } from '../QuickAddScreen';
 import * as api from '../../../api/client';
+import { clearCache } from '../../../state/cache';
 
 /**
  * Tests des pickers Catégorie → Type → Sous-type dans la saisie rapide
@@ -41,7 +42,8 @@ jest.mock('../../../api/client', () => {
     listAccounts: jest.fn(),
     getQuickAddDefaultAccount: jest.fn(),
     listCategories: jest.fn(),
-    listOpenDeadlines: jest.fn(),
+    listPockets: jest.fn(),
+    listProvisions: jest.fn(),
     findActiveBudgetsForCategory: jest.fn(),
     listCategoryTypes: jest.fn(),
     createCategoryType: jest.fn(),
@@ -54,6 +56,8 @@ jest.mock('../../../api/client', () => {
     confirmIncomeOccurrence: jest.fn(),
     createChargePlan: jest.fn(),
     createDeadline: jest.fn(),
+    contributePocket: jest.fn(),
+    contributeProvision: jest.fn(),
   };
 });
 
@@ -64,11 +68,13 @@ const CATEGORY_TRANSPORT = { id: 'cat-transport', name: 'Transport', kind: 'expe
 
 beforeEach(() => {
   jest.clearAllMocks();
+  clearCache();
   mockRouteParams = {};
   mockedApi.listAccounts.mockResolvedValue([{ id: 'acc-1', name: 'Compte SG' }]);
   mockedApi.getQuickAddDefaultAccount.mockResolvedValue({ accountId: 'acc-1' });
   mockedApi.listCategories.mockResolvedValue([CATEGORY_ALIMENTATION, CATEGORY_TRANSPORT]);
-  mockedApi.listOpenDeadlines.mockResolvedValue([]);
+  mockedApi.listPockets.mockResolvedValue([]);
+  mockedApi.listProvisions.mockResolvedValue([]);
   mockedApi.findActiveBudgetsForCategory.mockResolvedValue([]);
   mockedApi.createExpense.mockResolvedValue({ kind: 'adhoc_expense', expense: {}, soldeCourant: 0 });
   mockedApi.createIncomeSource.mockResolvedValue({ id: 'src-1' });
@@ -76,6 +82,8 @@ beforeEach(() => {
   mockedApi.confirmIncomeOccurrence.mockResolvedValue({});
   mockedApi.createChargePlan.mockResolvedValue({ id: 'plan-1' });
   mockedApi.createDeadline.mockResolvedValue({});
+  mockedApi.contributePocket.mockResolvedValue({});
+  mockedApi.contributeProvision.mockResolvedValue({});
 });
 
 async function renderScreen() {
@@ -232,39 +240,6 @@ describe('QuickAddScreen — Catégorie → Type → Sous-type (Vague 2 §21)', 
 });
 
 /**
- * Recette téléphone réel §10 (BUG BLOQUANT corrigé) : sélectionner une échéance
- * dans "Ajouter > Échéance" ouvrait un formulaire inline sans retour visuel
- * clair — désormais un seul parcours de paiement partagé (DeadlineDetailScreen,
- * le même qu'Accueil/Plan financier/Calendrier) : sélectionner navigue
- * IMMÉDIATEMENT, jamais une sélection silencieuse.
- */
-describe('QuickAddScreen — Ajouter > Échéance (§10, bug bloquant corrigé)', () => {
-  beforeEach(() => {
-    mockRouteParams = { mode: 'paiement' };
-    mockedApi.listOpenDeadlines.mockResolvedValue([
-      { id: 'dl-1', dueDate: '2026-09-30', resteAPayer: 1950, provisionId: null, chargePlan: { label: 'Restauration T1' } },
-    ]);
-  });
-
-  it('sélectionner une échéance navigue directement vers DeadlineDetail (parcours de paiement unique)', async () => {
-    await render(<QuickAddScreen />);
-    await waitFor(() => screen.getByTestId('pick-deadline-dl-1'));
-
-    await fireEvent.press(screen.getByTestId('pick-deadline-dl-1'));
-
-    expect(mockNavigate).toHaveBeenCalledWith('DeadlineDetail', { id: 'dl-1' });
-  });
-
-  it('aucune échéance ouverte → message explicite, jamais une liste vide silencieuse', async () => {
-    mockedApi.listOpenDeadlines.mockResolvedValue([]);
-    await render(<QuickAddScreen />);
-
-    await waitFor(() => screen.getByText("Aucune échéance ouverte pour l'instant."));
-    expect(screen.queryByText('Enregistrer')).toBeNull();
-  });
-});
-
-/**
  * Recette téléphone réel §11 : le transfert affiche désormais les soldes réels
  * par compte et un aperçu "avant/après" recalculé en direct, jamais après coup.
  */
@@ -369,16 +344,11 @@ describe('QuickAddScreen — Transfert entre comptes (§11)', () => {
  * jamais un second moteur de prévision.
  */
 describe('QuickAddScreen — Réalisé/Reçu vs À venir', () => {
-  it('le segment Réalisé/À venir n\'apparaît ni pour Transfert ni pour la sélection d\'Échéance', async () => {
+  it('le segment Réalisé/À venir n\'apparaît pas pour Transfert', async () => {
     mockRouteParams = { mode: 'transfert' };
     mockedApi.listAccounts.mockResolvedValue([{ id: 'acc-1', name: 'Compte SG', soldeCourant: 1000 }]);
     await render(<QuickAddScreen />);
     await waitFor(() => screen.getByTestId('quickadd-account-select'));
-    expect(screen.queryByTestId('quickadd-status-toggle')).toBeNull();
-
-    mockRouteParams = { mode: 'paiement' };
-    await render(<QuickAddScreen />);
-    await waitFor(() => screen.getByText("Aucune échéance ouverte pour l'instant."));
     expect(screen.queryByTestId('quickadd-status-toggle')).toBeNull();
   });
 
@@ -479,6 +449,107 @@ describe('QuickAddScreen — Réalisé/Reçu vs À venir', () => {
 
     await waitFor(() =>
       expect(mockedApi.confirmIncomeOccurrence).toHaveBeenCalledWith('occ-1', expect.objectContaining({ actualDate: '2026-09-12' })),
+    );
+  });
+});
+
+/**
+ * Correction modèle fonctionnel §3 — le sélecteur de mode (accès non verrouillé)
+ * propose exactement les 4 opérations réelles Dépense/Revenu/Transfert/Versement,
+ * jamais "Échéance" (régression corrigée) — une échéance reste accessible via
+ * DeadlineDetailScreen (Accueil/Calendrier/Plan financier), jamais dupliquée ici.
+ */
+describe('QuickAddScreen — sélecteur de mode (§3)', () => {
+  it('propose Dépense/Revenu/Transfert/Versement, jamais Échéance', async () => {
+    await renderScreen();
+
+    expect(screen.getByText('Dépense')).toBeTruthy();
+    expect(screen.getByText('Revenu')).toBeTruthy();
+    expect(screen.getByText('Transfert')).toBeTruthy();
+    expect(screen.getByText('Versement')).toBeTruthy();
+    expect(screen.queryByText('Échéance')).toBeNull();
+  });
+});
+
+/**
+ * Correction modèle fonctionnel §1/§3/§9 — Versement = mettre réellement de
+ * côté (ou planifier) une somme DANS un sous-compte (SavingsPocket/Provision) :
+ * réutilise EXACTEMENT contribute() déjà en place, jamais un second moteur,
+ * jamais un accountId (le compte bancaire réel ne bouge pas).
+ */
+describe('QuickAddScreen — Versement (§1/§3/§9)', () => {
+  beforeEach(() => {
+    mockRouteParams = { mode: 'versement' };
+    mockedApi.listPockets.mockResolvedValue([{ id: 'pocket-1', name: 'Vacances' }]);
+    mockedApi.listProvisions.mockResolvedValue([{ id: 'prov-1', name: 'Voiture' }]);
+  });
+
+  it('Réalisé — verse réellement dans le sous-compte choisi (confirmed=true)', async () => {
+    await render(<QuickAddScreen />);
+    await waitFor(() => screen.getByTestId('quickadd-envelope-select'));
+
+    await fireEvent.press(screen.getByTestId('quickadd-envelope-select'));
+    await fireEvent.press(await screen.findByTestId('quickadd-envelope-select-option-savings_pocket:pocket-1'));
+    await fireEvent.changeText(screen.getByPlaceholderText('Montant (DH)'), '500');
+    await fireEvent.press(screen.getByText('Enregistrer'));
+
+    await waitFor(() =>
+      expect(mockedApi.contributePocket).toHaveBeenCalledWith('pocket-1', expect.objectContaining({ amount: 500, confirmed: true })),
+    );
+    expect(mockedApi.contributeProvision).not.toHaveBeenCalled();
+  });
+
+  it('À venir — planifie le versement sans le confirmer (confirmed=false)', async () => {
+    await render(<QuickAddScreen />);
+    await waitFor(() => screen.getByTestId('quickadd-envelope-select'));
+
+    await fireEvent.press(screen.getByTestId('quickadd-status-a_venir'));
+    await fireEvent.press(screen.getByTestId('quickadd-envelope-select'));
+    await fireEvent.press(await screen.findByTestId('quickadd-envelope-select-option-provision:prov-1'));
+    await fireEvent.changeText(screen.getByPlaceholderText('Montant (DH)'), '300');
+    await fireEvent.press(screen.getByText('Planifier'));
+
+    await waitFor(() =>
+      expect(mockedApi.contributeProvision).toHaveBeenCalledWith('prov-1', expect.objectContaining({ amount: 300, confirmed: false })),
+    );
+  });
+
+  it('aucun sous-compte choisi → erreur explicite, jamais un versement silencieux sur rien', async () => {
+    await render(<QuickAddScreen />);
+    await waitFor(() => screen.getByTestId('quickadd-envelope-select'));
+
+    await fireEvent.changeText(screen.getByPlaceholderText('Montant (DH)'), '500');
+    await fireEvent.press(screen.getByText('Enregistrer'));
+
+    await waitFor(() => screen.getByText('Choisissez un sous-compte'));
+    expect(mockedApi.contributePocket).not.toHaveBeenCalled();
+    expect(mockedApi.contributeProvision).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Correction modèle fonctionnel §5 — une dépense "à venir" peut être récurrente
+ * (ex. Loyer chaque mois), jamais figée à ponctuel dans le formulaire.
+ */
+describe('QuickAddScreen — Récurrence sur une dépense à venir (§5)', () => {
+  it('champ Récurrence visible uniquement à venir, transmis à createChargePlan', async () => {
+    mockRouteParams = { mode: 'depense' };
+    mockedApi.listCategoryTypes.mockResolvedValue([]);
+    await renderScreen();
+
+    expect(screen.queryByTestId('quickadd-recurrence-select')).toBeNull();
+
+    await fireEvent.press(screen.getByTestId('quickadd-status-a_venir'));
+    await waitFor(() => screen.getByTestId('quickadd-recurrence-select'));
+
+    await fireEvent.press(screen.getByTestId('quickadd-recurrence-select'));
+    await fireEvent.press(await screen.findByTestId('quickadd-recurrence-select-option-mensuel'));
+    await fireEvent.changeText(screen.getByTestId('quickadd-label-input'), 'Loyer');
+    await fireEvent.changeText(screen.getByPlaceholderText('Montant (DH)'), '4500');
+    await fireEvent.press(screen.getByText('Planifier'));
+
+    await waitFor(() =>
+      expect(mockedApi.createChargePlan).toHaveBeenCalledWith(expect.objectContaining({ recurrenceRule: 'mensuel' })),
     );
   });
 });

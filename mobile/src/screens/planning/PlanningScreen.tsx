@@ -32,18 +32,18 @@ type GridLine =
   | { kind: 'child'; row: PlanningRow }
   | { kind: 'row'; row: PlanningRow }
   | { kind: 'total'; section: PlanningSection; label: string; valuesByMonth: Record<string, number> }
+  | { kind: 'synthese-header' }
   | { kind: 'balance'; label: string; valuesByMonth: Record<string, number> };
 
 /** Accent par section (§11 — "headers colorés très discrètement... Revenus
  * identifiable, Dépenses identifiable, Épargne identifiable") — jamais un
  * remplacement des couleurs de marque, seulement leur réutilisation ciblée
- * (teal=revenus, rouge très adouci=charges, ambre=enveloppes, violet=
- * exceptionnel), déjà utilisées ailleurs dans l'app pour ces mêmes notions. */
+ * (teal=revenus, rouge très adouci=charges, ambre=enveloppes), déjà
+ * utilisées ailleurs dans l'app pour ces mêmes notions. */
 const SECTION_ACCENT: Record<PlanningSection, { solid: string; soft: string }> = {
   revenus: { solid: colors.v6Teal, soft: colors.v6TealSoft },
   charges: { solid: colors.v6Red, soft: colors.v6RedSoft },
   enveloppes: { solid: colors.v6Amber, soft: colors.v6AmberSoft },
-  exceptionnel: { solid: colors.v6Purple, soft: colors.v6PurpleSoft },
 };
 
 const DATA_HORIZON_MONTHS = 12;
@@ -149,18 +149,33 @@ export function PlanningScreen() {
       out.push({ kind: 'total', section: group.section, label: `Total ${SECTION_LABEL[group.section].toLowerCase()}`, valuesByMonth: totals });
     }
 
-    // Balance = revenus - (charges + enveloppes + exceptionnel) — somme
-    // d'affichage des totaux de section déjà calculés ci-dessus, jamais un
-    // second moteur de calcul.
-    const balance = emptyTotals(monthKeys);
+    // Correction modèle fonctionnel §6 — SYNTHÈSE : Balance mensuelle =
+    // Revenus - Dépenses - Épargne prévue (somme d'affichage des totaux de
+    // section déjà calculés ci-dessus, jamais un second moteur de calcul).
+    // L'épargne réduit la disponibilité mensuelle mais N'EST PAS retirée du
+    // patrimoine (elle reste dans les sous-comptes) — Balance cumulée est
+    // donc la somme courante des balances mensuelles, jamais un champ
+    // recalculé côté backend (monthly-projection.util.ts exclut
+    // volontairement l'épargne de balance/cumulativeBalance).
+    const balanceMensuelle = emptyTotals(monthKeys);
     for (const k of monthKeys) {
       const revenus = sectionTotals.revenus?.[k] ?? 0;
       const sorties = SECTION_ORDER.filter((s) => s !== 'revenus').reduce((sum, s) => sum + (sectionTotals[s]?.[k] ?? 0), 0);
-      balance[k] = revenus - sorties;
+      balanceMensuelle[k] = revenus - sorties;
     }
-    if (groups.length > 0) out.push({ kind: 'balance', label: 'Balance', valuesByMonth: balance });
+    const balanceCumulee = emptyTotals(monthKeys);
+    let running = 0;
+    for (const k of monthKeys) {
+      running += balanceMensuelle[k];
+      balanceCumulee[k] = running;
+    }
+    if (groups.length > 0) {
+      out.push({ kind: 'synthese-header' });
+      out.push({ kind: 'balance', label: 'Balance mensuelle', valuesByMonth: balanceMensuelle });
+      out.push({ kind: 'balance', label: 'Balance cumulée', valuesByMonth: balanceCumulee });
+    }
 
-    return { lines: out, balanceValues: balance };
+    return { lines: out, balanceValues: balanceMensuelle };
   }, [groups, expandedPlans, monthKeys]);
 
   if (loading && !data) {
@@ -212,6 +227,7 @@ export function PlanningScreen() {
                     styles.cell,
                     line.kind === 'section' && [styles.sectionCell, accent && { backgroundColor: accent.soft }],
                     line.kind === 'total' && [styles.totalCell, accent && { backgroundColor: accent.soft }],
+                    line.kind === 'synthese-header' && styles.sectionCell,
                     line.kind === 'balance' && styles.balanceLabelCell,
                   ]}
                 >
@@ -222,6 +238,12 @@ export function PlanningScreen() {
                     <View style={styles.sectionLabelRow}>
                       <View style={[styles.sectionDot, accent && { backgroundColor: accent.solid }]} />
                       <Text style={[styles.sectionText, accent && { color: accent.solid }]}>{line.label.toUpperCase()}</Text>
+                    </View>
+                  )}
+                  {line.kind === 'synthese-header' && (
+                    <View style={styles.sectionLabelRow}>
+                      <View style={[styles.sectionDot, { backgroundColor: colors.v6Navy }]} />
+                      <Text style={[styles.sectionText, { color: colors.v6Navy }]}>SYNTHÈSE</Text>
                     </View>
                   )}
                   {line.kind === 'row' && (
@@ -297,6 +319,9 @@ export function PlanningScreen() {
                             style={[styles.cell, styles.sectionCell, accent && { backgroundColor: accent.soft }, { width: MONTH_COL_WIDTH }, current && styles.currentMonthCol]}
                           />
                         );
+                      }
+                      if (line.kind === 'synthese-header') {
+                        return <View key={m.month} style={[styles.cell, styles.sectionCell, { width: MONTH_COL_WIDTH }, current && styles.currentMonthCol]} />;
                       }
                       if (line.kind === 'total') {
                         const value = line.valuesByMonth[m.month];

@@ -78,6 +78,6 @@ export interface WebNavItem extends MenuItem {
 export const WEB_SIDEBAR_PRIMARY: WebNavItem[] = [
   { label: 'Accueil', icon: 'home-outline', route: 'Accueil', parent: 'Tabs' },
   { label: 'Planning', icon: 'grid-outline', route: 'Planning', parent: 'Tabs' },
-  { label: 'Enveloppes', icon: 'wallet-outline', route: 'Enveloppes', parent: 'Tabs' },
+  { label: 'Sous-comptes', icon: 'wallet-outline', route: 'Enveloppes', parent: 'Tabs' },
   { label: 'Transactions', icon: 'swap-horizontal-outline', route: 'Transactions', parent: 'Tabs' },
 ];

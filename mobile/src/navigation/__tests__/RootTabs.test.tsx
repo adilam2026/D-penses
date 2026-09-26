@@ -64,13 +64,13 @@ async function renderApp() {
   );
 }
 
-it('la navigation basse propose 4 positions symétriques : Accueil, Planning, [+], Enveloppes', async () => {
+it('la navigation basse propose 4 positions symétriques : Accueil, Planning, [+], Sous-comptes', async () => {
   await renderApp();
   await waitFor(() => screen.getByText("Aucun compte pour l'instant."));
   expect(screen.getByText('Accueil')).toBeTruthy();
   expect(screen.getByText('Planning')).toBeTruthy();
   expect(screen.getByTestId('tab-quick-actions')).toBeTruthy();
-  expect(screen.getByText('Enveloppes')).toBeTruthy();
+  expect(screen.getByText('Sous-comptes')).toBeTruthy();
   // Transactions/Calendrier/Projection/Budgets restent atteignables depuis le
   // menu ☰ (menuSections.ts) et leur propre Stack.Screen racine, mais ne sont
   // plus des onglets de la barre basse.

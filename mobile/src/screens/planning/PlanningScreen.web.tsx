@@ -32,13 +32,13 @@ type GridLine =
   | { kind: 'child'; row: PlanningRow }
   | { kind: 'row'; row: PlanningRow }
   | { kind: 'total'; section: PlanningSection; label: string; valuesByMonth: Record<string, number> }
+  | { kind: 'synthese-header' }
   | { kind: 'balance'; label: string; valuesByMonth: Record<string, number> };
 
 const SECTION_ACCENT: Record<PlanningSection, { solid: string; soft: string }> = {
   revenus: { solid: webColors.teal, soft: webColors.tealSoft },
   charges: { solid: webColors.red, soft: webColors.redSoft },
   enveloppes: { solid: webColors.amber, soft: webColors.amberSoft },
-  exceptionnel: { solid: webColors.purple, soft: webColors.purpleSoft },
 };
 
 function shiftMonths(iso: string, months: number): string {
@@ -136,13 +136,25 @@ export function PlanningScreen() {
       out.push({ kind: 'total', section: group.section, label: `Total ${SECTION_LABEL[group.section].toLowerCase()}`, valuesByMonth: totals });
     }
 
-    const balance = emptyTotals(monthKeys);
+    // Correction modèle fonctionnel §6 — mêmes deux lignes SYNTHÈSE que la
+    // version mobile (planningLogic partagé, jamais un second calcul).
+    const balanceMensuelle = emptyTotals(monthKeys);
     for (const k of monthKeys) {
       const revenus = sectionTotals.revenus?.[k] ?? 0;
       const sorties = SECTION_ORDER.filter((s) => s !== 'revenus').reduce((sum, s) => sum + (sectionTotals[s]?.[k] ?? 0), 0);
-      balance[k] = revenus - sorties;
+      balanceMensuelle[k] = revenus - sorties;
     }
-    if (groups.length > 0) out.push({ kind: 'balance', label: 'Balance', valuesByMonth: balance });
+    const balanceCumulee = emptyTotals(monthKeys);
+    let running = 0;
+    for (const k of monthKeys) {
+      running += balanceMensuelle[k];
+      balanceCumulee[k] = running;
+    }
+    if (groups.length > 0) {
+      out.push({ kind: 'synthese-header' });
+      out.push({ kind: 'balance', label: 'Balance mensuelle', valuesByMonth: balanceMensuelle });
+      out.push({ kind: 'balance', label: 'Balance cumulée', valuesByMonth: balanceCumulee });
+    }
 
     return out;
   }, [groups, expandedPlans, monthKeys]);
@@ -189,6 +201,7 @@ export function PlanningScreen() {
                       styles.cell,
                       line.kind === 'section' && [styles.sectionCell, accent && { backgroundColor: accent.soft }],
                       line.kind === 'total' && [styles.totalCell, accent && { backgroundColor: accent.soft }],
+                      line.kind === 'synthese-header' && styles.sectionCell,
                       line.kind === 'balance' && styles.balanceLabelCell,
                     ]}
                   >
@@ -199,6 +212,12 @@ export function PlanningScreen() {
                       <View style={styles.sectionLabelRow}>
                         <View style={[styles.sectionDot, accent && { backgroundColor: accent.solid }]} />
                         <Text style={[styles.sectionText, accent && { color: accent.solid }]}>{line.label.toUpperCase()}</Text>
+                      </View>
+                    )}
+                    {line.kind === 'synthese-header' && (
+                      <View style={styles.sectionLabelRow}>
+                        <View style={[styles.sectionDot, { backgroundColor: webColors.navy }]} />
+                        <Text style={[styles.sectionText, { color: webColors.navy }]}>SYNTHÈSE</Text>
                       </View>
                     )}
                     {line.kind === 'row' && (
@@ -263,6 +282,9 @@ export function PlanningScreen() {
                               style={[styles.cell, styles.sectionCell, accent && { backgroundColor: accent.soft }, { width: MONTH_COL_WIDTH }, current && styles.currentMonthCol]}
                             />
                           );
+                        }
+                        if (line.kind === 'synthese-header') {
+                          return <View key={m.month} style={[styles.cell, styles.sectionCell, { width: MONTH_COL_WIDTH }, current && styles.currentMonthCol]} />;
                         }
                         if (line.kind === 'total') {
                           const value = line.valuesByMonth[m.month];

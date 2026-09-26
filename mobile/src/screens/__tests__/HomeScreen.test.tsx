@@ -149,3 +149,22 @@ it('appuyer sur une carte compte navigue vers AccountDetail', async () => {
   await fireEvent.press(screen.getByTestId('home-account-card-acc1'));
   expect(mockNavigate).toHaveBeenCalledWith('AccountDetail', { id: 'acc1' });
 });
+
+// Correction modèle fonctionnel §2 — un sous-compte affiché sous son compte
+// bancaire doit être directement cliquable EN UN SEUL GESTE (Accueil -> Sous-compte),
+// jamais Accueil -> Compte -> liste -> Sous-compte.
+it('appuyer sur un sous-compte navigue directement vers EnvelopeDetail (jamais AccountDetail)', async () => {
+  mockedApi.listAccounts.mockResolvedValue([
+    account({
+      soldeCourant: 8000,
+      reservedByEnvelopes: 5000,
+      envelopes: [{ id: 'env1', kind: 'savings_pocket', name: 'Vacances', amount: 5000, subtitle: 'reserve' }],
+    }),
+  ]);
+  await render(<HomeScreen />);
+
+  await waitFor(() => screen.getByTestId('home-subaccount-env1'));
+  await fireEvent.press(screen.getByTestId('home-subaccount-env1'));
+  expect(mockNavigate).toHaveBeenCalledWith('EnvelopeDetail', { kind: 'savings_pocket', id: 'env1' });
+  expect(mockNavigate).not.toHaveBeenCalledWith('AccountDetail', expect.anything());
+});

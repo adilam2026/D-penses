@@ -63,6 +63,10 @@ export interface ProvisionCardView {
   nextDueDate: string | null;
   nextAmount: number;
   hasOpenSteps: boolean;
+  /** Besoin cumulé jusqu'à la prochaine échéance ouverte (0 si aucune échéance ouverte). */
+  need: number;
+  /** Recommandé DH/mois (correction modèle fonctionnel §8, carte "plan financier"). */
+  recommendedMonthly: number;
 }
 
 /**
@@ -73,11 +77,12 @@ export interface ProvisionCardView {
  */
 export function computeProvisionCardView(s: ProvisionSufficiencyLike): ProvisionCardView {
   const current = toNum(s.currentAmount);
+  const recommendedMonthly = toNum(s.versementMensuelRecommande);
   if (s.steps.length === 0) {
-    return { percent: 100, nextDueDate: null, nextAmount: 0, hasOpenSteps: false };
+    return { percent: 100, nextDueDate: null, nextAmount: 0, hasOpenSteps: false, need: 0, recommendedMonthly };
   }
   const next = s.steps[0];
   const need = toNum(next.cumulativeNeed);
   const percent = need > 0 ? Math.max(0, Math.min(100, Math.round((current / need) * 100))) : 100;
-  return { percent, nextDueDate: next.dueDate, nextAmount: toNum(next.resteAPayer), hasOpenSteps: true };
+  return { percent, nextDueDate: next.dueDate, nextAmount: toNum(next.resteAPayer), hasOpenSteps: true, need, recommendedMonthly };
 }

@@ -3,6 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { NavigationContainerRefWithCurrent } from '@react-navigation/native';
 import * as api from '../api/client';
+import { cached } from '../state/cache';
 import { useAuth } from '../auth/AuthContext';
 import { WEB_SIDEBAR_PRIMARY } from '../navigation/menuSections';
 import { useWebBreakpoint } from './useWebBreakpoint';
@@ -82,7 +83,9 @@ export function Header({ navigationRef, currentRouteName, onToggleSidebar }: Pro
 
   useEffect(() => {
     let cancelled = false;
-    api.getMyHousehold().then((h: any) => {
+    // Correction perf §13 — même clé de cache que HomeScreen.web.tsx
+    // ('myHousehold') : jamais un second appel réseau pour la même donnée.
+    cached('myHousehold', () => api.getMyHousehold()).then((h: any) => {
       if (!cancelled) setHouseholdName(h?.name ?? null);
     }).catch(() => {});
     return () => {

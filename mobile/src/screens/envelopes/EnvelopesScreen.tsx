@@ -10,13 +10,21 @@ import { useBottomInset } from '../../ui/useBottomInset';
 import { formatDh } from '../../ui/formatMoney';
 import { computePocketCardView, computeProvisionCardView, toNum } from './envelopesLogic';
 
+function formatDayMonth(iso: string): string {
+  return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+}
+
 /**
- * Reset design (§2/§3/§7) — CHAQUE sous-compte a une vraie identité visuelle
- * (besoin utilisateur -> nouvelle composition, pas l'ancienne grille de
- * cartes carrées recolorée) : pastille + nom, GRAND solde disponible en
- * premier ("4 500 DH disponibles"), barre de progression pilule avec le %
- * intégré, puis Objectif/Reste en paire compacte, puis "Voir →" — exactement
- * l'ordre demandé. Logique/hooks/appels réseau inchangés.
+ * Correction modèle fonctionnel §1/§8/§9 — "Enveloppes" a disparu du
+ * vocabulaire utilisateur : un SOUS-COMPTE est une répartition virtuelle
+ * d'une partie de l'argent réellement présent sur un compte bancaire (le
+ * solde du compte, lui, ne bouge jamais). Le backend garde ses noms
+ * techniques (SavingsPocket/Provision) — seul ce qui est AFFICHÉ change.
+ * Trois présentations distinctes selon le sous-compte (§8) : avec objectif,
+ * sans objectif (CTA "Définir un objectif"), et adossé à un plan financier à
+ * échéances (Besoin/Reste/Recommandé/Prochaine échéance). Le suivi mutuelle
+ * (§9) reste structurellement séparé — jamais fusionné avec un sous-compte
+ * Santé, qui lui a un solde réel.
  */
 export function EnvelopesScreen() {
   const navigation = useNavigation<any>();
@@ -65,57 +73,146 @@ export function EnvelopesScreen() {
       refreshControl={<RefreshControl refreshing={loading} onRefresh={() => load(true)} tintColor={colors.v6Navy} />}
     >
       <View style={styles.headerRow}>
-        <Text style={styles.pageTitle}>Enveloppes</Text>
+        <Text style={styles.pageTitle}>Sous-comptes</Text>
         <TouchableOpacity testID="envelopes-add" style={styles.addButton} onPress={() => navigation.navigate('CreatePocket')}>
           <Ionicons name="add" size={20} color="#fff" />
         </TouchableOpacity>
       </View>
-      <Text style={styles.pageSubtitle}>Réserves et plans financiers.</Text>
+      <Text style={styles.pageSubtitle}>Une part de votre argent, mise de côté sans jamais quitter le compte.</Text>
 
       <View style={styles.stack}>
         {provisionCards.map(({ provision, sufficiency }) => {
           const view = computeProvisionCardView(sufficiency);
           const accountName = provision.linkedAccountId ? accountNameById[provision.linkedAccountId] : undefined;
+          const remaining = view.hasOpenSteps ? Math.max(0, view.need - toNum(sufficiency.currentAmount)) : 0;
           return (
-            <EnvelopeCard
+            <TouchableOpacity
               key={provision.id}
               testID={`envelope-card-provision-${provision.id}`}
-              name={provision.name}
-              subtitle={accountName ? `${accountName} · plan à échéances` : 'Plan à échéances'}
-              icon="flag-outline"
-              accent={colors.v6Blue}
-              accentSoft={colors.v6BlueSoft}
-              available={toNum(sufficiency.currentAmount)}
-              target={view.hasOpenSteps ? view.nextAmount : null}
-              targetLabel="Prochaine échéance"
-              percent={view.percent}
-              remaining={view.hasOpenSteps ? Math.max(0, view.nextAmount - toNum(sufficiency.currentAmount)) : null}
-              footNote={view.nextDueDate ? new Date(view.nextDueDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }) : undefined}
+              style={styles.card}
+              activeOpacity={0.75}
               onPress={() => navigation.navigate('EnvelopeDetail', { kind: 'provision', id: provision.id })}
-            />
+            >
+              <View style={styles.cardHead}>
+                <View style={[styles.cardIcon, { backgroundColor: colors.v6BlueSoft }]}>
+                  <Ionicons name="flag-outline" size={17} color={colors.v6Blue} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.cardName} numberOfLines={1}>
+                    {provision.name.toUpperCase()}
+                  </Text>
+                  {accountName && (
+                    <Text style={styles.cardSubtitle} numberOfLines={1}>
+                      {accountName}
+                    </Text>
+                  )}
+                </View>
+              </View>
+
+              <Text style={styles.cardBalance}>{formatDh(toNum(sufficiency.currentAmount))}</Text>
+              <Text style={styles.cardBalanceCaption}>disponibles</Text>
+
+              <View style={styles.planBadgeRow}>
+                <View style={styles.planBadge}>
+                  <Text style={styles.planBadgeText}>Plan financier</Text>
+                </View>
+                {view.nextDueDate && (
+                  <Text style={styles.cardFootnote}>Prochaine échéance {formatDayMonth(view.nextDueDate)}</Text>
+                )}
+              </View>
+
+              {view.hasOpenSteps && (
+                <View style={styles.statPairRow}>
+                  <View style={styles.statPair}>
+                    <Text style={styles.statLabel}>Besoin</Text>
+                    <Text style={styles.statValue}>{formatDh(view.need)}</Text>
+                  </View>
+                  <View style={styles.statDivider} />
+                  <View style={styles.statPair}>
+                    <Text style={styles.statLabel}>Reste</Text>
+                    <Text style={styles.statValue}>{formatDh(remaining)}</Text>
+                  </View>
+                </View>
+              )}
+
+              {view.recommendedMonthly > 0 && (
+                <Text style={styles.recommendedText}>Recommandé {formatDh(view.recommendedMonthly)}/mois</Text>
+              )}
+
+              <View style={styles.cardFoot}>
+                <Text style={[styles.seeLink, { color: colors.v6Blue }]}>Voir le plan →</Text>
+              </View>
+            </TouchableOpacity>
           );
         })}
 
         {pockets.map((pocket) => {
           const view = computePocketCardView(pocket);
           const accountName = pocket.linkedAccountId ? accountNameById[pocket.linkedAccountId] : undefined;
+          const hasTarget = !!pocket.targetAmount;
+          const remaining = hasTarget ? Math.max(0, toNum(pocket.targetAmount) - toNum(pocket.currentAmount)) : 0;
           return (
-            <EnvelopeCard
+            <TouchableOpacity
               key={pocket.id}
               testID={`envelope-card-pocket-${pocket.id}`}
-              name={pocket.name}
-              subtitle={accountName ? `${accountName} · réserve permanente` : 'Réserve permanente'}
-              icon="wallet-outline"
-              accent={colors.v6Teal}
-              accentSoft={colors.v6TealSoft}
-              available={toNum(pocket.currentAmount)}
-              target={pocket.targetAmount ? toNum(pocket.targetAmount) : null}
-              targetLabel="Objectif"
-              percent={view.percent}
-              remaining={pocket.targetAmount ? Math.max(0, toNum(pocket.targetAmount) - toNum(pocket.currentAmount)) : null}
-              footNote={pocket.monthlyContribution ? `${formatDh(toNum(pocket.monthlyContribution))}/mois` : undefined}
+              style={styles.card}
+              activeOpacity={0.75}
               onPress={() => navigation.navigate('EnvelopeDetail', { kind: 'savings_pocket', id: pocket.id })}
-            />
+            >
+              <View style={styles.cardHead}>
+                <View style={[styles.cardIcon, { backgroundColor: colors.v6TealSoft }]}>
+                  <Ionicons name="wallet-outline" size={17} color={colors.v6Teal} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.cardName} numberOfLines={1}>
+                    {pocket.name.toUpperCase()}
+                  </Text>
+                  {accountName && (
+                    <Text style={styles.cardSubtitle} numberOfLines={1}>
+                      {accountName}
+                    </Text>
+                  )}
+                </View>
+              </View>
+
+              <Text style={styles.cardBalance}>{formatDh(toNum(pocket.currentAmount))}</Text>
+              <Text style={styles.cardBalanceCaption}>disponibles</Text>
+
+              {hasTarget ? (
+                <>
+                  <View style={styles.progressTrack}>
+                    <View style={[styles.progressFill, { width: `${view.percent}%`, backgroundColor: colors.v6Teal }]} />
+                  </View>
+                  <View style={styles.progressLabelRow}>
+                    <Text style={[styles.progressPercent, { color: colors.v6Teal }]}>Progression {view.percent}%</Text>
+                  </View>
+                  <View style={styles.statPairRow}>
+                    <View style={styles.statPair}>
+                      <Text style={styles.statLabel}>Objectif</Text>
+                      <Text style={styles.statValue}>{formatDh(toNum(pocket.targetAmount))}</Text>
+                    </View>
+                    <View style={styles.statDivider} />
+                    <View style={styles.statPair}>
+                      <Text style={styles.statLabel}>Reste à constituer</Text>
+                      <Text style={styles.statValue}>{formatDh(remaining)}</Text>
+                    </View>
+                  </View>
+                </>
+              ) : (
+                <TouchableOpacity
+                  testID={`envelope-define-goal-${pocket.id}`}
+                  style={styles.defineGoalBtn}
+                  onPress={() => navigation.navigate('EnvelopeDetail', { kind: 'savings_pocket', id: pocket.id })}
+                >
+                  <Ionicons name="flag-outline" size={13} color={colors.v6Teal} />
+                  <Text style={styles.defineGoalText}>Définir un objectif</Text>
+                </TouchableOpacity>
+              )}
+
+              <View style={styles.cardFoot}>
+                <Text style={[styles.seeLink, { color: colors.v6Teal }]}>Voir →</Text>
+              </View>
+            </TouchableOpacity>
           );
         })}
       </View>
@@ -137,92 +234,13 @@ export function EnvelopesScreen() {
 
       {!loading && pockets.length === 0 && provisionCards.length === 0 && (
         <View style={styles.emptyState}>
-          <Text style={styles.empty}>Aucune enveloppe pour l'instant.</Text>
+          <Text style={styles.empty}>Aucun sous-compte pour l'instant.</Text>
           <TouchableOpacity testID="envelopes-empty-create" style={styles.emptyCta} onPress={() => navigation.navigate('CreatePocket')}>
-            <Text style={styles.emptyCtaText}>Créer une enveloppe</Text>
+            <Text style={styles.emptyCtaText}>Créer un sous-compte</Text>
           </TouchableOpacity>
         </View>
       )}
     </ScrollView>
-  );
-}
-
-function EnvelopeCard({
-  testID,
-  name,
-  subtitle,
-  icon,
-  accent,
-  accentSoft,
-  available,
-  target,
-  targetLabel,
-  percent,
-  remaining,
-  footNote,
-  onPress,
-}: {
-  testID: string;
-  name: string;
-  subtitle: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  accent: string;
-  accentSoft: string;
-  available: number;
-  target: number | null;
-  targetLabel: string;
-  percent: number;
-  remaining: number | null;
-  footNote?: string;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity testID={testID} style={styles.card} onPress={onPress} activeOpacity={0.75}>
-      <View style={styles.cardHead}>
-        <View style={[styles.cardIcon, { backgroundColor: accentSoft }]}>
-          <Ionicons name={icon} size={17} color={accent} />
-        </View>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={styles.cardName} numberOfLines={1}>
-            {name.toUpperCase()}
-          </Text>
-          <Text style={styles.cardSubtitle} numberOfLines={1}>
-            {subtitle}
-          </Text>
-        </View>
-      </View>
-
-      <Text style={styles.cardBalance}>{formatDh(available)}</Text>
-      <Text style={styles.cardBalanceCaption}>disponibles</Text>
-
-      {target !== null && (
-        <>
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${percent}%`, backgroundColor: accent }]} />
-          </View>
-          <View style={styles.progressLabelRow}>
-            <Text style={[styles.progressPercent, { color: accent }]}>{percent}%</Text>
-            {footNote && <Text style={styles.cardFootnote}>{footNote}</Text>}
-          </View>
-
-          <View style={styles.statPairRow}>
-            <View style={styles.statPair}>
-              <Text style={styles.statLabel}>{targetLabel}</Text>
-              <Text style={styles.statValue}>{formatDh(target)}</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statPair}>
-              <Text style={styles.statLabel}>Reste</Text>
-              <Text style={styles.statValue}>{remaining !== null ? formatDh(remaining) : '—'}</Text>
-            </View>
-          </View>
-        </>
-      )}
-
-      <View style={styles.cardFoot}>
-        <Text style={[styles.seeLink, { color: accent }]}>Voir →</Text>
-      </View>
-    </TouchableOpacity>
   );
 }
 
@@ -254,11 +272,27 @@ const styles = StyleSheet.create({
   progressPercent: { fontSize: 12, fontWeight: '800' },
   cardFootnote: { fontSize: 10, color: colors.v6Muted },
 
+  planBadgeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  planBadge: { backgroundColor: colors.v6BlueSoft, borderRadius: radius.sm, paddingHorizontal: 8, paddingVertical: 3 },
+  planBadgeText: { fontSize: 10, fontWeight: '800', color: colors.v6Blue, textTransform: 'uppercase', letterSpacing: 0.3 },
+
   statPairRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm + 4 },
   statPair: { flex: 1 },
   statDivider: { width: 1, height: 28, backgroundColor: colors.v6Line, marginHorizontal: spacing.sm + 2 },
   statLabel: { fontSize: 10, fontWeight: '700', color: colors.v6Muted, textTransform: 'uppercase', letterSpacing: 0.3 },
   statValue: { fontSize: 14, fontWeight: '800', color: colors.v6Text, marginTop: 2 },
+  recommendedText: { fontSize: 11, fontWeight: '700', color: colors.v6Muted, marginTop: spacing.sm },
+
+  defineGoalBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.v6TealSoft,
+    borderRadius: radius.md,
+    paddingVertical: 9,
+  },
+  defineGoalText: { fontSize: 12, fontWeight: '800', color: colors.v6Teal },
 
   cardFoot: { alignItems: 'flex-end', marginTop: spacing.sm + 2 },
   seeLink: { fontSize: 12, fontWeight: '800' },
