@@ -27,8 +27,30 @@ export const webColors = {
   sidebarTextMuted: brand.heroTextMuted,
   accountCardPalette,
 
-  // Géométrie Web dédiée (densité SaaS desktop, jamais un agrandissement mobile).
-  background: '#F2F1ED',
+  // Reset visuel — la palette "vivante" (D-Penses+ v6, déjà utilisée côté
+  // mobile) est désormais aussi disponible côté Web : jusqu'ici webTheme ne
+  // reprenait que navy/vert/rouge/ambre neutres, jamais teal/violet/or ni les
+  // variantes "soft" — d'où un portail perçu comme plus pâle/administratif
+  // que le mobile alors que la charte existait déjà.
+  navy: brand.v6Navy,
+  blue: brand.v6Blue,
+  blueSoft: brand.v6BlueSoft,
+  teal: brand.v6Teal,
+  tealSoft: brand.v6TealSoft,
+  amber: brand.v6Amber,
+  amberSoft: brand.v6AmberSoft,
+  red: brand.v6Red,
+  redSoft: brand.v6RedSoft,
+  purple: brand.v6Purple,
+  purpleSoft: brand.v6PurpleSoft,
+  gold: brand.v6Gold,
+  redOnDark: brand.v6RedOnDark,
+  tealOnDark: brand.v6TealOnDark,
+
+  // Géométrie Web dédiée (densité SaaS desktop, jamais un agrandissement
+  // mobile) — fond légèrement plus soutenu que l'ancien #F2F1ED (toujours issu
+  // de la même famille neutre, pas une couleur choisie arbitrairement).
+  background: '#EFEDE7',
   surface: '#FFFFFF',
   surfaceMuted: '#F7F6F3',
   surfaceActive: '#EEF0F3',

@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
+import { cached } from '../../state/cache';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
 import { useTopInset } from '../../ui/useTopInset';
 import { useBottomInset } from '../../ui/useBottomInset';
@@ -10,12 +11,15 @@ import { formatDh } from '../../ui/formatMoney';
 import { computePocketCardView, computeProvisionCardView, toNum } from './envelopesLogic';
 
 /**
- * Refonte maquette V6B §6 — version COMPACTE de l'onglet Enveloppes (jamais de
- * grand donut/anneau ici, réservé à l'écran Plan financier). Combine les 2
- * logiques distinctes (§7) sans les confondre : SavingsPocket = "enveloppe
- * permanente" (objectif/mensualité libres), Provision = "plan à échéances"
- * (recalcul dynamique, cf. envelopesLogic.computeProvisionCardView) — plus le
- * résumé Santé/Mutuelle (§10), jamais un revenu projeté avant clôture.
+ * Enveloppes — combine les 2 logiques distinctes sans les confondre :
+ * SavingsPocket = "enveloppe permanente" (objectif/mensualité libres),
+ * Provision = "plan à échéances" (recalcul dynamique) — plus le résumé
+ * Santé/Mutuelle, jamais un revenu projeté avant clôture. Reset visuel :
+ * accent bleu (plans à échéances) / teal (réserves permanentes) réellement
+ * porté par la carte (bandeau + badge), jamais confiné à la seule barre de
+ * progression comme avant. `cached()` évite de refetcher à chaque focus ;
+ * le calcul de suffisance par provision reste parallélisé (Promise.all,
+ * déjà correct ici avant cette passe).
  */
 export function EnvelopesScreen() {
   const navigation = useNavigation<any>();
@@ -28,19 +32,22 @@ export function EnvelopesScreen() {
   const [provisionCards, setProvisionCards] = useState<Array<{ provision: any; sufficiency: any }>>([]);
   const [claimsSummary, setClaimsSummary] = useState<{ pendingCount: number; totalEngaged: number; totalReimbursed: number } | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     setLoading(true);
     try {
       const [accounts, pocketList, provisionList, claims] = await Promise.all([
-        api.listAccounts(),
-        api.listPockets(),
-        api.listProvisions(),
-        api.listMedicalClaims(),
+        cached('accounts', () => api.listAccounts(), undefined, force),
+        cached('pockets', () => api.listPockets(), undefined, force),
+        cached('provisions', () => api.listProvisions(), undefined, force),
+        cached('medicalClaims', () => api.listMedicalClaims(), undefined, force),
       ]);
       setAccountNameById(Object.fromEntries(accounts.map((a: any) => [a.id, a.name])));
       setPockets(pocketList);
       const withSufficiency = await Promise.all(
-        provisionList.map(async (p: any) => ({ provision: p, sufficiency: await api.getProvisionSufficiency(p.id) })),
+        provisionList.map(async (p: any) => ({
+          provision: p,
+          sufficiency: await cached(`provisionSufficiency:${p.id}`, () => api.getProvisionSufficiency(p.id), undefined, force),
+        })),
       );
       setProvisionCards(withSufficiency);
       setClaimsSummary(claims.summary);
@@ -61,15 +68,15 @@ export function EnvelopesScreen() {
     <ScrollView
       style={styles.container}
       contentContainerStyle={{ paddingTop: top, paddingBottom: bottom, paddingHorizontal: spacing.lg }}
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
+      refreshControl={<RefreshControl refreshing={loading} onRefresh={() => load(true)} />}
     >
       <View style={styles.headerRow}>
         <View>
           <Text style={styles.pageTitle}>Enveloppes</Text>
           <Text style={styles.pageSubtitle}>Réserves et plans financiers.</Text>
         </View>
-        <TouchableOpacity testID="envelopes-add" onPress={() => navigation.navigate('CreatePocket')}>
-          <Text style={styles.headerAction}>Ajouter</Text>
+        <TouchableOpacity testID="envelopes-add" style={styles.headerActionButton} onPress={() => navigation.navigate('CreatePocket')}>
+          <Text style={styles.headerActionButtonText}>＋ Ajouter</Text>
         </TouchableOpacity>
       </View>
 
@@ -84,6 +91,7 @@ export function EnvelopesScreen() {
               style={[styles.card, cardWidthStyle]}
               onPress={() => navigation.navigate('EnvelopeDetail', { kind: 'provision', id: provision.id })}
             >
+              <View style={[styles.cardAccent, { backgroundColor: colors.v6Blue }]} />
               <View style={styles.cardHead}>
                 <View style={styles.cardHeadLeft}>
                   <Text style={styles.cardTitle}>{provision.name}</Text>
@@ -92,8 +100,8 @@ export function EnvelopesScreen() {
                       (concept désormais distinct, cf. Plans financiers). */}
                   <Text style={styles.cardSubtitle}>{accountName ? `${accountName} • ` : ''}Réserve à échéances</Text>
                 </View>
-                <View style={styles.cardRight}>
-                  <Text style={styles.cardRightValue}>{view.percent}%</Text>
+                <View style={[styles.cardRight, { backgroundColor: colors.v6BlueSoft }]}>
+                  <Text style={[styles.cardRightValue, { color: colors.v6Blue }]}>{view.percent}%</Text>
                   <Text style={styles.cardRightLabel}>constitué</Text>
                 </View>
               </View>
@@ -134,13 +142,14 @@ export function EnvelopesScreen() {
               style={[styles.card, cardWidthStyle]}
               onPress={() => navigation.navigate('EnvelopeDetail', { kind: 'savings_pocket', id: pocket.id })}
             >
+              <View style={[styles.cardAccent, { backgroundColor: colors.v6Teal }]} />
               <View style={styles.cardHead}>
                 <View style={styles.cardHeadLeft}>
                   <Text style={styles.cardTitle}>{pocket.name}</Text>
                   <Text style={styles.cardSubtitle}>{accountName ? `${accountName} • ` : ''}Réserve permanente</Text>
                 </View>
-                <View style={styles.cardRight}>
-                  <Text style={styles.cardRightValue}>{view.percent}%</Text>
+                <View style={[styles.cardRight, { backgroundColor: colors.v6TealSoft }]}>
+                  <Text style={[styles.cardRightValue, { color: colors.v6Teal }]}>{view.percent}%</Text>
                   <Text style={styles.cardRightLabel}>{view.status === 'sans_objectif' ? '' : 'objectif'}</Text>
                 </View>
               </View>
@@ -168,7 +177,6 @@ export function EnvelopesScreen() {
             </TouchableOpacity>
           );
         })}
-
       </View>
 
       {/* Convergence V6 §11 — Santé/Mutuelle n'est JAMAIS l'enveloppe principale
@@ -208,7 +216,8 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: spacing.md },
   pageTitle: { fontSize: 26, fontWeight: '800', letterSpacing: -0.7, color: colors.v6Text },
   pageSubtitle: { marginTop: 5, fontSize: 13, color: colors.v6Muted },
-  headerAction: { color: colors.v6Blue, fontWeight: '800' },
+  headerActionButton: { backgroundColor: colors.v6Navy, borderRadius: radius.pill, paddingHorizontal: spacing.md + 2, paddingVertical: spacing.sm + 2 },
+  headerActionButtonText: { color: '#fff', fontWeight: '800', fontSize: 13 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
   card: {
     backgroundColor: colors.v6Surface,
@@ -216,23 +225,25 @@ const styles = StyleSheet.create({
     borderColor: colors.v6Line,
     borderRadius: radius.xl,
     padding: spacing.md + 2,
+    paddingTop: spacing.md + 2 + 3,
     marginBottom: spacing.md,
+    overflow: 'hidden',
     ...elevation.card,
   },
+  cardAccent: { position: 'absolute', top: 0, left: 0, right: 0, height: 3 },
   cardHead: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm, alignItems: 'flex-start' },
   cardHeadLeft: { flexShrink: 1 },
   cardTitle: { fontSize: 15, fontWeight: '850' as any, color: colors.v6Text },
   cardSubtitle: { fontSize: 10, color: colors.v6Muted, marginTop: 3 },
-  cardRight: { alignItems: 'flex-end' },
-  cardRightValue: { fontSize: 14, fontWeight: '800', color: colors.v6Text },
-  cardRightLabel: { fontSize: 10, color: colors.v6Muted, marginTop: 2 },
+  cardRight: { alignItems: 'center', borderRadius: radius.md, paddingHorizontal: spacing.sm, paddingVertical: 4 },
+  cardRightValue: { fontSize: 14, fontWeight: '800' },
+  cardRightLabel: { fontSize: 9, color: colors.v6Muted, marginTop: 1 },
   progressTrack: { marginTop: spacing.sm + 4, height: 8, borderRadius: 999, backgroundColor: colors.v6SurfaceSoft, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 999 },
   metricsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs + 2, marginTop: spacing.sm + 4 },
   metric: { flexBasis: '47%', flexGrow: 1, backgroundColor: colors.v6Surface, borderWidth: 1, borderColor: colors.v6Line, borderRadius: radius.md, padding: spacing.sm + 2 },
   metricLabel: { fontSize: 10, color: colors.v6Muted },
   metricValue: { fontSize: 13, fontWeight: '700', color: colors.v6Text, marginTop: 4 },
-  note: { marginTop: spacing.sm + 2, padding: spacing.sm + 3, borderRadius: radius.md, backgroundColor: colors.v6SurfaceSoft, color: '#5E6C7F', fontSize: 11 },
   mutuelleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -249,11 +260,11 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: colors.v6Gold + '22',
+    backgroundColor: colors.v6AmberSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  mutuelleIconText: { fontSize: 16, fontWeight: '800', color: colors.v6Gold },
+  mutuelleIconText: { fontSize: 16, fontWeight: '800', color: colors.v6Amber },
   mutuelleTextCol: { flex: 1 },
   mutuelleTitle: { fontSize: 13, fontWeight: '700', color: colors.v6Text },
   mutuelleSubtitle: { fontSize: 11, color: colors.v6Muted, marginTop: 2 },

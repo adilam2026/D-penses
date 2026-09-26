@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
 import { HomeScreen } from '../HomeScreen';
 import * as api from '../../api/client';
+import { clearCache } from '../../state/cache';
 
 /**
  * Refonte maquette V6B §3 — Accueil centré sur les comptes (jamais de
@@ -57,6 +58,7 @@ function account(overrides: Partial<api.AccountApi>): api.AccountApi {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  clearCache();
   mockedApi.listAccounts.mockResolvedValue([]);
   mockedApi.listOpenDeadlines.mockResolvedValue([]);
   mockedApi.listProvisions.mockResolvedValue([]);

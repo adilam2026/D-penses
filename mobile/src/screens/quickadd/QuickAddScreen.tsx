@@ -22,6 +22,7 @@ import { FormField } from '../../ui/FormField';
 import { DateField } from '../../ui/DateField';
 import { frequencyOptions } from '../../ui/frequency';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
+import { useResponsiveLayout } from '../../ui/useResponsiveLayout';
 
 type Mode = 'depense' | 'revenu' | 'paiement' | 'transfert';
 
@@ -96,6 +97,8 @@ export function QuickAddScreen() {
   const bottomInset = useBottomInset();
   const topInset = useTopInset();
   const { scrollRef, handleFocus } = useKeyboardAwareScroll();
+  const { deviceClass } = useResponsiveLayout();
+  const wide = deviceClass !== 'mobile';
   // Vague 3 §3 — la bottom sheet "+" présélectionne toujours l'action (Dépense/
   // Revenu/Transfert) ; sans paramètre explicite (ex. accès direct pour "Payer
   // une échéance"), comportement inchangé (Dépense, sélecteur de mode visible).
@@ -420,7 +423,11 @@ export function QuickAddScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingTop: topInset, paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={[styles.scroll, wide && styles.scrollWide, { paddingTop: topInset, paddingBottom: bottomInset }]}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={styles.title}>
           {presetBudget ? 'Ajouter une dépense' : modeLocked ? MODE_LABEL[mode].replace(/^\+ /, '') : 'Ajouter'}
         </Text>
@@ -840,8 +847,12 @@ export function QuickAddScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: colors.v6Bg },
   scroll: { padding: spacing.xxl },
+  // §15 — desktop : formulaire centré à largeur raisonnable au lieu de
+  // s'étirer sur toute la page (plus de "grande page vide avec un petit
+  // formulaire en haut à gauche"), jamais des champs de 1200px de large.
+  scrollWide: { maxWidth: 560, width: '100%', alignSelf: 'center', paddingTop: spacing.xxl + spacing.md },
   mutuelleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -883,7 +894,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
     marginBottom: spacing.sm,
   },
-  modeChipActive: { backgroundColor: colors.primary },
+  modeChipActive: { backgroundColor: colors.v6Navy },
   modeChipText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
   modeChipTextActive: { color: colors.textOnPrimary },
   sectionLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm, marginTop: 4 },
@@ -914,7 +925,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipActive: { backgroundColor: colors.v6Navy, borderColor: colors.v6Navy },
   chipText: { fontSize: 13, color: colors.textPrimary },
   chipTextActive: { color: colors.textOnPrimary, fontWeight: '600' },
   chipAdd: {
@@ -932,7 +943,7 @@ const styles = StyleSheet.create({
   addLink: { color: colors.success, fontSize: 13, fontWeight: '600', marginBottom: spacing.md },
   inlineAddRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
   inlineAddInput: { flex: 1, marginRight: spacing.sm, marginBottom: 0 },
-  inlineAddButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12, justifyContent: 'center' },
+  inlineAddButton: { backgroundColor: colors.v6Navy, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12, justifyContent: 'center' },
   inlineAddButtonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 13 },
   hint: { fontSize: 12, color: colors.textSecondary, marginBottom: spacing.md, fontStyle: 'italic' },
   presetBudgetBanner: {
@@ -945,7 +956,7 @@ const styles = StyleSheet.create({
   },
   presetBudgetLabel: { fontSize: 11, color: colors.textSecondary },
   presetBudgetValue: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginTop: 2 },
-  button: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.sm },
+  button: { backgroundColor: colors.v6Navy, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.sm },
   buttonText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 15 },
   cancel: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.lg, fontSize: 13 },
   error: { color: colors.danger, fontSize: 13, marginBottom: spacing.sm },

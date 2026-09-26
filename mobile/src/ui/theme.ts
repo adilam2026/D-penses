@@ -78,7 +78,14 @@ export const colors = {
   v6Red: '#B94B4B',
   v6RedSoft: '#FFF1F1',
   v6Purple: '#8A68D6',
+  v6PurpleSoft: '#F2EEFB',
   v6Gold: '#D49B37',
+
+  // Variantes claires (fond navy uniquement, ex. ligne Balance du Planning) —
+  // v6Red/v6Teal seuls seraient trop peu contrastés sur v6Navy (deux teintes
+  // sombres proches). Jamais utilisées sur fond clair.
+  v6RedOnDark: '#FF9B8A',
+  v6TealOnDark: '#8EE6C4',
 } as const;
 
 /**

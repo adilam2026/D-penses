@@ -3,6 +3,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as api from '../../api/client';
+import { cached } from '../../state/cache';
 import { colors, spacing } from '../../ui/theme';
 import { useTopInset } from '../../ui/useTopInset';
 import { useBottomInset } from '../../ui/useBottomInset';
@@ -13,6 +14,8 @@ import {
   groupRowsByPlan,
   isCurrentMonth,
   SECTION_LABEL,
+  SECTION_ORDER,
+  PlanningSection,
   PlanningRow,
   PlanningPlanTotalRow,
   PlanningProvision,
@@ -24,18 +27,25 @@ const MONTH_COL_WIDTH = 110;
 const ROW_HEIGHT = 40;
 
 type GridLine =
-  | { kind: 'section'; label: string }
+  | { kind: 'section'; section: PlanningSection; label: string }
   | { kind: 'plan'; row: PlanningPlanTotalRow }
   | { kind: 'child'; row: PlanningRow }
-  | { kind: 'row'; row: PlanningRow };
+  | { kind: 'row'; row: PlanningRow }
+  | { kind: 'total'; section: PlanningSection; label: string; valuesByMonth: Record<string, number> }
+  | { kind: 'balance'; label: string; valuesByMonth: Record<string, number> };
 
-// Convergence V6 §6 — VISIBLE MONTH COUNT != DATA HORIZON. "2 à 3 mois visibles
-// sur téléphone" décrivait le rendu (colonnes de largeur fixe + défilement
-// horizontal, déjà géré par la ScrollView ci-dessous), jamais le nombre de
-// mois RÉCUPÉRÉS : l'horizon de données reste au minimum 12 mois glissants
-// sur toutes les tailles d'écran. Un utilisateur qui veut voir plus loin
-// avance/recule par fenêtre de 12 mois (boutons ci-dessous, via le paramètre
-// `at`) plutôt que de charger une infinité de colonnes d'un coup.
+/** Accent par section (§11 — "headers colorés très discrètement... Revenus
+ * identifiable, Dépenses identifiable, Épargne identifiable") — jamais un
+ * remplacement des couleurs de marque, seulement leur réutilisation ciblée
+ * (teal=revenus, rouge très adouci=charges, ambre=enveloppes, violet=
+ * exceptionnel), déjà utilisées ailleurs dans l'app pour ces mêmes notions. */
+const SECTION_ACCENT: Record<PlanningSection, { solid: string; soft: string }> = {
+  revenus: { solid: colors.v6Teal, soft: colors.v6TealSoft },
+  charges: { solid: colors.v6Red, soft: colors.v6RedSoft },
+  enveloppes: { solid: colors.v6Amber, soft: colors.v6AmberSoft },
+  exceptionnel: { solid: colors.v6Purple, soft: colors.v6PurpleSoft },
+};
+
 const DATA_HORIZON_MONTHS = 12;
 
 function shiftMonths(iso: string, months: number): string {
@@ -48,18 +58,18 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function emptyTotals(monthKeys: string[]): Record<string, number> {
+  return Object.fromEntries(monthKeys.map((k) => [k, 0]));
+}
+
 /**
- * Refonte maquette V6B §5 — Planning : véritable tableau façon Excel, 1re
- * colonne figée (libellés de série), défilement HORIZONTAL pour les mois
- * (largeur de colonne fixe : ~2-3 visibles en portrait mobile, davantage en
- * paysage/tablette/web par simple effet de largeur d'écran disponible —
- * jamais un carrousel mono-mois). Les montants proviennent exclusivement de
- * GET /projection/monthly (déjà calculé côté backend), jamais recalculés ici,
- * plus le calendrier mensuel réel de chaque plan financier (GET
- * /provisions/:id/sufficiency → monthlyCalendar, section ENVELOPPES). Les 2
- * colonnes (libellés figés / mois défilants) sont construites à partir de la
- * MÊME liste `lines`, ligne par ligne, pour garantir leur alignement vertical
- * sans dépendre d'un ajustement de marge fragile.
+ * Planning — véritable tableau façon Excel, 1re colonne figée (libellés de
+ * série), défilement HORIZONTAL pour les mois. Les montants proviennent
+ * exclusivement de GET /projection/monthly (déjà calculé côté backend,
+ * jamais recalculé ici), plus le calendrier mensuel réel de chaque plan
+ * financier. Reset visuel (§11) : accent couleur par section, mois courant
+ * mis en évidence, ligne Total par section (somme d'affichage des lignes déjà
+ * montrées — aucun nouveau calcul métier), Balance verte/rouge selon signe.
  */
 export function PlanningScreen() {
   const top = useTopInset();
@@ -69,22 +79,21 @@ export function PlanningScreen() {
   const [data, setData] = useState<api.MonthlyProjectionApi | null>(null);
   const [provisions, setProvisions] = useState<PlanningProvision[]>([]);
   const [financialPlans, setFinancialPlans] = useState<FinancialPlanRef[]>([]);
-  // Convergence V6 §8 — plans financiers repliés par défaut ([+] Scolarité
-  // 27 145 DH ... seul le total est visible tant que non déplié).
+  // Convergence V6 §8 — plans financiers repliés par défaut.
   const [expandedPlans, setExpandedPlans] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const [res, provisionList, plans] = await Promise.all([
-        api.getMonthlyProjection({ at: windowStart, horizonMonths: DATA_HORIZON_MONTHS }),
-        api.listProvisions(),
-        api.listFinancialPlans(),
+        cached(`monthlyProjection:${windowStart}`, () => api.getMonthlyProjection({ at: windowStart, horizonMonths: DATA_HORIZON_MONTHS })),
+        cached('provisions', () => api.listProvisions()),
+        cached('financialPlans', () => api.listFinancialPlans()),
       ]);
       setData(res);
       const withCalendar = await Promise.all(
         provisionList.map(async (p: any) => {
-          const sufficiency = await api.getProvisionSufficiency(p.id);
+          const sufficiency = await cached(`provisionSufficiency:${p.id}`, () => api.getProvisionSufficiency(p.id));
           return { id: p.id, name: p.name, monthlyCalendar: sufficiency.monthlyCalendar ?? [] };
         }),
       );
@@ -116,11 +125,17 @@ export function PlanningScreen() {
     });
   }
 
-  const lines: GridLine[] = useMemo(() => {
+  const monthKeys = useMemo(() => (data ? data.months.map((m) => m.month) : []), [data]);
+
+  const { lines, balanceValues } = useMemo(() => {
     const out: GridLine[] = [];
+    const sectionTotals: Partial<Record<PlanningSection, Record<string, number>>> = {};
+
     for (const group of groups) {
-      out.push({ kind: 'section', label: SECTION_LABEL[group.section] });
+      out.push({ kind: 'section', section: group.section, label: SECTION_LABEL[group.section] });
+      const totals = emptyTotals(monthKeys);
       for (const item of group.items) {
+        for (const k of monthKeys) totals[k] += item.row.valuesByMonth[k] ?? 0;
         if (item.kind === 'plan') {
           out.push({ kind: 'plan', row: item.row });
           if (expandedPlans.has(item.row.financialPlanId)) {
@@ -130,9 +145,23 @@ export function PlanningScreen() {
           out.push({ kind: 'row', row: item.row });
         }
       }
+      sectionTotals[group.section] = totals;
+      out.push({ kind: 'total', section: group.section, label: `Total ${SECTION_LABEL[group.section].toLowerCase()}`, valuesByMonth: totals });
     }
-    return out;
-  }, [groups, expandedPlans]);
+
+    // Balance = revenus - (charges + enveloppes + exceptionnel) — somme
+    // d'affichage des totaux de section déjà calculés ci-dessus, jamais un
+    // second moteur de calcul.
+    const balance = emptyTotals(monthKeys);
+    for (const k of monthKeys) {
+      const revenus = sectionTotals.revenus?.[k] ?? 0;
+      const sorties = SECTION_ORDER.filter((s) => s !== 'revenus').reduce((sum, s) => sum + (sectionTotals[s]?.[k] ?? 0), 0);
+      balance[k] = revenus - sorties;
+    }
+    if (groups.length > 0) out.push({ kind: 'balance', label: 'Balance', valuesByMonth: balance });
+
+    return { lines: out, balanceValues: balance };
+  }, [groups, expandedPlans, monthKeys]);
 
   if (loading && !data) {
     return (
@@ -148,10 +177,6 @@ export function PlanningScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Planning</Text>
         <View style={styles.windowRow}>
-          {/* Convergence V6 §7 — wording explicite (jamais "‹ 12 mois"/"12 mois
-              ›", qui ne communiquait pas la navigation précédente/suivante) :
-              "Précédent"/"Suivant" + la période affichée au centre, compact
-              pour ne jamais surcharger l'écran mobile. */}
           <TouchableOpacity
             testID="planning-window-prev"
             style={styles.windowButton}
@@ -178,37 +203,59 @@ export function PlanningScreen() {
         <View style={styles.gridRow}>
           <View style={{ width: LABEL_COL_WIDTH }}>
             <View style={[styles.cell, styles.cornerCell]} />
-            {lines.map((line, idx) => (
-              <View key={idx} style={[styles.cell, line.kind === 'section' && styles.sectionCell]}>
-                {line.kind === 'section' && <Text style={styles.sectionText}>{line.label.toUpperCase()}</Text>}
-                {line.kind === 'row' && (
-                  <Text style={styles.rowLabel} numberOfLines={1}>
-                    {line.row.label}
-                  </Text>
-                )}
-                {line.kind === 'plan' && (
-                  <TouchableOpacity
-                    testID={`planning-plan-toggle-${line.row.financialPlanId}`}
-                    style={styles.planLabelRow}
-                    onPress={() => togglePlan(line.row.financialPlanId)}
-                  >
-                    <Ionicons
-                      name={expandedPlans.has(line.row.financialPlanId) ? 'remove-circle-outline' : 'add-circle-outline'}
-                      size={16}
-                      color={colors.v6Text}
-                    />
-                    <Text style={styles.rowLabelPlan} numberOfLines={1}>
+            {lines.map((line, idx) => {
+              const accent = line.kind === 'section' || line.kind === 'total' ? SECTION_ACCENT[line.section] : null;
+              return (
+                <View
+                  key={idx}
+                  style={[
+                    styles.cell,
+                    line.kind === 'section' && [styles.sectionCell, accent && { backgroundColor: accent.soft }],
+                    line.kind === 'total' && [styles.totalCell, accent && { backgroundColor: accent.soft }],
+                    line.kind === 'balance' && styles.balanceLabelCell,
+                  ]}
+                >
+                  {line.kind === 'section' && (
+                    <View style={styles.sectionLabelRow}>
+                      <View style={[styles.sectionDot, accent && { backgroundColor: accent.solid }]} />
+                      <Text style={[styles.sectionText, accent && { color: accent.solid }]}>{line.label.toUpperCase()}</Text>
+                    </View>
+                  )}
+                  {line.kind === 'row' && (
+                    <Text style={styles.rowLabel} numberOfLines={1}>
                       {line.row.label}
                     </Text>
-                  </TouchableOpacity>
-                )}
-                {line.kind === 'child' && (
-                  <Text style={styles.rowLabelChild} numberOfLines={1}>
-                    {line.row.label}
-                  </Text>
-                )}
-              </View>
-            ))}
+                  )}
+                  {line.kind === 'plan' && (
+                    <TouchableOpacity
+                      testID={`planning-plan-toggle-${line.row.financialPlanId}`}
+                      style={styles.planLabelRow}
+                      onPress={() => togglePlan(line.row.financialPlanId)}
+                    >
+                      <Ionicons
+                        name={expandedPlans.has(line.row.financialPlanId) ? 'remove-circle-outline' : 'add-circle-outline'}
+                        size={16}
+                        color={colors.v6Text}
+                      />
+                      <Text style={styles.rowLabelPlan} numberOfLines={1}>
+                        {line.row.label}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  {line.kind === 'child' && (
+                    <Text style={styles.rowLabelChild} numberOfLines={1}>
+                      {line.row.label}
+                    </Text>
+                  )}
+                  {line.kind === 'total' && (
+                    <Text style={[styles.totalLabel, accent && { color: accent.solid }]} numberOfLines={1}>
+                      {line.label}
+                    </Text>
+                  )}
+                  {line.kind === 'balance' && <Text style={styles.balanceLabel}>{line.label}</Text>}
+                </View>
+              );
+            })}
           </View>
 
           <ScrollView horizontal showsHorizontalScrollIndicator testID="planning-months-scroll">
@@ -226,26 +273,49 @@ export function PlanningScreen() {
                 ))}
               </View>
 
-              {lines.map((line, idx) => (
-                <View key={idx} style={styles.rowLine}>
-                  {data.months.map((m) => {
-                    if (line.kind === 'section') {
+              {lines.map((line, idx) => {
+                const accent = line.kind === 'section' || line.kind === 'total' ? SECTION_ACCENT[line.section] : null;
+                return (
+                  <View key={idx} style={styles.rowLine}>
+                    {data.months.map((m) => {
+                      const current = isCurrentMonth(m.month);
+                      if (line.kind === 'section') {
+                        return (
+                          <View
+                            key={m.month}
+                            style={[styles.cell, styles.sectionCell, accent && { backgroundColor: accent.soft }, { width: MONTH_COL_WIDTH }, current && styles.currentMonthCol]}
+                          />
+                        );
+                      }
+                      if (line.kind === 'total') {
+                        const value = line.valuesByMonth[m.month];
+                        return (
+                          <View
+                            key={m.month}
+                            style={[styles.cell, styles.totalCell, accent && { backgroundColor: accent.soft }, { width: MONTH_COL_WIDTH }, current && styles.currentMonthCol]}
+                          >
+                            <Text style={[styles.totalValueText, accent && { color: accent.solid }]}>{formatDh(value)}</Text>
+                          </View>
+                        );
+                      }
+                      if (line.kind === 'balance') {
+                        const value = line.valuesByMonth[m.month];
+                        return (
+                          <View key={m.month} style={[styles.cell, styles.balanceCell, { width: MONTH_COL_WIDTH }, current && styles.balanceCurrentCol]}>
+                            <Text style={[styles.balanceValueText, { color: value < 0 ? colors.v6RedOnDark : colors.v6TealOnDark }]}>{formatDh(value)}</Text>
+                          </View>
+                        );
+                      }
+                      const value = line.row.valuesByMonth[m.month];
                       return (
-                        <View
-                          key={m.month}
-                          style={[styles.cell, styles.sectionCell, { width: MONTH_COL_WIDTH }, isCurrentMonth(m.month) && styles.currentMonthCol]}
-                        />
+                        <View key={m.month} style={[styles.cell, { width: MONTH_COL_WIDTH }, current && styles.currentMonthCol]}>
+                          <Text style={styles.valueText}>{value != null ? formatDh(value) : '—'}</Text>
+                        </View>
                       );
-                    }
-                    const value = line.row.valuesByMonth[m.month];
-                    return (
-                      <View key={m.month} style={[styles.cell, { width: MONTH_COL_WIDTH }, isCurrentMonth(m.month) && styles.currentMonthCol]}>
-                        <Text style={styles.valueText}>{value != null ? formatDh(value) : '—'}</Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              ))}
+                    })}
+                  </View>
+                );
+              })}
             </View>
           </ScrollView>
         </View>
@@ -275,11 +345,21 @@ const styles = StyleSheet.create({
   },
   cornerCell: { backgroundColor: colors.v6SurfaceSoft },
   sectionCell: { backgroundColor: colors.v6SurfaceSoft },
+  sectionLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  sectionDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.v6Muted },
   sectionText: { fontSize: 10, fontWeight: '850' as any, color: colors.v6Muted, letterSpacing: 0.4 },
   rowLabel: { fontSize: 12, color: colors.v6Text, fontWeight: '600' },
   planLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   rowLabelPlan: { fontSize: 12, color: colors.v6Text, fontWeight: '700', flexShrink: 1 },
   rowLabelChild: { fontSize: 11, color: colors.v6Muted, fontWeight: '500', paddingLeft: 20 },
+  totalCell: { backgroundColor: colors.v6SurfaceSoft, borderTopWidth: 1, borderTopColor: colors.v6Line },
+  totalLabel: { fontSize: 11, fontWeight: '800', color: colors.v6Text },
+  totalValueText: { fontSize: 12, fontWeight: '800', textAlign: 'right', color: colors.v6Text },
+  balanceLabelCell: { backgroundColor: colors.v6Navy },
+  balanceLabel: { fontSize: 12, fontWeight: '800', color: '#fff' },
+  balanceCell: { backgroundColor: colors.v6Navy },
+  balanceCurrentCol: { backgroundColor: '#1E4363' },
+  balanceValueText: { fontSize: 12, fontWeight: '850' as any, textAlign: 'right' },
   monthHeaderCell: { backgroundColor: colors.v6SurfaceSoft, alignItems: 'center' },
   monthHeaderText: { fontSize: 11, fontWeight: '800', color: colors.v6Muted },
   currentMonthHeader: { backgroundColor: colors.v6BlueSoft },
