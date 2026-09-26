@@ -18,6 +18,11 @@ interface Category {
   kind: 'income' | 'expense' | 'both';
 }
 
+interface FinancialPlanOption {
+  id: string;
+  label: string;
+}
+
 const RECURRENCE_VALUES = ['hebdomadaire', 'mensuel', 'trimestriel', 'semestriel', 'annuel', 'ponctuel'] as const;
 const AMOUNT_STATUS_LABEL: Record<string, string> = { estime: 'Estimé', confirme: 'Confirmé', inconnu: 'Montant inconnu' };
 
@@ -45,6 +50,9 @@ export function ChargesScreen() {
   const [amount, setAmount] = useState('');
   const [amountStatus, setAmountStatus] = useState<'estime' | 'confirme' | 'inconnu'>('estime');
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [financialPlans, setFinancialPlans] = useState<FinancialPlanOption[]>([]);
+  // Convergence V6 §9 — "Plan financier : Aucun / Scolarité / Vacances / etc."
+  const [financialPlanId, setFinancialPlanId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,6 +75,7 @@ export function ChargesScreen() {
 
   useEffect(() => {
     api.listCategories().then((list: Category[]) => setCategories(list.filter((c) => c.kind === 'expense' || c.kind === 'both')));
+    api.listFinancialPlans().then((list: FinancialPlanOption[]) => setFinancialPlans(list));
   }, []);
 
   async function onCreate() {
@@ -87,6 +96,7 @@ export function ChargesScreen() {
         recurrenceRule: recurrence === 'ponctuel' ? undefined : recurrence,
         recurrenceAnchorDate: recurrence === 'ponctuel' ? undefined : dueDate,
         categoryId: categoryId ?? undefined,
+        financialPlanId: financialPlanId ?? undefined,
       });
       await api.createDeadline(plan.id, {
         dueDate,
@@ -99,6 +109,7 @@ export function ChargesScreen() {
       setAmount('');
       setAmountStatus('estime');
       setCategoryId(null);
+      setFinancialPlanId(null);
       await load();
     } catch (err) {
       setError(err instanceof api.ApiError ? err.message : 'Création impossible');
@@ -201,6 +212,17 @@ export function ChargesScreen() {
           value={categoryId}
           options={categories.map((c) => ({ value: c.id, label: c.name }))}
           onChange={setCategoryId}
+        />
+      )}
+
+      {financialPlans.length > 0 && (
+        <Select
+          testID="web-charge-financial-plan"
+          label="Plan financier (facultatif)"
+          placeholder="Aucun"
+          value={financialPlanId ?? ''}
+          onChange={(v) => setFinancialPlanId(v || null)}
+          options={[{ value: '', label: 'Aucun' }, ...financialPlans.map((p) => ({ value: p.id, label: p.label }))]}
         />
       )}
 
