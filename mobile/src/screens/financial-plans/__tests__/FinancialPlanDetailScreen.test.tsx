@@ -60,6 +60,17 @@ const PLAN = {
     { id: 'd2', chargePlanId: 'cp-resto', dueDate: '2026-09-15', chargePlanLabel: 'Restauration T1', amountCurrent: 1950, amountStatus: 'confirme' as const },
     { id: 'd3', chargePlanId: 'cp-uniforme', dueDate: '2026-09-20', chargePlanLabel: 'Uniforme', amountCurrent: 3395, amountStatus: 'confirme' as const },
   ],
+  // Correction modèle fonctionnel §6 — champs déjà calculés par
+  // financial-plans.service.ts#detailOnTx, désormais réellement affichés
+  // (Besoin/Disponible réel/Reste à constituer/Prochaine échéance).
+  knownPlanCost: 27145,
+  remainingDue: 27145,
+  provisionCoverage: 0,
+  remainingToFund: 27145,
+  tauxCouverture: 0,
+  nextDeadlineDate: '2026-09-15',
+  hasOverdue: false,
+  chargeCount: 3,
 };
 
 beforeEach(() => {
@@ -67,18 +78,33 @@ beforeEach(() => {
   mockedApi.getFinancialPlan.mockResolvedValue(PLAN);
 });
 
-it('affiche le nom du plan et la liste des charges (libellé, montant, date) — jamais de budget/couverture/taux', async () => {
+it('affiche le nom du plan, masque les charges détaillées par défaut, les révèle au clic — jamais de budget/options envisagées (ancien moteur)', async () => {
   await render(<FinancialPlanDetailScreen />);
   await waitFor(() => screen.getByText('Scolarité 2026-2027'));
+
+  // §6 — charges détaillées masquées par défaut.
+  expect(screen.queryByTestId('plan-charge-d1')).toBeNull();
+  expect(screen.getByText('Voir le détail (3 charges)')).toBeTruthy();
+
+  await fireEvent.press(screen.getByTestId('plan-toggle-detail'));
 
   expect(screen.getByTestId('plan-charge-d1')).toBeTruthy();
   expect(screen.getByText('21 800 DH')).toBeTruthy();
   expect(screen.getByText('1 950 DH')).toBeTruthy();
   expect(screen.getByText('3 395 DH')).toBeTruthy();
   expect(screen.queryByText(/Budget connu/)).toBeNull();
-  expect(screen.queryByText(/Reste à financer/)).toBeNull();
-  expect(screen.queryByText(/TAUX DE COUVERTURE/)).toBeNull();
   expect(screen.queryByText(/Options envisagées/)).toBeNull();
+});
+
+it('affiche la vue financière consolidée déjà calculée côté backend (Besoin/Disponible réel/Reste à constituer/Prochaine échéance)', async () => {
+  await render(<FinancialPlanDetailScreen />);
+  await waitFor(() => screen.getByText('Scolarité 2026-2027'));
+
+  expect(screen.getByTestId('plan-stats-card')).toBeTruthy();
+  expect(screen.getByText('Besoin')).toBeTruthy();
+  expect(screen.getByText('Disponible réel')).toBeTruthy();
+  expect(screen.getByText('Reste à constituer')).toBeTruthy();
+  expect(screen.getByText('Prochaine échéance')).toBeTruthy();
 });
 
 it('affiche le bouton "+ Ajouter une charge" qui ouvre le formulaire de création', async () => {

@@ -312,12 +312,22 @@ export function AccountDetailScreen() {
 
             {account.reservedByEnvelopes > 0 && (
               <View style={[styles.card, account.reservedByEnvelopes > account.soldeCourant && styles.cardWarning]}>
-                <Text style={styles.cardTitle}>Répartition — enveloppes localisées sur ce compte</Text>
+                {/* Correction modèle fonctionnel §1 — "Enveloppes" a disparu du
+                    vocabulaire utilisateur : ce sont des SOUS-COMPTES, une
+                    répartition virtuelle de ce compte (jamais une sortie
+                    d'argent). Chaque ligne est cliquable en un clic, jamais un
+                    texte statique (même principe qu'Accueil). */}
+                <Text style={styles.cardTitle}>Sous-comptes sur ce compte</Text>
                 {(account.envelopes ?? []).map((e) => (
-                  <View key={e.id} style={styles.envelopeRow}>
+                  <TouchableOpacity
+                    key={e.id}
+                    testID={`account-envelope-${e.id}`}
+                    style={styles.envelopeRow}
+                    onPress={() => navigation.navigate('EnvelopeDetail', { kind: e.kind, id: e.id })}
+                  >
                     <Text style={styles.envelopeName}>{e.name}</Text>
                     <Text style={styles.envelopeAmount}>{e.amount.toLocaleString('fr-FR')} DH</Text>
-                  </View>
+                  </TouchableOpacity>
                 ))}
                 <View style={styles.envelopeDivider} />
                 {account.reservedByEnvelopes > account.soldeCourant ? (

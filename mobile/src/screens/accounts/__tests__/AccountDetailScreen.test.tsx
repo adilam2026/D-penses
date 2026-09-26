@@ -194,6 +194,25 @@ it('corrections consolidées §7 — "+ Ajouter une transaction" navigue vers Qu
   expect(navigate).toHaveBeenCalledWith('QuickAdd', { mode: 'depense', accountId: 'acc1' });
 });
 
+it('correction modèle fonctionnel §1 — un sous-compte listé sur le compte est cliquable en un clic vers EnvelopeDetail, jamais un texte statique', async () => {
+  const navigate = jest.fn();
+  jest.spyOn(require('@react-navigation/native'), 'useNavigation').mockReturnValue({ navigate });
+  mockedApi.getAccount.mockResolvedValue({
+    ...ACTIVE_ACCOUNT,
+    reservedByEnvelopes: 500,
+    envelopes: [{ id: 'env1', kind: 'savings_pocket', name: 'Vacances', amount: 500, subtitle: 'reserve' }],
+  });
+  await render(<AccountDetailScreen />);
+  await waitFor(() => screen.getByTestId('account-envelope-env1'));
+
+  expect(screen.queryByText(/enveloppes localisées/i)).toBeNull();
+  expect(screen.getByText('Sous-comptes sur ce compte')).toBeTruthy();
+
+  await fireEvent.press(screen.getByTestId('account-envelope-env1'));
+
+  expect(navigate).toHaveBeenCalledWith('EnvelopeDetail', { kind: 'savings_pocket', id: 'env1' });
+});
+
 it('affiche le badge "Hors pilotage" pour un compte exclu', async () => {
   mockedApi.getAccount.mockResolvedValue({ ...ACTIVE_ACCOUNT, includeInOperationalTreasury: false });
   await render(<AccountDetailScreen />);

@@ -13,12 +13,16 @@ import { computePocketCardView, computeProvisionCardView, toNum } from './envelo
 type Kind = 'savings_pocket' | 'provision';
 
 /**
- * Refonte maquette V6B §7/§8 — détail d'une enveloppe. Pour un plan à échéances
- * (Provision), reproduit l'écran "Plan" de la maquette (anneau + métriques) —
- * le recalcul dynamique (§8) est déjà entièrement produit par
+ * Correction modèle fonctionnel §1/§8 — détail d'un SOUS-COMPTE. Un Provision
+ * (plan à échéances) est présenté à l'utilisateur comme "Plan financier"
+ * (jamais "Réserve à échéances", ancien vocabulaire) avec Besoin/Reste/
+ * Recommandé/Prochaine échéance — même modèle que la carte sous-compte
+ * (EnvelopesScreen). Un SavingsPocket sans objectif propose une action
+ * claire "Définir un objectif" (updatePocket), jamais un tiret muet. Le
+ * recalcul dynamique reste entièrement produit par
  * computeProvisionSufficiency côté backend (jamais dupliqué ici, uniquement
- * affiché). Pour une enveloppe permanente (SavingsPocket), permet un
- * versement réel direct (jamais une écriture planifiée silencieuse).
+ * affiché) ; le versement réel direct reste une écriture immédiate, jamais
+ * planifiée silencieusement.
  */
 export function EnvelopeDetailScreen() {
   const navigation = useNavigation<any>();
@@ -33,6 +37,9 @@ export function EnvelopeDetailScreen() {
   const [accountName, setAccountName] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [settingGoal, setSettingGoal] = useState(false);
+  const [goalAmount, setGoalAmount] = useState('');
+  const [savingGoal, setSavingGoal] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -81,6 +88,20 @@ export function EnvelopeDetailScreen() {
     }
   };
 
+  const onSaveGoal = async () => {
+    const numeric = Number(goalAmount.replace(',', '.'));
+    if (!numeric || numeric <= 0) return;
+    setSavingGoal(true);
+    try {
+      await api.updatePocket(id, { targetAmount: numeric });
+      setGoalAmount('');
+      setSettingGoal(false);
+      await load();
+    } finally {
+      setSavingGoal(false);
+    }
+  };
+
   if (loading && !pocket) {
     return (
       <View style={[styles.container, styles.center]}>
@@ -104,7 +125,17 @@ export function EnvelopeDetailScreen() {
       {kind === 'provision' ? (
         <ProvisionDetail pocket={pocket} sufficiency={sufficiency} accountName={accountName} />
       ) : (
-        <PocketDetail pocket={pocket} accountName={accountName} />
+        <PocketDetail
+          pocket={pocket}
+          accountName={accountName}
+          settingGoal={settingGoal}
+          goalAmount={goalAmount}
+          savingGoal={savingGoal}
+          onStartGoal={() => setSettingGoal(true)}
+          onChangeGoalAmount={setGoalAmount}
+          onSaveGoal={onSaveGoal}
+          onFocusGoalInput={handleFocus}
+        />
       )}
 
       <View style={styles.contributeCard} testID="envelope-contribute-card">
@@ -137,19 +168,21 @@ export function EnvelopeDetailScreen() {
 function ProvisionDetail({ pocket, sufficiency, accountName }: { pocket: any; sufficiency: any; accountName: string | null }) {
   if (!sufficiency) return null;
   const view = computeProvisionCardView(sufficiency);
-  const reste = view.hasOpenSteps ? Math.max(0, toNum(sufficiency.steps[0].cumulativeNeed) - toNum(sufficiency.currentAmount)) : 0;
+  const reste = view.hasOpenSteps ? Math.max(0, view.need - toNum(sufficiency.currentAmount)) : 0;
   return (
     <View>
       <Text style={styles.title}>{pocket.name}</Text>
-      {/* Convergence V6 §5 — jamais "Plan financier" pour une enveloppe. */}
-      <Text style={styles.subtitle}>{accountName ? `${accountName} • ` : ''}Réserve à échéances</Text>
+      {/* Correction modèle fonctionnel §8 — un Provision se présente à
+          l'utilisateur comme "Plan financier" (même vocabulaire que la
+          carte sous-compte d'EnvelopesScreen), jamais "Réserve à échéances". */}
+      <Text style={styles.subtitle}>{accountName ? `${accountName} • ` : ''}Plan financier</Text>
 
       {view.hasOpenSteps && (
         <View style={styles.headlineCard}>
           <View style={styles.headlineTop}>
             <View>
-              <Text style={styles.headlineLabel}>Échéance du {formatFullDate(view.nextDueDate!)}</Text>
-              <Text style={styles.headlineSub}>Objectif principal</Text>
+              <Text style={styles.headlineLabel}>Prochaine échéance</Text>
+              <Text style={styles.headlineSub}>{formatFullDate(view.nextDueDate!)}</Text>
             </View>
             <Text style={styles.headlineAmount}>{formatDh(view.nextAmount)}</Text>
           </View>
@@ -157,7 +190,9 @@ function ProvisionDetail({ pocket, sufficiency, accountName }: { pocket: any; su
             <Donut size={100} pct={view.percent} warn={view.percent < 50} />
             <View style={styles.ringMetrics}>
               <Metric label="Disponible" value={formatDh(toNum(sufficiency.currentAmount))} />
-              <Metric label="Reste" value={formatDh(reste)} />
+              <Metric label="Besoin" value={formatDh(view.need)} />
+              <Metric label="Reste à constituer" value={formatDh(reste)} />
+              {view.recommendedMonthly > 0 && <Metric label="Recommandé" value={`${formatDh(view.recommendedMonthly)}/mois`} />}
             </View>
           </View>
         </View>
@@ -188,23 +223,80 @@ function ProvisionDetail({ pocket, sufficiency, accountName }: { pocket: any; su
   );
 }
 
-function PocketDetail({ pocket, accountName }: { pocket: any; accountName: string | null }) {
+function PocketDetail({
+  pocket,
+  accountName,
+  settingGoal,
+  goalAmount,
+  savingGoal,
+  onStartGoal,
+  onChangeGoalAmount,
+  onSaveGoal,
+  onFocusGoalInput,
+}: {
+  pocket: any;
+  accountName: string | null;
+  settingGoal: boolean;
+  goalAmount: string;
+  savingGoal: boolean;
+  onStartGoal: () => void;
+  onChangeGoalAmount: (v: string) => void;
+  onSaveGoal: () => void;
+  onFocusGoalInput: (e: any) => void;
+}) {
   const view = computePocketCardView(pocket);
+  const hasTarget = !!pocket.targetAmount;
+  const reste = hasTarget ? Math.max(0, toNum(pocket.targetAmount) - toNum(pocket.currentAmount)) : 0;
   return (
     <View>
       <Text style={styles.title}>{pocket.name}</Text>
-      <Text style={styles.subtitle}>{accountName ? `${accountName} • ` : ''}Réserve permanente</Text>
+      <Text style={styles.subtitle}>{accountName ? `${accountName} • ` : ''}Sous-compte</Text>
       <View style={styles.headlineCard}>
         <View style={styles.ringRow}>
           <Donut size={100} pct={view.percent} warn={false} />
           <View style={styles.ringMetrics}>
             <Metric label="Disponible" value={formatDh(toNum(pocket.currentAmount))} />
-            <Metric label="Objectif" value={pocket.targetAmount ? formatDh(toNum(pocket.targetAmount)) : '—'} />
+            <Metric label="Objectif" value={hasTarget ? formatDh(toNum(pocket.targetAmount)) : '—'} />
+            {hasTarget && <Metric label="Reste à constituer" value={formatDh(reste)} />}
             <Metric label="Mensuel" value={pocket.monthlyContribution ? formatDh(toNum(pocket.monthlyContribution)) : '—'} />
             <Metric label="Statut" value={view.statusLabel} />
           </View>
         </View>
       </View>
+
+      {!hasTarget && (
+        <View style={styles.goalCard} testID="pocket-define-goal-card">
+          {settingGoal ? (
+            <>
+              <Text style={styles.goalTitle}>Objectif à atteindre</Text>
+              <View style={styles.contributeRow}>
+                <TextInput
+                  testID="pocket-goal-amount"
+                  style={styles.input}
+                  keyboardType="decimal-pad"
+                  placeholder="Montant en DH"
+                  placeholderTextColor={colors.v6Muted}
+                  value={goalAmount}
+                  onChangeText={onChangeGoalAmount}
+                  onFocus={onFocusGoalInput}
+                />
+                <TouchableOpacity
+                  testID="pocket-goal-save"
+                  style={[styles.contributeButton, (!goalAmount || savingGoal) && styles.contributeButtonDisabled]}
+                  disabled={!goalAmount || savingGoal}
+                  onPress={onSaveGoal}
+                >
+                  <Text style={styles.contributeButtonText}>Enregistrer</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : (
+            <TouchableOpacity testID="pocket-define-goal-start" style={styles.goalStartButton} onPress={onStartGoal}>
+              <Text style={styles.goalStartButtonText}>Définir un objectif</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -242,6 +334,15 @@ const styles = StyleSheet.create({
   metricLabel: { fontSize: 10, color: colors.v6Muted },
   metricValue: { fontSize: 13, fontWeight: '700', color: colors.v6Text, marginTop: 4 },
   emptyNote: { color: colors.v6Muted, fontSize: 13, marginTop: spacing.md },
+  goalCard: {
+    marginTop: spacing.md,
+    backgroundColor: colors.v6TealSoft,
+    borderRadius: radius.xl,
+    padding: spacing.md,
+  },
+  goalTitle: { fontSize: 13, fontWeight: '800', color: colors.v6Text, marginBottom: spacing.sm },
+  goalStartButton: { alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
+  goalStartButtonText: { color: colors.v6Teal, fontWeight: '800', fontSize: 13 },
   calendarCard: {
     marginTop: spacing.md,
     backgroundColor: colors.v6Surface,
