@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import * as api from '../../api/client';
+import { cached } from '../../state/cache';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { ChoiceSheet } from '../../ui/ChoiceSheet';
 import { FormField } from '../../ui/FormField';
@@ -103,11 +104,14 @@ export function AccountDetailScreen() {
       // R5 clôture §2 — getAccount() n'est jamais filtré par statut (un compte
       // archivé doit rester consultable) ; les comptes proposés comme
       // destination de transfert restent listAccounts() (actifs uniquement).
+      // Correction perf §4/§13 — clé 'accounts' partagée avec Accueil/Sous-
+      // comptes/Ajouter/Planning : jamais un second appel réseau pour la même
+      // liste (toute mutation vide déjà le cache entier, cf. api/client.ts).
       const [found, all, recon, tx] = await Promise.all([
-        api.getAccount(accountId),
-        api.listAccounts(),
-        api.listReconciliations(accountId),
-        api.listTransactions({ accountId }),
+        cached(`account:${accountId}`, () => api.getAccount(accountId)),
+        cached('accounts', () => api.listAccounts()),
+        cached(`accountReconciliations:${accountId}`, () => api.listReconciliations(accountId)),
+        cached(`accountTransactions:${accountId}`, () => api.listTransactions({ accountId })),
       ]);
       setAccount(found);
       setOtherAccounts(all.filter((a: Account) => a.id !== accountId));

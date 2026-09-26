@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
+import { cached } from '../../state/cache';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
 import { useTopInset } from '../../ui/useTopInset';
 import { useBottomInset } from '../../ui/useBottomInset';
@@ -44,21 +45,27 @@ export function EnvelopeDetailScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      // Correction perf §4/§13 — 'accounts' partagé avec Accueil/Sous-comptes/
+      // Ajouter/Planning (déjà chaud en arrivant depuis Sous-comptes), et
+      // chargé EN PARALLÈLE (jamais après coup) même si on ne sait pas encore
+      // si linkedAccountId sera renseigné : jamais une requête séquentielle
+      // qui n'a pas besoin de l'être.
       if (kind === 'savings_pocket') {
-        const p = await api.getPocket(id);
+        const [p, accounts] = await Promise.all([
+          cached(`pocket:${id}`, () => api.getPocket(id)),
+          cached('accounts', () => api.listAccounts()),
+        ]);
         setPocket(p);
-        if (p.linkedAccountId) {
-          const accounts = await api.listAccounts();
-          setAccountName(accounts.find((a: any) => a.id === p.linkedAccountId)?.name ?? null);
-        }
+        setAccountName(p.linkedAccountId ? (accounts.find((a: any) => a.id === p.linkedAccountId)?.name ?? null) : null);
       } else {
-        const [p, s] = await Promise.all([api.getProvision(id), api.getProvisionSufficiency(id)]);
+        const [p, s, accounts] = await Promise.all([
+          cached(`provision:${id}`, () => api.getProvision(id)),
+          cached(`provisionSufficiency:${id}`, () => api.getProvisionSufficiency(id)),
+          cached('accounts', () => api.listAccounts()),
+        ]);
         setPocket(p);
         setSufficiency(s);
-        if (p.linkedAccountId) {
-          const accounts = await api.listAccounts();
-          setAccountName(accounts.find((a: any) => a.id === p.linkedAccountId)?.name ?? null);
-        }
+        setAccountName(p.linkedAccountId ? (accounts.find((a: any) => a.id === p.linkedAccountId)?.name ?? null) : null);
       }
     } finally {
       setLoading(false);

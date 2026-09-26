@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
+import { cached } from '../../state/cache';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { ChoiceSheet } from '../../ui/ChoiceSheet';
 import { DateField } from '../../ui/DateField';
@@ -76,10 +77,12 @@ export function FinancialPlanDetailScreen() {
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     setLoading(true);
     try {
-      const d: FinancialPlanDetail = await api.getFinancialPlan(id);
+      // Correction perf §4/§13 — retour vers un plan déjà consulté : quasi
+      // instantané tant que le cache est chaud (toute mutation le vide déjà).
+      const d: FinancialPlanDetail = await cached(`financialPlan:${id}`, () => api.getFinancialPlan(id), undefined, force);
       d.deadlinesCertain = [...d.deadlinesCertain].sort((a, b) => {
         const byDate = a.dueDate.localeCompare(b.dueDate);
         return byDate !== 0 ? byDate : a.id.localeCompare(b.id);

@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../../api/client';
+import { cached } from '../../state/cache';
 import { colors, elevation, radius, spacing } from '../../ui/theme';
 import { useTopInset } from '../../ui/useTopInset';
 import { useBottomInset } from '../../ui/useBottomInset';
@@ -31,10 +32,13 @@ export function MedicalClaimsScreen() {
   const [loading, setLoading] = useState(true);
   const [claims, setClaims] = useState<api.MedicalClaim[]>([]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     setLoading(true);
     try {
-      const res = await api.listMedicalClaims();
+      // Correction perf §4/§13 — même clé 'medicalClaims' que Sous-comptes
+      // (bloc "Suivi mutuelle") : jamais un second appel réseau pour la même
+      // donnée en arrivant depuis ce raccourci.
+      const res = await cached('medicalClaims', () => api.listMedicalClaims(), undefined, force);
       setClaims(res.claims);
     } finally {
       setLoading(false);
@@ -51,7 +55,7 @@ export function MedicalClaimsScreen() {
     <ScrollView
       style={styles.container}
       contentContainerStyle={{ paddingTop: top, paddingBottom: bottom, paddingHorizontal: spacing.lg }}
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
+      refreshControl={<RefreshControl refreshing={loading} onRefresh={() => load(true)} />}
     >
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text style={styles.back}>← Retour</Text>

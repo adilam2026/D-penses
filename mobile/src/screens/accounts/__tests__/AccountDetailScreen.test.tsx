@@ -2,6 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { AccountDetailScreen } from '../AccountDetailScreen';
 import * as api from '../../../api/client';
+import { clearCache } from '../../../state/cache';
 
 /**
  * R5 clôture §2 — un compte doit pouvoir être modifié (nom/type) et archivé
@@ -89,6 +90,10 @@ function mockConfirmAlert(buttonText = 'Archiver') {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // Correction perf §4/§13 — load() passe désormais par le cache mémoire
+  // partagé (state/cache.ts) : jamais de valeur d'un test précédent qui
+  // fuite vers le suivant (même clé 'accounts'/'account:acc1' réutilisée).
+  clearCache();
   mockedApi.listAccounts.mockResolvedValue([]);
   mockedApi.listReconciliations.mockResolvedValue([]);
   mockedApi.listTransactions.mockResolvedValue([]);
