@@ -12,6 +12,13 @@ import { clearCache } from '../../state/cache';
  */
 jest.mock('../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
 jest.mock('../../ui/useTopInset', () => ({ useTopInset: () => 16 }));
+// La résolution réelle de @expo/vector-icons entraîne expo-font -> expo-asset
+// (non installé dans ce projet, jamais requis par le natif/le bundle réel où
+// Metro sait le résoudre autrement) : mock minimal, comme DateField ailleurs.
+jest.mock('@expo/vector-icons', () => {
+  const React = require('react');
+  return { Ionicons: (props: any) => React.createElement('Ionicons', props) };
+});
 
 const mockNavigate = jest.fn();
 const mockGetParent = jest.fn(() => ({ navigate: mockNavigate }));
@@ -82,14 +89,14 @@ it('affiche le solde, la banque et les enveloppes affectées d\'un compte (jamai
 
   await waitFor(() => expect(screen.getByTestId('home-account-card-acc1')).toBeTruthy());
   expect(screen.getByText('12 000 DH')).toBeTruthy();
-  expect(screen.getByText('Vacances')).toBeTruthy();
+  expect(screen.getByText(/Vacances/)).toBeTruthy();
 });
 
-it('affiche "Banque • Propriétaire" quand les deux sont connus', async () => {
+it('affiche "Banque · Propriétaire" quand les deux sont connus', async () => {
   mockedApi.listAccounts.mockResolvedValue([account({ bankName: 'CIH', ownerLabel: 'Lamiaa' })]);
   await render(<HomeScreen />);
 
-  await waitFor(() => expect(screen.getByText('CIH • Lamiaa')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('CIH · Lamiaa')).toBeTruthy());
 });
 
 it('affiche la note "compte dédié" avec son alimentation récurrente', async () => {

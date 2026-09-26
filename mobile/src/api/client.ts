@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { clearCache } from '../state/cache';
 
 export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000';
 
@@ -40,12 +41,13 @@ export class ApiError extends Error {
 }
 
 async function rawFetch(path: string, options: { method?: string; body?: unknown; withAuth?: boolean } = {}) {
+  const method = options.method ?? 'GET';
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (options.withAuth !== false && accessToken) {
     headers.Authorization = `Bearer ${accessToken}`;
   }
   const res = await fetch(`${API_BASE_URL}${path}`, {
-    method: options.method ?? 'GET',
+    method,
     headers,
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   });
@@ -57,6 +59,20 @@ async function rawFetch(path: string, options: { method?: string; body?: unknown
     const raw = data && (data.message ?? data.error);
     const message = Array.isArray(raw) ? raw[0] : raw;
     throw new ApiError(res.status, message ?? `Erreur ${res.status}`);
+  }
+  // Sécurité cache (§4 audit) — n'importe quelle mutation qui réussit (POST/
+  // PATCH/PUT/DELETE, hors /auth/*) invalide TOUT le cache mémoire, jamais une
+  // invalidation ciblée par écran à retenir manuellement pour chaque nouvelle
+  // mutation. Volontairement large plutôt que fin : après un paiement, un
+  // transfert ou un versement, l'Accueil/Enveloppes/Planning peuvent tous être
+  // affectés (solde de compte, enveloppe, échéance, projection mensuelle) —
+  // une invalidation par clé exacte obligerait à connaître, pour chaque
+  // mutation, la liste complète des clés qu'elle affecte ailleurs dans l'app,
+  // ce qui est exactement le genre d'oubli qui laisserait un solde périmé
+  // visible. Le coût (un refetch complet au prochain écran visité) est
+  // négligeable comparé au risque d'argent affiché faux.
+  if (method !== 'GET' && !path.startsWith('/auth/')) {
+    clearCache();
   }
   return data;
 }

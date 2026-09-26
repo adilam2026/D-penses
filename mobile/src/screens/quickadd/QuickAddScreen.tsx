@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as api from '../../api/client';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { useTopInset } from '../../ui/useTopInset';
@@ -82,6 +83,15 @@ const MODE_LABEL: Record<Mode, string> = {
   revenu: '+ Revenu',
   paiement: '+ Échéance',
   transfert: '+ Transfert',
+};
+
+/** Refonte §9 — 4 modes immédiatement identifiables : tuiles icône+couleur au
+ * lieu de pastilles texte, jamais un simple recolorage de l'ancien sélecteur. */
+const MODE_META: Record<Mode, { icon: keyof typeof Ionicons.glyphMap; color: string; soft: string }> = {
+  depense: { icon: 'arrow-down-circle', color: colors.v6Red, soft: colors.v6RedSoft },
+  revenu: { icon: 'arrow-up-circle', color: colors.v6Teal, soft: colors.v6TealSoft },
+  paiement: { icon: 'calendar', color: colors.v6Amber, soft: colors.v6AmberSoft },
+  transfert: { icon: 'swap-horizontal', color: colors.v6Blue, soft: colors.v6BlueSoft },
 };
 
 /**
@@ -420,6 +430,7 @@ export function QuickAddScreen() {
 
   const expenseCategories = categories.filter((c) => c.kind === 'expense' || c.kind === 'both');
   const isSanteCategory = categories.find((c) => c.id === categoryId)?.name === 'Santé';
+  const accent = MODE_META[mode];
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -435,21 +446,36 @@ export function QuickAddScreen() {
         {/* M3 §5 — rattaché à un budget précis : un seul type d'objet possible
             (une dépense), jamais de choix Revenu/Échéance/Transfert ici.
             Convergence V6 §4 — idem quand le mode arrive verrouillé depuis la
-            bottom sheet "+" : aucun sélecteur de mode, formulaire à usage unique. */}
+            bottom sheet "+" : aucun sélecteur de mode, formulaire à usage unique.
+            Refonte §9 — tuiles icône+couleur, jamais un mur de pastilles texte
+            indifférenciées : chaque mode a sa propre identité visuelle. */}
         {!presetBudget && !modeLocked && (
-          <View style={styles.modeRow}>
-            {(Object.keys(MODE_LABEL) as Mode[]).map((m) => (
-              <TouchableOpacity key={m} style={[styles.modeChip, mode === m && styles.modeChipActive]} onPress={() => setMode(m)}>
-                <Text style={[styles.modeChipText, mode === m && styles.modeChipTextActive]}>{MODE_LABEL[m]}</Text>
-              </TouchableOpacity>
-            ))}
+          <View style={styles.modeGrid}>
+            {(Object.keys(MODE_LABEL) as Mode[]).map((m) => {
+              const meta = MODE_META[m];
+              const active = mode === m;
+              return (
+                <TouchableOpacity
+                  key={m}
+                  style={[styles.modeTile, active && { borderColor: meta.color, backgroundColor: meta.soft }]}
+                  onPress={() => setMode(m)}
+                >
+                  <View style={[styles.modeTileIcon, { backgroundColor: active ? meta.color : meta.soft }]}>
+                    <Ionicons name={meta.icon} size={17} color={active ? '#fff' : meta.color} />
+                  </View>
+                  <Text style={[styles.modeTileText, active && { color: meta.color }]}>
+                    {MODE_LABEL[m].replace(/^\+ /, '')}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
 
         {loading ? (
           <ActivityIndicator style={{ marginTop: 24 }} />
         ) : (
-          <>
+          <View style={styles.formCard}>
             {showStatusToggle && (
               // NOUVELLE ÉVOLUTION — segmented control Réalisée/Reçu vs À venir,
               // même style visuel que le toggle Ponctuel/Récurrent du transfert.
@@ -504,14 +530,21 @@ export function QuickAddScreen() {
                 )}
               </>
             ) : (
-              <FormField
-                testID="quickadd-amount-input"
-                placeholder="Montant (DH)"
-                keyboardType="decimal-pad"
-                value={amount}
-                onChangeText={setAmount}
-                onFocus={handleFocus}
-              />
+              // Refonte §9 — le montant est l'élément central d'une saisie rapide :
+              // carte teintée à la couleur du mode, jamais un champ texte anonyme
+              // perdu au milieu des autres champs.
+              <View style={[styles.amountCard, { backgroundColor: accent.soft, borderColor: accent.color }]} testID="quickadd-amount-card">
+                <Text style={[styles.amountCardLabel, { color: accent.color }]}>MONTANT</Text>
+                <FormField
+                  testID="quickadd-amount-input"
+                  placeholder="Montant (DH)"
+                  keyboardType="decimal-pad"
+                  value={amount}
+                  onChangeText={setAmount}
+                  onFocus={handleFocus}
+                  containerStyle={styles.amountFieldContainer}
+                />
+              </View>
             )}
 
             {mode === 'depense' && presetBudget && (
@@ -698,37 +731,48 @@ export function QuickAddScreen() {
               </>
             )}
 
-            {mode === 'depense' && (
-              <>
-                {/* NOUVELLE ÉVOLUTION — une dépense "à venir" crée un ChargePlan
-                    (pas de champ notes sur ce modèle) : masqué plutôt qu'ignoré. */}
-                {!isAVenir && (
-                  <FormField testID="quickadd-notes-input" placeholder="Note (facultatif)" value={notes} onChangeText={setNotes} onFocus={handleFocus} />
-                )}
-                <DateField label={isAVenir ? 'Date prévue' : 'Date de la dépense'} value={spentDate} onChange={setSpentDate} />
-              </>
+            {mode === 'depense' && !isAVenir && (
+              // NOUVELLE ÉVOLUTION — une dépense "à venir" crée un ChargePlan
+              // (pas de champ notes sur ce modèle) : masqué plutôt qu'ignoré.
+              <FormField testID="quickadd-notes-input" placeholder="Note (facultatif)" value={notes} onChangeText={setNotes} onFocus={handleFocus} />
             )}
 
-            {mode === 'revenu' && (
-              <DateField label={isAVenir ? 'Date prévue' : 'Date de réception'} value={incomeDate} onChange={setIncomeDate} />
-            )}
+            {/* Refonte §9 — "2 colonnes intelligentes sur desktop" : date et
+                compte forment une paire logique (quand + sur quel compte),
+                juxtaposées sur desktop, jamais deux champs isolés l'un sous
+                l'autre. Un seul écran (mobile) : empilement classique. */}
+            <View style={wide ? styles.fieldRow : undefined}>
+              {mode === 'depense' && (
+                <View style={wide ? styles.fieldRowItem : undefined}>
+                  <DateField label={isAVenir ? 'Date prévue' : 'Date de la dépense'} value={spentDate} onChange={setSpentDate} />
+                </View>
+              )}
 
-            {mode !== 'paiement' && (
-              // R5 clôture §6 — sélecteur compact (comptes potentiellement nombreux),
-              // jamais un mur de chips permanent.
-              <Select
-                testID="quickadd-account-select"
-                label={mode === 'transfert' ? 'Compte source' : mode === 'revenu' && isAVenir ? 'Compte à créditer' : 'Compte'}
-                placeholder="Choisir un compte"
-                value={accountId}
-                onChange={setAccountId}
-                options={accounts.map((a) => ({
-                  value: a.id,
-                  label: a.name,
-                  sublabel: mode === 'transfert' ? `${a.soldeCourant.toLocaleString('fr-FR')} DH` : undefined,
-                }))}
-              />
-            )}
+              {mode === 'revenu' && (
+                <View style={wide ? styles.fieldRowItem : undefined}>
+                  <DateField label={isAVenir ? 'Date prévue' : 'Date de réception'} value={incomeDate} onChange={setIncomeDate} />
+                </View>
+              )}
+
+              {mode !== 'paiement' && (
+                // R5 clôture §6 — sélecteur compact (comptes potentiellement nombreux),
+                // jamais un mur de chips permanent.
+                <View style={wide ? styles.fieldRowItem : undefined}>
+                  <Select
+                    testID="quickadd-account-select"
+                    label={mode === 'transfert' ? 'Compte source' : mode === 'revenu' && isAVenir ? 'Compte à créditer' : 'Compte'}
+                    placeholder="Choisir un compte"
+                    value={accountId}
+                    onChange={setAccountId}
+                    options={accounts.map((a) => ({
+                      value: a.id,
+                      label: a.name,
+                      sublabel: mode === 'transfert' ? `${a.soldeCourant.toLocaleString('fr-FR')} DH` : undefined,
+                    }))}
+                  />
+                </View>
+              )}
+            </View>
 
             {mode === 'transfert' && (
               <>
@@ -819,7 +863,11 @@ export function QuickAddScreen() {
             {error ? <Text style={styles.error}>{error}</Text> : null}
 
             {mode !== 'paiement' && (
-              <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={submitting}>
+              <TouchableOpacity
+                style={[styles.button, { backgroundColor: accent.color }]}
+                onPress={onSubmit}
+                disabled={submitting}
+              >
                 {submitting ? (
                   <ActivityIndicator color={colors.textOnPrimary} />
                 ) : (
@@ -835,7 +883,7 @@ export function QuickAddScreen() {
                 )}
               </TouchableOpacity>
             )}
-          </>
+          </View>
         )}
 
         <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -852,7 +900,43 @@ const styles = StyleSheet.create({
   // §15 — desktop : formulaire centré à largeur raisonnable au lieu de
   // s'étirer sur toute la page (plus de "grande page vide avec un petit
   // formulaire en haut à gauche"), jamais des champs de 1200px de large.
-  scrollWide: { maxWidth: 560, width: '100%', alignSelf: 'center', paddingTop: spacing.xxl + spacing.md },
+  // Refonte §9 — légèrement élargi (560→680) pour accueillir 2 colonnes
+  // intelligentes (ex. date + compte) sans se sentir à l'étroit.
+  scrollWide: { maxWidth: 680, width: '100%', alignSelf: 'center', paddingTop: spacing.xxl + spacing.md },
+  formCard: {
+    backgroundColor: colors.v6Surface,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.v6Line,
+    ...elevation.card,
+  },
+  modeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
+  modeTile: {
+    flexBasis: '47%',
+    flexGrow: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.v6Surface,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.v6Line,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  modeTileIcon: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  modeTileText: { fontSize: 13, fontWeight: '700', color: colors.v6Text },
+  amountCard: {
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  amountCardLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.6, marginBottom: 6 },
+  amountFieldContainer: { marginBottom: 0 },
+  fieldRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
+  fieldRowItem: { flexBasis: '47%', flexGrow: 1, minWidth: 220 },
   mutuelleRow: {
     flexDirection: 'row',
     alignItems: 'center',

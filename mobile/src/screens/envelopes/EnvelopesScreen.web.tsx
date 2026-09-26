@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as api from '../../api/client';
 import { cached } from '../../state/cache';
 import { useResponsiveLayout } from '../../ui/useResponsiveLayout';
@@ -11,12 +12,9 @@ import { computePocketCardView, computeProvisionCardView, toNum } from './envelo
 const MAX_WIDTH = 1360;
 
 /**
- * Équivalent Web de EnvelopesScreen.tsx (mêmes 2 logiques, mêmes appels
- * réseau, jamais un dashboard consolidé en plus) — n'existait pas avant
- * cette passe : sur Web, cet écran retombait sur le composant mobile rendu
- * tel quel dans la zone de contenu du shell desktop (colonne étroite au
- * milieu d'un écran large). Ici : grille large à 3 colonnes (comme
- * l'Accueil Web), même accent couleur bleu/teal.
+ * Équivalent Web — grille de cartes-identité (2-3 colonnes selon largeur),
+ * même carte que le mobile (mêmes props), jamais l'ancienne grille de cartes
+ * carrées avec 4 cases de métriques.
  */
 export function EnvelopesScreen() {
   const navigation = useNavigation<any>();
@@ -71,14 +69,13 @@ export function EnvelopesScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
       <View style={styles.headerRow}>
-        <View>
-          <Text style={styles.pageTitle}>Enveloppes</Text>
-          <Text style={styles.pageSubtitle}>Réserves et plans financiers.</Text>
-        </View>
-        <TouchableOpacity testID="envelopes-add" style={styles.headerActionButton} onPress={() => navigation.navigate('CreatePocket')}>
-          <Text style={styles.headerActionButtonText}>＋ Ajouter</Text>
+        <Text style={styles.pageTitle}>Enveloppes</Text>
+        <TouchableOpacity testID="envelopes-add" style={styles.addButton} onPress={() => navigation.navigate('CreatePocket')}>
+          <Ionicons name="add" size={16} color="#fff" />
+          <Text style={styles.addButtonText}>Ajouter</Text>
         </TouchableOpacity>
       </View>
+      <Text style={styles.pageSubtitle}>Réserves et plans financiers.</Text>
 
       <View style={styles.grid}>
         {provisionCards.map(({ provision, sufficiency }) => {
@@ -86,93 +83,42 @@ export function EnvelopesScreen() {
           const accountName = provision.linkedAccountId ? accountNameById[provision.linkedAccountId] : undefined;
           return (
             <View key={provision.id} style={[styles.cell, cellStyle]}>
-              <TouchableOpacity
+              <EnvelopeCard
                 testID={`envelope-card-provision-${provision.id}`}
-                style={styles.card}
+                name={provision.name}
+                subtitle={accountName ? `${accountName} · plan à échéances` : 'Plan à échéances'}
+                icon="flag-outline"
+                accent={webColors.blue}
+                accentSoft={webColors.blueSoft}
+                available={toNum(sufficiency.currentAmount)}
+                target={view.hasOpenSteps ? view.nextAmount : null}
+                targetLabel="Prochaine échéance"
+                percent={view.percent}
+                remaining={view.hasOpenSteps ? Math.max(0, view.nextAmount - toNum(sufficiency.currentAmount)) : null}
                 onPress={() => navigation.navigate('EnvelopeDetail', { kind: 'provision', id: provision.id })}
-              >
-                <View style={[styles.cardAccent, { backgroundColor: webColors.blue }]} />
-                <View style={styles.cardHead}>
-                  <View style={styles.cardHeadLeft}>
-                    <Text style={styles.cardTitle}>{provision.name}</Text>
-                    <Text style={styles.cardSubtitle}>{accountName ? `${accountName} • ` : ''}Réserve à échéances</Text>
-                  </View>
-                  <View style={[styles.cardRight, { backgroundColor: webColors.blueSoft }]}>
-                    <Text style={[styles.cardRightValue, { color: webColors.blue }]}>{view.percent}%</Text>
-                    <Text style={styles.cardRightLabel}>constitué</Text>
-                  </View>
-                </View>
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${view.percent}%`, backgroundColor: webColors.blue }]} />
-                </View>
-                <View style={styles.metricsRow}>
-                  <View style={styles.metric}>
-                    <Text style={styles.metricLabel}>Disponible</Text>
-                    <Text style={styles.metricValue}>{formatDh(toNum(sufficiency.currentAmount))}</Text>
-                  </View>
-                  <View style={styles.metric}>
-                    <Text style={styles.metricLabel}>Échéance</Text>
-                    <Text style={styles.metricValue}>{view.hasOpenSteps ? formatDh(view.nextAmount) : '—'}</Text>
-                  </View>
-                  <View style={styles.metric}>
-                    <Text style={styles.metricLabel}>Date</Text>
-                    <Text style={styles.metricValue}>
-                      {view.nextDueDate ? new Date(view.nextDueDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }) : '—'}
-                    </Text>
-                  </View>
-                  <View style={styles.metric}>
-                    <Text style={styles.metricLabel}>À verser</Text>
-                    <Text style={styles.metricValue}>{formatDh(toNum(sufficiency.versementMensuelRecommande))}</Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
+              />
             </View>
           );
         })}
-
         {pockets.map((pocket) => {
           const view = computePocketCardView(pocket);
           const accountName = pocket.linkedAccountId ? accountNameById[pocket.linkedAccountId] : undefined;
           return (
             <View key={pocket.id} style={[styles.cell, cellStyle]}>
-              <TouchableOpacity
+              <EnvelopeCard
                 testID={`envelope-card-pocket-${pocket.id}`}
-                style={styles.card}
+                name={pocket.name}
+                subtitle={accountName ? `${accountName} · réserve permanente` : 'Réserve permanente'}
+                icon="wallet-outline"
+                accent={webColors.teal}
+                accentSoft={webColors.tealSoft}
+                available={toNum(pocket.currentAmount)}
+                target={pocket.targetAmount ? toNum(pocket.targetAmount) : null}
+                targetLabel="Objectif"
+                percent={view.percent}
+                remaining={pocket.targetAmount ? Math.max(0, toNum(pocket.targetAmount) - toNum(pocket.currentAmount)) : null}
                 onPress={() => navigation.navigate('EnvelopeDetail', { kind: 'savings_pocket', id: pocket.id })}
-              >
-                <View style={[styles.cardAccent, { backgroundColor: webColors.teal }]} />
-                <View style={styles.cardHead}>
-                  <View style={styles.cardHeadLeft}>
-                    <Text style={styles.cardTitle}>{pocket.name}</Text>
-                    <Text style={styles.cardSubtitle}>{accountName ? `${accountName} • ` : ''}Réserve permanente</Text>
-                  </View>
-                  <View style={[styles.cardRight, { backgroundColor: webColors.tealSoft }]}>
-                    <Text style={[styles.cardRightValue, { color: webColors.teal }]}>{view.percent}%</Text>
-                    <Text style={styles.cardRightLabel}>{view.status === 'sans_objectif' ? '' : 'objectif'}</Text>
-                  </View>
-                </View>
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${view.percent}%`, backgroundColor: webColors.teal }]} />
-                </View>
-                <View style={styles.metricsRow}>
-                  <View style={styles.metric}>
-                    <Text style={styles.metricLabel}>Disponible</Text>
-                    <Text style={styles.metricValue}>{formatDh(toNum(pocket.currentAmount))}</Text>
-                  </View>
-                  <View style={styles.metric}>
-                    <Text style={styles.metricLabel}>Objectif</Text>
-                    <Text style={styles.metricValue}>{pocket.targetAmount ? formatDh(toNum(pocket.targetAmount)) : '—'}</Text>
-                  </View>
-                  <View style={styles.metric}>
-                    <Text style={styles.metricLabel}>Mensuel</Text>
-                    <Text style={styles.metricValue}>{pocket.monthlyContribution ? formatDh(toNum(pocket.monthlyContribution)) : '—'}</Text>
-                  </View>
-                  <View style={styles.metric}>
-                    <Text style={styles.metricLabel}>Statut</Text>
-                    <Text style={styles.metricValue}>{view.statusLabel}</Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
+              />
             </View>
           );
         })}
@@ -181,7 +127,7 @@ export function EnvelopesScreen() {
       {claimsSummary && (
         <TouchableOpacity testID="envelope-card-mutuelle" style={styles.mutuelleRow} onPress={() => navigation.navigate('MedicalClaims')}>
           <View style={styles.mutuelleIcon}>
-            <Text style={styles.mutuelleIconText}>+</Text>
+            <Ionicons name="medkit-outline" size={15} color={webColors.amber} />
           </View>
           <View style={styles.mutuelleTextCol}>
             <Text style={styles.mutuelleTitle}>Suivi mutuelle</Text>
@@ -205,41 +151,114 @@ export function EnvelopesScreen() {
   );
 }
 
+function EnvelopeCard({
+  testID,
+  name,
+  subtitle,
+  icon,
+  accent,
+  accentSoft,
+  available,
+  target,
+  targetLabel,
+  percent,
+  remaining,
+  onPress,
+}: {
+  testID: string;
+  name: string;
+  subtitle: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  accent: string;
+  accentSoft: string;
+  available: number;
+  target: number | null;
+  targetLabel: string;
+  percent: number;
+  remaining: number | null;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity testID={testID} style={styles.card} onPress={onPress}>
+      <View style={styles.cardHead}>
+        <View style={[styles.cardIcon, { backgroundColor: accentSoft }]}>
+          <Ionicons name={icon} size={15} color={accent} />
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.cardName} numberOfLines={1}>
+            {name.toUpperCase()}
+          </Text>
+          <Text style={styles.cardSubtitle} numberOfLines={1}>
+            {subtitle}
+          </Text>
+        </View>
+      </View>
+
+      <Text style={styles.cardBalance}>{formatDh(available)}</Text>
+      <Text style={styles.cardBalanceCaption}>disponibles</Text>
+
+      {target !== null && (
+        <>
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${percent}%`, backgroundColor: accent }]} />
+          </View>
+          <Text style={[styles.progressPercent, { color: accent }]}>{percent}%</Text>
+
+          <View style={styles.statPairRow}>
+            <View style={styles.statPair}>
+              <Text style={styles.statLabel}>{targetLabel}</Text>
+              <Text style={styles.statValue}>{formatDh(target)}</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statPair}>
+              <Text style={styles.statLabel}>Reste</Text>
+              <Text style={styles.statValue}>{remaining !== null ? formatDh(remaining) : '—'}</Text>
+            </View>
+          </View>
+        </>
+      )}
+
+      <View style={styles.cardFoot}>
+        <Text style={[styles.seeLink, { color: accent }]}>Voir →</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: webColors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: webColors.background },
   scroll: { padding: webSpacing.xl, maxWidth: MAX_WIDTH, width: '100%', alignSelf: 'center' },
-  headerRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: webSpacing.lg },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   pageTitle: { fontSize: 22, fontWeight: '800', letterSpacing: -0.5, color: webColors.textPrimary },
-  pageSubtitle: { marginTop: 4, fontSize: 13, color: webColors.textSecondary },
-  headerActionButton: { backgroundColor: webColors.navy, borderRadius: webRadius.pill, paddingHorizontal: webSpacing.lg, paddingVertical: webSpacing.sm + 2 },
-  headerActionButtonText: { color: '#fff', fontWeight: '800', fontSize: 13 },
+  pageSubtitle: { fontSize: 13, color: webColors.textSecondary, marginTop: 4, marginBottom: webSpacing.lg },
+  addButton: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: webColors.navy, borderRadius: webRadius.pill, paddingHorizontal: 16, paddingVertical: 10 },
+  addButtonText: { color: '#fff', fontWeight: '800', fontSize: 12 },
+
   grid: { flexDirection: 'row', flexWrap: 'wrap', width: '100%', marginHorizontal: -(webSpacing.sm / 2) },
   cell: { paddingHorizontal: webSpacing.sm / 2, marginBottom: webSpacing.md },
-  card: {
-    backgroundColor: webColors.surface,
-    borderWidth: 1,
-    borderColor: webColors.border,
-    borderRadius: webRadius.lg,
-    padding: webSpacing.md,
-    paddingTop: webSpacing.md + 3,
-    overflow: 'hidden',
-    ...webElevation.card,
-  },
-  cardAccent: { position: 'absolute', top: 0, left: 0, right: 0, height: 3 },
-  cardHead: { flexDirection: 'row', justifyContent: 'space-between', gap: webSpacing.sm, alignItems: 'flex-start' },
-  cardHeadLeft: { flexShrink: 1 },
-  cardTitle: { fontSize: 14, fontWeight: '800', color: webColors.textPrimary },
-  cardSubtitle: { fontSize: 10, color: webColors.textSecondary, marginTop: 3 },
-  cardRight: { alignItems: 'center', borderRadius: webRadius.md, paddingHorizontal: webSpacing.sm, paddingVertical: 4 },
-  cardRightValue: { fontSize: 13, fontWeight: '800' },
-  cardRightLabel: { fontSize: 9, color: webColors.textSecondary, marginTop: 1 },
-  progressTrack: { marginTop: webSpacing.sm + 2, height: 6, borderRadius: 999, backgroundColor: webColors.surfaceMuted, overflow: 'hidden' },
+  card: { backgroundColor: webColors.surface, borderWidth: 1, borderColor: webColors.border, borderRadius: webRadius.lg, padding: webSpacing.md, ...webElevation.card },
+  cardHead: { flexDirection: 'row', alignItems: 'center', gap: webSpacing.sm, marginBottom: webSpacing.sm },
+  cardIcon: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  cardName: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3, color: webColors.textPrimary },
+  cardSubtitle: { fontSize: 10, color: webColors.textSecondary, marginTop: 1 },
+
+  cardBalance: { fontSize: 26, fontWeight: '900', letterSpacing: -0.6, color: webColors.textPrimary },
+  cardBalanceCaption: { fontSize: 10, color: webColors.textSecondary, marginTop: -2, marginBottom: webSpacing.sm + 2 },
+
+  progressTrack: { height: 7, borderRadius: 999, backgroundColor: webColors.surfaceMuted, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 999 },
-  metricsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: webSpacing.sm + 2 },
-  metric: { flexBasis: '47%', flexGrow: 1, backgroundColor: webColors.surfaceMuted, borderRadius: webRadius.sm, padding: webSpacing.sm },
-  metricLabel: { fontSize: 9, color: webColors.textSecondary },
-  metricValue: { fontSize: 12, fontWeight: '700', color: webColors.textPrimary, marginTop: 3 },
+  progressPercent: { fontSize: 11, fontWeight: '800', marginTop: 5 },
+
+  statPairRow: { flexDirection: 'row', alignItems: 'center', marginTop: webSpacing.sm },
+  statPair: { flex: 1 },
+  statDivider: { width: 1, height: 24, backgroundColor: webColors.border, marginHorizontal: webSpacing.sm },
+  statLabel: { fontSize: 9, fontWeight: '700', color: webColors.textSecondary, textTransform: 'uppercase' },
+  statValue: { fontSize: 13, fontWeight: '800', color: webColors.textPrimary, marginTop: 2 },
+
+  cardFoot: { alignItems: 'flex-end', marginTop: webSpacing.sm },
+  seeLink: { fontSize: 11, fontWeight: '800' },
+
   mutuelleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -254,7 +273,6 @@ const styles = StyleSheet.create({
     maxWidth: 480,
   },
   mutuelleIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: webColors.amberSoft, alignItems: 'center', justifyContent: 'center' },
-  mutuelleIconText: { fontSize: 16, fontWeight: '800', color: webColors.amber },
   mutuelleTextCol: { flex: 1 },
   mutuelleTitle: { fontSize: 13, fontWeight: '700', color: webColors.textPrimary },
   mutuelleSubtitle: { fontSize: 11, color: webColors.textSecondary, marginTop: 2 },

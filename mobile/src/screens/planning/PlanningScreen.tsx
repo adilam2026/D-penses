@@ -215,6 +215,9 @@ export function PlanningScreen() {
                     line.kind === 'balance' && styles.balanceLabelCell,
                   ]}
                 >
+                  {accent && (line.kind === 'section' || line.kind === 'total') && (
+                    <View style={[styles.rail, { backgroundColor: accent.solid }]} />
+                  )}
                   {line.kind === 'section' && (
                     <View style={styles.sectionLabelRow}>
                       <View style={[styles.sectionDot, accent && { backgroundColor: accent.solid }]} />
@@ -264,11 +267,19 @@ export function PlanningScreen() {
                 {data.months.map((m) => (
                   <View
                     key={m.month}
-                    style={[styles.cell, styles.monthHeaderCell, { width: MONTH_COL_WIDTH }, isCurrentMonth(m.month) && styles.currentMonthHeader]}
+                    style={[styles.cell, styles.monthHeaderCell, { width: MONTH_COL_WIDTH }]}
                   >
-                    <Text style={[styles.monthHeaderText, isCurrentMonth(m.month) && styles.currentMonthHeaderText]} numberOfLines={1}>
-                      {m.label}
-                    </Text>
+                    {isCurrentMonth(m.month) ? (
+                      <View style={styles.currentMonthPill}>
+                        <Text style={styles.currentMonthPillText} numberOfLines={1}>
+                          {m.label}
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.monthHeaderText} numberOfLines={1}>
+                        {m.label}
+                      </Text>
+                    )}
                   </View>
                 ))}
               </View>
@@ -342,7 +353,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.v6Line,
     backgroundColor: colors.v6Surface,
+    position: 'relative',
   },
+  rail: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3 },
   cornerCell: { backgroundColor: colors.v6SurfaceSoft },
   sectionCell: { backgroundColor: colors.v6SurfaceSoft },
   sectionLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -362,8 +375,8 @@ const styles = StyleSheet.create({
   balanceValueText: { fontSize: 12, fontWeight: '850' as any, textAlign: 'right' },
   monthHeaderCell: { backgroundColor: colors.v6SurfaceSoft, alignItems: 'center' },
   monthHeaderText: { fontSize: 11, fontWeight: '800', color: colors.v6Muted },
-  currentMonthHeader: { backgroundColor: colors.v6BlueSoft },
-  currentMonthHeaderText: { color: colors.v6Blue },
+  currentMonthPill: { backgroundColor: colors.v6Blue, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
+  currentMonthPillText: { fontSize: 11, fontWeight: '800', color: '#fff' },
   currentMonthCol: { backgroundColor: '#F6FAFF' },
   valueText: { fontSize: 12, color: colors.v6Text, textAlign: 'right', fontWeight: '600' },
 });

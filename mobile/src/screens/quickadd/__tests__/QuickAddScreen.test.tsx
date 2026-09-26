@@ -10,6 +10,12 @@ import * as api from '../../../api/client';
  */
 jest.mock('../../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
 jest.mock('../../../ui/useTopInset', () => ({ useTopInset: () => 16 }));
+// La résolution réelle de @expo/vector-icons entraîne expo-font -> expo-asset
+// (non installé dans ce projet) : mock minimal, comme dans HomeScreen.test.tsx.
+jest.mock('@expo/vector-icons', () => {
+  const React = require('react');
+  return { Ionicons: (props: any) => React.createElement('Ionicons', props) };
+});
 
 jest.mock('../../../ui/DateField', () => {
   const { TextInput } = require('react-native');

@@ -66,7 +66,7 @@ async function renderApp() {
 
 it('la navigation basse propose 4 positions symétriques : Accueil, Planning, [+], Enveloppes', async () => {
   await renderApp();
-  await waitFor(() => screen.getByText('Comptes'));
+  await waitFor(() => screen.getByText("Aucun compte pour l'instant."));
   expect(screen.getByText('Accueil')).toBeTruthy();
   expect(screen.getByText('Planning')).toBeTruthy();
   expect(screen.getByTestId('tab-quick-actions')).toBeTruthy();
