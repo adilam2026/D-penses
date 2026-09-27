@@ -1,90 +1,36 @@
 import React from 'react';
+import { render, screen, waitFor } from '@testing-library/react-native';
 import { NavigationContainer } from '@react-navigation/native';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { RootTabs } from '../RootTabs';
-import { QuickActionsProvider } from '../../state/QuickActionsContext';
-import { QuickActionsSheet } from '../../ui/QuickActionsSheet';
-import * as api from '../../api/client';
+import { clearCache } from '../../state/cache';
 
-/**
- * Refonte maquette V6B §19 — navigation basse : Accueil / Planning / [+] /
- * Enveloppes, le bouton central ouvre la bottom sheet — jamais une navigation
- * d'onglet réelle.
- */
-jest.mock('../../ui/useBottomInset', () => ({ useBottomInset: () => 16 }));
-jest.mock('../../ui/useTopInset', () => ({ useTopInset: () => 0 }));
+jest.mock('../../api/client', () => ({
+  listAccounts: () => Promise.resolve([]),
+}));
 
-jest.mock('@expo/vector-icons', () => {
-  const { Text } = require('react-native');
-  return { Ionicons: (props: any) => require('react').createElement(Text, null, props.name) };
-});
+const TEST_INSET_METRICS = {
+  frame: { x: 0, y: 0, width: 390, height: 844 },
+  insets: { top: 47, left: 0, right: 0, bottom: 34 },
+};
 
-jest.mock('../../api/client', () => {
-  const actual = jest.requireActual('../../api/client');
-  return {
-    ...actual,
-    listAccounts: jest.fn().mockResolvedValue([]),
-    listOpenDeadlines: jest.fn().mockResolvedValue([]),
-    listProvisions: jest.fn().mockResolvedValue([]),
-    listPockets: jest.fn().mockResolvedValue([]),
-    listMedicalClaims: jest.fn().mockResolvedValue({ summary: { pendingCount: 0, totalEngaged: 0, totalReimbursed: 0 }, claims: [] }),
-    getMonthlyProjection: jest.fn().mockResolvedValue({
-      reference_date: '2026-09-01',
-      horizon_end: '2027-02-28',
-      horizon_months: 6,
-      months: [],
-      summary: {
-        total_income: 0,
-        total_expense: 0,
-        total_balance: 0,
-        deficit_months_count: 0,
-        worst_month: null,
-        max_monthly_deficit: null,
-        opening_cash_balance: 0,
-        cash_low_point: null,
-        max_financing_need: 0,
-        first_positive_cash_balance_month: null,
-        treasury_account_ids: [],
-        is_complete: true,
-        incomplete_months_count: 0,
-      },
-      account_filters: { incomeAccountIds: null, expenseAccountIds: null },
-    }),
-  };
-});
+beforeEach(() => clearCache());
 
-async function renderApp() {
-  await render(
-    <NavigationContainer>
-      <QuickActionsProvider>
+it('affiche exactement les 4 onglets Accueil / Planning / Épargne / Ajouter', async () => {
+  render(
+    <SafeAreaProvider initialMetrics={TEST_INSET_METRICS}>
+      <NavigationContainer>
         <RootTabs />
-        <QuickActionsSheet />
-      </QuickActionsProvider>
-    </NavigationContainer>,
+      </NavigationContainer>
+    </SafeAreaProvider>,
   );
-}
 
-it('la navigation basse propose 4 positions symétriques : Accueil, Planning, [+], Sous-comptes', async () => {
-  await renderApp();
-  await waitFor(() => screen.getByText("Aucun compte pour l'instant."));
-  expect(screen.getByText('Accueil')).toBeTruthy();
+  // "Accueil" apparaît deux fois (libellé de l'onglet + titre de l'écran) — legitime.
+  await waitFor(() => expect(screen.getAllByText('Accueil').length).toBeGreaterThan(0));
   expect(screen.getByText('Planning')).toBeTruthy();
-  expect(screen.getByTestId('tab-quick-actions')).toBeTruthy();
-  expect(screen.getByText('Sous-comptes')).toBeTruthy();
-  // Transactions/Calendrier/Projection/Budgets restent atteignables depuis le
-  // menu ☰ (menuSections.ts) et leur propre Stack.Screen racine, mais ne sont
-  // plus des onglets de la barre basse.
-  expect(screen.queryByText('Transactions')).toBeNull();
-  expect(screen.queryByText('Calendrier')).toBeNull();
-  expect(screen.queryByText('Projection')).toBeNull();
-});
-
-it('le bouton central "+" ouvre la bottom sheet, jamais une navigation d\'onglet', async () => {
-  await renderApp();
-  await waitFor(() => screen.getByTestId('tab-quick-actions'));
-
-  await fireEvent.press(screen.getByTestId('tab-quick-actions'));
-
-  await waitFor(() => expect(screen.getByTestId('quick-actions-sheet')).toBeTruthy());
-  expect(screen.getByTestId('quick-action-depense')).toBeTruthy();
+  expect(screen.getByText('Épargne')).toBeTruthy();
+  expect(screen.getByText('Ajouter')).toBeTruthy();
+  // Aucun autre onglet (pas de "Plus"/"Enveloppes"/bouton central flottant de l'ancienne app).
+  expect(screen.queryByText('Plus')).toBeNull();
+  expect(screen.queryByText('Enveloppes')).toBeNull();
 });

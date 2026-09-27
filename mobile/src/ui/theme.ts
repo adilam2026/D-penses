@@ -1,154 +1,82 @@
 import { Platform } from 'react-native';
 
 /**
- * Design tokens D-Penses+ (Lot recette téléphone réel §15). Source UNIQUE des
- * couleurs de l'application — jamais un hex en dur dans un StyleSheet d'écran.
- * Valeurs reprises telles quelles depuis l'usage réel dominant (audit du code
- * existant) pour ne rien casser visuellement : aucune nouvelle couleur choisie
- * arbitrairement, seulement une centralisation + quelques quasi-doublons
- * fusionnés (ex. plusieurs verts clairs très proches → un seul token).
+ * Design tokens Finance Maison — palette entièrement nouvelle (reset total,
+ * aucune valeur reprise de l'ancienne application). Source UNIQUE des
+ * couleurs/espacements : jamais un hex en dur dans un StyleSheet d'écran.
  */
 
 export const colors = {
-  // Marque / texte
-  primary: '#172436', // bleu nuit D-Penses+ — texte principal, boutons primaires
-  primaryDark: '#0F1A29',
+  primary: '#1F3D34',
+  primaryDark: '#142924',
 
-  // États sémantiques
-  success: '#2E7D5B',
-  successLight: '#E6F4EC',
-  danger: '#B3261E',
-  dangerLight: '#FBEDEC',
-  warning: '#B8860B',
-  warningLight: '#FFF7E6',
-  // Accent ambre distinct (bandeau "attention/échéance proche" — plus vif que
-  // warning/warningLight, ex. scénario de simulation en cours sur Projection).
-  amberAccentBorder: '#E6C87A',
-  amberAccentText: '#8A6D1D',
+  success: '#2F7A4F',
+  successLight: '#E4F3E9',
+  danger: '#A33B2E',
+  dangerLight: '#FBEAE7',
+  warning: '#9C6B14',
+  warningLight: '#FBF0DD',
 
-  // Texte
-  textPrimary: '#172436',
-  textSecondary: '#6B747C',
-  textPlaceholder: '#9AA0A6',
+  textPrimary: '#1C2420',
+  textSecondary: '#6B7570',
+  textPlaceholder: '#9BA39D',
   textOnPrimary: '#FFFFFF',
 
-  // Fonds / surfaces — R6.1 §15 : fond légèrement plus soutenu (vs. #F6F5F2)
-  // pour que les cartes blanches se détachent réellement, pas seulement via
-  // un filet de bordure à peine visible.
-  background: '#EDEAE3',
-  surface: '#FFFFFF', // carte principale
-  surfaceSecondary: '#EDEBE6', // chip/diviseur/fond secondaire
-  surfaceActive: '#EEF0F3', // sélection/état actif clair
+  background: '#EEF1EC',
+  surface: '#FFFFFF',
+  surfaceSecondary: '#E7EBE4',
+  surfaceActive: '#E2ECE6',
 
-  // Bordures — `border` reste le filet discret existant (listes denses,
-  // séparateurs) ; `borderStrong` (R6.1 §15) est le nouveau contour visible
-  // utilisé sur les cartes principales, à la place d'un filet quasi invisible.
-  border: '#E3E1DC',
-  borderStrong: '#D3CEC3',
-  divider: '#EDEBE6',
+  border: '#DDE3D8',
+  borderStrong: '#C7D0C0',
+  divider: '#E7EBE4',
 
-  // Passe visuelle Home (Maquette 3) — pas de librairie de dégradé disponible
-  // (installation réseau bloquée dans cet environnement) : approximation par
-  // une couleur pleine la plus proche du dégradé navy→teal de la maquette,
-  // jamais une couleur choisie arbitrairement.
-  heroBackground: '#14344A',
-  heroTextMuted: '#B9C6D0',
-  donutTrack: '#E9EEEC',
-  donutTrackWarn: '#F2E9DC',
-
-  // Refonte maquette V6B — palette exacte de la maquette HTML de référence
-  // (finance_maison_maquette_v6b), utilisée par les écrans Accueil/Planning/
-  // Enveloppes/Mutuelle réécrits pour cette refonte. Tokens additifs — jamais
-  // de remplacement des valeurs ci-dessus, pour ne rien casser des écrans non
-  // encore migrés.
-  v6Bg: '#F5F7FA',
-  v6Surface: '#FFFFFF',
-  v6SurfaceSoft: '#F9FAFC',
-  v6Text: '#172235',
-  v6Muted: '#758196',
-  v6Line: '#E7EBF0',
-  v6LineStrong: '#D9DFE8',
-  v6Navy: '#15304A',
-  v6Blue: '#355DF7',
-  v6BlueSoft: '#EEF2FF',
-  v6Teal: '#178A72',
-  v6TealSoft: '#EAF7F3',
-  v6Amber: '#B47B18',
-  v6AmberSoft: '#FFF6E6',
-  v6Red: '#B94B4B',
-  v6RedSoft: '#FFF1F1',
-  v6Purple: '#8A68D6',
-  v6PurpleSoft: '#F2EEFB',
-  v6Gold: '#D49B37',
-
-  // Variantes claires (fond navy uniquement, ex. ligne Balance du Planning) —
-  // v6Red/v6Teal seuls seraient trop peu contrastés sur v6Navy (deux teintes
-  // sombres proches). Jamais utilisées sur fond clair.
-  v6RedOnDark: '#FF9B8A',
-  v6TealOnDark: '#8EE6C4',
+  donutTrack: '#E3EEE8',
+  donutTrackWarn: '#F3E8D2',
 } as const;
 
-/**
- * Palette "cartes comptes" (Maquette 3, §2) — rotation par index, purement
- * visuelle (jamais liée à une règle métier : aucun compte n'a de couleur
- * assignée en base). Approximation en couleur pleine du dégradé de la
- * maquette (mêmes teintes dominantes), même contrainte que ci-dessus.
- */
-export const accountCardPalette = ['#33A57C', '#5D79CD', '#C66F95'] as const;
-
-/**
- * Relief (R6.1 §15) — la refonte R6 n'avait fait que centraliser les couleurs
- * existantes sans ombre ni contour marqué (cartes "plates" dénoncées en
- * recette). `card`/`raised` donnent un vrai relief perceptible aux cartes
- * principales de chaque écran ; `elevation` (Android) et `shadow*` (iOS)
- * doivent toujours être appliqués ensemble.
- */
 export const elevation = {
   card: Platform.select({
     android: { elevation: 3 },
-    default: { shadowColor: '#172436', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 6 },
+    default: { shadowColor: colors.primaryDark, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6 },
   }),
   raised: Platform.select({
     android: { elevation: 6 },
-    default: { shadowColor: '#172436', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.14, shadowRadius: 12 },
+    default: { shadowColor: colors.primaryDark, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 12 },
   }),
 } as const;
 
-/** Espacement cohérent (§18 densité) — jamais une valeur magique par écran. */
+/** Espacement cohérent — jamais une valeur magique par écran. */
 export const spacing = {
   xs: 4,
   sm: 8,
   md: 12,
-  lg: 16,
-  xl: 20,
-  xxl: 24,
+  lg: 18,
+  xl: 22,
+  xxl: 28,
 } as const;
 
 export const radius = {
   sm: 8,
   md: 10,
-  lg: 12,
-  xl: 14,
+  lg: 14,
+  xl: 18,
   pill: 999,
 } as const;
 
-/** Échelle typographique (§18) — titres/montants/labels cohérents partout. */
 export const typography = {
   screenTitle: { fontSize: 22, fontWeight: '700' as const, color: colors.textPrimary },
   sectionTitle: { fontSize: 15, fontWeight: '700' as const, color: colors.textPrimary },
-  sectionLabel: { fontSize: 13, fontWeight: '600' as const, color: colors.textPrimary },
-  amountPrimary: { fontSize: 28, fontWeight: '800' as const, color: colors.textPrimary },
-  amountSecondary: { fontSize: 16, fontWeight: '700' as const, color: colors.textPrimary },
+  sectionLabel: { fontSize: 13, fontWeight: '700' as const, color: colors.textPrimary },
+  amountPrimary: { fontSize: 30, fontWeight: '800' as const, color: colors.textPrimary },
+  amountSecondary: { fontSize: 17, fontWeight: '700' as const, color: colors.textPrimary },
   body: { fontSize: 14, color: colors.textPrimary },
   bodySecondary: { fontSize: 13, color: colors.textSecondary },
   caption: { fontSize: 11, color: colors.textSecondary },
   badge: { fontSize: 10, fontWeight: '700' as const },
 };
 
-/**
- * Niveaux de carte (§17) — jamais le même traitement partout :
- * A. information (neutre), B. action (mise en avant), C. alerte, D. résultat financier.
- */
+/** Niveaux de carte réutilisables : info (neutre), action (mise en avant), result (chiffre clé). */
 export const cardVariants = {
   info: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, ...elevation.card },
   action: {
@@ -158,20 +86,6 @@ export const cardVariants = {
     borderWidth: 1,
     borderColor: colors.borderStrong,
     ...elevation.card,
-  },
-  alert: {
-    backgroundColor: colors.dangerLight,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.danger,
-  },
-  warningAlert: {
-    backgroundColor: colors.warningLight,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.warning,
   },
   result: {
     backgroundColor: colors.surface,

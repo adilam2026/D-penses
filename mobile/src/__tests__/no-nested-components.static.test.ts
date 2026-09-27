@@ -47,7 +47,10 @@ describe('Aucun composant imbriqué dans un écran (garde-fou bug focus/remount)
   const files = listScreenFiles(screensDir);
 
   it('a bien trouvé des écrans à analyser', () => {
-    expect(files.length).toBeGreaterThan(20);
+    // Reset Finance Maison (2026-09-27) : nouvelle application reconstruite
+    // depuis zéro, encore peu d'écrans — seuil abaissé, le garde-fou lui-même
+    // reste actif et s'appliquera automatiquement à chaque nouvel écran créé.
+    expect(files.length).toBeGreaterThan(0);
   });
 
   it.each(files.map((f) => [path.relative(screensDir, f), f] as const))('%s ne définit aucun composant à l\'intérieur de son écran exporté', (_name, file) => {

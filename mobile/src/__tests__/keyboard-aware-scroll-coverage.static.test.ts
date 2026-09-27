@@ -22,23 +22,14 @@ function listScreenFiles(dir: string): string[] {
   return files;
 }
 
-// Écrans audités et sciemment NON corrigés (Round 3 §1) — un seul champ (ou
-// un seul visible à la fois), contenu fixe et court au-dessus/au-dessous,
-// bouton de soumission qui suit immédiatement le dernier champ : aucun risque
-// réel que le clavier recouvre un champ ou une action.
+// Reset Finance Maison (2026-09-27) : tous les écrans métier de l'ancienne
+// application ont été supprimés (archive/legacy-d-penses-2026-09-27) — liste
+// repartie de zéro. household/HouseholdSetupScreen.tsx est un écran d'INFRA
+// conservé tel quel (auth/foyer, hors reset métier), l'exception d'origine
+// reste donc valide à l'identique.
 const JUSTIFIED_EXCEPTIONS: Record<string, string> = {
   'household/HouseholdSetupScreen.tsx':
     'Un seul TextInput visible à la fois (nom OU code selon le mode), pied de page minimal (erreur, bouton, lien) — rien à faire défiler.',
-  'accounts/QuickCreateAccountScreen.tsx':
-    'Formulaire court (2 champs) : le bouton de création suit immédiatement le dernier champ, aucun contenu variable ne peut le repousser hors écran.',
-  'savings/GoalDetailScreen.tsx':
-    'Le seul TextInput (montant de contribution) suit un bloc de chiffres de taille fixe ; le contenu variable (contributions, tests) est affiché après le champ, jamais au-dessus.',
-  'financial-plans/FinancialPlanDetailScreen.tsx':
-    'Les TextInput (§2/§3 — Modifier/Dupliquer) vivent dans des Modal overlay courts (un champ, boutons juste en dessous), pas dans le corps défilant du ScrollView principal — le ScrollView de la page ne contient lui-même aucun TextInput.',
-  'transactions/TransactionDetailScreen.tsx':
-    'Les TextInput (clôture §1 — Corriger/Modifier une transaction) vivent dans des Modal overlay courts (un seul champ, boutons juste en dessous), pas dans le corps défilant du ScrollView principal — le ScrollView de la page ne contient lui-même aucun TextInput.',
-  'financial-plans/FinancialPlansScreen.web.tsx':
-    'Convergence V6C §2 — les TextInput (Nom/Description, création d\'un plan) vivent dans un Modal overlay court (2 champs, boutons juste en dessous), pas dans le corps défilant du ScrollView principal — le ScrollView de la page ne contient lui-même aucun TextInput.',
 };
 
 describe('Couverture useKeyboardAwareScroll (garde-fou Round 3 §1/§3)', () => {
@@ -46,7 +37,7 @@ describe('Couverture useKeyboardAwareScroll (garde-fou Round 3 §1/§3)', () => 
   const files = listScreenFiles(screensDir);
 
   it('a bien trouvé des écrans à analyser', () => {
-    expect(files.length).toBeGreaterThan(20);
+    expect(files.length).toBeGreaterThan(0);
   });
 
   it.each(files.map((f) => [path.relative(screensDir, f), f] as const))(

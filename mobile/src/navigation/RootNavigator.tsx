@@ -1,91 +1,37 @@
 import React from 'react';
-import { ActivityIndicator, Platform, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { RouteProp, useRoute } from '@react-navigation/native';
 import { useAuth } from '../auth/AuthContext';
 import { LoginScreen } from '../screens/auth/LoginScreen';
 import { SignupScreen } from '../screens/auth/SignupScreen';
 import { VerifyEmailScreen } from '../screens/auth/VerifyEmailScreen';
 import { HouseholdSetupScreen } from '../screens/household/HouseholdSetupScreen';
-import { QuickAddScreen } from '../screens/quickadd/QuickAddScreen';
-import { AccountsScreen } from '../screens/accounts/AccountsScreen';
-import { TransactionsScreen } from '../screens/transactions/TransactionsScreen';
-import { PlanningScreen } from '../screens/planning/PlanningScreen';
-import { AccountDetailScreen } from '../screens/accounts/AccountDetailScreen';
-import { QuickCreateAccountScreen } from '../screens/accounts/QuickCreateAccountScreen';
-import { IncomeScreen } from '../screens/income/IncomeScreen';
-import { IncomeSourceDetailScreen } from '../screens/income/IncomeSourceDetailScreen';
-import { IncomeOccurrenceDetailScreen } from '../screens/income/IncomeOccurrenceDetailScreen';
-import { CreateIncomeScreen } from '../screens/income/CreateIncomeScreen';
-import { ChargesScreen } from '../screens/charges/ChargesScreen';
-import { CreateChargeScreen } from '../screens/charges/CreateChargeScreen';
-import { ChargePlanDetailScreen } from '../screens/charges/ChargePlanDetailScreen';
-import { DeadlineDetailScreen } from '../screens/charges/DeadlineDetailScreen';
-import { EngagedDetailScreen } from '../screens/EngagedDetailScreen';
-import { TransactionDetailScreen } from '../screens/transactions/TransactionDetailScreen';
-import { BudgetsScreen } from '../screens/budgets/BudgetsScreen';
-import { BudgetDetailScreen } from '../screens/budgets/BudgetDetailScreen';
-import { CreateBudgetScreen } from '../screens/budgets/CreateBudgetScreen';
-import { ChildrenScreen } from '../screens/children/ChildrenScreen';
-import { ChildCostsScreen } from '../screens/children/ChildCostsScreen';
-import { FinancialPlansScreen } from '../screens/financial-plans/FinancialPlansScreen';
-import { FinancialPlanDetailScreen } from '../screens/financial-plans/FinancialPlanDetailScreen';
-import { ConfirmDeadlineScreen } from '../screens/financial-plans/ConfirmDeadlineScreen';
-import { SchoolProjectionScreen } from '../screens/financial-plans/SchoolProjectionScreen';
-import { SchoolWizardScreen } from '../screens/school-wizard/SchoolWizardScreen';
-import { TravelWizardScreen } from '../screens/travel-wizard/TravelWizardScreen';
-import { VehicleWizardScreen } from '../screens/vehicle-wizard/VehicleWizardScreen';
-import { HousingWizardScreen } from '../screens/housing-wizard/HousingWizardScreen';
-import { SubscriptionsWizardScreen } from '../screens/subscriptions-wizard/SubscriptionsWizardScreen';
-import { CreatePocketScreen } from '../screens/savings/CreatePocketScreen';
-import { PocketDetailScreen } from '../screens/savings/PocketDetailScreen';
-import { GoalsScreen } from '../screens/savings/GoalsScreen';
-import { GoalDetailScreen } from '../screens/savings/GoalDetailScreen';
-import { CreateGoalScreen } from '../screens/savings/CreateGoalScreen';
-import { ProjectionScreen } from '../screens/projection/ProjectionScreen';
-import { CalendarScreen } from '../screens/calendar/CalendarScreen';
-import { SimulatorScreen } from '../screens/simulation/SimulatorScreen';
-import { OnboardingWizardScreen } from '../screens/onboarding/OnboardingWizardScreen';
-import { EpargneScreen } from '../screens/savings/EpargneScreen';
-import { RecurringTransfersScreen } from '../screens/recurring-transfers/RecurringTransfersScreen';
-import { RecurringTransferDetailScreen } from '../screens/recurring-transfers/RecurringTransferDetailScreen';
-import { EnvelopeDetailScreen } from '../screens/envelopes/EnvelopeDetailScreen';
-import { MedicalClaimsScreen } from '../screens/health/MedicalClaimsScreen';
-import { CloseMedicalClaimScreen } from '../screens/health/CloseMedicalClaimScreen';
-import { HamburgerMenuScreen } from '../screens/HamburgerMenuScreen';
 import { HouseholdMembersScreen } from '../screens/household/HouseholdMembersScreen';
 import { JoinHouseholdScreen } from '../screens/household/JoinHouseholdScreen';
-import { CategoriesScreen } from '../screens/settings/CategoriesScreen';
-import { CategoryTypesScreen } from '../screens/settings/CategoryTypesScreen';
-import { PreferencesScreen } from '../screens/settings/PreferencesScreen';
-import { HouseholdConfigScreen } from '../screens/settings/HouseholdConfigScreen';
-import { ResetFinancialDataScreen } from '../screens/settings/ResetFinancialDataScreen';
+import { MenuScreen } from '../screens/MenuScreen';
+import { PlaceholderScreen } from '../screens/PlaceholderScreen';
 import { RootTabs } from './RootTabs';
-import { QuickActionsProvider } from '../state/QuickActionsContext';
-import { QuickActionsSheet } from '../ui/QuickActionsSheet';
+import { colors } from '../ui/theme';
 
 const Stack = createNativeStackNavigator();
 
-// WEB-V4.2/V4.3 — les écrans désormais réellement remplacés par une page Web
-// dédiée (Accounts/Budgets/FinancialPlans/Charges/Projection .web.tsx)
-// n'affichent plus le header natif React Navigation sur Web (le Header du
-// shell desktop en tient déjà lieu) : jamais de double header. Ne touche QUE
-// ces routes — les écrans détail/formulaire/assistant non redessinés gardent
-// leur header natif actuel, aucun refactor général de ce fichier.
-// (Calendrier est géré séparément : nested dans "Tabs", RootTabs.web.tsx a
-// déjà headerShown:false, aucune entrée root ici à toucher pour cet écran.)
-const isWeb = Platform.OS === 'web';
+function PlaceholderRoute() {
+  const route = useRoute<RouteProp<{ Placeholder: { title: string } }, 'Placeholder'>>();
+  return <PlaceholderScreen title={route.params?.title ?? ''} subtitle="Cet écran sera construit dans une prochaine étape." />;
+}
 
 /**
- * Bascule entre trois états (docs/03 §I.1) : non connecté → Auth, connecté sans
- * foyer actif → onboarding foyer (RG-001), connecté avec foyer actif → application.
+ * Bascule entre trois états : non connecté → Auth, connecté sans foyer actif →
+ * onboarding foyer, connecté avec foyer actif → application (Tabs + menu).
  */
 export function RootNavigator() {
   const { status } = useAuth();
 
   if (status === 'loading') {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F6F5F2' }}>
-        <ActivityIndicator size="large" />
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -109,77 +55,12 @@ export function RootNavigator() {
   }
 
   return (
-    <QuickActionsProvider>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Tabs" component={RootTabs} />
-      <Stack.Screen name="HamburgerMenu" component={HamburgerMenuScreen} />
+      <Stack.Screen name="Menu" component={MenuScreen} options={{ presentation: 'modal' }} />
       <Stack.Screen name="HouseholdMembers" component={HouseholdMembersScreen} options={{ headerShown: true, title: 'Membres du foyer' }} />
       <Stack.Screen name="JoinHousehold" component={JoinHouseholdScreen} options={{ headerShown: true, title: 'Mes foyers' }} />
-      <Stack.Screen name="Categories" component={CategoriesScreen} options={{ headerShown: true, title: 'Catégories' }} />
-      <Stack.Screen name="CategoryTypes" component={CategoryTypesScreen} options={{ headerShown: true, title: 'Types de dépenses' }} />
-      <Stack.Screen name="Preferences" component={PreferencesScreen} options={{ headerShown: true, title: 'Préférences' }} />
-      <Stack.Screen name="HouseholdConfig" component={HouseholdConfigScreen} options={{ headerShown: true, title: 'Configuration du foyer' }} />
-      <Stack.Screen name="ResetFinancialData" component={ResetFinancialDataScreen} options={{ headerShown: true, title: 'Réinitialiser mes données' }} />
-      {/* Refonte maquette V6B §6 — "Enveloppes" désigne désormais l'onglet
-          principal (RootTabs, nouvel écran compact EnvelopesScreen). L'ancien
-          écran Épargne/Provisions (CAS 1/2/3, plus détaillé) reste atteignable
-          sous un nom distinct, aucune fonctionnalité perdue. */}
-      <Stack.Screen name="EnveloppesLegacy" component={EpargneScreen} options={{ headerShown: true, title: 'Enveloppes (détail)' }} />
-      <Stack.Screen name="EnvelopeDetail" component={EnvelopeDetailScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="MedicalClaims" component={MedicalClaimsScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="CloseMedicalClaim" component={CloseMedicalClaimScreen} options={{ headerShown: false, presentation: 'modal' }} />
-      <Stack.Screen name="Planning" component={PlanningScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="Transactions" component={TransactionsScreen} options={{ headerShown: !isWeb, title: 'Transactions' }} />
-      <Stack.Screen name="RecurringTransfers" component={RecurringTransfersScreen} options={{ headerShown: true, title: 'Transferts récurrents' }} />
-      <Stack.Screen name="RecurringTransferDetail" component={RecurringTransferDetailScreen} options={{ headerShown: true, title: 'Transfert récurrent' }} />
-      <Stack.Screen name="QuickAdd" component={QuickAddScreen} options={{ presentation: 'modal' }} />
-      <Stack.Screen name="Accounts" component={AccountsScreen} options={{ headerShown: !isWeb, title: 'Comptes' }} />
-      <Stack.Screen name="AccountDetail" component={AccountDetailScreen} options={{ headerShown: !isWeb, title: 'Compte' }} />
-      <Stack.Screen
-        name="QuickCreateAccount"
-        component={QuickCreateAccountScreen}
-        options={{ headerShown: true, title: 'Nouveau compte', presentation: 'modal' }}
-      />
-      <Stack.Screen name="Income" component={IncomeScreen} options={{ headerShown: true, title: 'Revenus' }} />
-      <Stack.Screen name="IncomeSourceDetail" component={IncomeSourceDetailScreen} options={{ headerShown: true, title: 'Revenu' }} />
-      <Stack.Screen name="IncomeOccurrenceDetail" component={IncomeOccurrenceDetailScreen} options={{ headerShown: true, title: 'Revenu prévu' }} />
-      <Stack.Screen name="CreateIncome" component={CreateIncomeScreen} options={{ headerShown: true, title: 'Nouveau revenu', presentation: 'modal' }} />
-      <Stack.Screen name="Charges" component={ChargesScreen} options={{ headerShown: !isWeb, title: 'Charges prévisionnelles' }} />
-      <Stack.Screen name="CreateCharge" component={CreateChargeScreen} options={{ headerShown: true, title: 'Nouvelle charge', presentation: 'modal' }} />
-      <Stack.Screen name="ChargePlanDetail" component={ChargePlanDetailScreen} options={{ headerShown: !isWeb, title: 'Charge prévisionnelle' }} />
-      <Stack.Screen name="DeadlineDetail" component={DeadlineDetailScreen} options={{ headerShown: !isWeb, title: 'Échéance' }} />
-      <Stack.Screen name="EngagedDetail" component={EngagedDetailScreen} options={{ headerShown: true, title: 'Détail de l\'engagé' }} />
-      <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} options={{ headerShown: !isWeb, title: 'Transaction' }} />
-      <Stack.Screen name="Budgets" component={BudgetsScreen} options={{ headerShown: !isWeb, title: 'Budgets' }} />
-      <Stack.Screen name="BudgetDetail" component={BudgetDetailScreen} options={{ headerShown: !isWeb, title: 'Budget' }} />
-      <Stack.Screen name="CreateBudget" component={CreateBudgetScreen} options={{ headerShown: true, title: 'Nouveau budget', presentation: 'modal' }} />
-      <Stack.Screen name="Children" component={ChildrenScreen} options={{ headerShown: true, title: 'Enfants' }} />
-      <Stack.Screen name="ChildCosts" component={ChildCostsScreen} options={{ headerShown: true, title: 'Coûts' }} />
-      <Stack.Screen name="FinancialPlans" component={FinancialPlansScreen} options={{ headerShown: !isWeb, title: 'Plans financiers' }} />
-      <Stack.Screen name="FinancialPlanDetail" component={FinancialPlanDetailScreen} options={{ headerShown: !isWeb, title: 'Plan financier' }} />
-      <Stack.Screen name="ConfirmDeadline" component={ConfirmDeadlineScreen} options={{ headerShown: true, title: 'Confirmer la facture', presentation: 'modal' }} />
-      <Stack.Screen name="SchoolProjection" component={SchoolProjectionScreen} options={{ headerShown: true, title: 'Projection pluriannuelle' }} />
-      <Stack.Screen name="SchoolWizard" component={SchoolWizardScreen} options={{ presentation: 'modal' }} />
-      <Stack.Screen name="TravelWizard" component={TravelWizardScreen} options={{ presentation: 'modal' }} />
-      <Stack.Screen name="VehicleWizard" component={VehicleWizardScreen} options={{ presentation: 'modal' }} />
-      <Stack.Screen name="HousingWizard" component={HousingWizardScreen} options={{ presentation: 'modal' }} />
-      <Stack.Screen name="SubscriptionsWizard" component={SubscriptionsWizardScreen} options={{ presentation: 'modal' }} />
-      <Stack.Screen name="CreatePocket" component={CreatePocketScreen} options={{ headerShown: true, title: 'Nouvelle enveloppe', presentation: 'modal' }} />
-      <Stack.Screen name="PocketDetail" component={PocketDetailScreen} options={{ headerShown: true, title: 'Épargne' }} />
-      <Stack.Screen name="Goals" component={GoalsScreen} options={{ headerShown: true, title: 'Objectifs' }} />
-      <Stack.Screen name="GoalDetail" component={GoalDetailScreen} options={{ headerShown: true, title: 'Objectif' }} />
-      <Stack.Screen name="CreateGoal" component={CreateGoalScreen} options={{ headerShown: true, title: 'Nouvel objectif', presentation: 'modal' }} />
-      {/* Corrections UI/UX finales §2/§6/§8 — Projection et Calendrier deviennent des
-          onglets de la barre basse (RootTabs) EN PLUS d'être atteignables en push
-          racine (ex. depuis le menu ☰) : les deux composants gèrent déjà eux-mêmes
-          leur propre titre + safe-area (useTopInset), jamais de header natif ici
-          pour éviter un double titre/double padding selon le chemin d'accès. */}
-      <Stack.Screen name="Projection" component={ProjectionScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="Calendrier" component={CalendarScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="Simulator" component={SimulatorScreen} options={{ headerShown: true, title: 'Simulateur' }} />
-      <Stack.Screen name="Onboarding" component={OnboardingWizardScreen} options={{ headerShown: true, title: 'Assistant de démarrage', presentation: 'modal' }} />
-      </Stack.Navigator>
-      <QuickActionsSheet />
-    </QuickActionsProvider>
+      <Stack.Screen name="Placeholder" component={PlaceholderRoute} />
+    </Stack.Navigator>
   );
 }

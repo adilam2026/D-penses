@@ -1,51 +1,45 @@
 import { Platform } from 'react-native';
-import { accountCardPalette, colors as brand } from '../ui/theme';
 
 /**
  * Portail Web v4 — charte VISUELLE dédiée, totalement séparée de ui/theme.ts
- * (mobile, jamais touché). Réutilise UNIQUEMENT les couleurs de marque déjà
- * définies (navy/vert/rouge/ambre/palette comptes — identité D-Penses+,
- * validé §5) ; tout le reste (rayons, espacements, ombres, typographie,
- * densité) est repensé pour un portail desktop dense, jamais un agrandissement
- * des tokens mobile.
+ * (mobile). Web reste gelé (reset Finance Maison, 2026-09-27) : ce fichier
+ * n'importe plus ui/theme.ts (désormais propriété exclusive du mobile, palette
+ * entièrement nouvelle) — ses propres valeurs sont reprises ici telles quelles,
+ * inchangées, pour ne strictement rien modifier côté Web.
  */
 
+export const accountCardPalette = ['#33A57C', '#5D79CD', '#C66F95'] as const;
+
 export const webColors = {
-  // Identité conservée telle quelle (aucune couleur de marque réinventée).
-  primary: brand.primary,
-  success: brand.success,
-  successLight: brand.successLight,
-  danger: brand.danger,
-  dangerLight: brand.dangerLight,
-  warning: brand.warning,
-  warningLight: brand.warningLight,
-  textPrimary: brand.textPrimary,
-  textSecondary: brand.textSecondary,
-  textPlaceholder: brand.textPlaceholder,
-  textOnPrimary: brand.textOnPrimary,
-  sidebarBg: brand.heroBackground,
-  sidebarTextMuted: brand.heroTextMuted,
+  primary: '#172436',
+  success: '#2E7D5B',
+  successLight: '#E6F4EC',
+  danger: '#B3261E',
+  dangerLight: '#FBEDEC',
+  warning: '#B8860B',
+  warningLight: '#FFF7E6',
+  textPrimary: '#172436',
+  textSecondary: '#6B747C',
+  textPlaceholder: '#9AA0A6',
+  textOnPrimary: '#FFFFFF',
+  sidebarBg: '#14344A',
+  sidebarTextMuted: '#B9C6D0',
   accountCardPalette,
 
-  // Reset visuel — la palette "vivante" (D-Penses+ v6, déjà utilisée côté
-  // mobile) est désormais aussi disponible côté Web : jusqu'ici webTheme ne
-  // reprenait que navy/vert/rouge/ambre neutres, jamais teal/violet/or ni les
-  // variantes "soft" — d'où un portail perçu comme plus pâle/administratif
-  // que le mobile alors que la charte existait déjà.
-  navy: brand.v6Navy,
-  blue: brand.v6Blue,
-  blueSoft: brand.v6BlueSoft,
-  teal: brand.v6Teal,
-  tealSoft: brand.v6TealSoft,
-  amber: brand.v6Amber,
-  amberSoft: brand.v6AmberSoft,
-  red: brand.v6Red,
-  redSoft: brand.v6RedSoft,
-  purple: brand.v6Purple,
-  purpleSoft: brand.v6PurpleSoft,
-  gold: brand.v6Gold,
-  redOnDark: brand.v6RedOnDark,
-  tealOnDark: brand.v6TealOnDark,
+  navy: '#15304A',
+  blue: '#355DF7',
+  blueSoft: '#EEF2FF',
+  teal: '#178A72',
+  tealSoft: '#EAF7F3',
+  amber: '#B47B18',
+  amberSoft: '#FFF6E6',
+  red: '#B94B4B',
+  redSoft: '#FFF1F1',
+  purple: '#8A68D6',
+  purpleSoft: '#F2EEFB',
+  gold: '#D49B37',
+  redOnDark: '#FF9B8A',
+  tealOnDark: '#8EE6C4',
 
   // Géométrie Web dédiée (densité SaaS desktop, jamais un agrandissement
   // mobile) — fond légèrement plus soutenu que l'ancien #F2F1ED (toujours issu
