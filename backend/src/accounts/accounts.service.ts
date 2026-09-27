@@ -1,14 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { RlsContextService } from '../common/prisma/rls-context.service';
-import {
-  assertInvariants,
-  buildLedgerLegs,
-  computeAccountBalance,
-  computeNonAffecte,
-  computeSubaccountBalance,
-  lockAccounts,
-} from '../common/ledger/ledger.util';
+import { assertInvariants, buildLedgerLegs, computeAccountBalance, computeSubaccountBalance, lockAccounts } from '../common/ledger/ledger.util';
 
 type TxClient = Prisma.TransactionClient;
 
@@ -150,14 +143,20 @@ export class AccountsService {
     });
   }
 
+  /**
+   * §performance (recette globale) : nonAffecte se déduit de balance - somme des
+   * soldes sous-comptes déjà calculés pour subaccountDtos, jamais recalculé via
+   * computeNonAffecte (qui re-requêterait les mêmes sous-comptes une 2e fois).
+   */
   private async toAccountDto(tx: TxClient, accountId: string) {
     const account = await tx.account.findUniqueOrThrow({ where: { id: accountId } });
     const subaccounts = await tx.subaccount.findMany({ where: { accountId }, orderBy: { createdAt: 'asc' } });
-    const [balance, nonAffecte, subaccountDtos] = await Promise.all([
+    const [balance, subaccountDtos] = await Promise.all([
       computeAccountBalance(tx, accountId),
-      computeNonAffecte(tx, accountId),
       Promise.all(subaccounts.map((s) => this.toSubaccountDto(tx, s.id))),
     ]);
+    const allocated = subaccountDtos.reduce((sum, s) => sum.add(s.balance), new Prisma.Decimal(0));
+    const nonAffecte = balance.sub(allocated);
     return { ...account, balance, nonAffecte, subaccounts: subaccountDtos };
   }
 

@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { OperationKind, Prisma } from '@prisma/client';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { insertFinancialOperation } from '../common/ledger/ledger.util';
+import { ensurePlannedOccurrences } from '../common/ledger/recurrence.util';
 import { resolveFallbackCategoryId } from '../categories/categories.service';
 
 export interface UpdatePlannedOperationInput {
@@ -68,6 +69,9 @@ export class PlannedOperationsService {
   async list(userId: string, householdId: string) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
+      // Fenêtre glissante toujours à jour (même logique que Planning) — sinon
+      // "À faire" (Accueil) peut rester figé si l'utilisateur n'ouvre jamais Planning.
+      await ensurePlannedOccurrences(tx, householdId);
       return tx.plannedOperation.findMany({ where: { householdId }, orderBy: { expectedDate: 'asc' } });
     });
   }
