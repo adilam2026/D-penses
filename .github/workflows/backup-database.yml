@@ -13,8 +13,24 @@ jobs:
   backup:
     runs-on: ubuntu-latest
     steps:
-      - name: Installer les outils client PostgreSQL (pg_dump/pg_restore)
-        run: sudo apt-get update -y && sudo apt-get install -y postgresql-client
+      - name: Installer les outils client PostgreSQL 18 (dépôt PGDG — le paquet Ubuntu par défaut est trop ancien face au serveur Railway)
+        # Premier essai (postgresql-client générique Ubuntu) a échoué :
+        # "aborting because of server version mismatch — server version: 18.6,
+        # pg_dump version: 16.15" — pg_dump refuse par sécurité de dumper un
+        # serveur plus récent que lui. Le dépôt PGDG fournit le paquet
+        # postgresql-client-18 exact.
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y curl ca-certificates gnupg
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo "$VERSION_CODENAME")-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+          export PATH="/usr/lib/postgresql/18/bin:$PATH"
+          pg_dump --version
+          pg_restore --version
 
       - name: Préparer le nom horodaté du dump
         id: meta
