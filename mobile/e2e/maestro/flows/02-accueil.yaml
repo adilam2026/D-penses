@@ -15,4 +15,8 @@ appId: com.depenses.mobile
     text: "^BP Lamiaa$"
 - assertVisible:
     text: "^BP Adil$"
+- scrollUntilVisible:
+    element:
+      text: "À FAIRE"
+    direction: DOWN
 - assertVisible: "À FAIRE"

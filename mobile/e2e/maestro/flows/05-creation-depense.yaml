@@ -4,9 +4,11 @@ appId: com.depenses.mobile
 #
 # Note sur la date : DateField ouvre le sélecteur natif Android
 # (DateTimePickerAndroid), une boîte de dialogue système — jamais un champ
-# texte libre. android:id/button1 est l'id de ressource standard AOSP du
-# bouton positif ("OK") de cette boîte, stable quelle que soit la langue du
-# device. La date du jour est pré-sélectionnée par défaut.
+# texte libre. Le bouton positif de cette boîte est ciblé par son libellé
+# visible ("OK") plutôt que par android:id/button1 : ce dernier s'est avéré
+# intermittent en CI (l'id de ressource AOSP existe bien, mais le tap
+# échouait sporadiquement selon le timing de rendu du dialogue). La date du
+# jour est pré-sélectionnée par défaut.
 - runFlow: common/login.yaml
 - tapOn: "Ajouter"
 - assertVisible:
@@ -21,7 +23,7 @@ appId: com.depenses.mobile
 - tapOn:
     text: "Choisir une date"
 - tapOn:
-    id: "android:id/button1"
+    text: "^OK$"
 - tapOn:
     id: "ajouter-label"
 - inputText: "Dépense E2E Maestro"

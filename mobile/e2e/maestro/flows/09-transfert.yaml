@@ -11,7 +11,7 @@ appId: com.depenses.mobile
 - tapOn:
     text: "Choisir une date"
 - tapOn:
-    id: "android:id/button1"
+    text: "^OK$"
 - tapOn:
     id: "ajouter-label"
 - inputText: "Transfert E2E Maestro"

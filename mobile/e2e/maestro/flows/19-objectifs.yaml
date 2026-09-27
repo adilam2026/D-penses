@@ -15,5 +15,9 @@ appId: com.depenses.mobile
 - hideKeyboard
 - tapOn:
     id: "goal-submit"
+- scrollUntilVisible:
+    element:
+      text: "Objectif"
+    direction: DOWN
 - assertVisible:
     text: "Objectif"

@@ -6,6 +6,10 @@ appId: com.depenses.mobile
     id: "app-shell-menu-button"
 - tapOn:
     id: "menu-row-epargne-sous-comptes"
+- scrollUntilVisible:
+    element:
+      id: "savings-subaccounts-add-global"
+    direction: DOWN
 - tapOn:
     id: "savings-subaccounts-add-global"
 - assertVisible: "Nouveau sous-compte"
