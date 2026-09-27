@@ -12,6 +12,8 @@ import { FinancialOperationsModule } from './financial-operations/financial-oper
 import { PlannedOperationsModule } from './planned-operations/planned-operations.module';
 import { MedicalClaimsModule } from './medical-claims/medical-claims.module';
 import { RecurrenceRulesModule } from './recurrence-rules/recurrence-rules.module';
+import { PlanningModule } from './planning/planning.module';
+import { FinancialPlansModule } from './financial-plans/financial-plans.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -26,6 +28,8 @@ import { AppController } from './app.controller';
     PlannedOperationsModule,
     MedicalClaimsModule,
     RecurrenceRulesModule,
+    PlanningModule,
+    FinancialPlansModule,
   ],
   controllers: [AppController],
   providers: [

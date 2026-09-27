@@ -1,5 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { resolveFallbackCategoryId } from '../../categories/categories.service';
 
 type TxClient = Prisma.TransactionClient;
 type Kind = 'EXPENSE' | 'INCOME' | 'TRANSFER' | 'SAVINGS_CONTRIBUTION' | 'MEDICAL_REIMBURSEMENT' | 'OPENING_BALANCE';
@@ -240,6 +241,14 @@ export async function insertFinancialOperation(tx: TxClient, params: InsertOpera
   if (params.sourceSubaccountId) await assertSubaccountBelongsToAccount(tx, params.sourceSubaccountId, params.sourceAccountId!);
   if (params.destinationSubaccountId) await assertSubaccountBelongsToAccount(tx, params.destinationSubaccountId, params.destinationAccountId!);
 
+  // "Autres" obligatoire (Checkpoint 3) : une dépense non planifiée créée sans
+  // catégorie (ex. "Aspirateur 2500 DH") tombe automatiquement dans "Autres" —
+  // jamais de catégorie null qui échapperait à l'agrégation du Planning.
+  let categoryId = params.categoryId ?? null;
+  if (params.kind === 'EXPENSE' && !categoryId) {
+    categoryId = await resolveFallbackCategoryId(tx, params.householdId);
+  }
+
   const affectedAccountIds = [params.sourceAccountId, params.destinationAccountId].filter((x): x is string => !!x);
   await lockAccounts(tx, affectedAccountIds);
 
@@ -254,7 +263,7 @@ export async function insertFinancialOperation(tx: TxClient, params: InsertOpera
       label: params.label,
       date: params.date,
       amount: params.amount,
-      categoryId: params.categoryId ?? undefined,
+      categoryId: categoryId ?? undefined,
       sourceAccountId: params.sourceAccountId ?? undefined,
       sourceSubaccountId: params.sourceSubaccountId ?? undefined,
       destinationAccountId: params.destinationAccountId ?? undefined,

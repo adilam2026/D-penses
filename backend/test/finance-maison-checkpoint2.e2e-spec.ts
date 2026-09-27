@@ -147,30 +147,24 @@ describe('Finance Maison — Checkpoint 2 — nouveaux endpoints', () => {
     expect(afterFull.body.status).toBe('CLOSED');
   });
 
-  it('règle de récurrence : création puis liaison à une échéance prévue (Ajouter > Récurrente — §11)', async () => {
+  it('règle de récurrence : création génère automatiquement ses échéances prévues (Ajouter > Récurrente — §11, Checkpoint 3 §18)', async () => {
     const token = await freshHousehold();
     const cih = await createAccount(token, 'CIH', 20000);
 
     const rule = await http
       .post('/recurrence-rules')
       .set('Authorization', `Bearer ${token}`)
-      .send({ frequency: 'MONTHLY', anchorDate: '2026-10-01', label: 'Loyer' })
+      .send({ frequency: 'MONTHLY', anchorDate: '2026-10-01', label: 'Loyer', kind: 'EXPENSE', expectedAmount: '3000', sourceAccountId: cih.id })
       .expect(201);
     expect(rule.body.frequency).toBe('MONTHLY');
 
-    const planned = await http
-      .post('/planned-operations')
-      .set('Authorization', `Bearer ${token}`)
-      .send({
-        kind: 'EXPENSE',
-        label: 'Loyer',
-        expectedDate: '2026-10-01',
-        expectedAmount: '3000',
-        sourceAccountId: cih.id,
-        recurrenceRuleId: rule.body.id,
-      })
-      .expect(201);
-    expect(planned.body.recurrenceRuleId).toBe(rule.body.id);
+    // La création de la règle peuple immédiatement la fenêtre glissante (§18) —
+    // aucune création manuelle de planned_operation n'est nécessaire ni possible
+    // pour la même date (contrainte anti-doublon recurrenceRuleId+expectedDate).
+    const plannedList = await http.get('/planned-operations').set('Authorization', `Bearer ${token}`).expect(200);
+    const generated = plannedList.body.find((p: any) => p.recurrenceRuleId === rule.body.id && p.expectedDate.startsWith('2026-10-01'));
+    expect(generated).toBeTruthy();
+    expect(generated.expectedAmount).toBe(3000);
 
     const list = await http.get('/recurrence-rules').set('Authorization', `Bearer ${token}`).expect(200);
     expect(list.body).toHaveLength(1);

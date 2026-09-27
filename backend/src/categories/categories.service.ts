@@ -13,6 +13,12 @@ export async function seedDefaultFallbackCategory(tx: TxClient, householdId: str
   });
 }
 
+/** "Autres" obligatoire (Checkpoint 3) : id de la catégorie de repli du foyer. */
+export async function resolveFallbackCategoryId(tx: TxClient, householdId: string): Promise<string | null> {
+  const fallback = await tx.category.findFirst({ where: { householdId, isDefaultFallback: true } });
+  return fallback?.id ?? null;
+}
+
 @Injectable()
 export class CategoriesService {
   constructor(private readonly rlsContext: RlsContextService) {}

@@ -12,7 +12,7 @@ import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
 
 type QuickMode = 'EXPENSE' | 'INCOME' | 'TRANSFER' | 'SAVINGS_CONTRIBUTION';
 type EntryTab = 'realisee' | 'a_venir';
-type RecurrenceOption = 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'SEMIANNUAL' | 'YEARLY';
+type RecurrenceOption = 'WEEKLY' | 'MONTHLY' | 'BIMONTHLY' | 'QUARTERLY' | 'SEMIANNUAL' | 'YEARLY';
 
 const QUICK_TILES: { mode: QuickMode; label: string; icon: string }[] = [
   { mode: 'EXPENSE', label: 'Dépense', icon: '↓' },
@@ -24,6 +24,7 @@ const QUICK_TILES: { mode: QuickMode; label: string; icon: string }[] = [
 const RECURRENCE_LABELS: Record<RecurrenceOption, string> = {
   WEEKLY: 'Hebdomadaire',
   MONTHLY: 'Mensuelle',
+  BIMONTHLY: 'Tous les 2 mois',
   QUARTERLY: 'Trimestrielle',
   SEMIANNUAL: 'Semestrielle',
   YEARLY: 'Annuelle',
@@ -130,12 +131,23 @@ export function AjouterScreen() {
           destinationSubaccountId: dst?.subaccountId,
           createMedicalClaim: isSante && medicalClaim,
         });
+      } else if (recurring) {
+        // La règle génère IMMÉDIATEMENT ses occurrences sur la fenêtre glissante
+        // (dont celle-ci, à anchorDate) — jamais de planned_operation manuelle en
+        // plus, qui entrerait en conflit avec l'occurrence auto-générée (§18).
+        await api.createRecurrenceRule({
+          frequency,
+          anchorDate: date,
+          label: label.trim(),
+          kind: mode as 'EXPENSE' | 'INCOME' | 'SAVINGS_CONTRIBUTION',
+          expectedAmount: amount,
+          categoryId: categoryId ?? undefined,
+          sourceAccountId: src?.accountId,
+          sourceSubaccountId: src?.subaccountId,
+          destinationAccountId: dst?.accountId,
+          destinationSubaccountId: dst?.subaccountId,
+        });
       } else {
-        let recurrenceRuleId: string | undefined;
-        if (recurring) {
-          const rule = await api.createRecurrenceRule({ frequency, anchorDate: date, label: label.trim() });
-          recurrenceRuleId = rule.id;
-        }
         await api.createPlannedOperation({
           kind: mode as 'EXPENSE' | 'INCOME' | 'SAVINGS_CONTRIBUTION',
           label: label.trim(),
@@ -146,7 +158,6 @@ export function AjouterScreen() {
           sourceSubaccountId: src?.subaccountId,
           destinationAccountId: dst?.accountId,
           destinationSubaccountId: dst?.subaccountId,
-          recurrenceRuleId,
         });
       }
       setAmount('');

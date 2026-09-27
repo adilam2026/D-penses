@@ -280,6 +280,15 @@ export const realizePlannedOperation = (id: string, data: { actualAmount: string
 
 export const cancelPlannedOperation = (id: string) => apiFetch(`/planned-operations/${id}/cancel`, { method: 'POST' });
 
+/** Modifier UNE occurrence (appui long, ex. prévu 700 -> réel ajusté avant paiement) — ne touche jamais la règle. */
+export const updatePlannedOperation = (
+  id: string,
+  data: { expectedAmount?: string; expectedDate?: string; label?: string; categoryId?: string; sourceAccountId?: string; sourceSubaccountId?: string; destinationAccountId?: string; destinationSubaccountId?: string },
+): Promise<PlannedOperationApi> => apiFetch(`/planned-operations/${id}`, { method: 'PATCH', body: data });
+
+/** "Annuler le paiement" (case verte, appui long) — renversement validé, jamais de suppression de la transaction d'origine. */
+export const unrealizePlannedOperation = (id: string): Promise<PlannedOperationApi> => apiFetch(`/planned-operations/${id}/unrealize`, { method: 'POST' });
+
 // ---------- Dossiers santé / mutuelle (§10) ----------
 export interface MedicalReimbursementApi {
   id: string;
@@ -313,15 +322,138 @@ export const addMedicalReimbursement = (
   data: { amount: string; date: string; destinationAccountId: string; allocationSubaccountId?: string },
 ): Promise<MedicalClaimApi> => apiFetch(`/medical-claims/${claimId}/reimbursements`, { method: 'POST', body: data });
 
-// ---------- Règles de récurrence (Ajouter > Type=Récurrente, §11) ----------
-export type RecurrenceFrequency = 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'SEMIANNUAL' | 'YEARLY' | 'ONCE';
+// ---------- Règles de récurrence (Ajouter > Type=Récurrente, §11 / Checkpoint 3 §18-19) ----------
+export type RecurrenceFrequency = 'WEEKLY' | 'MONTHLY' | 'BIMONTHLY' | 'QUARTERLY' | 'SEMIANNUAL' | 'YEARLY' | 'ONCE';
 
 export interface RecurrenceRuleApi {
   id: string;
   frequency: RecurrenceFrequency;
   anchorDate: string;
   label: string | null;
+  active: boolean;
+  kind: PlannedOperationKind;
+  expectedAmount: number;
+  categoryId: string | null;
+  sourceAccountId: string | null;
+  sourceSubaccountId: string | null;
+  destinationAccountId: string | null;
+  destinationSubaccountId: string | null;
 }
 
-export const createRecurrenceRule = (data: { frequency: RecurrenceFrequency; anchorDate: string; label?: string }): Promise<RecurrenceRuleApi> =>
-  apiFetch('/recurrence-rules', { method: 'POST', body: data });
+export const listRecurrenceRules = (): Promise<RecurrenceRuleApi[]> => apiFetch('/recurrence-rules');
+
+export const createRecurrenceRule = (data: {
+  frequency: RecurrenceFrequency;
+  anchorDate: string;
+  label?: string;
+  kind: PlannedOperationKind;
+  expectedAmount: string;
+  categoryId?: string;
+  sourceAccountId?: string;
+  sourceSubaccountId?: string;
+  destinationAccountId?: string;
+  destinationSubaccountId?: string;
+}): Promise<RecurrenceRuleApi> => apiFetch('/recurrence-rules', { method: 'POST', body: data });
+
+/** Modifier une règle (§19) : applyFrom pilote "cette occurrence seulement" (jamais le gabarit) vs "cette occurrence et les suivantes". */
+export const updateRecurrenceRule = (
+  id: string,
+  data: {
+    applyFrom: 'THIS_OCCURRENCE' | 'THIS_AND_FOLLOWING';
+    fromDate: string;
+    expectedAmount?: string;
+    label?: string;
+    categoryId?: string;
+    sourceAccountId?: string;
+    sourceSubaccountId?: string;
+    destinationAccountId?: string;
+    destinationSubaccountId?: string;
+    active?: boolean;
+  },
+): Promise<RecurrenceRuleApi> => apiFetch(`/recurrence-rules/${id}`, { method: 'PATCH', body: data });
+
+// ---------- Planning multi-mois (Checkpoint 3) ----------
+export type PlanningCellStatus = 'EMPTY' | 'PENDING' | 'REALIZED' | 'MIXED';
+
+export interface PlanningCellItemApi {
+  type: 'PLANNED_PENDING' | 'PLANNED_REALIZED' | 'REAL_UNPLANNED';
+  plannedOperationId?: string;
+  financialOperationId?: string;
+  label: string;
+  amount: number;
+  date: string;
+  sourceAccountId: string | null;
+  sourceSubaccountId: string | null;
+  destinationAccountId: string | null;
+  destinationSubaccountId: string | null;
+}
+
+export interface PlanningSingleOccurrenceApi {
+  plannedOperationId: string;
+  status: 'PENDING' | 'REALIZED';
+  expectedAmount: number;
+  realizedAmount: number | null;
+  sourceAccountId: string | null;
+  sourceSubaccountId: string | null;
+  destinationAccountId: string | null;
+  destinationSubaccountId: string | null;
+}
+
+export interface PlanningCellApi {
+  displayAmount: number;
+  budgetAmount: number;
+  status: PlanningCellStatus;
+  singleOccurrence: PlanningSingleOccurrenceApi | null;
+  items: PlanningCellItemApi[];
+}
+
+export interface PlanningRowApi {
+  key: string;
+  label: string;
+  categoryId?: string;
+  cells: Record<string, PlanningCellApi>;
+}
+
+export interface PlanningMonthSyntheseApi {
+  totalRevenus: number;
+  totalDepenses: number;
+  totalEpargne: number;
+  balanceMensuelle: number;
+  balanceCumulee: number;
+}
+
+export interface PlanningTableApi {
+  months: string[];
+  revenus: PlanningRowApi[];
+  depenses: PlanningRowApi[];
+  epargne: PlanningRowApi[];
+  synthese: Record<string, PlanningMonthSyntheseApi>;
+}
+
+/** Endpoint agrégé unique — jamais 1 requête par ligne/mois/catégorie. */
+export const getPlanning = (months: number): Promise<PlanningTableApi> => apiFetch(`/planning?months=${months}`);
+
+// ---------- Plans financiers (Checkpoint 3 §plans financiers) ----------
+export interface FinancialPlanDeadlineSummaryApi {
+  deadlineId: string;
+  label: string;
+  dueDate: string;
+  totalPrevu: number;
+  disponible: number;
+  reste: number;
+  monthsRemaining: number;
+  recommendedMonthly: number;
+}
+
+export interface FinancialPlanApi {
+  id: string;
+  label: string;
+  items: { id: string; label: string }[];
+  deadlines: FinancialPlanDeadlineSummaryApi[];
+  nextDeadline: FinancialPlanDeadlineSummaryApi | null;
+}
+
+export const listFinancialPlans = (): Promise<FinancialPlanApi[]> => apiFetch('/financial-plans');
+
+export const createFinancialPlan = (data: { label: string; items?: { label: string }[]; deadlines?: { label: string; dueDate: string }[] }): Promise<FinancialPlanApi> =>
+  apiFetch('/financial-plans', { method: 'POST', body: data });

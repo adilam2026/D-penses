@@ -192,6 +192,7 @@ enum PlannedOperationStatus {
 enum RecurrenceFrequency {
   WEEKLY
   MONTHLY
+  BIMONTHLY
   QUARTERLY
   SEMIANNUAL
   YEARLY
@@ -222,6 +223,9 @@ model Account {
   plannedAsSource      PlannedOperation[] @relation("PlannedSourceAccount")
   plannedAsDestination PlannedOperation[] @relation("PlannedDestinationAccount")
 
+  recurrenceRulesAsSource      RecurrenceRule[] @relation("RecurrenceSourceAccount")
+  recurrenceRulesAsDestination RecurrenceRule[] @relation("RecurrenceDestinationAccount")
+
   @@index([householdId])
   @@map("account")
 }
@@ -251,6 +255,9 @@ model Subaccount {
   medicalClaims                MedicalClaim[]
   medicalReimbursementsAllocated MedicalReimbursement[] @relation("ReimbursementAllocationSubaccount")
 
+  recurrenceRulesAsSourceSub      RecurrenceRule[] @relation("RecurrenceSourceSubaccount")
+  recurrenceRulesAsDestinationSub RecurrenceRule[] @relation("RecurrenceDestinationSubaccount")
+
   @@index([accountId])
   @@index([householdId])
   @@map("subaccount")
@@ -271,6 +278,7 @@ model Category {
 
   financialOperations FinancialOperation[]
   plannedOperations   PlannedOperation[]
+  recurrenceRules     RecurrenceRule[]
 
   @@index([householdId])
   @@map("category")
@@ -279,15 +287,45 @@ model Category {
 // Une règle de récurrence n'est jamais une occurrence : chaque échéance réelle
 // est une ligne planned_operations distincte, garantie unique par
 // @@unique([recurrenceRuleId, expectedDate]) (idempotence de génération).
+//
+// Porte le GABARIT de génération (kind/montant/catégorie/comptes) — chaque
+// planned_operation générée copie ces valeurs à sa création, puis vit de
+// façon indépendante : modifier UNE occurrence ne touche jamais ce gabarit ;
+// modifier le gabarit avec "cette occurrence et les suivantes" met à jour ce
+// gabarit ET les occurrences PENDING à partir de la date pivot, jamais
+// l'historique déjà réalisé (Checkpoint 3 §18/§19).
 model RecurrenceRule {
   id          String              @id @default(uuid())
   householdId String              @map("household_id")
   frequency   RecurrenceFrequency
   anchorDate  DateTime            @map("anchor_date") @db.Date
   label       String?
+  active      Boolean             @default(true)
   createdAt   DateTime            @default(now()) @map("created_at")
 
-  household         Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  kind           PlannedOperationKind @default(EXPENSE)
+  expectedAmount Decimal              @default(0) @map("expected_amount") @db.Decimal(14, 2)
+  categoryId     String?              @map("category_id")
+
+  financialPlanItemId     String? @map("financial_plan_item_id")
+  financialPlanDeadlineId String? @map("financial_plan_deadline_id")
+
+  sourceAccountId         String? @map("source_account_id")
+  sourceSubaccountId      String? @map("source_subaccount_id")
+  destinationAccountId    String? @map("destination_account_id")
+  destinationSubaccountId String? @map("destination_subaccount_id")
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  category  Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  financialPlanItem     FinancialPlanItem?     @relation(fields: [financialPlanItemId], references: [id])
+  financialPlanDeadline FinancialPlanDeadline? @relation(fields: [financialPlanDeadlineId], references: [id])
+
+  sourceAccount         Account?    @relation("RecurrenceSourceAccount", fields: [sourceAccountId], references: [id])
+  sourceSubaccount      Subaccount? @relation("RecurrenceSourceSubaccount", fields: [sourceSubaccountId], references: [id])
+  destinationAccount    Account?    @relation("RecurrenceDestinationAccount", fields: [destinationAccountId], references: [id])
+  destinationSubaccount Subaccount? @relation("RecurrenceDestinationSubaccount", fields: [destinationSubaccountId], references: [id])
+
   plannedOperations PlannedOperation[]
 
   @@index([householdId])
@@ -315,6 +353,7 @@ model FinancialPlanItem {
 
   plan              FinancialPlan      @relation(fields: [planId], references: [id], onDelete: Cascade)
   plannedOperations PlannedOperation[]
+  recurrenceRules   RecurrenceRule[]
 
   @@index([planId])
   @@map("financial_plan_item")
@@ -331,6 +370,7 @@ model FinancialPlanDeadline {
 
   plan              FinancialPlan      @relation(fields: [planId], references: [id], onDelete: Cascade)
   plannedOperations PlannedOperation[]
+  recurrenceRules   RecurrenceRule[]
 
   @@index([planId])
   @@map("financial_plan_deadline")

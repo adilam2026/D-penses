@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AccueilScreen } from '../screens/AccueilScreen';
 import { EpargneScreen } from '../screens/EpargneScreen';
 import { AjouterScreen } from '../screens/AjouterScreen';
-import { PlaceholderScreen } from '../screens/PlaceholderScreen';
+import { PlanningScreen } from '../screens/PlanningScreen';
 import { AppShell } from './AppShell';
 import { colors } from '../ui/theme';
 
@@ -18,10 +18,6 @@ const TAB_ICONS: Record<string, { active: IconName; inactive: IconName }> = {
   Épargne: { active: 'leaf', inactive: 'leaf-outline' },
   Ajouter: { active: 'add-circle', inactive: 'add-circle-outline' },
 };
-
-function PlanningPlaceholder() {
-  return <PlaceholderScreen title="Planning" subtitle="Vue mensuelle des opérations prévues et réalisées — à venir (Checkpoint 3)." />;
-}
 
 /** Navigation basse Finance Maison : exactement Accueil / Planning / Épargne / Ajouter, sous un shell persistant (Finance Maison + foyer + ☰). */
 export function RootTabs() {
@@ -40,7 +36,7 @@ export function RootTabs() {
         })}
       >
         <Tab.Screen name="Accueil" component={AccueilScreen} />
-        <Tab.Screen name="Planning" component={PlanningPlaceholder} />
+        <Tab.Screen name="Planning" component={PlanningScreen} />
         <Tab.Screen name="Épargne" component={EpargneScreen} />
         <Tab.Screen name="Ajouter" component={AjouterScreen} />
       </Tab.Navigator>
