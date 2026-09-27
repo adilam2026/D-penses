@@ -22,9 +22,7 @@ appId: com.depenses.mobile
     id: "create-account-submit"
 - assertVisible:
     text: "Compte « Compte E2E Maestro » créé"
-    timeout: 10000
 - tapOn:
     id: "create-account-done"
 - assertVisible:
     text: "Compte E2E Maestro"
-    timeout: 10000

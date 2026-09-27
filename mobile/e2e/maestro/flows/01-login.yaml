@@ -22,6 +22,5 @@ appId: com.depenses.mobile
     id: "login-submit"
 - assertVisible:
     text: "MES COMPTES"
-    timeout: 15000
 - assertVisible:
     id: "app-shell-menu-button"

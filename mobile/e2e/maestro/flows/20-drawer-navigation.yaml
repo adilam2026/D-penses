@@ -26,4 +26,3 @@ appId: com.depenses.mobile
     id: "menu-close"
 - assertVisible:
     text: "MES COMPTES"
-    timeout: 10000

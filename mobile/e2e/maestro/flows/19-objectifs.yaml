@@ -17,4 +17,3 @@ appId: com.depenses.mobile
     id: "goal-submit"
 - assertVisible:
     text: "Objectif"
-    timeout: 10000

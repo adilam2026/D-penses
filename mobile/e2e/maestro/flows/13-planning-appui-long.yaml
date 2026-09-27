@@ -10,7 +10,6 @@ appId: com.depenses.mobile
     element:
       id: "planning-cell-prime-annuelle-2026-12"
     direction: RIGHT
-    timeout: 8000
 - longPressOn:
     id: "planning-cell-prime-annuelle-2026-12"
 - assertVisible:

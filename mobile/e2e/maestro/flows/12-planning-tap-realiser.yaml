@@ -12,7 +12,6 @@ appId: com.depenses.mobile
     element:
       id: "planning-cell-voyage-2026-12"
     direction: RIGHT
-    timeout: 8000
 - tapOn:
     id: "planning-cell-voyage-2026-12"
 - assertVisible:

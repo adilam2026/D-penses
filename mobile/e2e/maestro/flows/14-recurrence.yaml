@@ -38,4 +38,3 @@ appId: com.depenses.mobile
     id: "ajouter-submit"
 - assertVisible:
     text: "MES COMPTES"
-    timeout: 10000

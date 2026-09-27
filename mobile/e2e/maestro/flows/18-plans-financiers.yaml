@@ -16,7 +16,6 @@ appId: com.depenses.mobile
     id: "create-plan-submit"
 - assertVisible:
     text: "Plan E2E Maestro"
-    timeout: 10000
 - tapOn:
     id: "plan-detail-add-item"
 - assertVisible:
@@ -32,4 +31,3 @@ appId: com.depenses.mobile
     id: "add-item-submit"
 - assertVisible:
     text: "Poste E2E"
-    timeout: 10000

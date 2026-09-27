@@ -20,6 +20,5 @@ appId: com.depenses.mobile
     id: "create-subaccount-submit"
 - assertVisible:
     text: "Sous-compte « Sous-compte E2E Maestro » créé"
-    timeout: 10000
 - tapOn:
     id: "create-subaccount-done"

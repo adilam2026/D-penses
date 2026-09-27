@@ -28,4 +28,3 @@ appId: com.depenses.mobile
     id: "reimburse-submit"
 - assertVisible:
     text: "DOSSIERS EN ATTENTE"
-    timeout: 10000

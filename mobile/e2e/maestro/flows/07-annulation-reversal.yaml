@@ -35,7 +35,6 @@ appId: com.depenses.mobile
     id: "ajouter-submit"
 - assertVisible:
     text: "MES COMPTES"
-    timeout: 10000
 - tapOn:
     text: "^CIH$"
 - assertVisible:
@@ -47,4 +46,3 @@ appId: com.depenses.mobile
     id: "transaction-row-test-annulation-e2e"
 - assertVisible:
     text: "Annuler"
-    timeout: 5000

@@ -51,7 +51,6 @@ appId: com.depenses.mobile
     id: "ajouter-submit"
 - assertVisible:
     text: "MES COMPTES"
-    timeout: 10000
 
 # Ouvrir le compte concerné.
 - tapOn:
@@ -67,7 +66,6 @@ appId: com.depenses.mobile
     id: "transaction-row-test-transaction"
 - assertVisible:
     text: "Modifier"
-    timeout: 5000
 
 # --- Suite du scénario (ne s'exécute que si l'assertion précédente finit
 # --- par passer, le jour où la fonctionnalité existera) ---
