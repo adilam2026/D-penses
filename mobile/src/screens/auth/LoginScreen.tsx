@@ -26,7 +26,7 @@ export function LoginScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Text style={styles.title}>D-Penses+</Text>
+      <Text style={styles.title}>Finance Maison</Text>
       <Text style={styles.tagline}>Comprendre. Anticiper. Décider.</Text>
       <Text style={styles.subtitle}>Connexion</Text>
 

@@ -46,7 +46,7 @@ export function SignupScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Text style={styles.brand}>D-Penses+</Text>
+      <Text style={styles.brand}>Finance Maison</Text>
       <Text style={styles.title}>Créer un compte</Text>
 
       <TextInput style={styles.input} placeholder="Prénom" value={firstName} onChangeText={setFirstName} />

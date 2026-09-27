@@ -34,7 +34,7 @@ export function HouseholdSetupScreen() {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <Text style={styles.brand}>D-Penses+</Text>
+        <Text style={styles.brand}>Finance Maison</Text>
         <Text style={styles.title}>Votre foyer</Text>
         <Text style={styles.subtitle}>Créez votre foyer, ou rejoignez celui d'un proche avec son code d'invitation.</Text>
 

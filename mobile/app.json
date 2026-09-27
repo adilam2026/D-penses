@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "D-Penses+",
+    "name": "Finance Maison",
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -31,8 +31,8 @@
     },
     "web": {
       "favicon": "./assets/favicon.png",
-      "name": "D-Penses+",
-      "shortName": "D-Penses+",
+      "name": "Finance Maison",
+      "shortName": "Finance Maison",
       "themeColor": "#03155C",
       "backgroundColor": "#03155C",
       "display": "standalone"
