@@ -7,6 +7,7 @@ appId: com.depenses.mobile
 # session persistée d'un flow précédent), pour rester rejouable isolément.
 - launchApp:
     clearState: true
+- takeScreenshot: common-login-post-launch
 - assertVisible:
     id: "login-email"
 - tapOn:

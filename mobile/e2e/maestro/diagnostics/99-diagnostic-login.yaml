@@ -1,0 +1,17 @@
+appId: com.depenses.mobile
+---
+# Flow de DIAGNOSTIC uniquement — ne fait aucune assertion (ne peut donc pas
+# échouer sur un sélecteur), pour garantir une capture d'état exploitable
+# même si l'app affiche autre chose que prévu. Volontairement hors de
+# mobile/e2e/maestro/flows/ pour ne pas s'ajouter aux 21 flows fonctionnels
+# de la recette (lancé explicitement par son propre chemin dans le workflow
+# CI, jamais par `maestro test .../flows`).
+#
+# Séquence : lance l'app à l'état déconnecté (clearState), laisse le temps à
+# l'écran de s'afficher, capture un screenshot Maestro. Le workflow CI
+# complète cette capture avec un dump de la hiérarchie Android brute
+# (adb shell uiautomator dump) et une capture d'écran adb indépendante,
+# juste après ce flow — cf. .github/workflows/android-e2e.yml.
+- launchApp:
+    clearState: true
+- takeScreenshot: diagnostic-post-launch

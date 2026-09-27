@@ -151,8 +151,14 @@ jobs:
             echo "APK utilisé : $APK_PATH"
             adb install -r "$APK_PATH"
             export PATH="$HOME/.maestro/bin:$PATH"
-            mkdir -p mobile/e2e/maestro-report
+            mkdir -p mobile/e2e/maestro-report/debug
+            maestro test mobile/e2e/maestro/diagnostics/99-diagnostic-login.yaml --debug-output mobile/e2e/maestro-report/debug/diagnostic 2>&1 | tee mobile/e2e/maestro-report/diagnostic-run.log
+            adb shell uiautomator dump /sdcard/window_dump.xml
+            adb pull /sdcard/window_dump.xml mobile/e2e/maestro-report/debug/diagnostic-ui-hierarchy.xml
+            adb exec-out screencap -p > mobile/e2e/maestro-report/debug/diagnostic-adb-screenshot.png
+            cp *.png mobile/e2e/maestro-report/debug/ 2>/dev/null || true
             maestro test mobile/e2e/maestro/flows -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PASSWORD="$E2E_PASSWORD" --format junit --output mobile/e2e/maestro-report/report.xml --debug-output mobile/e2e/maestro-report/debug 2>&1 | tee mobile/e2e/maestro-report/maestro-run.log
+            cp *.png mobile/e2e/maestro-report/debug/ 2>/dev/null || true
 
       - name: Résumé de la campagne (extrait du rapport JUnit)
         if: always()
