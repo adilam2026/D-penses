@@ -53,6 +53,20 @@ jobs:
           test "$code" = "400"
           grep -q "invalide ou a expiré" verify.json
 
+      - name: Login compte de démonstration Finance Maison (prouve seed + schéma + auth)
+        # Les tokens JWT retournés ne sont jamais affichés dans les logs (grep -c
+        # au lieu de cat) — seule leur présence est vérifiée.
+        run: |
+          set -o pipefail
+          code=$(curl -sS -o login.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/auth/login" \
+            -H "Content-Type: application/json" \
+            -d '{"email":"demo@finance-maison.local","password":"DemoFinanceMaison2026!"}')
+          echo "HTTP $code"
+          test "$code" = "201" || test "$code" = "200"
+          grep -q '"accessToken"' login.json
+          grep -q '"refreshToken"' login.json
+          echo "Login démo OK — accessToken/refreshToken présents (valeurs non journalisées)"
+
       - name: Aucune référence à localhost dans les réponses publiques
         run: |
-          ! grep -io "localhost" signup.json verify.json body.json
+          ! grep -io "localhost" signup.json verify.json body.json login.json
