@@ -6,7 +6,7 @@ appId: com.depenses.mobile
 # lui) pour laisser le workflow CI dumper la hiérarchie UI Android réelle à
 # cet instant précis. Hors de mobile/e2e/maestro/flows/ : ne fait pas partie
 # de la campagne des 21 flows fonctionnels.
-- runFlow: common/login.yaml
+- runFlow: ../flows/common/login.yaml
 - tapOn: "Ajouter"
 - assertVisible:
     id: "ajouter-tile-EXPENSE"

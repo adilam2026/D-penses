@@ -5,7 +5,7 @@ appId: com.depenses.mobile
 # avant de choisir une option (aucune sélection, aucune soumission — pas
 # d'effet de bord sur les données du foyer E2E). Hors de
 # mobile/e2e/maestro/flows/.
-- runFlow: common/login.yaml
+- runFlow: ../flows/common/login.yaml
 - tapOn:
     id: "app-shell-menu-button"
 - tapOn:

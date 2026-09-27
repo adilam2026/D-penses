@@ -7,7 +7,7 @@ appId: com.depenses.mobile
 # échouait) — retaper ici échouerait différemment puisque la case n'est plus
 # PENDING. Vérifie si la coche "✓" est présente une fois l'écran rechargé
 # sans contrainte de temps. Hors de mobile/e2e/maestro/flows/.
-- runFlow: common/login.yaml
+- runFlow: ../flows/common/login.yaml
 - tapOn: "Planning"
 - scrollUntilVisible:
     element:

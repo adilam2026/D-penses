@@ -10,6 +10,6 @@ appId: com.depenses.mobile
 # entièrement chargé — ce qui distingue un problème de timing (l'objectif
 # existe mais l'assertion initiale a couru une course avec le rafraîchissement
 # réseau) d'un vrai bug d'affichage. Hors de mobile/e2e/maestro/flows/.
-- runFlow: common/login.yaml
+- runFlow: ../flows/common/login.yaml
 - tapOn: "Épargne"
 - takeScreenshot: diagnostic-objectif-epargne-revisite
