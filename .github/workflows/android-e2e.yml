@@ -152,13 +152,7 @@ jobs:
             adb install -r "$APK_PATH"
             export PATH="$HOME/.maestro/bin:$PATH"
             mkdir -p mobile/e2e/maestro-report
-            maestro test mobile/e2e/maestro/flows \
-              -e E2E_EMAIL="$E2E_EMAIL" \
-              -e E2E_PASSWORD="$E2E_PASSWORD" \
-              --format junit \
-              --output mobile/e2e/maestro-report/report.xml \
-              --debug-output mobile/e2e/maestro-report/debug \
-              2>&1 | tee mobile/e2e/maestro-report/maestro-run.log
+            maestro test mobile/e2e/maestro/flows -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PASSWORD="$E2E_PASSWORD" --format junit --output mobile/e2e/maestro-report/report.xml --debug-output mobile/e2e/maestro-report/debug 2>&1 | tee mobile/e2e/maestro-report/maestro-run.log
 
       - name: Résumé de la campagne (extrait du rapport JUnit)
         if: always()
