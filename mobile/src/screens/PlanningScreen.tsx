@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import * as api from '../api/client';
 import { colors, radius, spacing, typography } from '../ui/theme';
@@ -48,11 +48,11 @@ function relevantAccount(item: { sourceAccountId: string | null; sourceSubaccoun
  * ou annuler, détail catégorie sur case agrégée.
  */
 export function PlanningScreen() {
+  const navigation = useNavigation<any>();
   const [months, setMonths] = useState(6);
   const [data, setData] = useState<api.PlanningTableApi | null>(null);
   const [accounts, setAccounts] = useState<api.AccountApi[]>([]);
   const [plans, setPlans] = useState<api.FinancialPlanApi[]>([]);
-  const [expandedPlans, setExpandedPlans] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
   const [confirmTarget, setConfirmTarget] = useState<{ cell: api.PlanningCellApi; rowLabel: string } | null>(null);
@@ -239,18 +239,7 @@ export function PlanningScreen() {
           </ScrollView>
         </View>
 
-        <PlansSection
-          plans={plans}
-          expanded={expandedPlans}
-          onToggle={(id) =>
-            setExpandedPlans((prev) => {
-              const next = new Set(prev);
-              if (next.has(id)) next.delete(id);
-              else next.add(id);
-              return next;
-            })
-          }
-        />
+        <PlansSection plans={plans} onOpen={(id) => navigation.navigate('FinancialPlanDetail', { id })} />
       </ScrollView>
 
       <ConfirmPayModal
@@ -523,46 +512,24 @@ function OperationViewModal({ operationId, onClose }: { operationId: string | nu
   );
 }
 
-function PlansSection({ plans, expanded, onToggle }: { plans: api.FinancialPlanApi[]; expanded: Set<string>; onToggle: (id: string) => void }) {
+function PlansSection({ plans, onOpen }: { plans: api.FinancialPlanApi[]; onOpen: (id: string) => void }) {
   if (plans.length === 0) return null;
   return (
     <View style={styles.plansSection}>
       <Text style={styles.plansSectionTitle}>PLANS FINANCIERS</Text>
-      {plans.map((plan) => {
-        const isOpen = expanded.has(plan.id);
-        return (
-          <View key={plan.id} style={styles.planCard}>
-            <TouchableOpacity style={styles.planHeader} onPress={() => onToggle(plan.id)} testID={`planning-plan-${plan.id}`}>
-              <Text style={styles.planLabel}>
-                {plan.label} {isOpen ? '⌄' : '›'}
+      {plans.map((plan) => (
+        <TouchableOpacity key={plan.id} style={styles.planCard} onPress={() => onOpen(plan.id)} testID={`planning-plan-${plan.id}`}>
+          <View style={styles.planHeader}>
+            <Text style={styles.planLabel}>{plan.label}</Text>
+            {plan.nextDeadline ? (
+              <Text style={styles.planNextDeadline}>
+                {plan.nextDeadline.label} : {formatDh(plan.nextDeadline.totalPrevu)}
               </Text>
-              {plan.nextDeadline ? (
-                <Text style={styles.planNextDeadline}>
-                  {plan.nextDeadline.label} : {formatDh(plan.nextDeadline.totalPrevu)}
-                </Text>
-              ) : null}
-            </TouchableOpacity>
-            {isOpen && (
-              <View style={styles.planDetail}>
-                {plan.items.map((item) => (
-                  <Text key={item.id} style={styles.planItem}>
-                    • {item.label}
-                  </Text>
-                ))}
-                {plan.deadlines.map((d) => (
-                  <View key={d.deadlineId} style={styles.planDeadlineRow}>
-                    <Text style={styles.planDeadlineLabel}>{d.label}</Text>
-                    <Text style={styles.planDeadlineMeta}>
-                      Disponible {formatDh(d.disponible)} / {formatDh(d.totalPrevu)} · Reste {formatDh(d.reste)}
-                    </Text>
-                    {d.recommendedMonthly > 0 && <Text style={styles.planRecommendation}>Recommandé : {formatDh(d.recommendedMonthly)}/mois</Text>}
-                  </View>
-                ))}
-              </View>
-            )}
+            ) : null}
           </View>
-        );
-      })}
+          <Text style={styles.planViewLink}>Voir le plan ›</Text>
+        </TouchableOpacity>
+      ))}
     </View>
   );
 }
@@ -632,10 +599,5 @@ const styles = StyleSheet.create({
   planHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   planLabel: { ...typography.body, fontWeight: '700' },
   planNextDeadline: { ...typography.bodySecondary },
-  planDetail: { marginTop: spacing.md },
-  planItem: { ...typography.bodySecondary, marginBottom: 2 },
-  planDeadlineRow: { marginTop: spacing.sm },
-  planDeadlineLabel: { ...typography.body, fontWeight: '700' },
-  planDeadlineMeta: { ...typography.caption, marginTop: 2 },
-  planRecommendation: { ...typography.caption, color: colors.warning, marginTop: 2, fontWeight: '700' },
+  planViewLink: { ...typography.caption, fontWeight: '700', color: colors.primary, marginTop: spacing.xs },
 });

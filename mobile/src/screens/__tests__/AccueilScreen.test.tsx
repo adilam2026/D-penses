@@ -16,11 +16,13 @@ jest.mock('@react-navigation/native', () => ({
 const mockListAccounts = jest.fn();
 const mockListPlannedOperations = jest.fn();
 const mockListMedicalClaims = jest.fn();
+const mockListFinancialPlans = jest.fn();
 const mockRealizePlannedOperation = jest.fn();
 jest.mock('../../api/client', () => ({
   listAccounts: () => mockListAccounts(),
   listPlannedOperations: () => mockListPlannedOperations(),
   listMedicalClaims: () => mockListMedicalClaims(),
+  listFinancialPlans: () => mockListFinancialPlans(),
   realizePlannedOperation: (...args: unknown[]) => mockRealizePlannedOperation(...args),
 }));
 
@@ -38,6 +40,7 @@ beforeEach(() => {
   clearCache();
   mockListPlannedOperations.mockResolvedValue([]);
   mockListMedicalClaims.mockResolvedValue([]);
+  mockListFinancialPlans.mockResolvedValue([]);
 });
 
 it("n'affiche aucune métrique globale inventée, mais les comptes avec leurs sous-comptes et le non-affecté", async () => {
@@ -133,4 +136,37 @@ it('section "À faire" : dossier santé en attente -> carte "Voir" qui navigue v
   await waitFor(() => screen.getByText('Consultation'));
   fireEvent.press(screen.getByTestId('accueil-action-claim-claim1'));
   expect(mockNavigate).toHaveBeenCalledWith('Health', { id: 'sante' });
+});
+
+it('§18/test M : "À faire" ne remonte que les actions utiles (échéance de plan avec reste > 0, jamais celle déjà couverte)', async () => {
+  mockListAccounts.mockResolvedValue([]);
+  mockListFinancialPlans.mockResolvedValue([
+    {
+      id: 'plan-scolarite',
+      label: 'Scolarité',
+      accountId: null,
+      subaccountId: null,
+      disponibleActuel: 45000,
+      items: [],
+      deadlines: [],
+      nextDeadline: { deadlineId: 'd-1', label: 'Janvier', dueDate: '2027-01-31', totalPrevu: 40000, disponible: 45000, reste: 0, monthsRemaining: 3, recommendedMonthly: 0, paid: false, items: [] },
+    },
+    {
+      id: 'plan-voyage',
+      label: 'Voyage',
+      accountId: null,
+      subaccountId: null,
+      disponibleActuel: 2000,
+      items: [],
+      deadlines: [],
+      nextDeadline: { deadlineId: 'd-2', label: 'Été', dueDate: '2027-06-01', totalPrevu: 10000, disponible: 2000, reste: 8000, monthsRemaining: 5, recommendedMonthly: 1600, paid: false, items: [] },
+    },
+  ]);
+
+  renderWithSafeArea(<AccueilScreen />);
+  await waitFor(() => screen.getByText(/Voyage — Été/));
+  expect(screen.queryByText(/Scolarité — Janvier/)).toBeNull();
+
+  fireEvent.press(screen.getByTestId('accueil-action-plan-plan-voyage'));
+  expect(mockNavigate).toHaveBeenCalledWith('FinancialPlanDetail', { id: 'plan-voyage' });
 });

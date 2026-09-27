@@ -226,6 +226,8 @@ model Account {
   recurrenceRulesAsSource      RecurrenceRule[] @relation("RecurrenceSourceAccount")
   recurrenceRulesAsDestination RecurrenceRule[] @relation("RecurrenceDestinationAccount")
 
+  financialPlans FinancialPlan[] @relation("PlanAccount")
+
   @@index([householdId])
   @@map("account")
 }
@@ -257,6 +259,8 @@ model Subaccount {
 
   recurrenceRulesAsSourceSub      RecurrenceRule[] @relation("RecurrenceSourceSubaccount")
   recurrenceRulesAsDestinationSub RecurrenceRule[] @relation("RecurrenceDestinationSubaccount")
+
+  financialPlans FinancialPlan[] @relation("PlanSubaccount")
 
   @@index([accountId])
   @@index([householdId])
@@ -333,12 +337,17 @@ model RecurrenceRule {
 }
 
 model FinancialPlan {
-  id          String   @id @default(uuid())
-  householdId String   @map("household_id")
-  label       String
-  createdAt   DateTime @default(now()) @map("created_at")
+  id           String   @id @default(uuid())
+  householdId  String   @map("household_id")
+  label        String
+  accountId    String?  @map("account_id")
+  subaccountId String?  @map("subaccount_id")
+  createdAt    DateTime @default(now()) @map("created_at")
 
-  household Household               @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  household  Household   @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  account    Account?    @relation("PlanAccount", fields: [accountId], references: [id], onDelete: SetNull)
+  subaccount Subaccount? @relation("PlanSubaccount", fields: [subaccountId], references: [id], onDelete: SetNull)
+
   items     FinancialPlanItem[]
   deadlines FinancialPlanDeadline[]
 
@@ -346,10 +355,16 @@ model FinancialPlan {
   @@map("financial_plan")
 }
 
+// expectedAmount/frequency : gabarit optionnel d'un élément récurrent (§14 Checkpoint 4)
+// — un élément non récurrent (frequency=ONCE) n'est jamais généré automatiquement,
+// il est ajouté explicitement à UNE échéance (cf. financial-plans.service#addItemToDeadline).
 model FinancialPlanItem {
-  id     String @id @default(uuid())
-  planId String @map("plan_id")
-  label  String
+  id             String               @id @default(uuid())
+  planId         String               @map("plan_id")
+  label          String
+  expectedAmount Decimal?             @map("expected_amount") @db.Decimal(14, 2)
+  frequency      RecurrenceFrequency  @default(ONCE)
+  active         Boolean              @default(true)
 
   plan              FinancialPlan      @relation(fields: [planId], references: [id], onDelete: Cascade)
   plannedOperations PlannedOperation[]

@@ -9,6 +9,7 @@ jest.mock('../../api/client', () => ({
   listAccounts: () => Promise.resolve([]),
   listPlannedOperations: () => Promise.resolve([]),
   listMedicalClaims: () => Promise.resolve([]),
+  listFinancialPlans: () => Promise.resolve([]),
   listCategories: () => Promise.resolve([]),
   getMyHousehold: () => Promise.resolve({ id: 'h1', name: 'Foyer Demo' }),
 }));

@@ -73,4 +73,21 @@ export class MedicalClaimsService {
       return this.toDto(updated);
     });
   }
+
+  /**
+   * Clôture manuelle (§8) — permet de considérer un dossier terminé même si
+   * remboursé < engagé (reste à charge non remboursé). Ne modifie JAMAIS les
+   * montants engagé/remboursé, seul closed_at est renseigné.
+   */
+  async closeManually(userId: string, householdId: string, claimId: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const claim = await tx.medicalClaim.findUnique({ where: { id: claimId }, include: { reimbursements: true } });
+      if (!claim || claim.householdId !== householdId) throw new NotFoundException('Dossier introuvable');
+      if (claim.closedAt) return this.toDto(claim);
+
+      const updated = await tx.medicalClaim.update({ where: { id: claimId }, data: { closedAt: new Date() }, include: { reimbursements: true } });
+      return this.toDto(updated);
+    });
+  }
 }

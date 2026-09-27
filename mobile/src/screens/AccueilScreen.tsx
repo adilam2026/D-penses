@@ -33,18 +33,21 @@ export function AccueilScreen() {
   const [accounts, setAccounts] = useState<api.AccountApi[] | null>(null);
   const [plannedOps, setPlannedOps] = useState<api.PlannedOperationApi[]>([]);
   const [claims, setClaims] = useState<api.MedicalClaimApi[]>([]);
+  const [plans, setPlans] = useState<api.FinancialPlanApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async (force = false) => {
-    const [accountsData, planned, claimsData] = await Promise.all([
+    const [accountsData, planned, claimsData, plansData] = await Promise.all([
       cached('accounts', () => api.listAccounts(), 60_000, force),
       cached('planned-operations', () => api.listPlannedOperations(), 60_000, force),
       cached('medical-claims:all', () => api.listMedicalClaims(), 60_000, force),
+      cached('financial-plans', () => api.listFinancialPlans(), 60_000, force),
     ]);
     setAccounts(accountsData);
     setPlannedOps(planned);
     setClaims(claimsData);
+    setPlans(plansData);
   }, []);
 
   useFocusEffect(
@@ -100,8 +103,21 @@ export function AccueilScreen() {
         onPress: () => navigation.navigate('Health', { id: claim.subaccountId }),
       }));
 
-    return [...pendingOps, ...pendingClaimItems];
-  }, [plannedOps, claims, realize, navigation]);
+    const planDeadlineItems = plans
+      .filter((p) => p.nextDeadline && p.nextDeadline.reste > 0)
+      .slice(0, 2)
+      .map((plan) => ({
+        key: `plan-${plan.id}`,
+        label: `${plan.label} — ${plan.nextDeadline!.label}`,
+        meta: `À préparer : ${formatDh(plan.nextDeadline!.reste)} d'ici le ${formatShortDate(plan.nextDeadline!.dueDate)}`,
+        actionLabel: 'Voir',
+        color: colors.warning,
+        backgroundColor: colors.warningLight,
+        onPress: () => navigation.navigate('FinancialPlanDetail', { id: plan.id }),
+      }));
+
+    return [...pendingOps, ...pendingClaimItems, ...planDeadlineItems];
+  }, [plannedOps, claims, plans, realize, navigation]);
 
   if (loading && !accounts) {
     return (

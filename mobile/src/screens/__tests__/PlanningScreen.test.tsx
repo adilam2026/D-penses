@@ -5,8 +5,10 @@ import { PlanningScreen } from '../PlanningScreen';
 import { clearCache } from '../../state/cache';
 import type { PlanningTableApi } from '../../api/client';
 
+const mockNavigate = jest.fn();
+
 jest.mock('@react-navigation/native', () => ({
-  useNavigation: () => ({ navigate: jest.fn() }),
+  useNavigation: () => ({ navigate: mockNavigate }),
   useFocusEffect: (cb: () => void) => {
     const React = require('react');
     // Réagit aux changements de dépendances du callback (ex. horizon) — contrairement
@@ -229,23 +231,25 @@ it('case agrégée (plusieurs éléments, ex. Autres) : tap ouvre le détail de 
   expect(screen.getByText('Réparation maison')).toBeTruthy();
 });
 
-it('plans financiers : ligne collapsée par défaut, tap affiche la prochaine échéance et la recommandation', async () => {
+it('plans financiers : la carte affiche la prochaine échéance et navigue vers le détail du plan', async () => {
   mockGetPlanning.mockResolvedValue(basePlanning());
   mockListFinancialPlans.mockResolvedValue([
     {
       id: 'plan-1',
       label: 'Scolarité',
-      items: [{ id: 'item-1', label: 'Frais école' }],
-      deadlines: [{ deadlineId: 'd-1', label: 'Janvier', dueDate: '2027-01-01', totalPrevu: 30000, disponible: 12000, reste: 18000, monthsRemaining: 3, recommendedMonthly: 6000 }],
-      nextDeadline: { deadlineId: 'd-1', label: 'Janvier', dueDate: '2027-01-01', totalPrevu: 30000, disponible: 12000, reste: 18000, monthsRemaining: 3, recommendedMonthly: 6000 },
+      accountId: null,
+      subaccountId: null,
+      disponibleActuel: 12000,
+      items: [{ id: 'item-1', label: 'Frais école', expectedAmount: 30000, frequency: 'ONCE', active: true }],
+      deadlines: [{ deadlineId: 'd-1', label: 'Janvier', dueDate: '2027-01-01', totalPrevu: 30000, disponible: 12000, reste: 18000, monthsRemaining: 3, recommendedMonthly: 6000, paid: false, items: [] }],
+      nextDeadline: { deadlineId: 'd-1', label: 'Janvier', dueDate: '2027-01-01', totalPrevu: 30000, disponible: 12000, reste: 18000, monthsRemaining: 3, recommendedMonthly: 6000, paid: false, items: [] },
     },
   ]);
 
   renderWithSafeArea(<PlanningScreen />);
   await waitFor(() => screen.getByTestId('planning-plan-plan-1'));
-  expect(screen.queryByText(/Frais école/)).toBeNull();
+  expect(screen.getByText(/Janvier : 30 000 DH/)).toBeTruthy();
 
   fireEvent.press(screen.getByTestId('planning-plan-plan-1'));
-  await waitFor(() => screen.getByText(/Frais école/));
-  expect(screen.getByText(/Recommandé : 6 000 DH\/mois/)).toBeTruthy();
+  expect(mockNavigate).toHaveBeenCalledWith('FinancialPlanDetail', { id: 'plan-1' });
 });

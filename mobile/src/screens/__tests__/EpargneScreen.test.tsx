@@ -15,9 +15,15 @@ jest.mock('@react-navigation/native', () => ({
 
 const mockListAccounts = jest.fn();
 const mockListMedicalClaims = jest.fn();
+const mockListGoals = jest.fn();
+const mockCreateGoal = jest.fn();
+const mockDeleteGoal = jest.fn();
 jest.mock('../../api/client', () => ({
   listAccounts: () => mockListAccounts(),
   listMedicalClaims: () => mockListMedicalClaims(),
+  listGoals: () => mockListGoals(),
+  createGoal: (...args: unknown[]) => mockCreateGoal(...args),
+  deleteGoal: (...args: unknown[]) => mockDeleteGoal(...args),
 }));
 
 function renderWithSafeArea(ui: React.ReactElement) {
@@ -30,6 +36,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   clearCache();
   mockListMedicalClaims.mockResolvedValue([]);
+  mockListGoals.mockResolvedValue([]);
 });
 
 it("aucune curation cachée : tous les comptes épargne sans sous-compte ET tous les sous-comptes apparaissent, y compris BP Épargne-Autres", async () => {
@@ -58,6 +65,37 @@ it("aucune curation cachée : tous les comptes épargne sans sous-compte ET tous
   // CIH (courant) n'apparaît pas lui-même, mais son enveloppe de réserve oui.
   expect(screen.queryByText('CIH')).toBeNull();
   expect(screen.getByText('CIH-Voiture')).toBeTruthy();
+});
+
+it('§16/test I : objectif sur un compte réel -> barre de progression affichée avec le pourcentage réel', async () => {
+  mockListAccounts.mockResolvedValue([
+    { id: 'epargne-enfants', name: 'Épargne Enfants', bank: 'BP', type: 'EPARGNE', ownerMemberId: null, ownerLabel: null, balance: 45000, nonAffecte: 45000, subaccounts: [] },
+  ]);
+  mockListGoals.mockResolvedValue([
+    { id: 'goal-1', accountId: 'epargne-enfants', subaccountId: null, targetAmount: 100000, targetDate: '2027-12-31T00:00:00.000Z', label: 'Épargne Enfants', current: 45000, percent: 45 },
+  ]);
+
+  renderWithSafeArea(<EpargneScreen />);
+  await waitFor(() => screen.getByTestId('epargne-goal-epargne-enfants'));
+  expect(screen.getByText(/Objectif 100 000 DH · 45%/)).toBeTruthy();
+});
+
+it('§16/test J : objectif sur un sous-compte -> création via le formulaire dédié, jamais le détail sous-compte générique', async () => {
+  mockListAccounts.mockResolvedValue([
+    { id: 'cih', name: 'CIH', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, balance: 5000, nonAffecte: 0, subaccounts: [{ id: 'voiture', accountId: 'cih', name: 'CIH-Voiture', balance: 5000 }] },
+  ]);
+  mockCreateGoal.mockResolvedValue({ id: 'goal-2', accountId: null, subaccountId: 'voiture', targetAmount: 15000, targetDate: null, label: 'CIH-Voiture', current: 5000, percent: 33 });
+
+  renderWithSafeArea(<EpargneScreen />);
+  await waitFor(() => screen.getByTestId('epargne-add-goal-voiture'));
+  fireEvent.press(screen.getByTestId('epargne-add-goal-voiture'));
+
+  await waitFor(() => screen.getByTestId('goal-amount'));
+  fireEvent.changeText(screen.getByTestId('goal-amount'), '15000');
+  await waitFor(() => expect(screen.getByTestId('goal-amount').props.value).toBe('15000'));
+  fireEvent.press(screen.getByTestId('goal-submit'));
+
+  await waitFor(() => expect(mockCreateGoal).toHaveBeenCalledWith(expect.objectContaining({ subaccountId: 'voiture', targetAmount: '15000' })));
 });
 
 it('tap sur une carte sous-compte navigue vers SubaccountDetail', async () => {

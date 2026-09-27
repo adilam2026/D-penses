@@ -3,9 +3,11 @@ import { useNavigation } from '@react-navigation/native';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../auth/AuthContext';
+import * as api from '../api/client';
 import { useTopInset } from '../ui/useTopInset';
 import { useBottomInset } from '../ui/useBottomInset';
 import { colors, radius, spacing, typography } from '../ui/theme';
+import { isSanteSubaccount } from '../ui/santeDetection';
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -27,6 +29,13 @@ export function MenuScreen() {
   const topInset = useTopInset();
   const bottomInset = useBottomInset();
 
+  async function openMutuelle() {
+    const accounts = await api.listAccounts();
+    const sante = accounts.flatMap((a) => a.subaccounts).find((s) => isSanteSubaccount(s.name));
+    if (sante) navigation.navigate('Health', { id: sante.id });
+    else navigation.navigate('Placeholder', { title: 'Mutuelle' });
+  }
+
   const sections: { title: string; entries: MenuEntry[] }[] = [
     {
       title: 'Mon foyer',
@@ -41,8 +50,8 @@ export function MenuScreen() {
         { label: 'Comptes', icon: 'card-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Comptes' }) },
         { label: 'Épargne & sous-comptes', icon: 'wallet-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Épargne & sous-comptes' }) },
         { label: 'Catégories', icon: 'pricetags-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Catégories' }) },
-        { label: 'Plans financiers', icon: 'folder-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Plans financiers' }) },
-        { label: 'Mutuelle', icon: 'medkit-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Mutuelle' }) },
+        { label: 'Plans financiers', icon: 'folder-outline', onPress: () => navigation.navigate('FinancialPlans') },
+        { label: 'Mutuelle', icon: 'medkit-outline', onPress: openMutuelle },
       ],
     },
     {

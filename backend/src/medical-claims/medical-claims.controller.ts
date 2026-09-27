@@ -18,4 +18,9 @@ export class MedicalClaimsController {
   addReimbursement(@Param('id') id: string, @Body() dto: CreateReimbursementDto, @CurrentUser() user: AuthenticatedUser) {
     return this.medicalClaims.addReimbursement(user.sub, user.householdId!, id, dto);
   }
+
+  @Post(':id/close')
+  closeManually(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.medicalClaims.closeManually(user.sub, user.householdId!, id);
+  }
 }

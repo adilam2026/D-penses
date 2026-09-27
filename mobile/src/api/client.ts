@@ -322,6 +322,9 @@ export const addMedicalReimbursement = (
   data: { amount: string; date: string; destinationAccountId: string; allocationSubaccountId?: string },
 ): Promise<MedicalClaimApi> => apiFetch(`/medical-claims/${claimId}/reimbursements`, { method: 'POST', body: data });
 
+/** Clôture manuelle (§8) — dossier terminé même avec un reste à charge non nul, jamais de modification des montants. */
+export const closeMedicalClaimManually = (claimId: string): Promise<MedicalClaimApi> => apiFetch(`/medical-claims/${claimId}/close`, { method: 'POST' });
+
 // ---------- Règles de récurrence (Ajouter > Type=Récurrente, §11 / Checkpoint 3 §18-19) ----------
 export type RecurrenceFrequency = 'WEEKLY' | 'MONTHLY' | 'BIMONTHLY' | 'QUARTERLY' | 'SEMIANNUAL' | 'YEARLY' | 'ONCE';
 
@@ -433,7 +436,15 @@ export interface PlanningTableApi {
 /** Endpoint agrégé unique — jamais 1 requête par ligne/mois/catégorie. */
 export const getPlanning = (months: number): Promise<PlanningTableApi> => apiFetch(`/planning?months=${months}`);
 
-// ---------- Plans financiers (Checkpoint 3 §plans financiers) ----------
+// ---------- Plans financiers (Checkpoint 3/4) ----------
+export interface FinancialPlanDeadlineItemApi {
+  plannedOperationId: string;
+  itemId: string | null;
+  label: string;
+  amount: number;
+  status: 'PENDING' | 'REALIZED';
+}
+
 export interface FinancialPlanDeadlineSummaryApi {
   deadlineId: string;
   label: string;
@@ -443,17 +454,72 @@ export interface FinancialPlanDeadlineSummaryApi {
   reste: number;
   monthsRemaining: number;
   recommendedMonthly: number;
+  paid: boolean;
+  items: FinancialPlanDeadlineItemApi[];
+}
+
+export interface FinancialPlanItemApi {
+  id: string;
+  label: string;
+  expectedAmount: number | null;
+  frequency: RecurrenceFrequency;
+  active: boolean;
 }
 
 export interface FinancialPlanApi {
   id: string;
   label: string;
-  items: { id: string; label: string }[];
+  accountId: string | null;
+  subaccountId: string | null;
+  disponibleActuel: number | null;
+  items: FinancialPlanItemApi[];
   deadlines: FinancialPlanDeadlineSummaryApi[];
   nextDeadline: FinancialPlanDeadlineSummaryApi | null;
 }
 
 export const listFinancialPlans = (): Promise<FinancialPlanApi[]> => apiFetch('/financial-plans');
+export const getFinancialPlan = (id: string): Promise<FinancialPlanApi> => apiFetch(`/financial-plans/${id}`);
 
-export const createFinancialPlan = (data: { label: string; items?: { label: string }[]; deadlines?: { label: string; dueDate: string }[] }): Promise<FinancialPlanApi> =>
-  apiFetch('/financial-plans', { method: 'POST', body: data });
+export const createFinancialPlan = (data: {
+  label: string;
+  accountId?: string;
+  subaccountId?: string;
+  items?: { label: string; expectedAmount?: string; frequency?: RecurrenceFrequency }[];
+  deadlines?: { label: string; dueDate: string }[];
+}): Promise<FinancialPlanApi> => apiFetch('/financial-plans', { method: 'POST', body: data });
+
+export const updateFinancialPlan = (id: string, data: { label?: string; accountId?: string; subaccountId?: string }): Promise<FinancialPlanApi> =>
+  apiFetch(`/financial-plans/${id}`, { method: 'PATCH', body: data });
+
+/** Ajouter un poste (§13/§14) — récurrent (frequency != ONCE) ou ponctuel, backfill immédiat sur les échéances existantes si récurrent. */
+export const addFinancialPlanItem = (planId: string, data: { label: string; expectedAmount?: string; frequency?: RecurrenceFrequency }): Promise<FinancialPlanItemApi> =>
+  apiFetch(`/financial-plans/${planId}/items`, { method: 'POST', body: data });
+
+export const addFinancialPlanDeadline = (planId: string, data: { label: string; dueDate: string }) =>
+  apiFetch(`/financial-plans/${planId}/deadlines`, { method: 'POST', body: data });
+
+/** "Détail d'une échéance" (§12) — ajoute/ajuste le montant d'un poste pour CETTE échéance précisément. */
+export const addItemToDeadline = (deadlineId: string, data: { itemId: string; amount: string }) =>
+  apiFetch(`/financial-plans/deadlines/${deadlineId}/items`, { method: 'POST', body: data });
+
+/** "Marquer comme payée" (§12) — réalise en bloc toutes les lignes encore prévues de cette échéance. */
+export const markDeadlinePaid = (deadlineId: string) => apiFetch(`/financial-plans/deadlines/${deadlineId}/mark-paid`, { method: 'POST' });
+
+// ---------- Objectifs simples (§16-17) ----------
+export interface GoalApi {
+  id: string;
+  accountId: string | null;
+  subaccountId: string | null;
+  targetAmount: number;
+  targetDate: string | null;
+  label: string | null;
+  current: number;
+  percent: number;
+}
+
+export const listGoals = (): Promise<GoalApi[]> => apiFetch('/goals');
+
+export const createGoal = (data: { accountId?: string; subaccountId?: string; targetAmount: string; targetDate?: string; label?: string }): Promise<GoalApi> =>
+  apiFetch('/goals', { method: 'POST', body: data });
+
+export const deleteGoal = (id: string) => apiFetch(`/goals/${id}`, { method: 'DELETE' });

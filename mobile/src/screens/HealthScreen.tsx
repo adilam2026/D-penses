@@ -37,6 +37,7 @@ export function HealthScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [reimburseClaim, setReimburseClaim] = useState<api.MedicalClaimApi | null>(null);
+  const [closeConfirmClaim, setCloseConfirmClaim] = useState<api.MedicalClaimApi | null>(null);
 
   const load = useCallback(async () => {
     const [accounts, ops, claimList] = await Promise.all([
@@ -51,6 +52,13 @@ export function HealthScreen() {
     setClaims(claimList);
   }, [id]);
 
+  // Une dépense est "remboursable" ssi un dossier lui est rattaché (§3) — jamais un simple champ déclaratif.
+  const claimByOperationId = useMemo(() => {
+    const map = new Map<string, api.MedicalClaimApi>();
+    for (const claim of claims ?? []) map.set(claim.sourceOperationId, claim);
+    return map;
+  }, [claims]);
+
   useFocusEffect(
     useCallback(() => {
       load();
@@ -59,6 +67,12 @@ export function HealthScreen() {
 
   const pendingClaims = useMemo(() => (claims ?? []).filter((c) => c.status === 'PENDING'), [claims]);
   const closedClaims = useMemo(() => (claims ?? []).filter((c) => c.status === 'CLOSED'), [claims]);
+
+  async function closeClaim(claimId: string) {
+    await api.closeMedicalClaimManually(claimId);
+    setCloseConfirmClaim(null);
+    await load();
+  }
 
   if (!account || !subaccount) {
     return (
@@ -108,15 +122,21 @@ export function HealthScreen() {
             {(expenses ?? []).length === 0 ? (
               <Text style={styles.emptyText}>Aucune dépense santé pour l'instant.</Text>
             ) : (
-              (expenses ?? []).map((op) => (
-                <View key={op.id} style={styles.opRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.opLabel}>{op.label}</Text>
-                    <Text style={styles.opMeta}>{formatShortDate(op.date)}</Text>
+              (expenses ?? []).map((op) => {
+                const claim = claimByOperationId.get(op.id);
+                return (
+                  <View key={op.id} style={styles.opRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.opLabel}>{op.label}</Text>
+                      <Text style={styles.opMeta}>
+                        {formatShortDate(op.date)} · {claim ? 'Remboursable' : 'Non remboursable'}
+                        {claim ? ` · ${claim.status === 'CLOSED' ? 'Clôturé' : claim.amountReimbursed > 0 ? 'Partiel' : 'En attente'}` : ''}
+                      </Text>
+                    </View>
+                    <Text style={[styles.opAmount, styles.opAmountMinus]}>-{formatDh(op.amount)}</Text>
                   </View>
-                  <Text style={[styles.opAmount, styles.opAmountMinus]}>-{formatDh(op.amount)}</Text>
-                </View>
-              ))
+                );
+              })
             )}
           </View>
         ) : (
@@ -125,7 +145,9 @@ export function HealthScreen() {
             {pendingClaims.length === 0 ? (
               <Text style={styles.emptyText}>Aucun dossier en attente.</Text>
             ) : (
-              pendingClaims.map((claim) => <ClaimCard key={claim.id} claim={claim} onReimburse={() => setReimburseClaim(claim)} />)
+              pendingClaims.map((claim) => (
+                <ClaimCard key={claim.id} claim={claim} onReimburse={() => setReimburseClaim(claim)} onClose={() => setCloseConfirmClaim(claim)} />
+              ))
             )}
 
             {closedClaims.length > 0 && (
@@ -177,11 +199,31 @@ export function HealthScreen() {
         onClose={() => setReimburseClaim(null)}
         onSubmitted={load}
       />
+
+      {closeConfirmClaim && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setCloseConfirmClaim(null)}>
+          <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setCloseConfirmClaim(null)} />
+          <View style={styles.confirmBox}>
+            <Text style={styles.claimLabel}>{closeConfirmClaim.label}</Text>
+            <Text style={styles.confirmText}>
+              Clôturer ce dossier malgré un reste de {formatDh(closeConfirmClaim.reste)} à charge ? Les montants engagé et remboursé ne seront jamais modifiés.
+            </Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity style={styles.confirmCancel} onPress={() => setCloseConfirmClaim(null)} testID="health-close-cancel">
+                <Text style={styles.confirmCancelText}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmConfirm} onPress={() => closeClaim(closeConfirmClaim.id)} testID="health-close-confirm">
+                <Text style={styles.confirmConfirmText}>Clôturer</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }
 
-function ClaimCard({ claim, closed, onReimburse }: { claim: api.MedicalClaimApi; closed?: boolean; onReimburse?: () => void }) {
+function ClaimCard({ claim, closed, onReimburse, onClose }: { claim: api.MedicalClaimApi; closed?: boolean; onReimburse?: () => void; onClose?: () => void }) {
   return (
     <View style={styles.claimCard}>
       <View style={styles.claimHeader}>
@@ -205,9 +247,14 @@ function ClaimCard({ claim, closed, onReimburse }: { claim: api.MedicalClaimApi;
         </View>
       </View>
       {!closed && (
-        <TouchableOpacity style={styles.reimburseButton} onPress={onReimburse} testID={`health-claim-reimburse-${claim.id}`}>
-          <Text style={styles.reimburseButtonText}>J'ai reçu un remboursement</Text>
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity style={styles.reimburseButton} onPress={onReimburse} testID={`health-claim-reimburse-${claim.id}`}>
+            <Text style={styles.reimburseButtonText}>J'ai reçu un remboursement</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.closeClaimButton} onPress={onClose} testID={`health-claim-close-${claim.id}`}>
+            <Text style={styles.closeClaimButtonText}>Clôturer le dossier</Text>
+          </TouchableOpacity>
+        </>
       )}
     </View>
   );
@@ -227,7 +274,8 @@ function ReimbursementModal({
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState('');
   const [destinationAccountId, setDestinationAccountId] = useState<string | null>(null);
-  const [allocate, setAllocate] = useState(false);
+  const [destinationChoice, setDestinationChoice] = useState<'DISPONIBLE' | 'SANTE' | 'AUTRE'>('DISPONIBLE');
+  const [otherSubaccountId, setOtherSubaccountId] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<api.AccountApi[]>([]);
   const [saving, setSaving] = useState(false);
   const bottomInset = useBottomInset(spacing.lg);
@@ -240,28 +288,29 @@ function ReimbursementModal({
 
   if (!claim) return null;
 
+  const destinationAccount = accounts.find((a) => a.id === destinationAccountId);
+  const otherSubaccountOptions = (destinationAccount?.subaccounts ?? []).filter((s) => s.id !== subaccountId).map((s) => ({ value: s.id, label: s.name }));
+
   async function submit() {
     if (!amount.trim() || !date.trim() || !destinationAccountId || saving) return;
+    if (destinationChoice === 'AUTRE' && !otherSubaccountId) return;
     setSaving(true);
     try {
-      await api.addMedicalReimbursement(claim!.id, {
-        amount,
-        date,
-        destinationAccountId: destinationAccountId!,
-        allocationSubaccountId: allocate ? subaccountId : undefined,
-      });
+      const allocationSubaccountId = destinationChoice === 'SANTE' ? subaccountId : destinationChoice === 'AUTRE' ? otherSubaccountId! : undefined;
+      await api.addMedicalReimbursement(claim!.id, { amount, date, destinationAccountId: destinationAccountId!, allocationSubaccountId });
       await onSubmitted();
       setAmount('');
       setDate('');
       setDestinationAccountId(null);
-      setAllocate(false);
+      setDestinationChoice('DISPONIBLE');
+      setOtherSubaccountId(null);
       onClose();
     } finally {
       setSaving(false);
     }
   }
 
-  const canSubmit = !!amount.trim() && !!date.trim() && !!destinationAccountId && !saving;
+  const canSubmit = !!amount.trim() && !!date.trim() && !!destinationAccountId && (destinationChoice !== 'AUTRE' || !!otherSubaccountId) && !saving;
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
@@ -275,13 +324,33 @@ function ReimbursementModal({
           placeholder="Choisir un compte"
           value={destinationAccountId}
           options={accounts.map((a) => ({ value: a.id, label: a.name }))}
-          onChange={setDestinationAccountId}
+          onChange={(v) => {
+            setDestinationAccountId(v);
+            setOtherSubaccountId(null);
+          }}
           testID="reimburse-account"
         />
-        <TouchableOpacity style={styles.allocateToggle} onPress={() => setAllocate((v) => !v)} testID="reimburse-allocate-toggle">
-          <View style={[styles.checkbox, allocate && styles.checkboxChecked]}>{allocate ? <Text style={styles.checkmark}>✓</Text> : null}</View>
-          <Text style={styles.allocateLabel}>Affecter cette somme à l'enveloppe Santé (sinon : laissée disponible)</Text>
-        </TouchableOpacity>
+        <Select
+          label="Que faire de cet argent ?"
+          value={destinationChoice}
+          options={[
+            { value: 'DISPONIBLE', label: 'Laisser disponible sur le compte' },
+            { value: 'SANTE', label: "Affecter à l'enveloppe Santé" },
+            { value: 'AUTRE', label: 'Affecter à un autre sous-compte' },
+          ]}
+          onChange={(v) => setDestinationChoice(v as typeof destinationChoice)}
+          testID="reimburse-destination-choice"
+        />
+        {destinationChoice === 'AUTRE' && (
+          <Select
+            label="Sous-compte"
+            placeholder="Choisir un sous-compte"
+            value={otherSubaccountId}
+            options={otherSubaccountOptions}
+            onChange={setOtherSubaccountId}
+            testID="reimburse-other-subaccount"
+          />
+        )}
         <TouchableOpacity style={[styles.reimburseButton, !canSubmit && styles.buttonDisabled]} disabled={!canSubmit} onPress={submit} testID="reimburse-submit">
           <Text style={styles.reimburseButtonText}>{saving ? 'Enregistrement…' : 'Confirmer'}</Text>
         </TouchableOpacity>
@@ -334,6 +403,23 @@ const styles = StyleSheet.create({
   reimburseButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginTop: spacing.md },
   buttonDisabled: { opacity: 0.5 },
   reimburseButtonText: { color: colors.textOnPrimary, fontWeight: '700', fontSize: 14 },
+  closeClaimButton: { borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginTop: spacing.sm },
+  closeClaimButtonText: { color: colors.textSecondary, fontWeight: '600', fontSize: 13 },
+  confirmBox: {
+    position: 'absolute',
+    left: spacing.xl,
+    right: spacing.xl,
+    top: '35%',
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+  },
+  confirmText: { ...typography.body, marginVertical: spacing.md },
+  confirmActions: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
+  confirmCancel: { flex: 1, paddingVertical: spacing.md, borderRadius: radius.md, alignItems: 'center', backgroundColor: colors.surfaceSecondary },
+  confirmCancelText: { ...typography.body, fontWeight: '700', color: colors.textSecondary },
+  confirmConfirm: { flex: 1, paddingVertical: spacing.md, borderRadius: radius.md, alignItems: 'center', backgroundColor: colors.primary },
+  confirmConfirmText: { ...typography.body, fontWeight: '700', color: colors.textOnPrimary },
   historyButton: { marginHorizontal: spacing.lg, alignItems: 'center', paddingVertical: spacing.md },
   historyButtonText: { ...typography.body, color: colors.primary, fontWeight: '600' },
   backdrop: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)' },

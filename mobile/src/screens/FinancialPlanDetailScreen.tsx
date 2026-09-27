@@ -1,0 +1,412 @@
+import React, { useCallback, useState } from 'react';
+import { RouteProp, useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import * as api from '../api/client';
+import { useTopInset } from '../ui/useTopInset';
+import { useBottomInset } from '../ui/useBottomInset';
+import { colors, radius, spacing, typography } from '../ui/theme';
+import { formatDh, formatShortDate } from '../ui/formatMoney';
+import { HelpButton } from '../ui/HelpButton';
+import { ChoiceSheet } from '../ui/ChoiceSheet';
+import { FormField } from '../ui/FormField';
+import { DateField } from '../ui/DateField';
+import { Select, SelectOption } from '../ui/Select';
+
+const FREQUENCY_LABELS: Record<api.RecurrenceFrequency, string> = {
+  ONCE: 'Ponctuel',
+  WEEKLY: 'Hebdomadaire',
+  MONTHLY: 'Mensuel',
+  BIMONTHLY: 'Bimestriel',
+  QUARTERLY: 'Trimestriel',
+  SEMIANNUAL: 'Semestriel',
+  YEARLY: 'Annuel',
+};
+
+const FREQUENCY_OPTIONS: SelectOption[] = (Object.keys(FREQUENCY_LABELS) as api.RecurrenceFrequency[]).map((f) => ({
+  value: f,
+  label: FREQUENCY_LABELS[f],
+}));
+
+/**
+ * Détail d'un plan financier (§10, §13-15) — Disponible actuel + prochaine
+ * échéance + liste des échéances (navigation vers le détail) + postes.
+ * La recommandation vient TOUJOURS du backend (calculée sur l'argent
+ * réellement disponible), jamais recalculée côté écran.
+ */
+export function FinancialPlanDetailScreen() {
+  const navigation = useNavigation<any>();
+  const route = useRoute<RouteProp<{ FinancialPlanDetail: { id: string } }, 'FinancialPlanDetail'>>();
+  const { id } = route.params;
+  const topInset = useTopInset();
+  const bottomInset = useBottomInset();
+
+  const [plan, setPlan] = useState<api.FinancialPlanApi | null>(null);
+  const [accounts, setAccounts] = useState<api.AccountApi[]>([]);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [addDeadlineOpen, setAddDeadlineOpen] = useState(false);
+  const [addItemOpen, setAddItemOpen] = useState(false);
+
+  const load = useCallback(async () => {
+    const [p, accs] = await Promise.all([api.getFinancialPlan(id), api.listAccounts()]);
+    setPlan(p);
+    setAccounts(accs);
+  }, [id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
+
+  if (!plan) {
+    return (
+      <View style={[styles.center, { paddingTop: topInset }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  const next = plan.nextDeadline;
+
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <ScrollView style={[styles.container, { paddingTop: topInset }]} contentContainerStyle={{ paddingBottom: bottomInset + spacing.xxl }}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backRow} onPress={() => navigation.goBack()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
+            <Text style={styles.backLabel}>Retour</Text>
+          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <HelpButton
+              title={plan.label}
+              text="Ce plan regroupe les postes de dépense à préparer et vos échéances. La recommandation mensuelle se base uniquement sur l'argent réellement disponible, jamais sur un versement seulement prévu."
+            />
+            <TouchableOpacity testID="plan-detail-menu" onPress={() => setMenuOpen(true)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <Ionicons name="ellipsis-horizontal" size={22} color={colors.textPrimary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <Text style={styles.title}>{plan.label}</Text>
+
+        <View style={styles.balanceCard}>
+          <Text style={styles.balanceLabel}>Disponible actuel</Text>
+          <Text style={styles.balanceAmount}>{formatDh(plan.disponibleActuel ?? 0)}</Text>
+        </View>
+
+        {next ? (
+          <View style={styles.nextCard} testID="plan-detail-next-deadline">
+            <Text style={styles.nextTitle}>PROCHAINE ÉCHÉANCE — {next.label.toUpperCase()}</Text>
+            <Text style={styles.nextMeta}>Le {formatShortDate(next.dueDate)}</Text>
+            <View style={styles.nextRow}>
+              <Text style={styles.nextRowLabel}>Besoin</Text>
+              <Text style={styles.nextRowValue}>{formatDh(next.totalPrevu)}</Text>
+            </View>
+            <View style={styles.nextRow}>
+              <Text style={styles.nextRowLabel}>Disponible</Text>
+              <Text style={styles.nextRowValue}>{formatDh(next.disponible)}</Text>
+            </View>
+            <View style={styles.nextRow}>
+              <Text style={styles.nextRowLabel}>Reste</Text>
+              <Text style={[styles.nextRowValue, next.reste > 0 && styles.nextRowValueWarning]}>{formatDh(next.reste)}</Text>
+            </View>
+            <View style={styles.nextRow}>
+              <Text style={styles.nextRowLabel}>Recommandation</Text>
+              <Text style={styles.nextRowValue}>{formatDh(next.recommendedMonthly)}/mois</Text>
+            </View>
+          </View>
+        ) : null}
+
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionLabel}>ÉCHÉANCES</Text>
+          <TouchableOpacity onPress={() => setAddDeadlineOpen(true)} testID="plan-detail-add-deadline">
+            <Text style={styles.addLink}>+ Ajouter</Text>
+          </TouchableOpacity>
+        </View>
+        {plan.deadlines.length === 0 ? (
+          <Text style={styles.emptyText}>Aucune échéance pour l'instant.</Text>
+        ) : (
+          plan.deadlines.map((d) => (
+            <TouchableOpacity
+              key={d.deadlineId}
+              style={styles.deadlineRow}
+              onPress={() => navigation.navigate('DeadlineDetail', { planId: plan.id, deadlineId: d.deadlineId })}
+              testID={`plan-detail-deadline-${d.deadlineId}`}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.deadlineLabel}>{d.label}</Text>
+                <Text style={styles.deadlineMeta}>
+                  {formatShortDate(d.dueDate)} · {formatDh(d.totalPrevu)}
+                </Text>
+              </View>
+              {d.paid ? <Text style={styles.paidBadge}>Payée ✓</Text> : <Ionicons name="chevron-forward" size={18} color={colors.textPlaceholder} />}
+            </TouchableOpacity>
+          ))
+        )}
+
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionLabel}>POSTES</Text>
+          <TouchableOpacity onPress={() => setAddItemOpen(true)} testID="plan-detail-add-item">
+            <Text style={styles.addLink}>+ Ajouter</Text>
+          </TouchableOpacity>
+        </View>
+        {plan.items.length === 0 ? (
+          <Text style={styles.emptyText}>Aucun poste pour l'instant.</Text>
+        ) : (
+          plan.items.map((item) => (
+            <View key={item.id} style={styles.itemRow}>
+              <Text style={styles.itemLabel}>{item.label}</Text>
+              <Text style={styles.itemMeta}>
+                {item.expectedAmount != null ? formatDh(item.expectedAmount) : '—'} · {FREQUENCY_LABELS[item.frequency]}
+              </Text>
+            </View>
+          ))
+        )}
+      </ScrollView>
+
+      <ChoiceSheet
+        visible={menuOpen}
+        title={plan.label}
+        onClose={() => setMenuOpen(false)}
+        testID="plan-detail-choice-sheet"
+        options={[{ key: 'edit', label: 'Modifier', icon: 'create-outline', onPress: () => setEditOpen(true) }]}
+      />
+
+      <EditPlanModal visible={editOpen} plan={plan} accounts={accounts} onClose={() => setEditOpen(false)} onSaved={load} />
+      <AddDeadlineModal visible={addDeadlineOpen} planId={plan.id} onClose={() => setAddDeadlineOpen(false)} onSaved={load} />
+      <AddItemModal visible={addItemOpen} planId={plan.id} onClose={() => setAddItemOpen(false)} onSaved={load} />
+    </View>
+  );
+}
+
+function EditPlanModal({
+  visible,
+  plan,
+  accounts,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  plan: api.FinancialPlanApi;
+  accounts: api.AccountApi[];
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const bottomInset = useBottomInset(spacing.lg);
+  const [label, setLabel] = useState(plan.label);
+  const [accountId, setAccountId] = useState<string | null>(plan.accountId);
+  const [subaccountId, setSubaccountId] = useState<string | null>(plan.subaccountId);
+  const [saving, setSaving] = useState(false);
+
+  React.useEffect(() => {
+    if (visible) {
+      setLabel(plan.label);
+      setAccountId(plan.accountId);
+      setSubaccountId(plan.subaccountId);
+    }
+  }, [visible, plan]);
+
+  const accountOptions: SelectOption[] = accounts.map((a) => ({ value: a.id, label: a.name }));
+  const selectedAccount = accounts.find((a) => a.id === accountId) ?? null;
+  const subaccountOptions: SelectOption[] = (selectedAccount?.subaccounts ?? []).map((s) => ({ value: s.id, label: s.name }));
+
+  async function submit() {
+    if (!label.trim() || saving) return;
+    setSaving(true);
+    try {
+      await api.updateFinancialPlan(plan.id, { label: label.trim(), accountId: accountId ?? undefined, subaccountId: subaccountId ?? undefined });
+      await onSaved();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.backdrop} />
+      </TouchableWithoutFeedback>
+      <ScrollView style={styles.sheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
+        <Text style={styles.sheetTitle}>Modifier le plan</Text>
+        <FormField label="Libellé" value={label} onChangeText={setLabel} testID="plan-edit-label" />
+        <Select
+          label="Compte lié"
+          placeholder="Aucun"
+          value={accountId}
+          options={accountOptions}
+          onChange={(v) => {
+            setAccountId(v);
+            setSubaccountId(null);
+          }}
+          testID="plan-edit-account"
+        />
+        {selectedAccount && subaccountOptions.length > 0 ? (
+          <Select label="Sous-compte" placeholder="Aucun" value={subaccountId} options={subaccountOptions} onChange={setSubaccountId} testID="plan-edit-subaccount" />
+        ) : null}
+        <TouchableOpacity style={[styles.submitButton, (!label.trim() || saving) && styles.submitButtonDisabled]} onPress={submit} disabled={!label.trim() || saving} testID="plan-edit-submit">
+          <Text style={styles.submitButtonText}>{saving ? 'Enregistrement…' : 'Enregistrer'}</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </Modal>
+  );
+}
+
+function AddDeadlineModal({ visible, planId, onClose, onSaved }: { visible: boolean; planId: string; onClose: () => void; onSaved: () => Promise<void> }) {
+  const bottomInset = useBottomInset(spacing.lg);
+  const [label, setLabel] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  React.useEffect(() => {
+    if (visible) {
+      setLabel('');
+      setDueDate('');
+    }
+  }, [visible]);
+
+  async function submit() {
+    if (!label.trim() || !dueDate || saving) return;
+    setSaving(true);
+    try {
+      await api.addFinancialPlanDeadline(planId, { label: label.trim(), dueDate });
+      await onSaved();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.backdrop} />
+      </TouchableWithoutFeedback>
+      <ScrollView style={styles.sheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
+        <Text style={styles.sheetTitle}>Ajouter une échéance</Text>
+        <FormField label="Libellé" value={label} onChangeText={setLabel} placeholder="Ex. Janvier" testID="add-deadline-label" />
+        <DateField label="Date" value={dueDate} onChange={setDueDate} />
+        <TouchableOpacity style={[styles.submitButton, (!label.trim() || !dueDate || saving) && styles.submitButtonDisabled]} onPress={submit} disabled={!label.trim() || !dueDate || saving} testID="add-deadline-submit">
+          <Text style={styles.submitButtonText}>{saving ? 'Enregistrement…' : 'Ajouter'}</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </Modal>
+  );
+}
+
+function AddItemModal({ visible, planId, onClose, onSaved }: { visible: boolean; planId: string; onClose: () => void; onSaved: () => Promise<void> }) {
+  const bottomInset = useBottomInset(spacing.lg);
+  const [label, setLabel] = useState('');
+  const [amount, setAmount] = useState('');
+  const [frequency, setFrequency] = useState<api.RecurrenceFrequency>('ONCE');
+  const [saving, setSaving] = useState(false);
+
+  React.useEffect(() => {
+    if (visible) {
+      setLabel('');
+      setAmount('');
+      setFrequency('ONCE');
+    }
+  }, [visible]);
+
+  async function submit() {
+    if (!label.trim() || saving) return;
+    setSaving(true);
+    try {
+      await api.addFinancialPlanItem(planId, { label: label.trim(), expectedAmount: amount.trim() || undefined, frequency });
+      await onSaved();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.backdrop} />
+      </TouchableWithoutFeedback>
+      <ScrollView style={styles.sheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
+        <Text style={styles.sheetTitle}>Ajouter un poste</Text>
+        <FormField label="Libellé" value={label} onChangeText={setLabel} placeholder="Ex. Frais école" testID="add-item-label" />
+        <FormField label="Montant estimé" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" testID="add-item-amount" />
+        <Select label="Fréquence" value={frequency} options={FREQUENCY_OPTIONS} onChange={(v) => setFrequency(v as api.RecurrenceFrequency)} testID="add-item-frequency" />
+        <Text style={styles.helperText}>
+          Un poste récurrent s'applique automatiquement à chaque échéance existante du plan.
+        </Text>
+        <TouchableOpacity style={[styles.submitButton, (!label.trim() || saving) && styles.submitButtonDisabled]} onPress={submit} disabled={!label.trim() || saving} testID="add-item-submit">
+          <Text style={styles.submitButtonText}>{saving ? 'Enregistrement…' : 'Ajouter'}</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, marginBottom: spacing.md },
+  backRow: { flexDirection: 'row', alignItems: 'center' },
+  backLabel: { ...typography.body, fontWeight: '600', marginLeft: 2 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  title: { ...typography.screenTitle, paddingHorizontal: spacing.lg },
+  balanceCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  balanceLabel: { ...typography.bodySecondary, marginBottom: spacing.xs },
+  balanceAmount: { ...typography.amountPrimary },
+  nextCard: {
+    backgroundColor: colors.surfaceActive,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.xl,
+  },
+  nextTitle: { ...typography.caption, fontWeight: '800', color: colors.textSecondary, letterSpacing: 0.5 },
+  nextMeta: { ...typography.bodySecondary, marginTop: 2, marginBottom: spacing.md },
+  nextRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+  nextRowLabel: { ...typography.body },
+  nextRowValue: { ...typography.body, fontWeight: '700' },
+  nextRowValueWarning: { color: colors.warning },
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
+  sectionLabel: { ...typography.sectionLabel, color: colors.textSecondary, letterSpacing: 0.5 },
+  addLink: { ...typography.body, fontWeight: '700', color: colors.primary },
+  emptyText: { ...typography.bodySecondary, paddingHorizontal: spacing.lg, marginBottom: spacing.lg },
+  deadlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  deadlineLabel: { ...typography.body, fontWeight: '700' },
+  deadlineMeta: { ...typography.caption, marginTop: 2 },
+  paidBadge: { ...typography.caption, fontWeight: '800', color: colors.success },
+  itemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+  },
+  itemLabel: { ...typography.body, fontWeight: '600' },
+  itemMeta: { ...typography.caption },
+  backdrop: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)' },
+  sheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 6, borderTopRightRadius: radius.xl + 6, padding: spacing.xl, maxHeight: '85%' },
+  sheetTitle: { ...typography.sectionTitle, marginBottom: spacing.lg },
+  helperText: { ...typography.caption, marginBottom: spacing.md },
+  submitButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginTop: spacing.sm },
+  submitButtonDisabled: { opacity: 0.5 },
+  submitButtonText: { color: colors.textOnPrimary, fontWeight: '700', fontSize: 14 },
+});

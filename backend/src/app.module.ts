@@ -14,6 +14,7 @@ import { MedicalClaimsModule } from './medical-claims/medical-claims.module';
 import { RecurrenceRulesModule } from './recurrence-rules/recurrence-rules.module';
 import { PlanningModule } from './planning/planning.module';
 import { FinancialPlansModule } from './financial-plans/financial-plans.module';
+import { GoalsModule } from './goals/goals.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -30,6 +31,7 @@ import { AppController } from './app.controller';
     RecurrenceRulesModule,
     PlanningModule,
     FinancialPlansModule,
+    GoalsModule,
   ],
   controllers: [AppController],
   providers: [
