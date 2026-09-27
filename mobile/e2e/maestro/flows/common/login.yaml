@@ -1,3 +1,5 @@
+appId: com.depenses.mobile
+---
 # Sous-flow réutilisable (appelé via runFlow) : connexion avec le compte de
 # démonstration E2E (${E2E_EMAIL} / ${E2E_PASSWORD}, injectés par le workflow
 # GitHub Actions android-e2e.yml). clearState garantit que chaque flow
