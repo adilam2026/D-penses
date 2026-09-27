@@ -11,13 +11,13 @@ export class CategoriesController {
   constructor(private readonly categories: CategoriesService) {}
 
   @Get()
-  findAll(@CurrentUser() user: AuthenticatedUser) {
-    return this.categories.findAll(user.sub, user.householdId!);
+  list(@CurrentUser() user: AuthenticatedUser) {
+    return this.categories.list(user.sub, user.householdId!);
   }
 
   @Post()
   create(@Body() dto: CreateCategoryDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.categories.create(user.sub, user.householdId!, dto);
+    return this.categories.create(user.sub, user.householdId!, dto.name);
   }
 
   @Patch(':id')
@@ -26,7 +26,7 @@ export class CategoriesController {
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.categories.remove(user.sub, user.householdId!, id);
+  archive(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.categories.archive(user.sub, user.householdId!, id);
   }
 }

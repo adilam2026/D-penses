@@ -1,94 +1,56 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { RlsContextService } from '../common/prisma/rls-context.service';
-import { CreateCategoryDto } from './dto/create-category.dto';
-import { UpdateCategoryDto } from './dto/update-category.dto';
+
+type TxClient = Prisma.TransactionClient;
+
+export const DEFAULT_FALLBACK_CATEGORY_NAME = 'Autres';
+
+/** Auto-seed de la catégorie "Autres" — appelé à la création d'un foyer. Jamais dupliquée, jamais supprimable. */
+export async function seedDefaultFallbackCategory(tx: TxClient, householdId: string): Promise<void> {
+  await tx.category.create({
+    data: { householdId, name: DEFAULT_FALLBACK_CATEGORY_NAME, isDefaultFallback: true, sortOrder: 9999 },
+  });
+}
 
 @Injectable()
 export class CategoriesService {
   constructor(private readonly rlsContext: RlsContextService) {}
 
-  /**
-   * Catégories système (household_id NULL) + catégories propres au foyer (document
-   * 02 §31), ACTIVES uniquement (corrections UI/UX finales §10) — une catégorie
-   * archivée disparaît de cette liste (donc des sélecteurs), jamais des relations
-   * déjà existantes (transactions/budgets/charges lisent leur catégorie par
-   * relation directe, jamais filtrée par status).
-   */
-  async findAll(userId: string, householdId: string) {
-    return this.rlsContext.run(userId, householdId, () =>
-      this.rlsContext.getClient().category.findMany({
-        where: { status: 'active', OR: [{ householdId: null }, { householdId }] },
-        orderBy: [{ isSystem: 'desc' }, { name: 'asc' }],
-      }),
-    );
-  }
-
-  /**
-   * Corrections UI/UX finales §10 — renommer/changer le type d'une catégorie,
-   * y compris une catégorie système (partagée par tous les foyers, comme sa
-   * lecture l'est déjà) : jamais bloquée ici pour préserver un écran "impossible
-   * à gérer". Reste interdit uniquement pour une catégorie d'un AUTRE foyer.
-   */
-  async update(userId: string, householdId: string, id: string, dto: UpdateCategoryDto) {
+  async list(userId: string, householdId: string) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
-      const category = await tx.category.findFirst({ where: { id } });
-      if (!category) throw new NotFoundException('Catégorie introuvable');
-      if (category.householdId !== null && category.householdId !== householdId) {
-        throw new ForbiddenException("Impossible de modifier une catégorie d'un autre foyer");
-      }
-      return tx.category.update({
-        where: { id },
-        data: { name: dto.name?.trim(), kind: dto.kind },
-      });
+      return tx.category.findMany({ where: { householdId }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] });
     });
   }
 
-  async create(userId: string, householdId: string, dto: CreateCategoryDto) {
-    return this.rlsContext.run(userId, householdId, () =>
-      this.rlsContext.getClient().category.create({
-        data: { householdId, name: dto.name, icon: dto.icon, kind: dto.kind, isSystem: false },
-      }),
-    );
-  }
-
-  /**
-   * Corrections UI/UX finales §10 — jamais un refus bloquant pour l'utilisateur :
-   * une catégorie non utilisée est réellement supprimée (comportement historique,
-   * R5 clôture §3) ; une catégorie déjà utilisée (revenus/charges/budgets/dépenses
-   * réelles, y compris via ses CategoryType) est ARCHIVÉE (status=inactive) au
-   * lieu d'un hard delete — elle disparaît de findAll() (donc des sélecteurs),
-   * jamais de l'historique : aucune relation existante n'est touchée, aucune
-   * transaction passée ne perd sa catégorie. Reste interdit uniquement pour une
-   * catégorie d'un AUTRE foyer (jamais une catégorie système, désormais gérable
-   * comme les autres).
-   */
-  async remove(userId: string, householdId: string, id: string) {
+  async create(userId: string, householdId: string, name: string) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
-      const category = await tx.category.findFirst({ where: { id } });
-      if (!category) throw new NotFoundException('Catégorie introuvable');
-      if (category.householdId !== null && category.householdId !== householdId) {
-        throw new ForbiddenException("Impossible de supprimer une catégorie d'un autre foyer");
-      }
+      return tx.category.create({ data: { householdId, name } });
+    });
+  }
 
-      const [incomeSources, chargePlans, variableBudgets, adhocDirect, budgetDirect, adhocViaType, budgetViaType] = await Promise.all([
-        tx.incomeSource.count({ where: { categoryId: id } }),
-        tx.chargePlan.count({ where: { categoryId: id } }),
-        tx.variableBudget.count({ where: { categoryId: id } }),
-        tx.adHocExpense.count({ where: { categoryId: id } }),
-        tx.budgetExpense.count({ where: { categoryId: id } }),
-        tx.adHocExpense.count({ where: { categoryType: { categoryId: id } } }),
-        tx.budgetExpense.count({ where: { categoryType: { categoryId: id } } }),
-      ]);
-      const usageCount = incomeSources + chargePlans + variableBudgets + adhocDirect + budgetDirect + adhocViaType + budgetViaType;
-      if (usageCount > 0) {
-        await tx.category.update({ where: { id }, data: { status: 'inactive' } });
-        return { archived: true };
+  async update(userId: string, householdId: string, id: string, data: { name?: string; sortOrder?: number; active?: boolean }) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const category = await tx.category.findUnique({ where: { id } });
+      if (!category || category.householdId !== householdId) throw new NotFoundException('Catégorie introuvable');
+      if (category.isDefaultFallback && data.active === false) {
+        throw new BadRequestException('"Autres" ne peut jamais être désactivée');
       }
+      return tx.category.update({ where: { id }, data });
+    });
+  }
 
-      await tx.category.delete({ where: { id } });
-      return { archived: false };
+  /** Jamais de suppression réelle : "Autres" absorbe toujours l'historique — ici, simple désactivation. */
+  async archive(userId: string, householdId: string, id: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const category = await tx.category.findUnique({ where: { id } });
+      if (!category || category.householdId !== householdId) throw new NotFoundException('Catégorie introuvable');
+      if (category.isDefaultFallback) throw new BadRequestException('"Autres" ne peut jamais être supprimée');
+      return tx.category.update({ where: { id }, data: { active: false } });
     });
   }
 }

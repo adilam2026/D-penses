@@ -1,5 +1,9 @@
-// Lot 0 — Socle (voir docs/05-roadmap-et-risques.md)
-// Reference normative: docs/02-modele-metier.md (metier) et docs/04-architecture-technique-et-donnees.md (schema)
+// Finance Maison — reconstruction totale (reset 2026-09-27).
+// Ancien socle métier archivé sur la branche `archive/legacy-d-penses-2026-09-27`.
+// Seule l'infrastructure technique (auth/foyer/session) est conservée à l'identique.
+// Schéma métier V3.1 : comptabilité en partie double via ledger_entries, aucune
+// balance stockée (toujours dérivée), aucune ambiguïté prévu/réalisé (cf. rapport
+// de reset — display() vs budget(), effective_amount, invariants non-affecté/solde).
 
 generator client {
   provider = "prisma-client-js"
@@ -10,267 +14,15 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ============================================================
+// SOCLE — infrastructure technique conservée à l'identique (jamais touchée par le reset)
+// ============================================================
+
 enum HouseholdRole {
   admin
   member
   read_only
 }
-
-enum ChildStatus {
-  active
-  inactive
-}
-
-enum CategoryKind {
-  income
-  expense
-  both
-}
-
-enum VariableBudgetProjectionMode {
-  contractuel
-  rythme_reel
-  prudent_max
-}
-
-enum AccountType {
-  courant
-  epargne
-  especes
-  autre
-}
-
-enum AccountStatus {
-  actif
-  archive
-}
-
-enum SnapshotSource {
-  manuel
-  import
-}
-
-enum ReconciliationStatus {
-  pending
-  resolue
-}
-
-enum AdjustmentType {
-  ecart_rapprochement
-  correction
-  autre
-}
-
-enum TransferStatus {
-  prevu
-  confirme
-  annule
-}
-
-enum TransferType {
-  interne
-  retrait_especes
-  depot_especes
-}
-
-// R6.2 (§10) — même convention actif/inactif que ChargePlanStatus/IncomeSourceStatus,
-// enum dédié pour ne jamais coupler RecurringTransfer à un autre domaine par accident.
-enum RecurringTransferStatus {
-  actif
-  inactif
-}
-
-// ---------- Lot 2 — Revenus & charges de base ----------
-
-enum IncomeSourceStatus {
-  actif
-  inactif
-}
-
-enum IncomeOccurrenceStatus {
-  prevu
-  recu
-  en_retard
-  annule
-}
-
-// Fréquence pilotant la génération automatique des Deadline/IncomeOccurrence
-// (ChargePlan.generation_mode = auto_frequence, doc02 §C.4). Le mode
-// calendrier_manuel (Lot 4) n'utilise pas ce champ.
-enum RecurrenceFrequency {
-  hebdomadaire
-  mensuel
-  trimestriel
-  semestriel
-  annuel
-  ponctuel
-}
-
-enum ChargePlanGenerationMode {
-  auto_frequence
-  calendrier_manuel
-}
-
-// Lot 11 (§9/§11 cadrage V1) — distingue les FinancialPlan pour l'UI mobile (assistant
-// scolaire vs voyage vs plan libre), purement informatif.
-// M7+M8 — extension additive : vehicle/housing/subscriptions, même principe (jamais
-// de logique métier branchée dessus, purement informatif/UI).
-enum FinancialPlanType {
-  school
-  travel
-  vehicle
-  housing
-  subscriptions
-  other
-}
-
-// M7+M8 — statut des référentiels Vehicle/Housing (ultra-simples : id/householdId/
-// name/status uniquement, jamais de fiche technique — cf. guard-rails M7+M8 §1/§2).
-enum ReferentialStatus {
-  active
-  inactive
-}
-
-enum ObligationStatus {
-  obligatoire
-  optionnelle_envisagee
-  optionnelle_souscrite
-  optionnelle_refusee
-}
-
-enum ChargePlanStatus {
-  actif
-  inactif
-}
-
-// RG-102 : amount_current est NULL si et seulement si amount_status = inconnu.
-enum AmountStatus {
-  inconnu
-  estime
-  confirme
-}
-
-// F.2 (doc02) — état financier persistant, seule source de vérité pour les calculs.
-// L'état temporel (bientôt_due/due/overdue/future) n'est jamais stocké (O.2).
-enum DeadlineFinancialStatus {
-  ouverte
-  partiellement_payee
-  soldee
-  annulee
-}
-
-// Refonte maquette V6B §10-11 — statut du dossier de remboursement mutuelle.
-enum MedicalClaimStatus {
-  en_attente
-  partiellement_rembourse
-  cloture
-}
-
-enum PaymentType {
-  paiement
-  remboursement
-  ajustement
-}
-
-enum PaymentDirection {
-  augmente_paye
-  diminue_paye
-}
-
-// T3B — même patron que PaymentType/PaymentDirection (reste_a_payer) : la
-// consommation d'un budget variable est un SUM(amount) signé, jamais une
-// réécriture de la ligne originale ni un Adjustment (scopé accountId, ne
-// touche jamais la consommation du budget).
-enum BudgetExpenseType {
-  depense
-  remboursement
-  ajustement
-}
-
-enum BudgetExpenseDirection {
-  augmente_depense
-  diminue_depense
-}
-
-enum FundingSource {
-  compte
-  provision
-}
-
-// ---------- Lot 3 — Budgets variables & dépenses ponctuelles ----------
-
-enum ReferencePeriod {
-  semaine
-  mois
-}
-
-// Lot 6 — mode mensuel du budget. Inerte quand referencePeriod = semaine (même
-// convention que weekStartDay inerte quand referencePeriod = mois). "calendaire"
-// = comportement historique (mois civil, 1er → dernier jour), défaut pour tout
-// budget existant : aucune migration de données au-delà du DEFAULT.
-enum MonthMode {
-  calendaire
-  financier
-  personnalise
-}
-
-// ---------- Lot 4 — Charges planifiées, FinancialPlan, module scolaire ----------
-
-// doc04 §P.1bis (RG-114) : type explicite + vraies FK, jamais un identifiant
-// polymorphe non typé — patron réutilisable pour toute relation bénéficiaire future.
-enum BeneficiaryType {
-  user
-  child
-}
-
-// ---------- Lot 6 — Épargne, provisions & objectifs (docs/02 §E.5/E.5bis-quinquies) ----------
-
-// RG-071 : deux modes exclusifs. virtual_allocation = l'argent reste dans son
-// compte d'origine, current_amount calculé depuis PocketMovement. backed_by_account
-// = current_amount est une lecture directe du solde du compte dédié (linked_account_id).
-enum AllocationMode {
-  virtual_allocation
-  backed_by_account
-}
-
-// RG-071/090 : discriminant typé (patron RG-114) — jamais un identifiant
-// polymorphe non typé pour distinguer la poche cible d'un PocketMovement.
-enum PocketType {
-  savings_pocket
-  provision
-}
-
-// PocketMovement (doc02 §C.5, prévu → confirmé/en_retard/annulé, cf. §320).
-// Seul un mouvement confirmé compte dans current_amount (RG-071/IF-07).
-enum PocketMovementStatus {
-  prevu
-  confirme
-  en_retard
-  annule
-}
-
-// RG-071 : le signe est déduit du type, jamais saisi (même principe que Payment.amount, RG-015).
-enum PocketMovementType {
-  contribution
-  retrait
-}
-
-// Goal (doc02 §320) : en_cours ⇄ en_pause → atteint/abandonné.
-enum GoalStatus {
-  en_cours
-  en_pause
-  atteint
-  abandonne
-}
-
-// GoalContribution : même distinction prévu/réel qu'un PocketMovement.
-enum GoalContributionStatus {
-  prevu
-  confirme
-  annule
-}
-
-// ---------- SOCLE ----------
 
 model User {
   id                String     @id @default(uuid())
@@ -279,20 +31,8 @@ model User {
   firstName         String     @map("first_name")
   lastName          String     @map("last_name")
   avatarUrl         String?    @map("avatar_url")
-  // M6 — couleur d'identification de l'initiateur (Transactions), jamais imposée à
-  // la saisie : NULL = pas encore choisie, l'affichage retombe sur une couleur
-  // déterministe dérivée de l'id (jamais un plantage, jamais une régression).
   color             String?    @map("color")
-  // NULL = compte créé mais adresse email pas encore confirmée par code OTP —
-  // aucun token de session émis avant que ce champ soit renseigné (signup).
   emailVerifiedAt   DateTime?  @map("email_verified_at")
-  // Corrections consolidées §16 — foyer ACTIF explicite, persistant entre
-  // connexions/rafraîchissements de token (auth.service.ts#activeHouseholdId).
-  // NULL = jamais switché depuis un second foyer : repli sur le membership le
-  // plus ancien (comportement historique inchangé pour tout utilisateur qui
-  // n'a jamais utilisé "Rejoindre un foyer" en étant déjà dans un foyer).
-  // onDelete SetNull : si le foyer référencé disparaissait un jour, jamais un
-  // utilisateur bloqué — simple repli sur l'ancien calcul.
   activeHouseholdId String?    @map("active_household_id")
   activeHousehold   Household? @relation(fields: [activeHouseholdId], references: [id], onDelete: SetNull)
   createdAt         DateTime   @default(now()) @map("created_at")
@@ -301,22 +41,9 @@ model User {
   memberships                HouseholdMembership[]
   sessions                   Session[]
   emailOtps                  EmailOtp[]
-  createdInvites             HouseholdInvite[]          @relation("InviteCreatedBy")
-  // §16 — liste (plus une relation 1-1) : un utilisateur peut redeem plusieurs
-  // invitations différentes au fil des changements de foyer actif.
-  redeemedInvites            HouseholdInvite[]          @relation("InviteRedeemedBy")
-  ownedAccounts              FinancialAccount[]
-  incomeSourcesAsBeneficiary IncomeSource[]
-  confirmedIncomeOccurrences IncomeOccurrence[]
-  incomeReversalsConfirmed   IncomeOccurrenceReversal[] @relation("IncomeOccurrenceReversalConfirmedBy")
-  incomeReversalsPerformed   IncomeOccurrenceReversal[] @relation("IncomeOccurrenceReversalReversedBy")
-  recordedPayments           Payment[]
-  recordedBudgetExpenses     BudgetExpense[]            @relation("BudgetExpenseRecordedBy")
-  recordedAdHocExpenses      AdHocExpense[]             @relation("AdHocExpenseRecordedBy")
-  financialPlanEntries       FinancialPlanBeneficiary[]
-  ownedSavingsPockets        SavingsPocket[]
-  recordedPocketMovements    PocketMovement[]
-  recordedGoalContributions  GoalContribution[]
+  createdInvites             HouseholdInvite[] @relation("InviteCreatedBy")
+  redeemedInvites            HouseholdInvite[] @relation("InviteRedeemedBy")
+  createdFinancialOperations FinancialOperation[]
 
   @@map("user")
 }
@@ -329,31 +56,17 @@ model Household {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   memberships         HouseholdMembership[]
-  // Corrections consolidées §16 — utilisateurs pour qui CE foyer est le foyer
-  // actif courant (User.activeHouseholdId) — jamais confondu avec `memberships`
-  // (appartenance) : un utilisateur peut être membre d'un foyer sans qu'il soit
-  // son foyer actif (cas d'un foyer quitté après un switch).
   usersWithThisActive User[]
-  children            Child[]
-  categories          Category[]
-  settings            HouseholdSettings?
   invites             HouseholdInvite[]
-  accounts            FinancialAccount[]
-  transfers           AccountTransfer[]
-  recurringTransfers  RecurringTransfer[]
-  incomeSources       IncomeSource[]
-  chargePlans         ChargePlan[]
-  variableBudgets     VariableBudget[]
-  adHocExpenses       AdHocExpense[]
+
+  accounts            Account[]
+  subaccounts         Subaccount[]
+  categories          Category[]
+  recurrenceRules     RecurrenceRule[]
   financialPlans      FinancialPlan[]
-  savingsPockets      SavingsPocket[]
-  provisions          Provision[]
   goals               Goal[]
-  categoryTypes       CategoryType[]
-  categorySubtypes    CategorySubtype[]
-  schoolProjections   SchoolProjection[]
-  vehicles            Vehicle[]
-  housings            Housing[]
+  financialOperations FinancialOperation[]
+  plannedOperations   PlannedOperation[]
   medicalClaims       MedicalClaim[]
 
   @@map("household")
@@ -369,179 +82,11 @@ model HouseholdMembership {
   household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  ownedAccounts Account[]
+
   @@unique([householdId, userId])
   @@map("household_membership")
 }
-
-model Child {
-  id          String      @id @default(uuid())
-  householdId String      @map("household_id")
-  firstName   String      @map("first_name")
-  lastName    String      @map("last_name")
-  birthDate   DateTime?   @map("birth_date") @db.Date
-  schoolName  String?     @map("school_name")
-  schoolClass String?     @map("school_class")
-  schoolYear  String?     @map("school_year")
-  status      ChildStatus @default(active)
-  createdAt   DateTime    @default(now()) @map("created_at")
-  updatedAt   DateTime    @updatedAt @map("updated_at")
-
-  household            Household                  @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  chargePlans          ChargePlanChild[]
-  deadlineAllocations  DeadlineChildAllocation[]
-  financialPlanEntries FinancialPlanBeneficiary[]
-  savingsPockets       SavingsPocket[]
-  schoolProjections    SchoolProjection[]
-
-  @@index([householdId])
-  @@map("child")
-}
-
-// M7+M8 — référentiel véhicule ULTRA SIMPLE (guard-rail §1) : uniquement le nom saisi
-// par l'utilisateur, aucune fiche technique (marque/modèle/immatriculation/etc.).
-model Vehicle {
-  id          String            @id @default(uuid())
-  householdId String            @map("household_id")
-  name        String
-  status      ReferentialStatus @default(active)
-  createdAt   DateTime          @default(now()) @map("created_at")
-  updatedAt   DateTime          @updatedAt @map("updated_at")
-
-  household      Household       @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  financialPlans FinancialPlan[]
-  chargePlans    ChargePlan[]
-
-  @@index([householdId])
-  @@map("vehicle")
-}
-
-// M7+M8 — référentiel logement ULTRA SIMPLE (guard-rail §2), même principe que Vehicle.
-model Housing {
-  id          String            @id @default(uuid())
-  householdId String            @map("household_id")
-  name        String
-  status      ReferentialStatus @default(active)
-  createdAt   DateTime          @default(now()) @map("created_at")
-  updatedAt   DateTime          @updatedAt @map("updated_at")
-
-  household      Household       @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  financialPlans FinancialPlan[]
-  chargePlans    ChargePlan[]
-
-  @@index([householdId])
-  @@map("housing")
-}
-
-model Category {
-  id          String            @id @default(uuid())
-  householdId String?           @map("household_id") // NULL = catégorie système, partagée par tous les foyers
-  name        String
-  icon        String?
-  kind        CategoryKind
-  isSystem    Boolean           @default(false) @map("is_system")
-  // Corrections UI/UX finales §10 — une catégorie déjà utilisée n'est plus jamais
-  // bloquée à la suppression (BadRequestException) : elle est archivée
-  // (status=inactive), jamais retirée de son historique (transactions/budgets/
-  // charges gardent leur relation intacte, ils ne filtrent jamais par status).
-  status      ReferentialStatus @default(active)
-  createdAt   DateTime          @default(now()) @map("created_at")
-
-  household         Household?         @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  incomeSources     IncomeSource[]
-  chargePlans       ChargePlan[]
-  variableBudgets   VariableBudget[]
-  budgetExpenses    BudgetExpense[]
-  adHocExpenses     AdHocExpense[]
-  types             CategoryType[]
-  dedicatedAccounts FinancialAccount[] @relation("AccountDedicatedCategory")
-
-  @@index([householdId])
-  @@map("category")
-}
-
-// Vague 2 §1 — plus petite évolution propre : Catégorie → Type → Sous-type (facultatif),
-// jamais 3 tables symétriques inutiles ; le Type est le niveau réellement filtré/saisi,
-// le Sous-type reste optionnel et n'existe que rattaché à un Type. household_id NULL =
-// système/partagé par tous les foyers (même convention que Category, doc02 §31).
-// Jamais de suppression brutale d'un type/sous-type déjà utilisé dans une transaction
-// historique (§3) : "active" seul contrôle sa disponibilité en saisie, l'historique lit
-// toujours la ligne quel que soit son état.
-model CategoryType {
-  id          String   @id @default(uuid())
-  categoryId  String   @map("category_id")
-  householdId String?  @map("household_id")
-  name        String
-  isSystem    Boolean  @default(false) @map("is_system")
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  category            Category                     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  household           Household?                   @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  subtypes            CategorySubtype[]
-  budgetExpenses      BudgetExpense[]
-  adHocExpenses       AdHocExpense[]
-  variableBudgets     VariableBudget[]
-  variableBudgetLinks VariableBudgetCategoryType[]
-
-  @@index([categoryId])
-  @@index([householdId])
-  @@map("category_type")
-}
-
-model CategorySubtype {
-  id             String   @id @default(uuid())
-  categoryTypeId String   @map("category_type_id")
-  householdId    String?  @map("household_id")
-  name           String
-  isSystem       Boolean  @default(false) @map("is_system")
-  active         Boolean  @default(true)
-  createdAt      DateTime @default(now()) @map("created_at")
-
-  categoryType   CategoryType    @relation(fields: [categoryTypeId], references: [id], onDelete: Cascade)
-  household      Household?      @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  budgetExpenses BudgetExpense[]
-  adHocExpenses  AdHocExpense[]
-
-  @@index([categoryTypeId])
-  @@index([householdId])
-  @@map("category_subtype")
-}
-
-model HouseholdSettings {
-  id                           String                       @id @default(uuid())
-  householdId                  String                       @unique @map("household_id")
-  securityMarginAmount         Decimal                      @default(0) @map("security_margin_amount") @db.Decimal(14, 2)
-  seuilAVenirDays              Int                          @default(30) @map("seuil_a_venir_days")
-  seuilAPayerDays              Int                          @default(7) @map("seuil_a_payer_days")
-  variableBudgetProjectionMode VariableBudgetProjectionMode @default(prudent_max) @map("variable_budget_projection_mode")
-  weekStartDay                 Int                          @default(1) @map("week_start_day") // 1=lundi (RG-098)
-  // Vague 3 §25 — onboarding : les étapes déjà configurées se déduisent en direct des
-  // données existantes (comptes/revenus/charges/...), jamais stockées ici. Seules les
-  // étapes explicitement marquées "non applicable"/"plus tard" par un adulte du foyer
-  // sont conservées, partagées entre tous les membres (le champ vit sur HouseholdSettings,
-  // déjà household-scoped) — pas 15 booléens, un seul tableau des clés d'étape ignorées.
-  onboardingSkippedSteps       String[]                     @default([]) @map("onboarding_skipped_steps")
-  // Recette téléphone réel §13 — le gros bandeau "Terminer ma configuration" ne
-  // doit plus s'afficher automatiquement dès que les prérequis essentiels sont
-  // satisfaits ET que l'utilisateur a explicitement choisi "Ne plus afficher"
-  // (jamais réaffiché après ce choix, partagé au niveau du foyer comme le reste
-  // de HouseholdSettings — même convention qu'onboardingSkippedSteps ci-dessus).
-  homeBannerDismissed          Boolean                      @default(false) @map("home_banner_dismissed")
-  // R6.3 (point A) — jour de clôture financière du foyer (1-31), dimension analytique
-  // pure : ne modifie jamais une date réelle, sert uniquement à classer les opérations
-  // en périodes financières (common/ledger/financial-period.util.ts, moteur unique).
-  // Défaut 31 = clôture au dernier jour du mois, donc rétrocompatible à l'identique
-  // avec le découpage par mois civil déjà utilisé partout avant R6.3.
-  closingDay                   Int                          @default(31) @map("closing_day")
-  createdAt                    DateTime                     @default(now()) @map("created_at")
-  updatedAt                    DateTime                     @updatedAt @map("updated_at")
-
-  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
-
-  @@map("household_settings")
-}
-
-// Mécanique d'authentification / onboarding (non financière, cf. document 03 §I.1)
 
 model HouseholdInvite {
   id          String        @id @default(uuid())
@@ -551,9 +96,6 @@ model HouseholdInvite {
   createdById String        @map("created_by_id")
   expiresAt   DateTime      @map("expires_at")
   usedAt      DateTime?     @map("used_at")
-  // §16 — plus @unique : un utilisateur peut désormais rejoindre plusieurs foyers dans
-  // le temps (changement de foyer actif), donc redeem plusieurs invitations différentes ;
-  // seule l'invitation elle-même (une ligne) reste à usage unique via `usedAt`.
   usedById    String?       @map("used_by_id")
   createdAt   DateTime      @default(now()) @map("created_at")
 
@@ -564,7 +106,6 @@ model HouseholdInvite {
   @@map("household_invite")
 }
 
-// Sessions revocables (document 04 §S.1 — deconnexion multi-appareils)
 model Session {
   id               String    @id @default(uuid())
   userId           String    @map("user_id")
@@ -579,11 +120,6 @@ model Session {
   @@map("session")
 }
 
-// Code de vérification d'adresse email à 6 chiffres — jamais stocké en clair
-// (codeHash, même convention que passwordHash). Non protégée par RLS : comme
-// Session, elle n'a de sens qu'avant tout foyer actif (userId seul, jamais
-// household_id). Une seule ligne "vivante" par utilisateur à la fois : générer
-// un nouveau code consomme explicitement les précédents (AuthService).
 model EmailOtp {
   id         String    @id @default(uuid())
   userId     String    @map("user_id")
@@ -600,1031 +136,382 @@ model EmailOtp {
 }
 
 // ============================================================
-// Lot 1 — Comptes financiers (docs/02-modele-metier.md §E.8, docs/04 §P)
+// FINANCE MAISON — schéma métier V3.1 (validé, cf. rapport de reset)
 // ============================================================
 
-model FinancialAccount {
-  id                           String        @id @default(uuid())
-  householdId                  String        @map("household_id")
-  name                         String
-  type                         AccountType
-  ownerUserId                  String?       @map("owner_user_id")
-  status                       AccountStatus @default(actif)
-  includeInOperationalTreasury Boolean       @default(true) @map("include_in_operational_treasury")
-  isProtected                  Boolean       @default(false) @map("is_protected")
-  // Corrections consolidées §5/§6 — préférences d'affichage PUREMENT visuelles,
-  // volontairement indépendantes de includeInOperationalTreasury (pilotage) :
-  // un compte peut être piloté et masqué sur l'accueil, ou hors pilotage et
-  // affiché — jamais l'une déduite de l'autre.
-  hideBalanceByDefault         Boolean       @default(false) @map("hide_balance_by_default")
-  showOnHome                   Boolean       @default(true) @map("show_on_home")
-  // Compte pré-rempli en priorité dans la saisie rapide (§14 Lot 2) — un seul compte
-  // favori par foyer, imposé en base (cf. index unique partiel dans la migration).
-  isFavorite                   Boolean       @default(false) @map("is_favorite")
-  currency                     String        @default("MAD")
-  // Refonte maquette V6B — nom de banque affiché séparément du libellé du compte
-  // ("CIH • LAMIAA" / "Compte enveloppes"), jamais concaténé dans `name`.
-  bankName                     String?       @map("bank_name")
-  // Refonte maquette V6B §2C — un "compte dédié" est un compte réel consacré à UNE
-  // catégorie de dépense (ex. Courses), alimenté par un AccountTransfer/RecurringTransfer
-  // ordinaire vers ce compte (aucun nouveau moteur de mouvement) : ces 2 champs ne sont
-  // qu'un marqueur d'affichage ("Compte courses" / "Alimenté depuis X • Y DH/mois" lu
-  // depuis le RecurringTransfer existant dont toAccountId = ce compte), jamais une
-  // source de vérité financière.
-  isDedicated                  Boolean       @default(false) @map("is_dedicated")
-  dedicatedCategoryId          String?       @map("dedicated_category_id")
-  createdAt                    DateTime      @default(now()) @map("created_at")
-  updatedAt                    DateTime      @updatedAt @map("updated_at")
+enum AccountType {
+  COURANT
+  EPARGNE
+  ESPECES
+  AUTRE
+}
 
-  household                    Household                @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  owner                        User?                    @relation(fields: [ownerUserId], references: [id])
-  dedicatedCategory            Category?                @relation("AccountDedicatedCategory", fields: [dedicatedCategoryId], references: [id])
-  snapshots                    AccountBalanceSnapshot[]
-  reconciliations              Reconciliation[]
-  adjustments                  Adjustment[]
-  transfersFrom                AccountTransfer[]        @relation("TransferFrom")
-  transfersTo                  AccountTransfer[]        @relation("TransferTo")
-  recurringTransfersFrom       RecurringTransfer[]      @relation("RecurringTransferFrom")
-  recurringTransfersTo         RecurringTransfer[]      @relation("RecurringTransferTo")
-  incomeSourcesAsDefault       IncomeSource[]           @relation("IncomeSourceDefaultAccount")
-  incomeOccurrences            IncomeOccurrence[]       @relation("IncomeOccurrenceAccount")
-  chargePlansAsDefault         ChargePlan[]             @relation("ChargePlanDefaultAccount")
-  payments                     Payment[]                @relation("PaymentAccount")
-  budgetExpenses               BudgetExpense[]          @relation("BudgetExpenseAccount")
-  adHocExpenses                AdHocExpense[]           @relation("AdHocExpenseAccount")
-  backedSavingsPockets         SavingsPocket[]          @relation("SavingsPocketLinkedAccount")
-  backedProvisions             Provision[]              @relation("ProvisionLinkedAccount")
-  medicalClaimsAsReimbursement MedicalClaim[]           @relation("MedicalClaimReimbursementAccount")
+// Nature économique de l'opération — jamais confondue avec la mécanique
+// comptable (ledger_entries) ni avec le traitement budgétaire (budget_impact).
+enum OperationKind {
+  EXPENSE
+  INCOME
+  TRANSFER
+  SAVINGS_CONTRIBUTION
+  MEDICAL_REIMBURSEMENT
+  OPENING_BALANCE
+}
+
+// Sous-ensemble de OperationKind : TRANSFER/MEDICAL_REIMBURSEMENT/OPENING_BALANCE
+// n'existent jamais à l'état "planifié" (cf. tableau de contraintes du rapport).
+enum PlannedOperationKind {
+  EXPENSE
+  INCOME
+  SAVINGS_CONTRIBUTION
+}
+
+// Renseigné uniquement pour EXPENSE/SAVINGS_CONTRIBUTION avec source_subaccount_id :
+// détermine si la dépense est already-funded (SUBACCOUNT) ou impacte le budget
+// courant (DIRECT). NULL pour les kinds où la question ne se pose pas (INCOME,
+// TRANSFER, MEDICAL_REIMBURSEMENT, OPENING_BALANCE).
+enum FinancedFrom {
+  DIRECT
+  SUBACCOUNT
+}
+
+// Filtre UNIQUEMENT l'agrégat budget() (Total Revenus/Dépenses/Épargne/Balance).
+// Ne filtre JAMAIS display() (ce que l'utilisateur voit dans une cellule Planning,
+// l'historique, le détail catégorie) — cf. bug corrigé §V3→V3.1 du rapport.
+enum BudgetImpact {
+  NORMAL
+  ALREADY_FUNDED
+  EXCLUDED
+}
+
+enum PlannedOperationStatus {
+  PENDING
+  REALIZED
+  CANCELLED
+}
+
+enum RecurrenceFrequency {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  SEMIANNUAL
+  YEARLY
+  ONCE
+}
+
+model Account {
+  id            String      @id @default(uuid())
+  householdId   String      @map("household_id")
+  name          String
+  bank          String?
+  type          AccountType @default(COURANT)
+  ownerMemberId String?     @map("owner_member_id")
+  ownerLabel    String?     @map("owner_label")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  household   Household            @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  ownerMember HouseholdMembership? @relation(fields: [ownerMemberId], references: [id], onDelete: SetNull)
+
+  subaccounts   Subaccount[]
+  ledgerEntries LedgerEntry[]
+  goals         Goal[]
+
+  operationsAsSource      FinancialOperation[] @relation("OperationSourceAccount")
+  operationsAsDestination FinancialOperation[] @relation("OperationDestinationAccount")
+
+  plannedAsSource      PlannedOperation[] @relation("PlannedSourceAccount")
+  plannedAsDestination PlannedOperation[] @relation("PlannedDestinationAccount")
 
   @@index([householdId])
-  @@index([dedicatedCategoryId])
-  @@map("financial_account")
+  @@map("account")
 }
 
-// RG-080 : point d'ancrage du calcul du solde courant — jamais un champ balance autoritaire.
-model AccountBalanceSnapshot {
-  id              String         @id @default(uuid())
-  accountId       String         @map("account_id")
-  declaredBalance Decimal        @map("declared_balance") @db.Decimal(14, 2)
-  declaredAt      DateTime       @default(now()) @map("declared_at")
-  source          SnapshotSource @default(manuel)
-  createdById     String         @map("created_by_id")
+// Le solde d'un sous-compte n'est JAMAIS stocké : toujours
+// SUM(ledger_entries.amount WHERE subaccount_id = X).
+model Subaccount {
+  id          String   @id @default(uuid())
+  accountId   String   @map("account_id")
+  householdId String   @map("household_id")
+  name        String
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
-  account FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
 
-  // Alimente account_current_balance (RG-080) : ORDER BY declared_at DESC LIMIT 1 par compte —
-  // chemin le plus chaud de tout le moteur (appelé à chaque calcul de solde).
-  @@index([accountId, declaredAt])
-  @@map("account_balance_snapshot")
-}
+  ledgerEntries LedgerEntry[]
+  goals         Goal[]
 
-// RG-083 : comparaison solde calculé / solde déclaré — ne corrige jamais automatiquement l'écart.
-model Reconciliation {
-  id              String               @id @default(uuid())
-  accountId       String               @map("account_id")
-  computedBalance Decimal              @map("computed_balance") @db.Decimal(14, 2)
-  declaredBalance Decimal              @map("declared_balance") @db.Decimal(14, 2)
-  discrepancy     Decimal              @map("discrepancy") @db.Decimal(14, 2)
-  status          ReconciliationStatus @default(pending)
-  reconciledAt    DateTime             @default(now()) @map("reconciled_at")
-  createdById     String               @map("created_by_id")
+  operationsAsSourceSub      FinancialOperation[] @relation("OperationSourceSubaccount")
+  operationsAsDestinationSub FinancialOperation[] @relation("OperationDestinationSubaccount")
 
-  account     FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  adjustments Adjustment[]
+  plannedAsSourceSub      PlannedOperation[] @relation("PlannedSourceSubaccount")
+  plannedAsDestinationSub PlannedOperation[] @relation("PlannedDestinationSubaccount")
+
+  medicalClaims                MedicalClaim[]
+  medicalReimbursementsAllocated MedicalReimbursement[] @relation("ReimbursementAllocationSubaccount")
 
   @@index([accountId])
-  @@map("reconciliation")
-}
-
-// RG-084 : mouvement réel typé et historisé — jamais une réécriture silencieuse du solde de référence.
-model Adjustment {
-  id                     String         @id @default(uuid())
-  accountId              String         @map("account_id")
-  amount                 Decimal        @map("amount") @db.Decimal(14, 2) // signé
-  reason                 String?
-  type                   AdjustmentType @default(autre)
-  linkedReconciliationId String?        @map("linked_reconciliation_id")
-  createdById            String         @map("created_by_id")
-  occurredAt             DateTime       @default(now()) @map("occurred_at")
-
-  account        FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  reconciliation Reconciliation?  @relation(fields: [linkedReconciliationId], references: [id])
-
-  @@index([accountId])
-  @@map("adjustment")
-}
-
-// RG-085 : sortie du compte source + entrée du compte destination, impact net foyer = 0 si interne.
-model AccountTransfer {
-  id                  String         @id @default(uuid())
-  householdId         String         @map("household_id")
-  fromAccountId       String?        @map("from_account_id")
-  toAccountId         String?        @map("to_account_id")
-  amount              Decimal        @map("amount") @db.Decimal(14, 2)
-  plannedDate         DateTime       @map("planned_date")
-  actualDate          DateTime?      @map("actual_date")
-  status              TransferStatus @default(prevu)
-  type                TransferType   @default(interne)
-  confirmedById       String?        @map("confirmed_by_id")
-  createdAt           DateTime       @default(now()) @map("created_at")
-  // R6.2 (§10) — NULL = transfert ponctuel saisi manuellement (comportement historique
-  // inchangé). Renseigné = occurrence générée par ensureRecurringTransfersUntil à partir
-  // d'un RecurringTransfer, même patron que Deadline.chargePlanId/IncomeOccurrence.
-  // incomeSourceId — jamais un second type de transfert, uniquement sa provenance.
-  recurringTransferId String?        @map("recurring_transfer_id")
-  // T3C — jamais une réécriture de l'original : reverseTransfer() crée un NOUVEAU
-  // transfert miroir (comptes inversés, même montant) et renseigne ce champ pour
-  // pointer vers l'original (jamais une simple note texte). @unique (nullable,
-  // Postgres autorise plusieurs NULL) garantit EN BASE qu'un original ne peut
-  // jamais avoir deux miroirs, même en cas de reverse concurrent — le service
-  // garde aussi son propre contrôle (ConflictException), la contrainte DB est le
-  // filet de sécurité final. Un transfert dont sourceTransferId est renseigné est
-  // lui-même un miroir — jamais reversable à son tour dans ce lot (pas de chaîne).
-  sourceTransferId    String?        @unique @map("source_transfer_id")
-
-  household         Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  fromAccount       FinancialAccount?  @relation("TransferFrom", fields: [fromAccountId], references: [id])
-  toAccount         FinancialAccount?  @relation("TransferTo", fields: [toAccountId], references: [id])
-  recurringTransfer RecurringTransfer? @relation(fields: [recurringTransferId], references: [id])
-  sourceTransfer    AccountTransfer?   @relation("AccountTransferReversal", fields: [sourceTransferId], references: [id])
-  reversal          AccountTransfer?   @relation("AccountTransferReversal")
-
-  // Anti-doublon pour ensureRecurringTransfersUntil (createMany skipDuplicates) — une même
-  // RecurringTransfer ne peut jamais avoir deux occurrences à la même plannedDate (même
-  // patron que Deadline[chargePlanId,dueDate]/IncomeOccurrence[incomeSourceId,usualDate]).
-  // Autorise plusieurs lignes recurringTransferId=NULL (transferts ponctuels, Postgres
-  // n'applique jamais l'unicité entre NULLs).
-  @@unique([recurringTransferId, plannedDate])
   @@index([householdId])
-  @@index([fromAccountId])
-  @@index([toAccountId])
-  @@index([plannedDate])
-  @@map("account_transfer")
+  @@map("subaccount")
 }
 
-// R6.2 (§10) — Transfert récurrent : objet dédié, JAMAIS modélisé comme une ChargePlan
-// (un transfert n'est ni un revenu ni une dépense, cf. monthly-projection.util.ts §15/§17
-// qui exclut déjà tout transfert des totaux consolidés — ce moteur n'est jamais dérangé).
-// Génère des AccountTransfer (statut prevu) via ensureRecurringTransfersUntil, EXACTEMENT
-// le même moteur occurrenceDatesInRange que IncomeSource/ChargePlan — jamais un 3e calcul
-// de dates. Un transfert prévu généré ici ne modifie jamais un solde réel (RG-085 inchangée) :
-// seule sa confirmation explicite (AccountsService.confirmTransfer, déjà existant) le fait.
-model RecurringTransfer {
-  id                   String                  @id @default(uuid())
-  householdId          String                  @map("household_id")
-  label                String
-  fromAccountId        String?                 @map("from_account_id")
-  toAccountId          String?                 @map("to_account_id")
-  amount               Decimal                 @map("amount") @db.Decimal(14, 2)
-  recurrenceRule       RecurrenceFrequency     @map("recurrence_rule")
-  recurrenceAnchorDate DateTime                @map("recurrence_anchor_date") @db.Date
-  note                 String?
-  status               RecurringTransferStatus @default(actif)
-  // M5 — bornage facultatif, même patron que ChargePlan.endDate : NULL = actif jusqu'à
-  // arrêt manuel (comportement historique inchangé), renseigné = ensureRecurringTransfersUntil
-  // ne génère plus aucune occurrence au-delà (jamais une génération infinie en base).
-  endDate              DateTime?               @map("end_date") @db.Date
-  createdAt            DateTime                @default(now()) @map("created_at")
-  updatedAt            DateTime                @updatedAt @map("updated_at")
-
-  household   Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  fromAccount FinancialAccount? @relation("RecurringTransferFrom", fields: [fromAccountId], references: [id])
-  toAccount   FinancialAccount? @relation("RecurringTransferTo", fields: [toAccountId], references: [id])
-  transfers   AccountTransfer[]
-
-  @@index([householdId])
-  @@map("recurring_transfer")
-}
-
-// ============================================================
-// Lot 2 — Revenus & charges de base (docs/02 §C.3/C.4, §E.2/E.3, docs/04 §P)
-// ============================================================
-
-model IncomeSource {
-  id                   String               @id @default(uuid())
-  householdId          String               @map("household_id")
-  label                String
-  beneficiaryUserId    String?              @map("beneficiary_user_id")
-  categoryId           String?              @map("category_id")
-  recurrenceRule       RecurrenceFrequency? @map("recurrence_rule")
-  // Lot 11 (§1) : date d'ancrage de la récurrence (jour habituel de versement) — sert de
-  // référence à recurrence.util.ts::occurrenceDatesInRange, jamais utilisée seule comme
-  // une IncomeOccurrence. NULL = pas encore configuré (ex. source ponctuelle) : aucune
-  // génération automatique tant que ce champ est vide.
-  recurrenceAnchorDate DateTime?            @map("recurrence_anchor_date") @db.Date
-  usualAmount          Decimal              @map("usual_amount") @db.Decimal(14, 2)
-  isRecurring          Boolean              @default(true) @map("is_recurring")
-  defaultAccountId     String               @map("default_account_id")
-  status               IncomeSourceStatus   @default(actif)
-  createdAt            DateTime             @default(now()) @map("created_at")
-  updatedAt            DateTime             @updatedAt @map("updated_at")
-
-  household      Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  beneficiary    User?              @relation(fields: [beneficiaryUserId], references: [id])
-  category       Category?          @relation(fields: [categoryId], references: [id])
-  defaultAccount FinancialAccount   @relation("IncomeSourceDefaultAccount", fields: [defaultAccountId], references: [id])
-  occurrences    IncomeOccurrence[]
-
-  @@index([householdId])
-  @@map("income_source")
-}
-
-// RG-014bis : account_id devient obligatoire seulement à la confirmation (statut reçu) ;
-// une occurrence "prévue" ne modifie jamais un solde réel (F.1, LedgerEntry ne lit que status=recu).
-model IncomeOccurrence {
-  id                String                 @id @default(uuid())
-  incomeSourceId    String                 @map("income_source_id")
-  usualDate         DateTime               @map("usual_date") @db.Date
-  actualDate        DateTime?              @map("actual_date")
-  plannedAmount     Decimal                @map("planned_amount") @db.Decimal(14, 2)
-  actualAmount      Decimal?               @map("actual_amount") @db.Decimal(14, 2)
-  accountId         String?                @map("account_id")
-  status            IncomeOccurrenceStatus @default(prevu)
-  confirmedByUserId String?                @map("confirmed_by_user_id")
-  confirmedAt       DateTime?              @map("confirmed_at")
-  createdAt         DateTime               @default(now()) @map("created_at")
-  updatedAt         DateTime               @updatedAt @map("updated_at")
-
-  incomeSource IncomeSource               @relation(fields: [incomeSourceId], references: [id], onDelete: Cascade)
-  account      FinancialAccount?          @relation("IncomeOccurrenceAccount", fields: [accountId], references: [id])
-  confirmedBy  User?                      @relation(fields: [confirmedByUserId], references: [id])
-  reversals    IncomeOccurrenceReversal[]
-
-  // Lot 11 (§1) : anti-doublon pour ensureIncomeOccurrencesUntil (createMany skipDuplicates) —
-  // une même source ne peut jamais avoir deux occurrences à la même usualDate.
-  @@unique([incomeSourceId, usualDate])
-  // Filtré par computeHorizon/computeProjection (status='prevu', usualDate dans l'horizon,
-  // §5/§23 Lots 5/7) — la requête la plus fréquente sur cette table.
-  @@index([incomeSourceId])
-  @@index([status, usualDate])
-  @@map("income_occurrence")
-}
-
-// T3A — un unconfirmOccurrence() produit une NOUVELLE ligne ici (jamais une
-// mise à jour), pour un audit complet même après plusieurs cycles confirm/
-// unconfirm sur la même occurrence. N'a aucun impact sur ledger_entry, le
-// solde ou la projection : IncomeOccurrence garde exactement son comportement
-// actuel (status→prevu, actual_*→null), cette table n'est qu'une trace
-// consultée à part (GET /income-occurrences/:id/reversals), jamais mêlée au
-// registre des mouvements financiers réels.
-model IncomeOccurrenceReversal {
-  id                 String   @id @default(uuid())
-  incomeOccurrenceId String   @map("income_occurrence_id")
-  // Valeurs de la ligne juste avant remise à `prevu` — capturées AVANT le
-  // nettoyage, jamais recalculées.
-  actualAmount       Decimal  @map("actual_amount") @db.Decimal(14, 2)
-  actualDate         DateTime @map("actual_date")
-  confirmedByUserId  String?  @map("confirmed_by_user_id")
-  reversedByUserId   String   @map("reversed_by_user_id")
-  reversedAt         DateTime @default(now()) @map("reversed_at")
-
-  // Pas de onDelete: Cascade ici (volontaire) — IncomeOccurrence peut être
-  // supprimée physiquement (cascade depuis IncomeSource.delete, cf.
-  // IncomeService.removeSource), mais removeSource() bloque déjà toute
-  // suppression dès qu'une occurrence a un historique de réversion ; la
-  // contrainte FK par défaut (NO ACTION) reste un filet de sécurité pour
-  // qu'un futur appel ne puisse jamais effacer silencieusement cet audit.
-  incomeOccurrence IncomeOccurrence @relation(fields: [incomeOccurrenceId], references: [id])
-  confirmedBy      User?            @relation("IncomeOccurrenceReversalConfirmedBy", fields: [confirmedByUserId], references: [id])
-  reversedBy       User             @relation("IncomeOccurrenceReversalReversedBy", fields: [reversedByUserId], references: [id])
-
-  @@index([incomeOccurrenceId, reversedAt])
-  @@map("income_occurrence_reversal")
-}
-
-// generation_mode = auto_frequence pour le Lot 2 (le calendrier_manuel du Lot 4
-// réutilisera le même modèle sans jamais nécessiter de refonte, cf. doc02 §C.4).
-model ChargePlan {
-  id                   String                   @id @default(uuid())
-  householdId          String                   @map("household_id")
-  label                String
-  categoryId           String?                  @map("category_id")
-  generationMode       ChargePlanGenerationMode @default(auto_frequence) @map("generation_mode")
-  recurrenceRule       RecurrenceFrequency?     @map("recurrence_rule")
-  // R6.2 (§1) : ancre de récurrence éditable indépendamment de startDate (qui reste la
-  // date de création originelle, jamais réécrite) — mêmes rôle et convention que
-  // IncomeSource.recurrenceAnchorDate. NULL = ensureChargeDeadlinesUntil retombe sur
-  // startDate (comportement historique inchangé pour les plans jamais modifiés depuis).
-  // Éditer "prochaine échéance"/fréquence ne touche jamais les Deadline déjà générées
-  // (RG implicite §3) : seule la génération FUTURE change d'ancre.
-  recurrenceAnchorDate DateTime?                @map("recurrence_anchor_date") @db.Date
-  defaultAccountId     String?                  @map("default_account_id")
-  obligationStatus     ObligationStatus         @default(obligatoire) @map("obligation_status")
-  // RG-110 : un ChargePlan appartient à 0 ou 1 FinancialPlan — jamais un conteneur
-  // universel obligatoire (§9), une dépense de courses n'y est jamais rattachée.
-  financialPlanId      String?                  @map("financial_plan_id")
-  // M7+M8 (guard-rail §3/§4) — rattachement direct à l'entité, jamais déduit
-  // uniquement via financialPlanId (un ChargePlan sait résoudre son entité par
-  // lui-même, même principe que schoolProjections.sourceDeadlineId en M9B).
-  vehicleId            String?                  @map("vehicle_id")
-  housingId            String?                  @map("housing_id")
-  startDate            DateTime                 @map("start_date") @db.Date
-  endDate              DateTime?                @map("end_date") @db.Date
-  priorityLevel        Int                      @default(1) @map("priority_level")
-  status               ChargePlanStatus         @default(actif)
-  createdAt            DateTime                 @default(now()) @map("created_at")
-  updatedAt            DateTime                 @updatedAt @map("updated_at")
-
-  household         Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  category          Category?          @relation(fields: [categoryId], references: [id])
-  defaultAccount    FinancialAccount?  @relation("ChargePlanDefaultAccount", fields: [defaultAccountId], references: [id])
-  financialPlan     FinancialPlan?     @relation(fields: [financialPlanId], references: [id])
-  vehicle           Vehicle?           @relation(fields: [vehicleId], references: [id])
-  housing           Housing?           @relation(fields: [housingId], references: [id])
-  deadlines         Deadline[]
-  children          ChargePlanChild[]
-  // M9 — poste source d'une chaîne de prévisions pluriannuelles (identité stable
-  // sur toute la chaîne, cf. SchoolProjection.sourceChargePlanId).
-  schoolProjections SchoolProjection[]
-
-  @@index([householdId])
-  @@index([financialPlanId])
-  @@index([vehicleId])
-  @@index([housingId])
-  @@map("charge_plan")
-}
-
-// F.2 (doc02) : état financier persistant seul stocké — l'état temporel (bientôt_due/
-// due/overdue/future) est toujours calculé à la lecture, jamais une colonne (O.2).
-// reste_a_payer n'est jamais une colonne : uniquement dérivé de amount_current - Σ Payment
-// signés (vue deadline_with_balance, RG-016) — source de vérité unique, cf. DeadlinesService.
-model Deadline {
-  id                     String                  @id @default(uuid())
-  chargePlanId           String                  @map("charge_plan_id")
-  dueDate                DateTime                @map("due_date") @db.Date
-  expectedBillingDate    DateTime?               @map("expected_billing_date") @db.Date
-  billingDate            DateTime?               @map("billing_date") @db.Date
-  // NULL ssi amount_status = inconnu (RG-102/RG-103) — jamais 0 dans ce cas.
-  amountCurrent          Decimal?                @map("amount_current") @db.Decimal(14, 2)
-  amountStatus           AmountStatus            @default(estime) @map("amount_status")
-  amountInitialEstimated Decimal?                @map("amount_initial_estimated") @db.Decimal(14, 2)
-  confirmedAt            DateTime?               @map("confirmed_at")
-  financialStatus        DeadlineFinancialStatus @default(ouverte) @map("financial_status")
-  // Lot 6 (RG-090) — Provision qui couvre chronologiquement cette échéance, 0..1.
-  provisionId            String?                 @map("provision_id")
-  createdAt              DateTime                @default(now()) @map("created_at")
-  updatedAt              DateTime                @updatedAt @map("updated_at")
-
-  chargePlan                ChargePlan                @relation(fields: [chargePlanId], references: [id], onDelete: Cascade)
-  provision                 Provision?                @relation(fields: [provisionId], references: [id])
-  payments                  Payment[]
-  childAllocations          DeadlineChildAllocation[]
-  // M9 — prévisions remplacées PAR cette échéance réelle (0..n en théorie, 0..1 en
-  // pratique : une Deadline naît d'au plus une prévision).
-  replacedSchoolProjections SchoolProjection[]        @relation("SchoolProjectionReplacedByDeadline")
-  // M9B §3 — chaînes de prévision dont CETTE Deadline est l'origine réelle (0..n,
-  // une chaîne par (poste, ce déclenchement) — cf. SchoolProjection.sourceDeadlineId).
-  sourcedSchoolProjections  SchoolProjection[]        @relation("SchoolProjectionSourceDeadline")
-
-  // Lot 11 (§1) : anti-doublon pour ensureChargeDeadlinesUntil (createMany skipDuplicates) —
-  // un même ChargePlan ne peut jamais avoir deux échéances à la même due_date.
-  @@unique([chargePlanId, dueDate])
-  @@index([chargePlanId])
-  @@index([dueDate])
-  @@index([provisionId])
-  @@map("deadline")
-}
-
-// RG-015 : amount toujours > 0, le signe comptable est déduit du type par le moteur,
-// jamais saisi directement (contrainte CHECK ajoutée en SQL brut dans la migration).
-model Payment {
-  id                 String            @id @default(uuid())
-  deadlineId         String            @map("deadline_id")
-  amount             Decimal           @map("amount") @db.Decimal(14, 2)
-  paidDate           DateTime          @map("paid_date")
-  // R6.2 (§5 CAS B) : NULL soit pour un paiement HISTORIQUE reconstitué sans compte
-  // connu, soit (RG implicite) jamais pour un paiement normal (payments.service.ts
-  // continue d'exiger un compte réel). accountId N'EST PLUS le proxy de "reprise
-  // historique" (corrections finales R6.2 §1) : un CAS A (compte historique connu)
-  // garde accountId renseigné mais reste exclu du solde via isHistoricalImport.
-  accountId          String?           @map("account_id")
-  // R6.2 corrections finales §1 — sémantique explicite de reprise historique,
-  // orthogonale à accountId. true = paiement reconstitué AVANT la reprise de
-  // données (montant/date/compte conservés à titre d'information, historique
-  // consultable) mais JAMAIS débité de la trésorerie actuelle (cf. ledger_entry
-  // .excluded_from_balance + account_current_balance). false = paiement normal
-  // du cycle courant, impacte réellement le solde comme avant. reste_a_payer
-  // (deadline_with_balance, lecture directe de payment) est inchangé dans les
-  // deux cas : un paiement historique solde bien l'échéance.
-  isHistoricalImport Boolean           @default(false) @map("is_historical_import")
-  type               PaymentType       @default(paiement)
-  direction          PaymentDirection? @map("direction")
-  fundingSource      FundingSource     @default(compte) @map("funding_source")
-  // Lot 6 (RG-095) — requis si funding_source = provision.
-  provisionId        String?           @map("provision_id")
-  recordedById       String            @map("recorded_by_id")
-  notes              String?
-  createdAt          DateTime          @default(now()) @map("created_at")
-
-  deadline   Deadline          @relation(fields: [deadlineId], references: [id], onDelete: Cascade)
-  account    FinancialAccount? @relation("PaymentAccount", fields: [accountId], references: [id])
-  provision  Provision?        @relation(fields: [provisionId], references: [id])
-  recordedBy User              @relation(fields: [recordedById], references: [id])
-
-  @@index([deadlineId])
-  @@index([accountId])
-  @@index([provisionId])
-  @@map("payment")
-}
-
-// ============================================================
-// Lot 3 — Budgets variables & dépenses ponctuelles (docs/02 §E.4, docs/04 §P)
-// ============================================================
-
-// RG-098/RG-022 : reference_period utilise de vraies semaines/mois calendaires,
-// jamais un raccourci arbitraire (1 mois ≠ 30 jours, 1 semaine ≠ 4 jours fixes).
-// week_start_day : 1=lundi..7=dimanche, même convention que HouseholdSettings.
-model VariableBudget {
-  id                         String               @id @default(uuid())
-  householdId                String               @map("household_id")
-  // M3 — libellé libre du budget (ex. "Courses", "Loisirs"), distinct des
-  // catégories/types suivis ci-dessous. Champ VIVANT, jamais versionné (absent
-  // de TRACKED_FIELDS/VariableBudgetVersion) : un renommage n'est pas une
-  // "modification" au sens de l'historique de périodes. Backfill de migration =
-  // category.name (jamais categoryType.name, cf. arbitrage M3).
-  label                      String               @default("")
-  categoryId                 String               @map("category_id")
-  // Lot 2 (module Budgets) : NULL = budget scopé à toute la catégorie (comportement
-  // historique) ; renseigné = budget scopé à ce seul CategoryType précis (doit
-  // appartenir à categoryId, vérifié en service). Jamais un nouveau regroupement
-  // au-dessus des catégories — réutilise la hiérarchie Category → CategoryType déjà
-  // en place (même convention que BudgetExpense/AdHocExpense).
-  // M3 — conservé temporairement pour compatibilité ascendante (entrée API
-  // singulière encore acceptée, convertie en categoryTypes:[ce type] en service) ;
-  // la source de vérité devient VariableBudgetCategoryType ci-dessous. Jamais
-  // supprimé dans ce lot (migration additive uniquement).
-  categoryTypeId             String?              @map("category_type_id")
-  referenceAmount            Decimal              @map("reference_amount") @db.Decimal(14, 2)
-  referencePeriod            ReferencePeriod      @map("reference_period")
-  weekStartDay               Int                  @default(1) @map("week_start_day")
-  // Lot 6 — mode du mois pour referencePeriod=mois (inerte pour semaine). calendaire
-  // = comportement historique inchangé. financier = aligné sur HouseholdSettings.closingDay
-  // (moteur R6.3, jamais redéfini ici). personnalise = jour de départ propre au budget,
-  // ci-dessous — jamais de closingDay dupliqué sur cette ligne live (source de vérité
-  // unique HouseholdSettings, cf. variable-budget.util.ts).
-  monthMode                  MonthMode            @default(calendaire) @map("month_mode")
-  // 1-31, requis uniquement si monthMode=personnalise (validé en service, pas de
-  // contrainte DB — même style que weekStartDay). Clampé au dernier jour réel du
-  // mois si celui-ci est plus court (29/30/31, cf. variable-budget.util.ts).
-  customStartDay             Int?                 @map("custom_start_day")
-  startDate                  DateTime             @map("start_date") @db.Date
-  endDate                    DateTime?            @map("end_date") @db.Date
-  // R6.4 (§1) : suppression physique bloquée dès qu'une BudgetExpense existe déjà
-  // (historique réel, même RG implicite que ChargePlansService.remove) — archivage
-  // via ce champ à la place, jamais un second "supprimé" implicite via endDate.
-  status                     VariableBudgetStatus @default(actif)
-  // Module Budgets (Lot 1, corrige RG-024bis) : seuls les budgets à true participent
-  // au Solde prudent (treasury.util.computeVariableBudgetCommitments) — le restant
-  // au rythme actuel reste un indicateur de pilotage affiché sur la fiche budget,
-  // jamais une majoration de la réservation budgétaire dans le disponible.
-  includeInPrudentProjection Boolean              @default(true) @map("include_in_prudent_projection")
-  createdAt                  DateTime             @default(now()) @map("created_at")
-  updatedAt                  DateTime             @updatedAt @map("updated_at")
-
-  household     Household                    @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  category      Category                     @relation(fields: [categoryId], references: [id])
-  categoryType  CategoryType?                @relation(fields: [categoryTypeId], references: [id])
-  expenses      BudgetExpense[]
-  versions      VariableBudgetVersion[]
-  categoryTypes VariableBudgetCategoryType[]
-
-  @@index([householdId])
-  @@index([categoryTypeId])
-  @@map("variable_budget")
-}
-
-// M3 — support de PLUSIEURS CategoryType suivis par un même budget (ex. le
-// budget "Courses" suit Alimentation·Supermarché ET Alimentation·Marché).
-// Liste VIDE pour un budget = comportement historique inchangé (toute la
-// catégorie parente, jamais réinterprété comme "aucun type"). Jamais versionné
-// (comme categoryTypeId ci-dessus) : la priorité de rattachement (§3) compare
-// toujours l'état COURANT de ce jeu, pas un instantané historique — seule la
-// consommation déjà enregistrée (BudgetExpense) reste figée dans le temps.
-model VariableBudgetCategoryType {
-  id               String   @id @default(uuid())
-  variableBudgetId String   @map("variable_budget_id")
-  categoryTypeId   String   @map("category_type_id")
-  createdAt        DateTime @default(now()) @map("created_at")
-
-  variableBudget VariableBudget @relation(fields: [variableBudgetId], references: [id], onDelete: Cascade)
-  categoryType   CategoryType   @relation(fields: [categoryTypeId], references: [id], onDelete: Cascade)
-
-  @@unique([variableBudgetId, categoryTypeId])
-  @@index([categoryTypeId])
-  @@map("variable_budget_category_type")
-}
-
-enum VariableBudgetStatus {
-  actif
-  inactif
-}
-
-// Lot 4 (module Budgets) — historique des modifications, versionnement par
-// instantané complet (jamais un journal champ-par-champ : un instantané reste
-// toujours un jeu de 7 champs cohérent, seul ce qui permet de reconstruire
-// correctement le BudgetLike applicable à une période passée). Une ligne =
-// un segment déjà CLOS (remplacé) ; l'état courant reste exclusivement porté
-// par les colonnes vivantes de VariableBudget, jamais dupliqué ici.
-//
-// Convention temporelle : intervalle semi-ouvert [validFrom, validTo), comme
-// les périodes budgétaires [periodStart, periodEndExclusive) — un changement
-// effectif EXACTEMENT à la borne de sortie d'une période appartient à la
-// période SUIVANTE, jamais à celle qui se termine (cf. common/ledger/
-// variable-budget.util.ts, resolveEffectiveConfig). validFrom du tout premier
-// segment jamais créé pour un budget = VariableBudget.createdAt (origine
-// technique du versionnement), jamais startDate (qui reste exclusivement la
-// date d'application financière utilisée par le moteur de période) — cela
-// évite un intervalle invalide si le budget est modifié avant sa startDate.
-// changedAt = effectiveFrom dans ce lot (= validTo) : aucune saisie d'une
-// date d'effet différente de l'instant d'enregistrement n'est proposée ici.
-model VariableBudgetVersion {
-  id                          String          @id @default(uuid())
-  variableBudgetId            String          @map("variable_budget_id")
-  referenceAmount             Decimal         @map("reference_amount") @db.Decimal(14, 2)
-  referencePeriod             ReferencePeriod @map("reference_period")
-  categoryId                  String          @map("category_id")
-  categoryTypeId              String?         @map("category_type_id")
-  weekStartDay                Int             @map("week_start_day")
-  // Lot 6 — suivis au même titre que les 7 champs déjà versionnés ci-dessus.
-  monthMode                   MonthMode       @map("month_mode")
-  customStartDay              Int?            @map("custom_start_day")
-  includeInPrudentProjection  Boolean         @map("include_in_prudent_projection")
-  endDate                     DateTime?       @map("end_date") @db.Date
-  // Lot 6 — HORS champs suivis ci-dessus : jamais éditable directement, jamais
-  // affiché comme une "modification" dans getHistory()/le bandeau initial-ajusté
-  // (exclu de TRACKED_FIELDS). Ancre technique uniquement : le closingDay du
-  // foyer en vigueur pendant TOUTE la durée [validFrom, validTo) de CE segment.
-  // Non-null OBLIGATOIRE pour tout segment monthMode=financier (posé à CHAQUE
-  // création de segment pour un tel budget, quelle qu'en soit la cause — édition
-  // du budget ou changement de HouseholdSettings.closingDay) ; null pour tout
-  // segment calendaire/personnalise. Un segment financier avec cette valeur à
-  // null est une donnée incohérente : resolveFinancialClosingDay lève une
-  // erreur explicite plutôt que de retomber silencieusement sur le closingDay
-  // live (ce qui réintroduirait de la rétroactivité, cf. variable-budget.util.ts).
-  financialClosingDaySnapshot Int?            @map("financial_closing_day_snapshot")
-  validFrom                   DateTime        @map("valid_from")
-  validTo                     DateTime        @map("valid_to")
-  createdAt                   DateTime        @default(now()) @map("created_at")
-
-  variableBudget VariableBudget @relation(fields: [variableBudgetId], references: [id], onDelete: Cascade)
-
-  @@index([variableBudgetId, validFrom])
-  @@map("variable_budget_version")
-}
-
-// Une dépense réelle rattachée à un VariableBudget actif (§6/§8). Ne double
-// jamais AdHocExpense : une dépense est soit l'un, soit l'autre, jamais les deux.
-model BudgetExpense {
+// "Autres" est le seul enregistrement avec isDefaultFallback=true : auto-seedé,
+// jamais supprimable (contrôlé au niveau service, pas par une contrainte DB).
+model Category {
   id                String   @id @default(uuid())
-  variableBudgetId  String   @map("variable_budget_id")
-  amount            Decimal  @map("amount") @db.Decimal(14, 2)
-  // Pas de @db.Date : même convention que Payment.paidDate/AccountTransfer.actualDate —
-  // une date de mouvement réel porte l'heure d'enregistrement (RG-080, cf. bug de
-  // comparaison avec AccountBalanceSnapshot.declaredAt sinon, corrigé en Lot 3).
-  spentDate         DateTime @map("spent_date")
-  categoryId        String?  @map("category_id")
-  // Vague 2 §1 : Type/Sous-type facultatifs, jamais requis — une dépense reste valide
-  // avec seulement une catégorie, comme avant cette évolution.
-  categoryTypeId    String?  @map("category_type_id")
-  categorySubtypeId String?  @map("category_subtype_id")
-  accountId         String   @map("account_id")
-  recordedById      String   @map("recorded_by_id")
-  notes             String?
-  // Refonte maquette V6B §12 — voir AdHocExpense.label (même convention, même
-  // NULL = ancienne ligne, jamais requis).
-  label             String?
+  householdId       String   @map("household_id")
+  name              String
+  active            Boolean  @default(true)
+  sortOrder         Int      @default(0) @map("sort_order")
+  isDefaultFallback Boolean  @default(false) @map("is_default_fallback")
   createdAt         DateTime @default(now()) @map("created_at")
 
-  // T3B — même patron que Payment (reste_a_payer) : `amount` reste toujours
-  // positif (CHECK budget_expense_amount_positive inchangé), le signe réel sur
-  // le solde/la consommation vient de `type`/`direction` (cf.
-  // budgetExpenseConsumptionAmount, ledger_entry, consommeADate,
-  // consommeSurFenetre — une seule sémantique, jamais dupliquée). Une ligne de
-  // correction/annulation est une NOUVELLE ligne, jamais une réécriture de la
-  // dépense originale (`sourceBudgetExpenseId` pointe vers elle — auditabilité,
-  // jamais une simple note texte).
-  type                  BudgetExpenseType       @default(depense)
-  direction             BudgetExpenseDirection? @map("direction")
-  sourceBudgetExpenseId String?                 @map("source_budget_expense_id")
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
 
-  variableBudget      VariableBudget   @relation(fields: [variableBudgetId], references: [id], onDelete: Cascade)
-  category            Category?        @relation(fields: [categoryId], references: [id])
-  categoryType        CategoryType?    @relation(fields: [categoryTypeId], references: [id])
-  categorySubtype     CategorySubtype? @relation(fields: [categorySubtypeId], references: [id])
-  account             FinancialAccount @relation("BudgetExpenseAccount", fields: [accountId], references: [id])
-  recordedBy          User             @relation("BudgetExpenseRecordedBy", fields: [recordedById], references: [id])
-  sourceBudgetExpense BudgetExpense?   @relation("BudgetExpenseReversal", fields: [sourceBudgetExpenseId], references: [id])
-  derivedEntries      BudgetExpense[]  @relation("BudgetExpenseReversal")
-
-  // consommeSurFenetre (variable-budget.util/projection.util) : WHERE variableBudgetId AND
-  // spentDate BETWEEN — appelé pour chaque période de chaque budget à chaque calcul.
-  @@index([variableBudgetId, spentDate])
-  @@index([accountId])
-  @@index([sourceBudgetExpenseId])
-  @@map("budget_expense")
-}
-
-// Une dépense réelle sans budget variable actif correspondant (§7) — jamais de
-// Deadline ni de ChargePlan créés pour l'enregistrer (§2).
-model AdHocExpense {
-  id                   String   @id @default(uuid())
-  householdId          String   @map("household_id")
-  categoryId           String?  @map("category_id")
-  categoryTypeId       String?  @map("category_type_id")
-  categorySubtypeId    String?  @map("category_subtype_id")
-  amount               Decimal  @map("amount") @db.Decimal(14, 2)
-  spentDate            DateTime @map("spent_date")
-  accountId            String   @map("account_id")
-  recordedById         String   @map("recorded_by_id")
-  notes                String?
-  // Refonte maquette V6B §12 — "Libellé" est un champ de saisie à part entière
-  // du formulaire Dépense (ex. "Consultation pédiatre"), jamais dérivé de la
-  // catégorie : NULL = ancienne dépense créée avant cette évolution, l'affichage
-  // retombe alors sur Type · Sous-type (comportement historique inchangé).
-  label                String?
-  // Refonte maquette V6B §9 — coché uniquement pour une dépense de catégorie Santé :
-  // déclenche à la création la génération automatique d'un MedicalClaim lié (1:1, jamais
-  // dupliqué). Les 500 DH engagés restent une dépense réelle immédiate (jamais annulée
-  // par l'existence du dossier) ; le remboursement futur n'est JAMAIS un revenu tant que
-  // le dossier n'est pas clôturé (cf. MedicalClaim).
-  remboursableMutuelle Boolean  @default(false) @map("remboursable_mutuelle")
-  createdAt            DateTime @default(now()) @map("created_at")
-
-  household       Household        @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  category        Category?        @relation(fields: [categoryId], references: [id])
-  categoryType    CategoryType?    @relation(fields: [categoryTypeId], references: [id])
-  categorySubtype CategorySubtype? @relation(fields: [categorySubtypeId], references: [id])
-  account         FinancialAccount @relation("AdHocExpenseAccount", fields: [accountId], references: [id])
-  recordedBy      User             @relation("AdHocExpenseRecordedBy", fields: [recordedById], references: [id])
-  medicalClaim    MedicalClaim?    @relation("MedicalClaimSourceExpense")
+  financialOperations FinancialOperation[]
+  plannedOperations   PlannedOperation[]
 
   @@index([householdId])
-  @@index([spentDate])
-  @@index([accountId])
-  @@map("adhoc_expense")
+  @@map("category")
 }
 
-// Refonte maquette V6B §9-11 — dossier de suivi d'un remboursement mutuelle. Créé
-// automatiquement (1:1) avec l'AdHocExpense source quand remboursableMutuelle=true ;
-// amountReimbursed reste à 0 / status='en_attente' tant que l'utilisateur n'a pas
-// explicitement clôturé le dossier avec le montant réellement reçu — jamais un revenu
-// projeté (RG absente de toute projection tant que non clôturé).
-model MedicalClaim {
-  id                       String             @id @default(uuid())
-  householdId              String             @map("household_id")
-  label                    String
-  visitDate                DateTime           @map("visit_date") @db.Date
-  amountEngaged            Decimal            @map("amount_engaged") @db.Decimal(14, 2)
-  amountReimbursed         Decimal            @default(0) @map("amount_reimbursed") @db.Decimal(14, 2)
-  reimbursementDate        DateTime?          @map("reimbursement_date") @db.Date
-  reimbursementAccountId   String?            @map("reimbursement_account_id")
-  // Affectation optionnelle du montant reçu à une enveloppe (versement réel, jamais
-  // une dépense) — réutilise SavingsPocket, aucun nouveau moteur d'affectation.
-  allocatedSavingsPocketId String?            @map("allocated_savings_pocket_id")
-  sourceExpenseId          String             @unique @map("source_expense_id")
-  status                   MedicalClaimStatus @default(en_attente)
-  createdAt                DateTime           @default(now()) @map("created_at")
-  updatedAt                DateTime           @updatedAt @map("updated_at")
+// Une règle de récurrence n'est jamais une occurrence : chaque échéance réelle
+// est une ligne planned_operations distincte, garantie unique par
+// @@unique([recurrenceRuleId, expectedDate]) (idempotence de génération).
+model RecurrenceRule {
+  id          String              @id @default(uuid())
+  householdId String              @map("household_id")
+  frequency   RecurrenceFrequency
+  anchorDate  DateTime            @map("anchor_date") @db.Date
+  label       String?
+  createdAt   DateTime            @default(now()) @map("created_at")
 
-  household              Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  reimbursementAccount   FinancialAccount? @relation("MedicalClaimReimbursementAccount", fields: [reimbursementAccountId], references: [id])
-  allocatedSavingsPocket SavingsPocket?    @relation("MedicalClaimAllocatedPocket", fields: [allocatedSavingsPocketId], references: [id])
-  sourceExpense          AdHocExpense      @relation("MedicalClaimSourceExpense", fields: [sourceExpenseId], references: [id], onDelete: Cascade)
+  household         Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  plannedOperations PlannedOperation[]
 
   @@index([householdId])
-  @@index([status])
-  @@map("medical_claim")
+  @@map("recurrence_rule")
 }
 
-// ============================================================
-// Lot 4 — Charges planifiées & FinancialPlan / module scolaire (docs/02 §E.12/E.3quater,
-// docs/04 §P.1bis)
-// ============================================================
-
-// RG-110/111 : regroupement générique thématique — aucun agrégat stocké (budget_total,
-// paid_total...), tout est calculé à la demande (FinancialPlansService).
 model FinancialPlan {
-  id                String            @id @default(uuid())
-  householdId       String            @map("household_id")
-  label             String
-  // Convergence V6 §1 — nouveau modèle : le plan devient un simple regroupement
-  // logique de charges (id/label/description/active). description/active sont
-  // additifs, jamais destructifs pour les plans existants créés par les wizards
-  // (planType/destination/schoolYear/periodStart/periodEnd/vehicleId/housingId
-  // restent en base, ne pilotent plus la nouvelle UI mais ne sont jamais supprimés).
-  description       String?
-  active            Boolean           @default(true)
-  // Lot 11 (§9/§11 cadrage V1) : distinction explicite du type de plan pour l'UI mobile
-  // (assistant scolaire vs assistant voyage vs plan libre) — jamais déduite du texte de
-  // `label`. Purement informatif, aucune logique métier ne branche dessus.
-  planType          FinancialPlanType @default(other) @map("plan_type")
-  // Lot 11 (§10) : destination réelle du plan Voyage — donnée métier propre, jamais
-  // encodée dans `label`. NULL pour les plans non-voyage.
-  destination       String?
-  // M9 — année scolaire STRUCTURÉE du plan (ex. "2026/2027"), distincte de
-  // periodStart/periodEnd : sert d'identité pour le chaînage des prévisions
-  // pluriannuelles (SchoolProjection.schoolYear) et pour la détection anti-doublon
-  // à la création d'un plan réel ultérieur. NULL pour les plans non-scolaires.
-  schoolYear        String?           @map("school_year")
-  // M9 — établissement en texte libre, copié depuis Child.schoolName au moment de
-  // la création (jamais un référentiel Établissement, hors périmètre M9). NULL pour
-  // les plans non-scolaires.
-  schoolName        String?           @map("school_name")
-  periodStart       DateTime          @map("period_start") @db.Date
-  periodEnd         DateTime          @map("period_end") @db.Date
-  // Lot 6 (RG-112) — relation informative pour l'affichage consolidé ; la couverture
-  // réelle reste régie par RG-090 indépendamment du FinancialPlan.
-  linkedProvisionId String?           @map("linked_provision_id")
-  // M7+M8 (guard-rail §3) — le Plan sait quelle entité il regroupe (Voiture/Maison),
-  // jamais de moteur financier supplémentaire porté par le Plan lui-même. NULL pour
-  // les plans non-vehicle/non-housing.
-  vehicleId         String?           @map("vehicle_id")
-  housingId         String?           @map("housing_id")
-  createdAt         DateTime          @default(now()) @map("created_at")
-  updatedAt         DateTime          @updatedAt @map("updated_at")
+  id          String   @id @default(uuid())
+  householdId String   @map("household_id")
+  label       String
+  createdAt   DateTime @default(now()) @map("created_at")
 
-  household                 Household                  @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  chargePlans               ChargePlan[]
-  beneficiaries             FinancialPlanBeneficiary[]
-  linkedProvision           Provision?                 @relation(fields: [linkedProvisionId], references: [id])
-  vehicle                   Vehicle?                   @relation(fields: [vehicleId], references: [id])
-  housing                   Housing?                   @relation(fields: [housingId], references: [id])
-  // M9 — prévisions dont ce plan réel est l'origine de la chaîne (jamais l'inverse :
-  // une SchoolProjection ne référence PAS le plan réel dont elle a été calculée année
-  // par année, seulement son plan D'ORIGINE, cf. sourceFinancialPlanId).
-  schoolProjectionsOrigin   SchoolProjection[]         @relation("SchoolProjectionSourcePlan")
-  // M9 — prévisions REMPLACÉES par ce plan (celui-ci est le plan réel créé à partir
-  // d'une ou plusieurs prévisions, cf. replacedByFinancialPlanId).
-  schoolProjectionsReplaced SchoolProjection[]         @relation("SchoolProjectionReplacedByPlan")
+  household Household               @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  items     FinancialPlanItem[]
+  deadlines FinancialPlanDeadline[]
 
   @@index([householdId])
-  @@index([vehicleId])
-  @@index([housingId])
   @@map("financial_plan")
 }
 
-// RG-114/doc04 §P.1bis : type explicite + colonnes user_id/child_id distinctes + vraies FK
-// + index uniques PARTIELS (jamais une seule UNIQUE(4 colonnes), insuffisante avec des
-// colonnes nullables en PostgreSQL) — cf. migration pour les deux index et le CHECK.
-model FinancialPlanBeneficiary {
-  id              String          @id @default(uuid())
-  financialPlanId String          @map("financial_plan_id")
-  beneficiaryType BeneficiaryType @map("beneficiary_type")
-  userId          String?         @map("user_id")
-  childId         String?         @map("child_id")
-  createdAt       DateTime        @default(now()) @map("created_at")
+model FinancialPlanItem {
+  id     String @id @default(uuid())
+  planId String @map("plan_id")
+  label  String
 
-  financialPlan FinancialPlan @relation(fields: [financialPlanId], references: [id], onDelete: Cascade)
-  user          User?         @relation(fields: [userId], references: [id])
-  child         Child?        @relation(fields: [childId], references: [id])
+  plan              FinancialPlan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+  plannedOperations PlannedOperation[]
 
-  @@map("financial_plan_beneficiary")
+  @@index([planId])
+  @@map("financial_plan_item")
 }
 
-enum SchoolProjectionIncreaseType {
-  aucune
-  fixe
-  pourcentage
+// Coquille simple uniquement : label + due_date. Aucun montant stocké ici — la
+// substance financière vit exclusivement dans planned_operations via
+// financial_plan_deadline_id (cf. rapport de reset).
+model FinancialPlanDeadline {
+  id      String   @id @default(uuid())
+  planId  String   @map("plan_id")
+  label   String
+  dueDate DateTime @map("due_date") @db.Date
+
+  plan              FinancialPlan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+  plannedOperations PlannedOperation[]
+
+  @@index([planId])
+  @@map("financial_plan_deadline")
 }
 
-enum SchoolProjectionStatus {
-  projete
-  remplacee
-}
-
-// M9 — prévision pluriannuelle d'un poste scolaire (§ architecture Plans, verrouillage
-// avant M7/M8). JAMAIS une vraie Deadline créée à l'avance : une ligne ici ne compte
-// jamais dans Montants_engagés/paiements/provisions (aucun code de ce module ne lit
-// SchoolProjection — treasury.util.ts, projection.util.ts, monthly-projection.util.ts
-// restent inchangés). sourceChargePlanId est l'identité STABLE de la ligne sur toute
-// la chaîne (T1/T2/T3 restent des ChargePlan distincts, jamais fusionnés en une somme
-// annuelle sans date) ; previousProjectionId chaîne les années successives (le montant
-// de référence d'une année N part TOUJOURS du montant calculé de l'année N-1, réelle ou
-// projetée). replacedByFinancialPlanId/replacedByDeadlineId matérialisent le remplacement
-// prévision→réel (jamais une suppression : historique consultable, jamais les deux à la
-// fois dans la Projection longue durée — cf. SchoolProjectionsService.listActiveForPlan).
-model SchoolProjection {
-  id                        String                       @id @default(uuid())
-  householdId               String                       @map("household_id")
-  childId                   String                       @map("child_id")
-  // Copié depuis FinancialPlan.schoolName au moment du calcul (jamais un live-join —
-  // même logique que label ci-dessous, stabilité historique de l'affichage).
-  schoolName                String?                      @map("school_name")
-  // Copié depuis ChargePlan.label au moment du calcul.
-  label                     String
-  schoolYear                String                       @map("school_year")
-  targetDate                DateTime                     @map("target_date") @db.Date
-  sourceFinancialPlanId     String                       @map("source_financial_plan_id")
-  sourceChargePlanId        String                       @map("source_charge_plan_id")
-  // M9B §3 — un ChargePlan PEUT porter plusieurs Deadline distinctes (POST
-  // /charge-plans/:id/deadlines n'est jamais limité à une seule) : sourceChargePlanId
-  // seul ne suffit donc pas à tracer la ligne réelle exacte. sourceDeadlineId fige la
-  // Deadline réelle d'origine de TOUTE la chaîne (propagé tel quel à chaque année
-  // suivante, jamais recalculé) — traçabilité complète, jamais une ambiguïté sur
-  // "quelle échéance a servi de référence".
-  sourceDeadlineId          String?                      @map("source_deadline_id")
-  referenceAmount           Decimal                      @map("reference_amount") @db.Decimal(14, 2)
-  increaseType              SchoolProjectionIncreaseType @map("increase_type")
-  // NULL ssi increaseType = aucune (même convention que Deadline.amountCurrent/amountStatus).
-  increaseValue             Decimal?                     @map("increase_value") @db.Decimal(14, 2)
-  computedAmount            Decimal                      @map("computed_amount") @db.Decimal(14, 2)
-  status                    SchoolProjectionStatus       @default(projete)
-  previousProjectionId      String?                      @unique @map("previous_projection_id")
-  replacedByFinancialPlanId String?                      @map("replaced_by_financial_plan_id")
-  replacedByDeadlineId      String?                      @map("replaced_by_deadline_id")
-  createdAt                 DateTime                     @default(now()) @map("created_at")
-  updatedAt                 DateTime                     @updatedAt @map("updated_at")
-
-  household               Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  child                   Child             @relation(fields: [childId], references: [id])
-  sourceFinancialPlan     FinancialPlan     @relation("SchoolProjectionSourcePlan", fields: [sourceFinancialPlanId], references: [id], onDelete: Cascade)
-  sourceChargePlan        ChargePlan        @relation(fields: [sourceChargePlanId], references: [id], onDelete: Cascade)
-  sourceDeadline          Deadline?         @relation("SchoolProjectionSourceDeadline", fields: [sourceDeadlineId], references: [id])
-  previousProjection      SchoolProjection? @relation("SchoolProjectionChain", fields: [previousProjectionId], references: [id])
-  nextProjection          SchoolProjection? @relation("SchoolProjectionChain")
-  replacedByFinancialPlan FinancialPlan?    @relation("SchoolProjectionReplacedByPlan", fields: [replacedByFinancialPlanId], references: [id])
-  replacedByDeadline      Deadline?         @relation("SchoolProjectionReplacedByDeadline", fields: [replacedByDeadlineId], references: [id])
-
-  // Une ligne (poste) ne peut avoir qu'UNE prévision par année scolaire cible —
-  // jamais deux valeurs concurrentes pour la même (poste, année).
-  @@unique([sourceChargePlanId, schoolYear])
-  @@index([householdId])
-  @@index([childId])
-  @@index([sourceFinancialPlanId])
-  @@index([sourceDeadlineId])
-  @@map("school_projection")
-}
-
-// doc04 §P (ChargePlan }o──o{ Child) — une charge peut concerner 0, 1 ou n enfants (§10).
-model ChargePlanChild {
-  chargePlanId String @map("charge_plan_id")
-  childId      String @map("child_id")
-
-  chargePlan ChargePlan @relation(fields: [chargePlanId], references: [id], onDelete: Cascade)
-  child      Child      @relation(fields: [childId], references: [id], onDelete: Cascade)
-
-  @@id([chargePlanId, childId])
-  @@map("charge_plan_child")
-}
-
-// RG-115/116 : ventilation analytique optionnelle, purement informative — une charge
-// commune reste UNE Deadline et UN Payment réel, jamais dédoublés (§11). RG-116bis :
-// Σ allocation_amount ≤ amount_current, vérifié par trigger (INSERT/UPDATE d'allocation
-// ET baisse de amount_current, §12) — jamais silencieusement dépassé dans un sens comme
-// dans l'autre.
-model DeadlineChildAllocation {
-  id               String   @id @default(uuid())
-  deadlineId       String   @map("deadline_id")
-  childId          String   @map("child_id")
-  allocationAmount Decimal  @map("allocation_amount") @db.Decimal(14, 2)
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
-
-  deadline Deadline @relation(fields: [deadlineId], references: [id], onDelete: Cascade)
-  child    Child    @relation(fields: [childId], references: [id], onDelete: Cascade)
-
-  @@unique([deadlineId, childId])
-  @@map("deadline_child_allocation")
-}
-
-// ============================================================
-// Lot 6 — Épargne, provisions & objectifs (docs/02 §C.5/E.5/E.5bis-quinquies, docs/04 §P)
-// ============================================================
-
-// RG-071 : current_amount n'est JAMAIS une colonne propre — toujours dérivé (virtual_allocation :
-// Σ PocketMovement confirmés ; backed_by_account : lecture du solde du compte lié), cf.
-// common/ledger/provision.util.ts. RG-047 : is_protected par défaut si beneficiaryChildId est
-// renseigné avec un versement récurrent déclaré (hasRecurringContribution à la création) —
-// jamais mobilisée automatiquement par un moteur d'arbitrage (Lot 8, hors périmètre ici).
-model SavingsPocket {
-  id                  String         @id @default(uuid())
-  householdId         String         @map("household_id")
-  name                String
-  ownerUserId         String?        @map("owner_user_id") // nullable = épargne commune du foyer
-  beneficiaryChildId  String?        @map("beneficiary_child_id") // RG-047 : épargne enfant
-  isProtected         Boolean        @default(false) @map("is_protected")
-  allocationMode      AllocationMode @map("allocation_mode")
-  // Requis (et UNIQUE, cf. migration) si allocationMode = backed_by_account, sinon NULL (RG-072/IF-14).
-  linkedAccountId     String?        @map("linked_account_id")
-  targetAmount        Decimal?       @map("target_amount") @db.Decimal(14, 2)
-  targetDate          DateTime?      @map("target_date") @db.Date
-  // Refonte maquette V6B §7A — "Versement mensuel" affiché sur une enveloppe permanente
-  // (Voiture : 2000 DH/mois) : montant de RÉFÉRENCE affiché uniquement, jamais une
-  // écriture automatique — chaque versement réel reste un PocketMovement explicite
-  // (RG-071 inchangée : current_amount ne dérive jamais de ce champ).
-  monthlyContribution Decimal?       @map("monthly_contribution") @db.Decimal(14, 2)
-  createdAt           DateTime       @default(now()) @map("created_at")
-  updatedAt           DateTime       @updatedAt @map("updated_at")
-
-  household              Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  owner                  User?             @relation(fields: [ownerUserId], references: [id])
-  beneficiaryChild       Child?            @relation(fields: [beneficiaryChildId], references: [id])
-  linkedAccount          FinancialAccount? @relation("SavingsPocketLinkedAccount", fields: [linkedAccountId], references: [id])
-  movements              PocketMovement[]  @relation("SavingsPocketMovements")
-  goals                  Goal[]
-  medicalClaimsAllocated MedicalClaim[]    @relation("MedicalClaimAllocatedPocket")
-
-  @@index([householdId])
-  @@map("savings_pocket")
-}
-
-// Spécialisation métier destinée à couvrir des obligations futures connues (Deadline liées,
-// couverture chronologique RG-090/091, cf. provision.util.ts). is_flexible (doc04) : une provision
-// flexible peut voir sa capacité redistribuée manuellement entre échéances liées (V1 : champ
-// informatif, la redistribution reste toujours l'allocation chronologique RG-090, jamais un choix
-// manuel qui romprait IF-17).
-model Provision {
-  id              String         @id @default(uuid())
-  householdId     String         @map("household_id")
-  name            String
-  allocationMode  AllocationMode @map("allocation_mode")
-  linkedAccountId String?        @map("linked_account_id")
-  isFlexible      Boolean        @default(true) @map("is_flexible")
-  createdAt       DateTime       @default(now()) @map("created_at")
-  updatedAt       DateTime       @updatedAt @map("updated_at")
-
-  household      Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  linkedAccount  FinancialAccount? @relation("ProvisionLinkedAccount", fields: [linkedAccountId], references: [id])
-  movements      PocketMovement[]  @relation("ProvisionMovements")
-  deadlines      Deadline[]
-  payments       Payment[]
-  financialPlans FinancialPlan[]
-
-  @@index([householdId])
-  @@map("provision")
-}
-
-// Seule source de vérité des mouvements virtuels confirmés (RG-080→RG-071, §C.5). Un même
-// PocketMovement référence EXACTEMENT une SavingsPocket OU une Provision (pocketType +
-// contrainte CHECK, patron RG-114) — jamais les deux, jamais aucune. Absente/informative pour
-// une poche backed_by_account (RG-073/086) : ce mode passe exclusivement par AccountTransfer.
-model PocketMovement {
-  id               String               @id @default(uuid())
-  pocketType       PocketType           @map("pocket_type")
-  savingsPocketId  String?              @map("savings_pocket_id")
-  provisionId      String?              @map("provision_id")
-  plannedDate      DateTime             @map("planned_date") @db.Date
-  plannedAmount    Decimal              @map("planned_amount") @db.Decimal(14, 2)
-  actualDate       DateTime?            @map("actual_date")
-  actualAmount     Decimal?             @map("actual_amount") @db.Decimal(14, 2)
-  status           PocketMovementStatus @default(prevu)
-  movementType     PocketMovementType   @map("movement_type")
-  // Purement informatif (RG-109/IF-22) — n'entre dans AUCUNE formule (G.3/G.4/G.9).
-  intentionLabel   String?              @map("intention_label")
-  recordedByUserId String               @map("recorded_by_user_id")
-  createdAt        DateTime             @default(now()) @map("created_at")
-
-  savingsPocket SavingsPocket? @relation("SavingsPocketMovements", fields: [savingsPocketId], references: [id], onDelete: Cascade)
-  provision     Provision?     @relation("ProvisionMovements", fields: [provisionId], references: [id], onDelete: Cascade)
-  recordedBy    User           @relation(fields: [recordedByUserId], references: [id])
-
-  // computePocketCurrentAmount (RG-071) et le moteur de projection (§4/§10 Lots 6/7)
-  // filtrent systématiquement par poche/provision + statut, et par date planifiée.
-  @@index([savingsPocketId, status])
-  @@index([provisionId, status])
-  @@index([plannedDate])
-  @@map("pocket_movement")
-}
-
-// RG-040/041/042 inchangées. linked_pocket_id (0..1) est purement une référence d'épargne
-// dédiée à l'objectif — aucun moteur de recommandation avancé ici (Lot 8, hors périmètre).
+// Exactement l'un de accountId/subaccountId est renseigné (contrôlé au niveau service).
 model Goal {
-  id             String     @id @default(uuid())
-  householdId    String     @map("household_id")
-  label          String
-  targetAmount   Decimal    @map("target_amount") @db.Decimal(14, 2)
-  targetDate     DateTime?  @map("target_date") @db.Date
-  priorityLevel  Int        @default(1) @map("priority_level")
-  linkedPocketId String?    @map("linked_pocket_id")
-  status         GoalStatus @default(en_cours)
-  createdAt      DateTime   @default(now()) @map("created_at")
-  updatedAt      DateTime   @updatedAt @map("updated_at")
+  id           String    @id @default(uuid())
+  householdId  String    @map("household_id")
+  accountId    String?   @map("account_id")
+  subaccountId String?   @map("subaccount_id")
+  targetAmount Decimal   @map("target_amount") @db.Decimal(14, 2)
+  targetDate   DateTime? @map("target_date") @db.Date
+  label        String?
+  createdAt    DateTime  @default(now()) @map("created_at")
 
-  household     Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  linkedPocket  SavingsPocket?     @relation(fields: [linkedPocketId], references: [id])
-  contributions GoalContribution[]
+  household  Household   @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  account    Account?    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  subaccount Subaccount? @relation(fields: [subaccountId], references: [id], onDelete: Cascade)
 
   @@index([householdId])
   @@map("goal")
 }
 
-// Même distinction prévu/réel qu'un PocketMovement (§16/17 de la demande) — une contribution
-// planifiée ne devient jamais automatiquement réelle (RG-000), jamais auto-confirmée à la date prévue.
-model GoalContribution {
-  id               String                 @id @default(uuid())
-  goalId           String                 @map("goal_id")
-  plannedDate      DateTime               @map("planned_date") @db.Date
-  plannedAmount    Decimal                @map("planned_amount") @db.Decimal(14, 2)
-  actualDate       DateTime?              @map("actual_date")
-  actualAmount     Decimal?               @map("actual_amount") @db.Decimal(14, 2)
-  status           GoalContributionStatus @default(prevu)
-  recordedByUserId String                 @map("recorded_by_user_id")
-  createdAt        DateTime               @default(now()) @map("created_at")
+// Fait économique immuable. `amount` est TOUJOURS positif — un renversement ne
+// modifie jamais cette ligne, il crée une nouvelle ligne avec
+// reversalOfOperationId renseigné (effective_amount = -amount dans ce cas,
+// calculé en application, jamais stocké). Contraintes par kind (source/
+// destination account/subaccount requis|interdit|optionnel) appliquées en
+// application + trigger DB (cf. tableau du rapport de reset).
+model FinancialOperation {
+  id          String        @id @default(uuid())
+  householdId String        @map("household_id")
+  kind        OperationKind
+  label       String
+  date        DateTime      @db.Date
+  amount      Decimal       @db.Decimal(14, 2)
+  categoryId  String?       @map("category_id")
 
-  goal       Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  recordedBy User @relation(fields: [recordedByUserId], references: [id])
+  sourceAccountId         String? @map("source_account_id")
+  sourceSubaccountId      String? @map("source_subaccount_id")
+  destinationAccountId    String? @map("destination_account_id")
+  destinationSubaccountId String? @map("destination_subaccount_id")
 
-  @@index([goalId, status])
-  @@index([plannedDate])
-  @@map("goal_contribution")
+  financedFrom FinancedFrom? @map("financed_from")
+  budgetImpact BudgetImpact  @default(NORMAL) @map("budget_impact")
+
+  reversalOfOperationId String? @map("reversal_of_operation_id")
+  reversalReason        String? @map("reversal_reason")
+
+  createdByUserId String   @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  category  Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  sourceAccount         Account?    @relation("OperationSourceAccount", fields: [sourceAccountId], references: [id])
+  sourceSubaccount      Subaccount? @relation("OperationSourceSubaccount", fields: [sourceSubaccountId], references: [id])
+  destinationAccount    Account?    @relation("OperationDestinationAccount", fields: [destinationAccountId], references: [id])
+  destinationSubaccount Subaccount? @relation("OperationDestinationSubaccount", fields: [destinationSubaccountId], references: [id])
+
+  createdByUser User @relation(fields: [createdByUserId], references: [id])
+
+  reversalOfOperation FinancialOperation?  @relation("OperationReversal", fields: [reversalOfOperationId], references: [id])
+  reversals           FinancialOperation[] @relation("OperationReversal")
+
+  ledgerEntries         LedgerEntry[]
+  realizesPlannedOps    PlannedOperation[]
+  medicalClaimsSourced  MedicalClaim[]
+  medicalReimbursements MedicalReimbursement[]
+
+  @@index([householdId])
+  @@index([reversalOfOperationId])
+  @@map("financial_operation")
+}
+
+// Mécanique comptable pure — AUCUNE sémantique (pas de category_id ici). Un
+// FinancialOperation peut produire 1 à 3 lignes (cf. exemples 1-10 du rapport :
+// un versement cross-compte génère 3 lignes ledger pour 1 seule opération).
+// affects_account_balance=false = mouvement purement interne à l'allocation
+// (création/versement de sous-compte), qui ne change jamais account.balance.
+model LedgerEntry {
+  id                    String   @id @default(uuid())
+  financialOperationId  String   @map("financial_operation_id")
+  accountId             String   @map("account_id")
+  subaccountId          String?  @map("subaccount_id")
+  amount                Decimal  @db.Decimal(14, 2)
+  affectsAccountBalance Boolean  @map("affects_account_balance")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  financialOperation FinancialOperation @relation(fields: [financialOperationId], references: [id], onDelete: Cascade)
+  account            Account            @relation(fields: [accountId], references: [id])
+  subaccount         Subaccount?        @relation(fields: [subaccountId], references: [id])
+
+  @@index([financialOperationId])
+  @@index([accountId])
+  @@index([subaccountId])
+  @@map("ledger_entry")
+}
+
+// @@unique([recurrenceRuleId, expectedDate]) garantit l'idempotence de
+// génération (jamais de doublon d'occurrence), y compris pour une récurrence
+// hebdomadaire ou plusieurs fois par mois — jamais une clé dérivée en string.
+model PlannedOperation {
+  id               String               @id @default(uuid())
+  householdId      String               @map("household_id")
+  kind             PlannedOperationKind
+  recurrenceRuleId String?              @map("recurrence_rule_id")
+  categoryId       String?              @map("category_id")
+
+  financialPlanItemId     String? @map("financial_plan_item_id")
+  financialPlanDeadlineId String? @map("financial_plan_deadline_id")
+
+  sourceAccountId         String? @map("source_account_id")
+  sourceSubaccountId      String? @map("source_subaccount_id")
+  destinationAccountId    String? @map("destination_account_id")
+  destinationSubaccountId String? @map("destination_subaccount_id")
+
+  expectedAmount Decimal  @map("expected_amount") @db.Decimal(14, 2)
+  expectedDate   DateTime @map("expected_date") @db.Date
+  label          String
+
+  status              PlannedOperationStatus @default(PENDING)
+  realizedOperationId String?                @unique @map("realized_operation_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  household      Household       @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  recurrenceRule RecurrenceRule? @relation(fields: [recurrenceRuleId], references: [id])
+  category       Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  financialPlanItem     FinancialPlanItem?     @relation(fields: [financialPlanItemId], references: [id])
+  financialPlanDeadline FinancialPlanDeadline? @relation(fields: [financialPlanDeadlineId], references: [id])
+
+  sourceAccount         Account?    @relation("PlannedSourceAccount", fields: [sourceAccountId], references: [id])
+  sourceSubaccount      Subaccount? @relation("PlannedSourceSubaccount", fields: [sourceSubaccountId], references: [id])
+  destinationAccount    Account?    @relation("PlannedDestinationAccount", fields: [destinationAccountId], references: [id])
+  destinationSubaccount Subaccount? @relation("PlannedDestinationSubaccount", fields: [destinationSubaccountId], references: [id])
+
+  realizedOperation FinancialOperation? @relation(fields: [realizedOperationId], references: [id])
+
+  @@unique([recurrenceRuleId, expectedDate])
+  @@index([householdId])
+  @@map("planned_operation")
+}
+
+// amount_reimbursed et status ne sont JAMAIS stockés — toujours dérivés de
+// SUM(medical_reimbursements.amount) / comparaison à amount_engaged (cf. rapport).
+model MedicalClaim {
+  id                String    @id @default(uuid())
+  householdId       String    @map("household_id")
+  sourceOperationId String    @map("source_operation_id")
+  subaccountId      String?   @map("subaccount_id")
+  label             String
+  amountEngaged     Decimal   @map("amount_engaged") @db.Decimal(14, 2)
+  closedAt          DateTime? @map("closed_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  household       Household              @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  sourceOperation FinancialOperation     @relation(fields: [sourceOperationId], references: [id])
+  subaccount      Subaccount?            @relation(fields: [subaccountId], references: [id])
+  reimbursements  MedicalReimbursement[]
+
+  @@index([householdId])
+  @@map("medical_claim")
+}
+
+model MedicalReimbursement {
+  id                     String   @id @default(uuid())
+  claimId                String   @map("claim_id")
+  amount                 Decimal  @db.Decimal(14, 2)
+  date                   DateTime @db.Date
+  operationId            String   @map("operation_id")
+  allocationSubaccountId String?  @map("allocation_subaccount_id")
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  claim                MedicalClaim       @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  operation            FinancialOperation @relation(fields: [operationId], references: [id])
+  allocationSubaccount Subaccount?        @relation("ReimbursementAllocationSubaccount", fields: [allocationSubaccountId], references: [id])
+
+  @@index([claimId])
+  @@map("medical_reimbursement")
 }

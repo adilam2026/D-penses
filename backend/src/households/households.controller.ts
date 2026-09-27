@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { HouseholdsService } from './households.service';
 import { AuthService } from '../auth/auth.service';
@@ -6,9 +6,6 @@ import { CreateHouseholdDto } from './dto/create-household.dto';
 import { CreateInviteDto } from './dto/create-invite.dto';
 import { JoinHouseholdDto } from './dto/join-household.dto';
 import { SwitchActiveHouseholdDto } from './dto/switch-active-household.dto';
-import { UpdateHouseholdSettingsDto } from './dto/update-household-settings.dto';
-import { SkipOnboardingStepDto } from './dto/skip-onboarding-step.dto';
-import { ResetFinancialDataDto } from './dto/reset-financial-data.dto';
 import { CurrentUser, AuthenticatedUser } from '../common/decorators/current-user.decorator';
 import { HouseholdRequiredGuard } from '../common/guards/household-required.guard';
 
@@ -45,38 +42,15 @@ export class HouseholdsController {
     return { household, ...tokens };
   }
 
-  /** Corrections consolidées §17 — liste des foyers déjà membres, pour le sélecteur « Changer de foyer ». */
   @Get('memberships')
   listMemberships(@CurrentUser() user: AuthenticatedUser) {
     return this.households.listMemberships(user.sub);
   }
 
-  /**
-   * Corrections consolidées §17 — « Changer de foyer actif » parmi les memberships
-   * EXISTANTS, jamais une invitation (cf. join() ci-dessus, concept distinct).
-   */
   @Post('switch-active')
   async switchActive(@Body() dto: SwitchActiveHouseholdDto, @CurrentUser() user: AuthenticatedUser, @Req() req: Request) {
     const household = await this.households.switchActive(user.sub, dto.householdId);
     const tokens = await this.auth.reissueForHousehold(user.sub, household.id, req.headers['user-agent']);
     return { household, ...tokens };
-  }
-
-  @Patch('settings')
-  @UseGuards(HouseholdRequiredGuard)
-  updateSettings(@Body() dto: UpdateHouseholdSettingsDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.households.updateSettings(user.sub, user.householdId!, dto);
-  }
-
-  @Patch('onboarding/skip')
-  @UseGuards(HouseholdRequiredGuard)
-  skipOnboardingStep(@Body() dto: SkipOnboardingStepDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.households.skipOnboardingStep(user.sub, user.householdId!, dto);
-  }
-
-  @Post('reset-financial-data')
-  @UseGuards(HouseholdRequiredGuard)
-  resetFinancialData(@Body() dto: ResetFinancialDataDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.households.resetFinancialData(user.sub, user.householdId!, dto);
   }
 }

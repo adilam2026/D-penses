@@ -1,6 +1,5 @@
-import { IsIn, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, MinLength } from 'class-validator';
 
-/** Corrections UI/UX finales §10 — rename + kind, y compris pour une catégorie système. */
 export class UpdateCategoryDto {
   @IsOptional()
   @IsString()
@@ -8,6 +7,10 @@ export class UpdateCategoryDto {
   name?: string;
 
   @IsOptional()
-  @IsIn(['income', 'expense', 'both'])
-  kind?: 'income' | 'expense' | 'both';
+  @IsInt()
+  sortOrder?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
 }
