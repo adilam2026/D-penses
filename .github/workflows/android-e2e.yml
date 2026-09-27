@@ -127,17 +127,25 @@ jobs:
           disable-spellchecker: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
-            set -x
-            APK=$(find mobile/android/app/build/outputs/apk/release -type f -name "*.apk" | head -1)
+            set -e
+
+            APK="$(find mobile/android/app/build/outputs/apk/release -type f -name '*.apk' | head -n 1)"
+
             echo "APK détecté : $APK"
+
             if [ -z "$APK" ] || [ ! -f "$APK" ]; then
               echo "::error::APK Release introuvable avant adb install"
               find mobile/android/app/build/outputs -maxdepth 5 -type f || true
               exit 1
             fi
+
             adb install -r "$APK"
+
             export PATH="$HOME/.maestro/bin:$PATH"
+
             mkdir -p mobile/e2e/maestro-report
+
+            set +e
             maestro test mobile/e2e/maestro/flows \
               -e E2E_EMAIL="$E2E_EMAIL" \
               -e E2E_PASSWORD="$E2E_PASSWORD" \
@@ -145,10 +153,11 @@ jobs:
               --output mobile/e2e/maestro-report/report.xml \
               --debug-output mobile/e2e/maestro-report/debug \
               2>&1 | tee mobile/e2e/maestro-report/maestro-run.log
-            # Le statut Maestro (échec attendu des parcours 6/7, cf. gap produit
-            # documenté dans leurs flows) NE DOIT PAS empêcher l'upload des
-            # artifacts ci-dessous — capturé ici, jamais avalé silencieusement.
-            echo "maestro_exit_code=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
+
+            MAESTRO_EXIT_CODE=${PIPESTATUS[0]}
+            echo "maestro_exit_code=$MAESTRO_EXIT_CODE" >> "$GITHUB_ENV"
+
+            exit 0
 
       - name: Résumé de la campagne (nombre de scénarios / statut Maestro)
         if: always()
