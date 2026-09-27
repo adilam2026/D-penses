@@ -1,0 +1,15 @@
+appId: com.depenses.mobile
+---
+# Flow de DIAGNOSTIC uniquement — revisite en LECTURE SEULE la case "Prime
+# annuelle" du Planning, sans retaper sur planning-adjust-submit. Doit être
+# exécuté APRÈS la campagne des 21 flows : 13-planning-appui-long.yaml y a
+# déjà soumis l'ajustement avec succès (seule l'assertion finale "✓"
+# échouait). Vérifie si la coche "✓" est présente une fois l'écran rechargé
+# sans contrainte de temps. Hors de mobile/e2e/maestro/flows/.
+- runFlow: common/login.yaml
+- tapOn: "Planning"
+- scrollUntilVisible:
+    element:
+      id: "planning-cell-prime-annuelle-2026-12"
+    direction: RIGHT
+- takeScreenshot: diagnostic-planning-ajustement-revisite

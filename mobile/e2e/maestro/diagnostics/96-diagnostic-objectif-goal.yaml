@@ -1,0 +1,15 @@
+appId: com.depenses.mobile
+---
+# Flow de DIAGNOSTIC uniquement — revisite en LECTURE SEULE l'écran Épargne,
+# sans refaire la soumission d'objectif. Doit être exécuté APRÈS la campagne
+# des 21 flows dans le workflow CI : 19-objectifs.yaml y a déjà tapé
+# goal-submit avec succès (seule l'assertion finale "Objectif" échouait) —
+# resoumettre ici recréerait un objectif en double sur le même compte. Ce
+# flow vérifie donc, avec une navigation fraîche et sans contrainte de temps,
+# si le texte "Objectif …" est réellement présent une fois l'écran
+# entièrement chargé — ce qui distingue un problème de timing (l'objectif
+# existe mais l'assertion initiale a couru une course avec le rafraîchissement
+# réseau) d'un vrai bug d'affichage. Hors de mobile/e2e/maestro/flows/.
+- runFlow: common/login.yaml
+- tapOn: "Épargne"
+- takeScreenshot: diagnostic-objectif-epargne-revisite

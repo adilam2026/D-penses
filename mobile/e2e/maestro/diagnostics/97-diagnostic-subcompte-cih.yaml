@@ -1,0 +1,25 @@
+appId: com.depenses.mobile
+---
+# Flow de DIAGNOSTIC uniquement — reproduit 04-creation-sous-compte.yaml
+# jusqu'à l'ouverture du sélecteur "Compte bancaire support", puis s'arrête
+# avant de choisir une option (aucune sélection, aucune soumission — pas
+# d'effet de bord sur les données du foyer E2E). Hors de
+# mobile/e2e/maestro/flows/.
+- runFlow: common/login.yaml
+- tapOn:
+    id: "app-shell-menu-button"
+- tapOn:
+    id: "menu-row-epargne-sous-comptes"
+- scrollUntilVisible:
+    element:
+      id: "savings-subaccounts-add-global"
+    direction: DOWN
+- tapOn:
+    id: "savings-subaccounts-add-global"
+- assertVisible: "Nouveau sous-compte"
+- tapOn:
+    id: "create-subaccount-name"
+- inputText: "Sous-compte E2E Maestro Diagnostic"
+- tapOn:
+    id: "create-subaccount-account"
+- takeScreenshot: diagnostic-subcompte-account-selector

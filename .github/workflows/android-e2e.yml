@@ -168,6 +168,36 @@ jobs:
             cp *.png mobile/e2e/maestro-report/debug/ 2>/dev/null || true
             maestro test mobile/e2e/maestro/flows -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PASSWORD="$E2E_PASSWORD" --format junit --output mobile/e2e/maestro-report/report.xml --debug-output mobile/e2e/maestro-report/debug 2>&1 | tee mobile/e2e/maestro-report/maestro-run.log
             cp *.png mobile/e2e/maestro-report/debug/ 2>/dev/null || true
+            maestro test mobile/e2e/maestro/diagnostics/98-diagnostic-datepicker.yaml --debug-output mobile/e2e/maestro-report/debug/diagnostic-datepicker 2>&1 | tee mobile/e2e/maestro-report/diagnostic-datepicker-run.log
+            adb shell uiautomator dump /sdcard/window_dump_datepicker.xml
+            adb pull /sdcard/window_dump_datepicker.xml mobile/e2e/maestro-report/debug/diagnostic-datepicker-ui-hierarchy.xml
+            adb exec-out screencap -p > mobile/e2e/maestro-report/debug/diagnostic-datepicker-adb-screenshot.png
+            echo "=== DIAGNOSTIC DATEPICKER : resume hierarchie UI ==="
+            python3 mobile/e2e/scripts/dump-ui-summary.py mobile/e2e/maestro-report/debug/diagnostic-datepicker-ui-hierarchy.xml
+            maestro test mobile/e2e/maestro/diagnostics/97-diagnostic-subcompte-cih.yaml --debug-output mobile/e2e/maestro-report/debug/diagnostic-subcompte 2>&1 | tee mobile/e2e/maestro-report/diagnostic-subcompte-run.log
+            adb shell uiautomator dump /sdcard/window_dump_subcompte.xml
+            adb pull /sdcard/window_dump_subcompte.xml mobile/e2e/maestro-report/debug/diagnostic-subcompte-ui-hierarchy.xml
+            adb exec-out screencap -p > mobile/e2e/maestro-report/debug/diagnostic-subcompte-adb-screenshot.png
+            echo "=== DIAGNOSTIC SOUS-COMPTE (selecteur compte) : resume hierarchie UI ==="
+            python3 mobile/e2e/scripts/dump-ui-summary.py mobile/e2e/maestro-report/debug/diagnostic-subcompte-ui-hierarchy.xml
+            maestro test mobile/e2e/maestro/diagnostics/96-diagnostic-objectif-goal.yaml --debug-output mobile/e2e/maestro-report/debug/diagnostic-objectif 2>&1 | tee mobile/e2e/maestro-report/diagnostic-objectif-run.log
+            adb shell uiautomator dump /sdcard/window_dump_objectif.xml
+            adb pull /sdcard/window_dump_objectif.xml mobile/e2e/maestro-report/debug/diagnostic-objectif-ui-hierarchy.xml
+            adb exec-out screencap -p > mobile/e2e/maestro-report/debug/diagnostic-objectif-adb-screenshot.png
+            echo "=== DIAGNOSTIC OBJECTIF (revisite en lecture seule apres la campagne) : resume hierarchie UI ==="
+            python3 mobile/e2e/scripts/dump-ui-summary.py mobile/e2e/maestro-report/debug/diagnostic-objectif-ui-hierarchy.xml Objectif
+            maestro test mobile/e2e/maestro/diagnostics/95-diagnostic-planning-realiser.yaml --debug-output mobile/e2e/maestro-report/debug/diagnostic-planning-realiser 2>&1 | tee mobile/e2e/maestro-report/diagnostic-planning-realiser-run.log
+            adb shell uiautomator dump /sdcard/window_dump_planning_realiser.xml
+            adb pull /sdcard/window_dump_planning_realiser.xml mobile/e2e/maestro-report/debug/diagnostic-planning-realiser-ui-hierarchy.xml
+            adb exec-out screencap -p > mobile/e2e/maestro-report/debug/diagnostic-planning-realiser-adb-screenshot.png
+            echo "=== DIAGNOSTIC PLANNING tap realiser, case Voyage, revisite apres la campagne : resume hierarchie UI ==="
+            python3 mobile/e2e/scripts/dump-ui-summary.py mobile/e2e/maestro-report/debug/diagnostic-planning-realiser-ui-hierarchy.xml planning-cell-voyage
+            maestro test mobile/e2e/maestro/diagnostics/94-diagnostic-planning-ajustement.yaml --debug-output mobile/e2e/maestro-report/debug/diagnostic-planning-ajustement 2>&1 | tee mobile/e2e/maestro-report/diagnostic-planning-ajustement-run.log
+            adb shell uiautomator dump /sdcard/window_dump_planning_ajustement.xml
+            adb pull /sdcard/window_dump_planning_ajustement.xml mobile/e2e/maestro-report/debug/diagnostic-planning-ajustement-ui-hierarchy.xml
+            adb exec-out screencap -p > mobile/e2e/maestro-report/debug/diagnostic-planning-ajustement-adb-screenshot.png
+            echo "=== DIAGNOSTIC PLANNING appui long, case Prime annuelle, revisite apres la campagne : resume hierarchie UI ==="
+            python3 mobile/e2e/scripts/dump-ui-summary.py mobile/e2e/maestro-report/debug/diagnostic-planning-ajustement-ui-hierarchy.xml planning-cell-prime
 
       - name: Résumé de la campagne (extrait du rapport JUnit)
         if: always()

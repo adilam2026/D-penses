@@ -1,0 +1,22 @@
+appId: com.depenses.mobile
+---
+# Flow de DIAGNOSTIC uniquement — reproduit exactement les étapes de
+# 05-creation-depense.yaml jusqu'à l'ouverture du DatePicker Android natif,
+# puis s'arrête (aucun tap sur le bouton du dialogue, aucune assertion sur
+# lui) pour laisser le workflow CI dumper la hiérarchie UI Android réelle à
+# cet instant précis. Hors de mobile/e2e/maestro/flows/ : ne fait pas partie
+# de la campagne des 21 flows fonctionnels.
+- runFlow: common/login.yaml
+- tapOn: "Ajouter"
+- assertVisible:
+    id: "ajouter-tile-EXPENSE"
+- tapOn:
+    id: "ajouter-tile-EXPENSE"
+- tapOn:
+    id: "ajouter-tab-realisee"
+- tapOn:
+    id: "ajouter-amount"
+- inputText: "150"
+- tapOn:
+    text: "Choisir une date"
+- takeScreenshot: diagnostic-datepicker-open
