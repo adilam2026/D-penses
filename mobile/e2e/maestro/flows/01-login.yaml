@@ -6,7 +6,6 @@ appId: com.depenses.mobile
 # shell persistant "Finance Maison".
 - launchApp:
     clearState: true
-- assertVisible: "Finance Maison"
 - assertVisible:
     id: "login-email"
 - assertVisible:

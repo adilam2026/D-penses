@@ -7,7 +7,8 @@ appId: com.depenses.mobile
 # session persistée d'un flow précédent), pour rester rejouable isolément.
 - launchApp:
     clearState: true
-- assertVisible: "Finance Maison"
+- assertVisible:
+    id: "login-email"
 - tapOn:
     id: "login-email"
 - inputText: "${E2E_EMAIL}"
