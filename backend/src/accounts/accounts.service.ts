@@ -104,10 +104,19 @@ export class AccountsService {
     });
   }
 
-  async list(userId: string, householdId: string) {
+  /**
+   * `includeInactive` (Organisation → Comptes, §7) : les sélecteurs de nouvelle
+   * opération et l'Accueil n'appellent jamais avec `true` — un compte désactivé
+   * ne doit plus être proposé par défaut pour de nouvelles opérations (§8),
+   * mais reste visible dans son propre écran de gestion et dans l'historique.
+   */
+  async list(userId: string, householdId: string, includeInactive = false) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
-      const accounts = await tx.account.findMany({ where: { householdId }, orderBy: { createdAt: 'asc' } });
+      const accounts = await tx.account.findMany({
+        where: { householdId, ...(includeInactive ? {} : { active: true }) },
+        orderBy: { createdAt: 'asc' },
+      });
       return Promise.all(accounts.map((a) => this.toAccountDto(tx, a.id)));
     });
   }
@@ -121,24 +130,39 @@ export class AccountsService {
     });
   }
 
-  /** "Modifier" (Détail compte, §8) — renommage uniquement, écran très simple. */
-  async rename(userId: string, householdId: string, id: string, name: string) {
+  /** "Modifier" (Détail compte / Comptes, §7-§8) — champs d'identification + désactivation/réactivation logique. */
+  async update(
+    userId: string,
+    householdId: string,
+    id: string,
+    dto: { name?: string; bank?: string; type?: string; ownerMemberId?: string; ownerLabel?: string; active?: boolean },
+  ) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
       const account = await tx.account.findUnique({ where: { id } });
       if (!account || account.householdId !== householdId) throw new NotFoundException('Compte introuvable');
-      await tx.account.update({ where: { id }, data: { name } });
+      await tx.account.update({
+        where: { id },
+        data: {
+          name: dto.name,
+          bank: dto.bank,
+          type: dto.type as never,
+          ownerMemberId: dto.ownerMemberId,
+          ownerLabel: dto.ownerLabel,
+          active: dto.active,
+        },
+      });
       return this.toAccountDto(tx, id);
     });
   }
 
-  /** "Modifier" (Détail sous-compte, §9) — renommage uniquement. */
-  async renameSubaccount(userId: string, householdId: string, id: string, name: string) {
+  /** "Modifier" (Détail sous-compte / Épargne & sous-comptes, §9-§10) — renommage + désactivation/réactivation logique. */
+  async updateSubaccount(userId: string, householdId: string, id: string, dto: { name?: string; active?: boolean }) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
       const subaccount = await tx.subaccount.findUnique({ where: { id } });
       if (!subaccount || subaccount.householdId !== householdId) throw new NotFoundException('Sous-compte introuvable');
-      await tx.subaccount.update({ where: { id }, data: { name } });
+      await tx.subaccount.update({ where: { id }, data: { name: dto.name, active: dto.active } });
       return this.toSubaccountDto(tx, id);
     });
   }

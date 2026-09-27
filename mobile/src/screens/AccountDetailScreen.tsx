@@ -69,7 +69,7 @@ export function AccountDetailScreen() {
         </View>
 
         <Text style={styles.title}>{account.name}</Text>
-        <Text style={styles.subtitle}>Compte bancaire</Text>
+        <Text style={styles.subtitle}>Compte bancaire{account.active ? '' : ' · Désactivé'}</Text>
 
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>Solde</Text>
@@ -111,9 +111,28 @@ export function AccountDetailScreen() {
             key: 'add-transaction',
             label: 'Ajouter une transaction',
             icon: 'add-circle-outline',
+            disabled: !account.active,
             onPress: () => navigation.navigate('Tabs', { screen: 'Ajouter', params: { prefill: { sourceAccountId: account.id } } }),
           },
-          { key: 'deactivate', label: 'Désactiver', icon: 'power-outline', onPress: () => {}, disabled: true },
+          account.active
+            ? {
+                key: 'deactivate',
+                label: 'Désactiver',
+                icon: 'power-outline',
+                onPress: async () => {
+                  await api.updateAccount(account.id, { active: false });
+                  await load();
+                },
+              }
+            : {
+                key: 'reactivate',
+                label: 'Réactiver',
+                icon: 'power-outline',
+                onPress: async () => {
+                  await api.updateAccount(account.id, { active: true });
+                  await load();
+                },
+              },
         ]}
       />
 

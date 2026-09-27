@@ -207,6 +207,7 @@ model Account {
   type          AccountType @default(COURANT)
   ownerMemberId String?     @map("owner_member_id")
   ownerLabel    String?     @map("owner_label")
+  active        Boolean     @default(true)
   createdAt     DateTime    @default(now()) @map("created_at")
   updatedAt     DateTime    @updatedAt @map("updated_at")
 
@@ -239,6 +240,7 @@ model Subaccount {
   accountId   String   @map("account_id")
   householdId String   @map("household_id")
   name        String
+  active      Boolean  @default(true)
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 

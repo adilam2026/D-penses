@@ -1,7 +1,10 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import * as crypto from 'node:crypto';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { seedDefaultFallbackCategory } from '../categories/categories.service';
+
+type TxClient = Prisma.TransactionClient;
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 jours
 
@@ -153,6 +156,46 @@ export class HouseholdsService {
       }
       await tx.user.update({ where: { id: userId }, data: { activeHouseholdId: householdId } });
       return tx.household.findUniqueOrThrow({ where: { id: householdId } });
+    });
+  }
+
+  /**
+   * Réinitialiser les données (§17) — supprime UNIQUEMENT les données métier
+   * financières du foyer (comptes, sous-comptes, opérations, planning, dossiers
+   * santé, catégories, plans financiers, objectifs, récurrences). Ne touche
+   * JAMAIS : User, Session, EmailOtp, Household, HouseholdMembership,
+   * HouseholdInvite — l'identité/auth de l'utilisateur et du foyer survivent
+   * intactes. Réservé aux admins (action structurante irréversible).
+   *
+   * Ordre de suppression : feuilles avant parents, pour ne jamais dépendre
+   * d'une action FK par défaut (plusieurs relations du schéma sont en
+   * `Restrict` implicite, jamais `Cascade`) — voir rapport de reset. Un
+   * FinancialOperation.reversalOfOperationId auto-référencé est neutralisé
+   * avant la suppression des opérations elles-mêmes.
+   */
+  async reset(userId: string, householdId: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const membership = await tx.householdMembership.findUnique({
+        where: { householdId_userId: { householdId, userId } },
+      });
+      if (!membership || membership.role !== 'admin') {
+        throw new ForbiddenException('Seul un administrateur du foyer peut réinitialiser les données');
+      }
+
+      await tx.medicalReimbursement.deleteMany({ where: { claim: { householdId } } });
+      await tx.medicalClaim.deleteMany({ where: { householdId } });
+      await tx.plannedOperation.deleteMany({ where: { householdId } });
+      await tx.financialOperation.updateMany({ where: { householdId }, data: { reversalOfOperationId: null } });
+      await tx.financialOperation.deleteMany({ where: { householdId } });
+      await tx.recurrenceRule.deleteMany({ where: { householdId } });
+      await tx.goal.deleteMany({ where: { householdId } });
+      await tx.financialPlan.deleteMany({ where: { householdId } });
+      await tx.category.deleteMany({ where: { householdId } });
+      await tx.subaccount.deleteMany({ where: { householdId } });
+      await tx.account.deleteMany({ where: { householdId } });
+
+      await seedDefaultFallbackCategory(tx, householdId);
     });
   }
 }

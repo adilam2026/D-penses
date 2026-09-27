@@ -17,6 +17,14 @@ import { HealthScreen } from '../screens/HealthScreen';
 import { FinancialPlansScreen } from '../screens/FinancialPlansScreen';
 import { FinancialPlanDetailScreen } from '../screens/FinancialPlanDetailScreen';
 import { DeadlineDetailScreen } from '../screens/DeadlineDetailScreen';
+import { AccountsScreen } from '../screens/AccountsScreen';
+import { CreateAccountScreen } from '../screens/CreateAccountScreen';
+import { SavingsSubaccountsScreen } from '../screens/SavingsSubaccountsScreen';
+import { CreateSubaccountScreen } from '../screens/CreateSubaccountScreen';
+import { CategoriesScreen } from '../screens/CategoriesScreen';
+import { SettingsScreen } from '../screens/SettingsScreen';
+import { GuideScreen } from '../screens/GuideScreen';
+import { ResetDataScreen } from '../screens/ResetDataScreen';
 import { RootTabs } from './RootTabs';
 import { colors } from '../ui/theme';
 
@@ -72,6 +80,14 @@ export function RootNavigator() {
       <Stack.Screen name="DeadlineDetail" component={DeadlineDetailScreen} />
       <Stack.Screen name="HouseholdMembers" component={HouseholdMembersScreen} options={{ headerShown: true, title: 'Membres du foyer' }} />
       <Stack.Screen name="JoinHousehold" component={JoinHouseholdScreen} options={{ headerShown: true, title: 'Mes foyers' }} />
+      <Stack.Screen name="Accounts" component={AccountsScreen} />
+      <Stack.Screen name="CreateAccount" component={CreateAccountScreen} />
+      <Stack.Screen name="SavingsSubaccounts" component={SavingsSubaccountsScreen} />
+      <Stack.Screen name="CreateSubaccount" component={CreateSubaccountScreen} />
+      <Stack.Screen name="Categories" component={CategoriesScreen} />
+      <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="Guide" component={GuideScreen} />
+      <Stack.Screen name="ResetData" component={ResetDataScreen} />
       <Stack.Screen name="Placeholder" component={PlaceholderRoute} />
     </Stack.Navigator>
   );

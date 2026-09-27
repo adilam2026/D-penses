@@ -140,6 +140,9 @@ export const listHouseholdMemberships = () => apiFetch('/households/memberships'
 export const switchActiveHousehold = (householdId: string) =>
   apiFetch('/households/switch-active', { method: 'POST', body: { householdId } });
 
+/** "Réinitialiser les données" (§17) — supprime les données financières du foyer, jamais l'identité/auth. */
+export const resetHouseholdData = () => apiFetch('/households/reset', { method: 'POST' });
+
 // ---------- Catégories ----------
 export interface CategoryApi {
   id: string;
@@ -152,11 +155,21 @@ export interface CategoryApi {
 export const listCategories = (): Promise<CategoryApi[]> => apiFetch('/categories');
 export const createCategory = (name: string) => apiFetch('/categories', { method: 'POST', body: { name } });
 
+/** Catégories (Organisation → Catégories, §11) — renommage ; "Autres" ne peut jamais être désactivée (refusé côté backend). */
+export const renameCategory = (id: string, name: string): Promise<CategoryApi> => apiFetch(`/categories/${id}`, { method: 'PATCH', body: { name } });
+
+/** Désactivation logique — jamais de suppression réelle, l'historique n'est jamais perdu. */
+export const archiveCategory = (id: string): Promise<CategoryApi> => apiFetch(`/categories/${id}`, { method: 'DELETE' });
+
+/** Réactiver une catégorie désactivée. */
+export const reactivateCategory = (id: string): Promise<CategoryApi> => apiFetch(`/categories/${id}`, { method: 'PATCH', body: { active: true } });
+
 // ---------- Comptes / sous-comptes ----------
 export interface SubaccountApi {
   id: string;
   accountId: string;
   name: string;
+  active: boolean;
   balance: number;
 }
 
@@ -167,12 +180,15 @@ export interface AccountApi {
   type: string;
   ownerMemberId: string | null;
   ownerLabel: string | null;
+  active: boolean;
   balance: number;
   nonAffecte: number;
   subaccounts: SubaccountApi[];
 }
 
-export const listAccounts = (): Promise<AccountApi[]> => apiFetch('/accounts');
+/** `includeInactive` (Organisation → Comptes, §7) — jamais passé à `true` par les sélecteurs de nouvelle opération. */
+export const listAccounts = (includeInactive = false): Promise<AccountApi[]> =>
+  apiFetch(`/accounts${includeInactive ? '?includeInactive=true' : ''}`);
 export const getAccount = (id: string): Promise<AccountApi> => apiFetch(`/accounts/${id}`);
 
 export const createAccount = (data: { name: string; bank?: string; type?: string; ownerMemberId?: string; ownerLabel?: string; openingBalance?: string }) =>
@@ -184,6 +200,16 @@ export const createSubaccount = (data: { accountId: string; name: string; initia
 /** "Modifier" (Détail compte/sous-compte) — renommage uniquement, écran très simple. */
 export const renameAccount = (id: string, name: string): Promise<AccountApi> => apiFetch(`/accounts/${id}`, { method: 'PATCH', body: { name } });
 export const renameSubaccount = (id: string, name: string): Promise<SubaccountApi> => apiFetch(`/accounts/subaccounts/${id}`, { method: 'PATCH', body: { name } });
+
+/** Comptes (Organisation → Comptes, §7-§8) — édition complète + désactivation/réactivation logique, jamais de suppression physique. */
+export const updateAccount = (
+  id: string,
+  data: { name?: string; bank?: string; type?: string; ownerMemberId?: string; ownerLabel?: string; active?: boolean },
+): Promise<AccountApi> => apiFetch(`/accounts/${id}`, { method: 'PATCH', body: data });
+
+/** Épargne & sous-comptes (§9-§10) — renommage + désactivation/réactivation logique, jamais de suppression physique. */
+export const updateSubaccount = (id: string, data: { name?: string; active?: boolean }): Promise<SubaccountApi> =>
+  apiFetch(`/accounts/subaccounts/${id}`, { method: 'PATCH', body: data });
 
 // ---------- Opérations financières (réalisées) ----------
 export type OperationKind = 'EXPENSE' | 'INCOME' | 'TRANSFER' | 'SAVINGS_CONTRIBUTION' | 'MEDICAL_REIMBURSEMENT' | 'OPENING_BALANCE';

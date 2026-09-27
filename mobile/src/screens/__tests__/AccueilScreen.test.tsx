@@ -70,10 +70,12 @@ it("n'affiche aucune métrique globale inventée, mais les comptes avec leurs so
   expect(screen.queryByText(/Disponible libre/)).toBeNull();
 });
 
-it('état vide : aucun compte -> message et pas de crash', async () => {
+it('état vide : aucun compte -> écran de bienvenue première utilisation (§2), jamais un dashboard vide', async () => {
   mockListAccounts.mockResolvedValue([]);
   renderWithSafeArea(<AccueilScreen />);
-  await waitFor(() => expect(screen.getByText(/Aucun compte/)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('Bienvenue dans Finance Maison')).toBeTruthy());
+  expect(screen.getByTestId('accueil-welcome-add-account')).toBeTruthy();
+  expect(screen.getByTestId('accueil-welcome-discover')).toBeTruthy();
 });
 
 it('tap sur un compte -> navigue vers AccountDetail', async () => {
@@ -113,7 +115,9 @@ it('tap sur un sous-compte non-Santé -> navigue vers SubaccountDetail', async (
 });
 
 it('section "À faire" : échéance prévue en attente -> carte avec action Payer qui réalise l\'opération', async () => {
-  mockListAccounts.mockResolvedValue([]);
+  mockListAccounts.mockResolvedValue([
+    { id: 'cih', name: 'CIH', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, active: true, balance: 0, nonAffecte: 0, subaccounts: [] },
+  ]);
   mockListPlannedOperations.mockResolvedValue([
     { id: 'p1', kind: 'EXPENSE', label: 'Voyage Été', expectedDate: '2020-01-01', expectedAmount: 8000, categoryId: null, sourceAccountId: 'cih', sourceSubaccountId: null, destinationAccountId: null, destinationSubaccountId: null, status: 'PENDING', realizedOperationId: null },
   ]);
@@ -127,7 +131,9 @@ it('section "À faire" : échéance prévue en attente -> carte avec action Paye
 });
 
 it('section "À faire" : dossier santé en attente -> carte "Voir" qui navigue vers Health', async () => {
-  mockListAccounts.mockResolvedValue([]);
+  mockListAccounts.mockResolvedValue([
+    { id: 'cih', name: 'CIH', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, active: true, balance: 0, nonAffecte: 0, subaccounts: [] },
+  ]);
   mockListMedicalClaims.mockResolvedValue([
     { id: 'claim1', sourceOperationId: 'op1', subaccountId: 'sante', label: 'Consultation', amountEngaged: 700, amountReimbursed: 0, reste: 700, status: 'PENDING', closedAt: null, createdAt: '2026-01-01', reimbursements: [] },
   ]);
@@ -139,7 +145,9 @@ it('section "À faire" : dossier santé en attente -> carte "Voir" qui navigue v
 });
 
 it('§18/test M : "À faire" ne remonte que les actions utiles (échéance de plan avec reste > 0, jamais celle déjà couverte)', async () => {
-  mockListAccounts.mockResolvedValue([]);
+  mockListAccounts.mockResolvedValue([
+    { id: 'cih', name: 'CIH', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, active: true, balance: 0, nonAffecte: 0, subaccounts: [] },
+  ]);
   mockListFinancialPlans.mockResolvedValue([
     {
       id: 'plan-scolarite',

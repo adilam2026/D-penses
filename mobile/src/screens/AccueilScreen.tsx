@@ -127,6 +127,34 @@ export function AccueilScreen() {
     );
   }
 
+  // §2 (première utilisation) : un foyer sans AUCUN compte ne doit jamais
+  // afficher un dashboard vide ni des données inventées — un seul écran de
+  // bienvenue avec une action claire, jamais la structure Accueil habituelle.
+  if (accounts && accounts.length === 0) {
+    return (
+      <View style={[styles.container, styles.welcomeContainer]}>
+        <Text style={styles.welcomeTitle}>Bienvenue dans Finance Maison</Text>
+        <Text style={styles.welcomeSubtitle}>
+          Commencez par ajouter les comptes bancaires que vous souhaitez superviser.
+        </Text>
+        <TouchableOpacity
+          style={styles.welcomePrimaryButton}
+          onPress={() => navigation.navigate('CreateAccount')}
+          testID="accueil-welcome-add-account"
+        >
+          <Text style={styles.welcomePrimaryButtonText}>+ Ajouter mon premier compte</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.welcomeSecondaryButton}
+          onPress={() => navigation.navigate('Guide')}
+          testID="accueil-welcome-discover"
+        >
+          <Text style={styles.welcomeSecondaryButtonText}>Découvrir l'application</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
     <ScrollView
       style={styles.container}
@@ -145,12 +173,6 @@ export function AccueilScreen() {
       </View>
 
       <Text style={styles.sectionLabel}>MES COMPTES</Text>
-
-      {(accounts ?? []).length === 0 && (
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyText}>Aucun compte pour l'instant.</Text>
-        </View>
-      )}
 
       {(accounts ?? []).map((account) => {
         const hasSubaccounts = account.subaccounts.length > 0;
@@ -238,6 +260,13 @@ const styles = StyleSheet.create({
   sectionLabel: { ...typography.sectionLabel, color: colors.textSecondary, marginBottom: spacing.sm, letterSpacing: 0.5 },
   emptyCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, alignItems: 'center' },
   emptyText: { ...typography.bodySecondary },
+  welcomeContainer: { alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
+  welcomeTitle: { ...typography.screenTitle, textAlign: 'center', marginBottom: spacing.sm },
+  welcomeSubtitle: { ...typography.bodySecondary, textAlign: 'center', marginBottom: spacing.xl, maxWidth: 280 },
+  welcomePrimaryButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.xl, alignItems: 'center', width: '100%' },
+  welcomePrimaryButtonText: { color: colors.textOnPrimary, fontWeight: '700', fontSize: 14 },
+  welcomeSecondaryButton: { paddingVertical: spacing.md, alignItems: 'center', marginTop: spacing.sm },
+  welcomeSecondaryButtonText: { ...typography.body, fontWeight: '700', color: colors.textSecondary },
   accountCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.md },
   accountHeaderRow: { flexDirection: 'row', alignItems: 'center' },
   accountName: { ...typography.sectionTitle },

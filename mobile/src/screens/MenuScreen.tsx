@@ -47,9 +47,9 @@ export function MenuScreen() {
     {
       title: 'Organisation',
       entries: [
-        { label: 'Comptes', icon: 'card-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Comptes' }) },
-        { label: 'Épargne & sous-comptes', icon: 'wallet-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Épargne & sous-comptes' }) },
-        { label: 'Catégories', icon: 'pricetags-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Catégories' }) },
+        { label: 'Comptes', icon: 'card-outline', onPress: () => navigation.navigate('Accounts') },
+        { label: 'Épargne & sous-comptes', icon: 'wallet-outline', onPress: () => navigation.navigate('SavingsSubaccounts') },
+        { label: 'Catégories', icon: 'pricetags-outline', onPress: () => navigation.navigate('Categories') },
         { label: 'Plans financiers', icon: 'folder-outline', onPress: () => navigation.navigate('FinancialPlans') },
         { label: 'Mutuelle', icon: 'medkit-outline', onPress: openMutuelle },
       ],
@@ -57,9 +57,9 @@ export function MenuScreen() {
     {
       title: 'Application',
       entries: [
-        { label: 'Guide', icon: 'book-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Guide' }) },
-        { label: 'Paramètres', icon: 'settings-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Paramètres' }) },
-        { label: 'Réinitialiser les données', icon: 'refresh-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Réinitialiser les données' }) },
+        { label: 'Guide', icon: 'book-outline', onPress: () => navigation.navigate('Guide') },
+        { label: 'Paramètres', icon: 'settings-outline', onPress: () => navigation.navigate('Settings') },
+        { label: 'Réinitialiser les données', icon: 'refresh-outline', onPress: () => navigation.navigate('ResetData') },
       ],
     },
     {

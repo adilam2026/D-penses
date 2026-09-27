@@ -39,7 +39,7 @@ beforeEach(() => {
 
 it('affiche "Disponible" + "Rattaché à {compte}" (jamais "Solde")', async () => {
   mockListAccounts.mockResolvedValue([
-    { id: 'cih', name: 'CIH', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, balance: 20000, nonAffecte: 15000, subaccounts: [{ id: 'voiture', accountId: 'cih', name: 'CIH-Voiture', balance: 5000 }] },
+    { id: 'cih', name: 'CIH', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, balance: 20000, nonAffecte: 15000, subaccounts: [{ id: 'voiture', accountId: 'cih', name: 'CIH-Voiture', active: true, balance: 5000 }] },
   ]);
   renderWithSafeArea(<SubaccountDetailScreen />);
   await waitFor(() => expect(screen.getByText('CIH-Voiture')).toBeTruthy());
@@ -50,7 +50,7 @@ it('affiche "Disponible" + "Rattaché à {compte}" (jamais "Solde")', async () =
 
 it('menu ⋯ propose "Ajouter de l\'argent" en plus de Modifier/Ajouter une transaction', async () => {
   mockListAccounts.mockResolvedValue([
-    { id: 'cih', name: 'CIH', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, balance: 20000, nonAffecte: 15000, subaccounts: [{ id: 'voiture', accountId: 'cih', name: 'CIH-Voiture', balance: 5000 }] },
+    { id: 'cih', name: 'CIH', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, balance: 20000, nonAffecte: 15000, subaccounts: [{ id: 'voiture', accountId: 'cih', name: 'CIH-Voiture', active: true, balance: 5000 }] },
   ]);
   renderWithSafeArea(<SubaccountDetailScreen />);
   await waitFor(() => screen.getByTestId('subaccount-detail-menu'));
@@ -65,7 +65,7 @@ it('menu ⋯ propose "Ajouter de l\'argent" en plus de Modifier/Ajouter une tran
 
 it('le sous-compte "Santé" redirige vers Health (jamais cet écran générique)', async () => {
   mockListAccounts.mockResolvedValue([
-    { id: 'cih', name: 'CIH', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, balance: 3000, nonAffecte: 0, subaccounts: [{ id: 'voiture', accountId: 'cih', name: 'CIH-Santé', balance: 3000 }] },
+    { id: 'cih', name: 'CIH', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, balance: 3000, nonAffecte: 0, subaccounts: [{ id: 'voiture', accountId: 'cih', name: 'CIH-Santé', active: true, balance: 3000 }] },
   ]);
   renderWithSafeArea(<SubaccountDetailScreen />);
   await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('Health', { id: 'voiture' }));

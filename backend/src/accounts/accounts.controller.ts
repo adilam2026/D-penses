@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AccountsService } from './accounts.service';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { CreateSubaccountDto } from './dto/create-subaccount.dto';
@@ -13,8 +13,8 @@ export class AccountsController {
   constructor(private readonly accounts: AccountsService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthenticatedUser) {
-    return this.accounts.list(user.sub, user.householdId!);
+  list(@Query('includeInactive') includeInactive: string | undefined, @CurrentUser() user: AuthenticatedUser) {
+    return this.accounts.list(user.sub, user.householdId!, includeInactive === 'true');
   }
 
   @Get(':id')
@@ -33,12 +33,12 @@ export class AccountsController {
   }
 
   @Patch(':id')
-  rename(@Param('id') id: string, @Body() dto: UpdateAccountDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.accounts.rename(user.sub, user.householdId!, id, dto.name!);
+  update(@Param('id') id: string, @Body() dto: UpdateAccountDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.accounts.update(user.sub, user.householdId!, id, dto);
   }
 
   @Patch('subaccounts/:id')
-  renameSubaccount(@Param('id') id: string, @Body() dto: UpdateSubaccountDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.accounts.renameSubaccount(user.sub, user.householdId!, id, dto.name!);
+  updateSubaccount(@Param('id') id: string, @Body() dto: UpdateSubaccountDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.accounts.updateSubaccount(user.sub, user.householdId!, id, dto);
   }
 }

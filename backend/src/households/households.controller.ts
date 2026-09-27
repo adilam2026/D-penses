@@ -53,4 +53,11 @@ export class HouseholdsController {
     const tokens = await this.auth.reissueForHousehold(user.sub, household.id, req.headers['user-agent']);
     return { household, ...tokens };
   }
+
+  /** "Réinitialiser les données" (§17) — la double confirmation vit côté mobile, jamais ici. */
+  @Post('reset')
+  @UseGuards(HouseholdRequiredGuard)
+  reset(@CurrentUser() user: AuthenticatedUser) {
+    return this.households.reset(user.sub, user.householdId!);
+  }
 }

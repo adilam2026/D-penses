@@ -81,7 +81,7 @@ export function SubaccountDetailScreen() {
         </View>
 
         <Text style={styles.title}>{subaccount.name}</Text>
-        <Text style={styles.subtitle}>Rattaché à {account.name}</Text>
+        <Text style={styles.subtitle}>Rattaché à {account.name}{subaccount.active ? '' : ' · Désactivé'}</Text>
 
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>Disponible</Text>
@@ -123,6 +123,7 @@ export function SubaccountDetailScreen() {
             key: 'add-transaction',
             label: 'Ajouter une transaction',
             icon: 'add-circle-outline',
+            disabled: !subaccount.active,
             onPress: () =>
               navigation.navigate('Tabs', {
                 screen: 'Ajouter',
@@ -133,12 +134,32 @@ export function SubaccountDetailScreen() {
             key: 'add-money',
             label: "Ajouter de l'argent",
             icon: 'wallet-outline',
+            disabled: !subaccount.active,
             onPress: () =>
               navigation.navigate('Tabs', {
                 screen: 'Ajouter',
                 params: { prefill: { kind: 'SAVINGS_CONTRIBUTION', destinationAccountId: account.id, destinationSubaccountId: subaccount.id } },
               }),
           },
+          subaccount.active
+            ? {
+                key: 'deactivate',
+                label: 'Désactiver',
+                icon: 'power-outline',
+                onPress: async () => {
+                  await api.updateSubaccount(subaccount.id, { active: false });
+                  await load();
+                },
+              }
+            : {
+                key: 'reactivate',
+                label: 'Réactiver',
+                icon: 'power-outline',
+                onPress: async () => {
+                  await api.updateSubaccount(subaccount.id, { active: true });
+                  await load();
+                },
+              },
         ]}
       />
 
