@@ -1,0 +1,72 @@
+name: Railway PROD — Sauvegarde complète de la base (pg_dump)
+
+# Reconstruction Finance Maison — étape préalable OBLIGATOIRE avant toute
+# migration destructive (cf. rapport de reset). Ce workflow ne modifie RIEN :
+# lecture seule (pg_dump), jamais de migrate/reset/deploy. Déclenchement
+# manuel uniquement. Utilise le même secret DATABASE_URL_PROD que
+# railway-migrate-deploy.yml (jamais RAILWAY_TOKEN, jamais échoué en clair
+# dans les logs — aucune étape ci-dessous ne fait echo/cat/set -x dessus).
+on:
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Installer les outils client PostgreSQL (pg_dump/pg_restore)
+        run: sudo apt-get update -y && sudo apt-get install -y postgresql-client
+
+      - name: Préparer le nom horodaté du dump
+        id: meta
+        run: |
+          ts=$(date -u +%Y%m%d-%H%M%SZ)
+          echo "timestamp=$ts" >> "$GITHUB_OUTPUT"
+          echo "filename=d-penses-prod-backup-$ts.dump" >> "$GITHUB_OUTPUT"
+
+      - name: pg_dump complet de la base PROD (format custom -Fc, jamais la valeur de DATABASE_URL affichée)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+        run: |
+          set -o pipefail
+          pg_dump "$DATABASE_URL" -Fc --no-owner --no-privileges -f "${{ steps.meta.outputs.filename }}"
+
+      - name: Vérifier que le dump n'est pas vide
+        run: |
+          FILE="${{ steps.meta.outputs.filename }}"
+          test -s "$FILE" || (echo "::error::Dump manquant ou vide: $FILE" && exit 1)
+          ls -la "$FILE"
+
+      - name: Vérifier que pg_restore peut relire le contenu (liste du TOC, aucune restauration réelle)
+        run: |
+          FILE="${{ steps.meta.outputs.filename }}"
+          pg_restore --list "$FILE" > toc.txt
+          test -s toc.txt || (echo "::error::pg_restore --list n'a produit aucune entrée — dump illisible ou vide" && exit 1)
+          entry_count=$(wc -l < toc.txt)
+          table_count=$(grep -c "^; " toc.txt || true; grep -c " TABLE DATA " toc.txt || true)
+          echo "Entrées du TOC : $entry_count"
+          echo "--- Tables présentes dans le dump (échantillon) ---"
+          grep " TABLE " toc.txt | grep -v "TABLE DATA" | awk '{print $NF}' | sort -u | head -60
+
+      - name: Calculer le SHA-256 du dump
+        id: sha
+        run: |
+          FILE="${{ steps.meta.outputs.filename }}"
+          sha256sum "$FILE" | tee sha256.txt
+          echo "sha256=$(cut -d' ' -f1 sha256.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Résumé du backup
+        run: |
+          FILE="${{ steps.meta.outputs.filename }}"
+          echo "Fichier      : $FILE"
+          echo "Taille       : $(stat -c%s "$FILE") octets"
+          echo "SHA-256      : ${{ steps.sha.outputs.sha256 }}"
+          echo "Horodatage   : ${{ steps.meta.outputs.timestamp }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.filename }}
+          path: |
+            ${{ steps.meta.outputs.filename }}
+            toc.txt
+            sha256.txt
+          retention-days: 90
