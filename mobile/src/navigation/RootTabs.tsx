@@ -2,7 +2,10 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { AccueilScreen } from '../screens/AccueilScreen';
+import { EpargneScreen } from '../screens/EpargneScreen';
+import { AjouterScreen } from '../screens/AjouterScreen';
 import { PlaceholderScreen } from '../screens/PlaceholderScreen';
+import { AppShell } from './AppShell';
 import { colors } from '../ui/theme';
 
 const Tab = createBottomTabNavigator();
@@ -17,36 +20,30 @@ const TAB_ICONS: Record<string, { active: IconName; inactive: IconName }> = {
 };
 
 function PlanningPlaceholder() {
-  return <PlaceholderScreen title="Planning" subtitle="Vue mensuelle des opérations prévues et réalisées — à venir." />;
+  return <PlaceholderScreen title="Planning" subtitle="Vue mensuelle des opérations prévues et réalisées — à venir (Checkpoint 3)." />;
 }
 
-function EpargnePlaceholder() {
-  return <PlaceholderScreen title="Épargne" subtitle="Vue consolidée de l'épargne du foyer — à venir." />;
-}
-
-function AjouterPlaceholder() {
-  return <PlaceholderScreen title="Ajouter" subtitle="Dépense, revenu, transfert, versement — à venir." />;
-}
-
-/** Navigation basse Finance Maison : exactement Accueil / Planning / Épargne / Ajouter. */
+/** Navigation basse Finance Maison : exactement Accueil / Planning / Épargne / Ajouter, sous un shell persistant (Finance Maison + foyer + ☰). */
 export function RootTabs() {
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textPlaceholder,
-        tabBarIcon: ({ focused, color, size }) => {
-          const icons = TAB_ICONS[route.name];
-          if (!icons) return null;
-          return <Ionicons name={focused ? icons.active : icons.inactive} size={size} color={color} />;
-        },
-      })}
-    >
-      <Tab.Screen name="Accueil" component={AccueilScreen} />
-      <Tab.Screen name="Planning" component={PlanningPlaceholder} />
-      <Tab.Screen name="Épargne" component={EpargnePlaceholder} />
-      <Tab.Screen name="Ajouter" component={AjouterPlaceholder} />
-    </Tab.Navigator>
+    <AppShell>
+      <Tab.Navigator
+        screenOptions={({ route }) => ({
+          headerShown: false,
+          tabBarActiveTintColor: colors.primary,
+          tabBarInactiveTintColor: colors.textPlaceholder,
+          tabBarIcon: ({ focused, color, size }) => {
+            const icons = TAB_ICONS[route.name];
+            if (!icons) return null;
+            return <Ionicons name={focused ? icons.active : icons.inactive} size={size} color={color} />;
+          },
+        })}
+      >
+        <Tab.Screen name="Accueil" component={AccueilScreen} />
+        <Tab.Screen name="Planning" component={PlanningPlaceholder} />
+        <Tab.Screen name="Épargne" component={EpargneScreen} />
+        <Tab.Screen name="Ajouter" component={AjouterScreen} />
+      </Tab.Navigator>
+    </AppShell>
   );
 }

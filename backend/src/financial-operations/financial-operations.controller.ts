@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { FinancialOperationsService } from './financial-operations.service';
 import { CreateFinancialOperationDto } from './dto/create-financial-operation.dto';
 import { CurrentUser, AuthenticatedUser } from '../common/decorators/current-user.decorator';
@@ -10,8 +10,8 @@ export class FinancialOperationsController {
   constructor(private readonly operations: FinancialOperationsService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthenticatedUser) {
-    return this.operations.list(user.sub, user.householdId!);
+  list(@Query('accountId') accountId: string | undefined, @Query('subaccountId') subaccountId: string | undefined, @CurrentUser() user: AuthenticatedUser) {
+    return this.operations.list(user.sub, user.householdId!, { accountId, subaccountId });
   }
 
   @Get(':id')

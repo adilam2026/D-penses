@@ -7,6 +7,10 @@ import { clearCache } from '../../state/cache';
 
 jest.mock('../../api/client', () => ({
   listAccounts: () => Promise.resolve([]),
+  listPlannedOperations: () => Promise.resolve([]),
+  listMedicalClaims: () => Promise.resolve([]),
+  listCategories: () => Promise.resolve([]),
+  getMyHousehold: () => Promise.resolve({ id: 'h1', name: 'Foyer Demo' }),
 }));
 
 const TEST_INSET_METRICS = {
@@ -16,7 +20,7 @@ const TEST_INSET_METRICS = {
 
 beforeEach(() => clearCache());
 
-it('affiche exactement les 4 onglets Accueil / Planning / Épargne / Ajouter', async () => {
+it('affiche exactement les 4 onglets Accueil / Planning / Épargne / Ajouter, sous le shell "Finance Maison"', async () => {
   render(
     <SafeAreaProvider initialMetrics={TEST_INSET_METRICS}>
       <NavigationContainer>
@@ -30,6 +34,9 @@ it('affiche exactement les 4 onglets Accueil / Planning / Épargne / Ajouter', a
   expect(screen.getByText('Planning')).toBeTruthy();
   expect(screen.getByText('Épargne')).toBeTruthy();
   expect(screen.getByText('Ajouter')).toBeTruthy();
+  // Shell persistant (Checkpoint 2 §5) : marque visible, menu accessible depuis les 4 onglets.
+  expect(screen.getByText('Finance Maison')).toBeTruthy();
+  expect(screen.getByTestId('app-shell-menu-button')).toBeTruthy();
   // Aucun autre onglet (pas de "Plus"/"Enveloppes"/bouton central flottant de l'ancienne app).
   expect(screen.queryByText('Plus')).toBeNull();
   expect(screen.queryByText('Enveloppes')).toBeNull();

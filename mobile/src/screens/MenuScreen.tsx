@@ -39,7 +39,7 @@ export function MenuScreen() {
       title: 'Organisation',
       entries: [
         { label: 'Comptes', icon: 'card-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Comptes' }) },
-        { label: 'Sous-comptes', icon: 'wallet-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Sous-comptes' }) },
+        { label: 'Épargne & sous-comptes', icon: 'wallet-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Épargne & sous-comptes' }) },
         { label: 'Catégories', icon: 'pricetags-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Catégories' }) },
         { label: 'Plans financiers', icon: 'folder-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Plans financiers' }) },
         { label: 'Mutuelle', icon: 'medkit-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Mutuelle' }) },
@@ -50,8 +50,7 @@ export function MenuScreen() {
       entries: [
         { label: 'Guide', icon: 'book-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Guide' }) },
         { label: 'Paramètres', icon: 'settings-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Paramètres' }) },
-        { label: "Revoir l'introduction", icon: 'sparkles-outline', onPress: () => navigation.navigate('Placeholder', { title: "Revoir l'introduction" }) },
-        { label: 'Réinitialiser', icon: 'refresh-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Réinitialiser' }) },
+        { label: 'Réinitialiser les données', icon: 'refresh-outline', onPress: () => navigation.navigate('Placeholder', { title: 'Réinitialiser les données' }) },
       ],
     },
     {

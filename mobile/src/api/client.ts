@@ -181,9 +181,21 @@ export const createAccount = (data: { name: string; bank?: string; type?: string
 export const createSubaccount = (data: { accountId: string; name: string; initialAllocation?: string }) =>
   apiFetch('/accounts/subaccounts', { method: 'POST', body: data });
 
+/** "Modifier" (Détail compte/sous-compte) — renommage uniquement, écran très simple. */
+export const renameAccount = (id: string, name: string): Promise<AccountApi> => apiFetch(`/accounts/${id}`, { method: 'PATCH', body: { name } });
+export const renameSubaccount = (id: string, name: string): Promise<SubaccountApi> => apiFetch(`/accounts/subaccounts/${id}`, { method: 'PATCH', body: { name } });
+
 // ---------- Opérations financières (réalisées) ----------
 export type OperationKind = 'EXPENSE' | 'INCOME' | 'TRANSFER' | 'SAVINGS_CONTRIBUTION' | 'MEDICAL_REIMBURSEMENT' | 'OPENING_BALANCE';
 export type BudgetImpact = 'NORMAL' | 'ALREADY_FUNDED' | 'EXCLUDED';
+
+export interface LedgerEntryApi {
+  id: string;
+  accountId: string;
+  subaccountId: string | null;
+  amount: number;
+  affectsAccountBalance: boolean;
+}
 
 export interface FinancialOperationApi {
   id: string;
@@ -200,9 +212,17 @@ export interface FinancialOperationApi {
   reversalOfOperationId: string | null;
   reversalReason: string | null;
   createdAt: string;
+  ledgerEntries: LedgerEntryApi[];
 }
 
-export const listFinancialOperations = (): Promise<FinancialOperationApi[]> => apiFetch('/financial-operations');
+/** Historique filtré (Détail compte/sous-compte, §8/§9) — jamais un filtrage client sur tout l'historique du foyer. */
+export const listFinancialOperations = (filters?: { accountId?: string; subaccountId?: string }): Promise<FinancialOperationApi[]> => {
+  const params = new URLSearchParams();
+  if (filters?.subaccountId) params.set('subaccountId', filters.subaccountId);
+  else if (filters?.accountId) params.set('accountId', filters.accountId);
+  const qs = params.toString();
+  return apiFetch(`/financial-operations${qs ? `?${qs}` : ''}`);
+};
 export const getFinancialOperation = (id: string) => apiFetch(`/financial-operations/${id}`);
 
 export const createFinancialOperation = (data: {
@@ -217,6 +237,8 @@ export const createFinancialOperation = (data: {
   destinationSubaccountId?: string;
   reversalOfOperationId?: string;
   reversalReason?: string;
+  /** Ajouter > "Remboursable par mutuelle ?" (visible si Catégorie=Santé). */
+  createMedicalClaim?: boolean;
 }) => apiFetch('/financial-operations', { method: 'POST', body: data });
 
 // ---------- Opérations planifiées (Planning) ----------
@@ -246,6 +268,7 @@ export const createPlannedOperation = (data: {
   expectedDate: string;
   expectedAmount: string;
   categoryId?: string;
+  recurrenceRuleId?: string;
   sourceAccountId?: string;
   sourceSubaccountId?: string;
   destinationAccountId?: string;
@@ -256,3 +279,49 @@ export const realizePlannedOperation = (id: string, data: { actualAmount: string
   apiFetch(`/planned-operations/${id}/realize`, { method: 'POST', body: data });
 
 export const cancelPlannedOperation = (id: string) => apiFetch(`/planned-operations/${id}/cancel`, { method: 'POST' });
+
+// ---------- Dossiers santé / mutuelle (§10) ----------
+export interface MedicalReimbursementApi {
+  id: string;
+  claimId: string;
+  amount: number;
+  date: string;
+  operationId: string;
+  allocationSubaccountId: string | null;
+}
+
+export interface MedicalClaimApi {
+  id: string;
+  sourceOperationId: string;
+  subaccountId: string | null;
+  label: string;
+  amountEngaged: number;
+  amountReimbursed: number;
+  reste: number;
+  status: 'PENDING' | 'CLOSED';
+  closedAt: string | null;
+  createdAt: string;
+  reimbursements: MedicalReimbursementApi[];
+}
+
+export const listMedicalClaims = (subaccountId?: string): Promise<MedicalClaimApi[]> =>
+  apiFetch(`/medical-claims${subaccountId ? `?subaccountId=${subaccountId}` : ''}`);
+
+/** "J'ai reçu un remboursement" — crée l'opération MEDICAL_REIMBURSEMENT + la ligne dédiée. */
+export const addMedicalReimbursement = (
+  claimId: string,
+  data: { amount: string; date: string; destinationAccountId: string; allocationSubaccountId?: string },
+): Promise<MedicalClaimApi> => apiFetch(`/medical-claims/${claimId}/reimbursements`, { method: 'POST', body: data });
+
+// ---------- Règles de récurrence (Ajouter > Type=Récurrente, §11) ----------
+export type RecurrenceFrequency = 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'SEMIANNUAL' | 'YEARLY' | 'ONCE';
+
+export interface RecurrenceRuleApi {
+  id: string;
+  frequency: RecurrenceFrequency;
+  anchorDate: string;
+  label: string | null;
+}
+
+export const createRecurrenceRule = (data: { frequency: RecurrenceFrequency; anchorDate: string; label?: string }): Promise<RecurrenceRuleApi> =>
+  apiFetch('/recurrence-rules', { method: 'POST', body: data });

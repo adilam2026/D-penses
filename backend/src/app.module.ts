@@ -10,6 +10,8 @@ import { CategoriesModule } from './categories/categories.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { FinancialOperationsModule } from './financial-operations/financial-operations.module';
 import { PlannedOperationsModule } from './planned-operations/planned-operations.module';
+import { MedicalClaimsModule } from './medical-claims/medical-claims.module';
+import { RecurrenceRulesModule } from './recurrence-rules/recurrence-rules.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -22,6 +24,8 @@ import { AppController } from './app.controller';
     AccountsModule,
     FinancialOperationsModule,
     PlannedOperationsModule,
+    MedicalClaimsModule,
+    RecurrenceRulesModule,
   ],
   controllers: [AppController],
   providers: [

@@ -11,6 +11,9 @@ import { HouseholdMembersScreen } from '../screens/household/HouseholdMembersScr
 import { JoinHouseholdScreen } from '../screens/household/JoinHouseholdScreen';
 import { MenuScreen } from '../screens/MenuScreen';
 import { PlaceholderScreen } from '../screens/PlaceholderScreen';
+import { AccountDetailScreen } from '../screens/AccountDetailScreen';
+import { SubaccountDetailScreen } from '../screens/SubaccountDetailScreen';
+import { HealthScreen } from '../screens/HealthScreen';
 import { RootTabs } from './RootTabs';
 import { colors } from '../ui/theme';
 
@@ -58,6 +61,9 @@ export function RootNavigator() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Tabs" component={RootTabs} />
       <Stack.Screen name="Menu" component={MenuScreen} options={{ presentation: 'modal' }} />
+      <Stack.Screen name="AccountDetail" component={AccountDetailScreen} />
+      <Stack.Screen name="SubaccountDetail" component={SubaccountDetailScreen} />
+      <Stack.Screen name="Health" component={HealthScreen} />
       <Stack.Screen name="HouseholdMembers" component={HouseholdMembersScreen} options={{ headerShown: true, title: 'Membres du foyer' }} />
       <Stack.Screen name="JoinHousehold" component={JoinHouseholdScreen} options={{ headerShown: true, title: 'Mes foyers' }} />
       <Stack.Screen name="Placeholder" component={PlaceholderRoute} />

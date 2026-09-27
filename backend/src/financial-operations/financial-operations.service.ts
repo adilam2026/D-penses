@@ -15,6 +15,8 @@ export interface CreateFinancialOperationInput {
   destinationSubaccountId?: string;
   reversalOfOperationId?: string;
   reversalReason?: string;
+  /** Ajouter > "Remboursable par mutuelle ?" (§11/§10 maquette) — crée le medical_claim dans la même transaction. */
+  createMedicalClaim?: boolean;
 }
 
 @Injectable()
@@ -24,7 +26,7 @@ export class FinancialOperationsService {
   async create(userId: string, householdId: string, dto: CreateFinancialOperationInput) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
-      return insertFinancialOperation(tx, {
+      const operation = await insertFinancialOperation(tx, {
         householdId,
         createdByUserId: userId,
         kind: dto.kind,
@@ -39,14 +41,34 @@ export class FinancialOperationsService {
         reversalOfOperationId: dto.reversalOfOperationId,
         reversalReason: dto.reversalReason,
       });
+
+      if (dto.createMedicalClaim && dto.kind === 'EXPENSE') {
+        await tx.medicalClaim.create({
+          data: {
+            householdId,
+            sourceOperationId: operation.id,
+            subaccountId: dto.sourceSubaccountId ?? null,
+            label: dto.label,
+            amountEngaged: operation.amount,
+          },
+        });
+      }
+
+      return operation;
     });
   }
 
-  async list(userId: string, householdId: string) {
+  async list(userId: string, householdId: string, filters?: { accountId?: string; subaccountId?: string }) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
+      const where: Prisma.FinancialOperationWhereInput = { householdId };
+      if (filters?.subaccountId) {
+        where.OR = [{ sourceSubaccountId: filters.subaccountId }, { destinationSubaccountId: filters.subaccountId }];
+      } else if (filters?.accountId) {
+        where.OR = [{ sourceAccountId: filters.accountId }, { destinationAccountId: filters.accountId }];
+      }
       return tx.financialOperation.findMany({
-        where: { householdId },
+        where,
         orderBy: { date: 'desc' },
         include: { ledgerEntries: true },
       });

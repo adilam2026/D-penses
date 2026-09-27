@@ -1,4 +1,4 @@
-import { IsDateString, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
 import { OperationKind } from '@prisma/client';
 
 export class CreateFinancialOperationDto {
@@ -43,4 +43,9 @@ export class CreateFinancialOperationDto {
   @IsOptional()
   @IsString()
   reversalReason?: string;
+
+  /** Ajouter > "Remboursable par mutuelle ?" — visible uniquement si Catégorie=Santé (cf. maquette #10/#11). */
+  @IsOptional()
+  @IsBoolean()
+  createMedicalClaim?: boolean;
 }

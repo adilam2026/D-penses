@@ -128,6 +128,28 @@ export class AccountsService {
     });
   }
 
+  /** "Modifier" (Détail compte, §8) — renommage uniquement, écran très simple. */
+  async rename(userId: string, householdId: string, id: string, name: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const account = await tx.account.findUnique({ where: { id } });
+      if (!account || account.householdId !== householdId) throw new NotFoundException('Compte introuvable');
+      await tx.account.update({ where: { id }, data: { name } });
+      return this.toAccountDto(tx, id);
+    });
+  }
+
+  /** "Modifier" (Détail sous-compte, §9) — renommage uniquement. */
+  async renameSubaccount(userId: string, householdId: string, id: string, name: string) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const subaccount = await tx.subaccount.findUnique({ where: { id } });
+      if (!subaccount || subaccount.householdId !== householdId) throw new NotFoundException('Sous-compte introuvable');
+      await tx.subaccount.update({ where: { id }, data: { name } });
+      return this.toSubaccountDto(tx, id);
+    });
+  }
+
   private async toAccountDto(tx: TxClient, accountId: string) {
     const account = await tx.account.findUniqueOrThrow({ where: { id: accountId } });
     const subaccounts = await tx.subaccount.findMany({ where: { accountId }, orderBy: { createdAt: 'asc' } });
