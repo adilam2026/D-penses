@@ -128,7 +128,13 @@ jobs:
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
             set -x
-            APK=mobile/android/app/build/outputs/apk/release/app-release.apk
+            APK=$(find mobile/android/app/build/outputs/apk/release -type f -name "*.apk" | head -1)
+            echo "APK détecté : $APK"
+            if [ -z "$APK" ] || [ ! -f "$APK" ]; then
+              echo "::error::APK Release introuvable avant adb install"
+              find mobile/android/app/build/outputs -maxdepth 5 -type f || true
+              exit 1
+            fi
             adb install -r "$APK"
             export PATH="$HOME/.maestro/bin:$PATH"
             mkdir -p mobile/e2e/maestro-report
