@@ -109,8 +109,8 @@ it('case prévue (PENDING) : tap simple ouvre la confirmation "Payer" avec le co
   );
 
   renderWithSafeArea(<PlanningScreen />);
-  await waitFor(() => screen.getAllByTestId('planning-cell'));
-  fireEvent.press(screen.getAllByTestId('planning-cell')[0]);
+  await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
+  fireEvent.press(screen.getAllByTestId(/^planning-cell-/)[0]);
 
   await waitFor(() => screen.getByTestId('planning-confirm-pay'));
   expect(screen.getByText(/Payer 700 DH depuis CIH-Voiture/)).toBeTruthy();
@@ -144,8 +144,8 @@ it('case prévue : appui long ouvre le modal d\'ajustement pré-rempli avec le m
   );
 
   renderWithSafeArea(<PlanningScreen />);
-  await waitFor(() => screen.getAllByTestId('planning-cell'));
-  fireEvent(screen.getAllByTestId('planning-cell')[0], 'longPress');
+  await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
+  fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
 
   await waitFor(() => screen.getByTestId('planning-adjust-submit'));
   expect(screen.getByText('Prévu 700 DH')).toBeTruthy();
@@ -184,10 +184,10 @@ it('case réalisée (verte) : appui long propose Voir/Modifier/Annuler le paieme
   );
 
   renderWithSafeArea(<PlanningScreen />);
-  await waitFor(() => screen.getAllByTestId('planning-cell'));
+  await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
   expect(screen.getByText(/820 DH ✓/)).toBeTruthy();
 
-  fireEvent(screen.getAllByTestId('planning-cell')[0], 'longPress');
+  fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
   await waitFor(() => screen.getByTestId('planning-realized-menu-option-cancel'));
   fireEvent.press(screen.getByTestId('planning-realized-menu-option-cancel'));
 
@@ -223,8 +223,8 @@ it('case agrégée (plusieurs éléments, ex. Autres) : tap ouvre le détail de 
   );
 
   renderWithSafeArea(<PlanningScreen />);
-  await waitFor(() => screen.getAllByTestId('planning-cell'));
-  fireEvent.press(screen.getAllByTestId('planning-cell')[0]);
+  await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
+  fireEvent.press(screen.getAllByTestId(/^planning-cell-/)[0]);
 
   await waitFor(() => screen.getByText('Aspirateur'));
   expect(screen.getByText('Cadeau')).toBeTruthy();

@@ -1,0 +1,22 @@
+appId: com.depenses.mobile
+---
+# Parcours 12 — Planning : tap simple pour réaliser un paiement prévu
+#
+# Cible la case "Voyage" (catégorie de l'opération planifiée "Voyage Été",
+# 8000 DH, échéance 2026-12-15 dans le jeu de données de démonstration —
+# backend/src/e2e/e2e-seed-data.util.ts) sur le mois 2026-12. testID posé
+# dans PlanningScreen.tsx : planning-cell-<slug(libellé de ligne)>-<mois>.
+- runFlow: common/login.yaml
+- tapOn: "Planning"
+- scrollUntilVisible:
+    element:
+      id: "planning-cell-voyage-2026-12"
+    direction: RIGHT
+    timeout: 8000
+- tapOn:
+    id: "planning-cell-voyage-2026-12"
+- assertVisible:
+    id: "planning-confirm-pay"
+- tapOn:
+    id: "planning-confirm-pay"
+- assertVisible: "✓"

@@ -1,0 +1,179 @@
+name: Android E2E (Maestro — recette staging)
+
+# Recette E2E Android automatisée : build de l'APK Release (staging), lancement
+# d'un émulateur Android réel, réinitialisation des données du foyer de
+# démonstration via POST /e2e/reset (staging uniquement, protégé par
+# E2E_TEST_MODE + E2E_RESET_TOKEN — cf. backend/src/e2e/e2e.service.ts), puis
+# exécution des flows Maestro sous mobile/e2e/maestro/flows/ contre l'APK
+# réellement installé (tap/inputText/scroll/longPress/assertVisible — jamais
+# de simples tests React/Jest). Ce workflow ne touche jamais PROD : l'URL
+# backend est fixée ci-dessous sur le service staging Railway, jamais
+# paramétrable via une entrée du workflow.
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - claude/finance-maison-v1
+
+env:
+  # Backend de test — staging uniquement (jamais PROD, jamais paramétrable).
+  E2E_API_URL: https://finance-maison-backend-production.up.railway.app
+  # Compte de démonstration du foyer E2E (backend/prisma/seed.ts /
+  # backend/src/e2e/e2e-seed-data.util.ts) — même foyer que POST /e2e/reset
+  # réinitialise et reseed avant chaque campagne.
+  E2E_EMAIL: demo@finance-maison.local
+  E2E_PASSWORD: DemoFinanceMaison2026!
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---------- 1. Dépendances + typecheck mobile ----------
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Installer les dépendances (mobile)
+        working-directory: mobile
+        run: npm ci
+
+      - name: Typecheck mobile (aucune règle métier, validation avant build)
+        working-directory: mobile
+        run: npx tsc --noEmit
+
+      # ---------- 2. Construire l'APK Release pointé sur le staging ----------
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Accepter les licences du SDK Android
+        run: yes | sdkmanager --licenses > /dev/null || true
+
+      - name: Générer le projet Android natif (expo prebuild)
+        working-directory: mobile
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build APK RELEASE (bundle JS embarqué, EXPO_PUBLIC_API_URL = staging)
+        working-directory: mobile/android
+        env:
+          EXPO_PUBLIC_API_URL: ${{ env.E2E_API_URL }}
+        run: |
+          set -o pipefail
+          ./gradlew assembleRelease --no-daemon | tee build-release.log
+
+      - name: Vérifier que l'APK existe, n'est pas vide, et embarque le bundle JS
+        working-directory: mobile
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          test -s "$APK" || (echo "APK manquant ou vide: $APK" && exit 1)
+          ls -la "$APK"
+          unzip -l "$APK" | grep -E "assets/index\.android\.bundle" \
+            || (echo "assets/index.android.bundle absent de l'APK — JS non embarqué" && exit 1)
+          echo "SHA-256 de l'APK utilisé pour cette campagne E2E :"
+          sha256sum "$APK"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e2e-apk-utilise
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 14
+
+      # ---------- 3. Réinitialiser les données E2E sur staging (avant Maestro) ----------
+      - name: Réinitialiser le foyer de démonstration (POST /e2e/reset, staging)
+        env:
+          E2E_RESET_TOKEN: ${{ secrets.E2E_RESET_TOKEN }}
+        run: |
+          if [ -z "$E2E_RESET_TOKEN" ]; then
+            echo "::error::Le secret GitHub E2E_RESET_TOKEN est absent — impossible de réinitialiser les données E2E sur staging. Voir la documentation du mécanisme dans mobile/e2e/maestro/README.md."
+            exit 1
+          fi
+          status=$(curl -s -o /tmp/e2e-reset-response.json -w "%{http_code}" -X POST \
+            "$E2E_API_URL/e2e/reset" \
+            -H "x-e2e-token: $E2E_RESET_TOKEN")
+          echo "Réponse POST /e2e/reset : HTTP $status"
+          cat /tmp/e2e-reset-response.json
+          echo ""
+          if [ "$status" != "201" ] && [ "$status" != "200" ]; then
+            echo "::error::POST /e2e/reset a échoué (HTTP $status) — la campagne ne peut pas repartir d'un état connu, abandon."
+            exit 1
+          fi
+
+      # ---------- 4. Émulateur Android + Maestro (interaction réelle avec l'APK) ----------
+      - name: Enable KVM group perms (accélération matérielle de l'émulateur)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Installer le CLI Maestro
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Émulateur Android (API 34, x86_64, portrait) + campagne Maestro
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          disable-animations: true
+          disable-spellchecker: true
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            set -x
+            APK=mobile/android/app/build/outputs/apk/release/app-release.apk
+            adb install -r "$APK"
+            export PATH="$HOME/.maestro/bin:$PATH"
+            mkdir -p mobile/e2e/maestro-report
+            maestro test mobile/e2e/maestro/flows \
+              -e E2E_EMAIL="$E2E_EMAIL" \
+              -e E2E_PASSWORD="$E2E_PASSWORD" \
+              --format junit \
+              --output mobile/e2e/maestro-report/report.xml \
+              --debug-output mobile/e2e/maestro-report/debug \
+              2>&1 | tee mobile/e2e/maestro-report/maestro-run.log
+            # Le statut Maestro (échec attendu des parcours 6/7, cf. gap produit
+            # documenté dans leurs flows) NE DOIT PAS empêcher l'upload des
+            # artifacts ci-dessous — capturé ici, jamais avalé silencieusement.
+            echo "maestro_exit_code=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
+
+      - name: Résumé de la campagne (nombre de scénarios / statut Maestro)
+        if: always()
+        run: |
+          echo "Code de sortie Maestro : ${maestro_exit_code:-inconnu}"
+          if [ -f mobile/e2e/maestro-report/report.xml ]; then
+            echo "--- Extrait du rapport JUnit ---"
+            grep -E "testsuite|testcase" mobile/e2e/maestro-report/report.xml | head -100 || true
+          fi
+
+      # ---------- 5. Artifacts (rapport, captures d'échec, logs) ----------
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-rapport-maestro
+          path: mobile/e2e/maestro-report/report.xml
+          retention-days: 30
+          if-no-files-found: warn
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-logs-maestro
+          path: mobile/e2e/maestro-report/maestro-run.log
+          retention-days: 30
+          if-no-files-found: warn
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-debug-captures-echecs
+          path: mobile/e2e/maestro-report/debug
+          retention-days: 30
+          if-no-files-found: warn

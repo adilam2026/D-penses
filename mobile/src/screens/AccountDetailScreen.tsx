@@ -11,6 +11,7 @@ import { OPERATION_KIND_LABELS, localAmount } from '../ui/operationKindLabel';
 import { ChoiceSheet } from '../ui/ChoiceSheet';
 import { RenameModal } from '../ui/RenameModal';
 import { HelpButton } from '../ui/HelpButton';
+import { testIdSlug } from '../ui/testIdSlug';
 
 /**
  * Détail compte — écran TRÈS SIMPLE (validation Checkpoint 2 §8) : nom, solde,
@@ -83,7 +84,7 @@ export function AccountDetailScreen() {
           (operations ?? []).map((op) => {
             const amount = localAmount(op.ledgerEntries, { accountId: id });
             return (
-              <View key={op.id} style={styles.opRow}>
+              <View key={op.id} style={styles.opRow} testID={`transaction-row-${testIdSlug(op.label)}`}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.opLabel}>{op.label}</Text>
                   <Text style={styles.opMeta}>

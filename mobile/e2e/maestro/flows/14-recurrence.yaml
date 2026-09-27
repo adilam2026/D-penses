@@ -1,0 +1,41 @@
+appId: com.depenses.mobile
+---
+# Parcours 14 — Récurrence (règle de revenu récurrent)
+- runFlow: common/login.yaml
+- tapOn: "Ajouter"
+- tapOn:
+    id: "ajouter-tile-INCOME"
+- tapOn:
+    id: "ajouter-tab-a-venir"
+- tapOn:
+    id: "ajouter-type-recurrente"
+- assertVisible:
+    id: "ajouter-frequency"
+- tapOn:
+    id: "ajouter-amount"
+- inputText: "400"
+- tapOn:
+    text: "Choisir une date"
+- tapOn:
+    id: "android:id/button1"
+- tapOn:
+    id: "ajouter-label"
+- inputText: "Revenu récurrent E2E"
+- hideKeyboard
+- tapOn:
+    id: "ajouter-destination"
+- tapOn:
+    text: "^CIH$"
+- tapOn:
+    id: "ajouter-category"
+- tapOn:
+    text: "Prime"
+- tapOn:
+    id: "ajouter-frequency"
+- tapOn:
+    text: "Mensuelle"
+- tapOn:
+    id: "ajouter-submit"
+- assertVisible:
+    text: "MES COMPTES"
+    timeout: 10000

@@ -8,6 +8,7 @@ import { useTopInset } from '../ui/useTopInset';
 import { useBottomInset } from '../ui/useBottomInset';
 import { colors, radius, spacing, typography } from '../ui/theme';
 import { isSanteSubaccount } from '../ui/santeDetection';
+import { testIdSlug } from '../ui/testIdSlug';
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -74,7 +75,7 @@ export function MenuScreen() {
       contentContainerStyle={{ paddingBottom: bottomInset + spacing.xxl }}
     >
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+        <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} testID="menu-close">
           <Ionicons name="close" size={26} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Menu</Text>
@@ -90,6 +91,7 @@ export function MenuScreen() {
                 key={entry.label}
                 style={[styles.row, index < section.entries.length - 1 && styles.rowBorder]}
                 onPress={entry.onPress}
+                testID={`menu-row-${testIdSlug(entry.label)}`}
               >
                 <Ionicons name={entry.icon} size={20} color={colors.textSecondary} style={{ marginRight: spacing.md }} />
                 <Text style={styles.rowLabel}>{entry.label}</Text>

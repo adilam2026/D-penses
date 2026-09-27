@@ -1,0 +1,20 @@
+# Sous-flow réutilisable (appelé via runFlow) : connexion avec le compte de
+# démonstration E2E (${E2E_EMAIL} / ${E2E_PASSWORD}, injectés par le workflow
+# GitHub Actions android-e2e.yml). clearState garantit que chaque flow
+# top-level qui l'appelle repart d'une app fraîchement installée (pas de
+# session persistée d'un flow précédent), pour rester rejouable isolément.
+- launchApp:
+    clearState: true
+- assertVisible: "Finance Maison"
+- tapOn:
+    id: "login-email"
+- inputText: "${E2E_EMAIL}"
+- tapOn:
+    id: "login-password"
+- inputText: "${E2E_PASSWORD}"
+- hideKeyboard
+- tapOn:
+    id: "login-submit"
+- assertVisible:
+    text: "MES COMPTES"
+    timeout: 15000

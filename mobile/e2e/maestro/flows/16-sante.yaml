@@ -1,0 +1,14 @@
+appId: com.depenses.mobile
+---
+# Parcours 16 — Santé / Mutuelle
+- runFlow: common/login.yaml
+- tapOn: "Épargne"
+- tapOn:
+    text: "^CIH-Santé$"
+- assertVisible:
+    id: "health-tab-depenses"
+- assertVisible: "Consultation santé"
+- tapOn:
+    id: "health-tab-remboursements"
+- assertVisible: "DOSSIERS EN ATTENTE"
+- assertVisible: "Analyse laboratoire"

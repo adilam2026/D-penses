@@ -37,16 +37,17 @@ export function LoginScreen() {
         keyboardType="email-address"
         value={email}
         onChangeText={setEmail}
+        testID="login-email"
       />
-      <TextInput style={styles.input} placeholder="Mot de passe" secureTextEntry value={password} onChangeText={setPassword} />
+      <TextInput style={styles.input} placeholder="Mot de passe" secureTextEntry value={password} onChangeText={setPassword} testID="login-password" />
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={loading}>
+      <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={loading} testID="login-submit">
         {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Se connecter</Text>}
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => navigation.navigate('Signup')}>
+      <TouchableOpacity onPress={() => navigation.navigate('Signup')} testID="login-signup-link">
         <Text style={styles.link}>Pas encore de compte ? Créer un compte</Text>
       </TouchableOpacity>
     </KeyboardAvoidingView>

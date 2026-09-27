@@ -1,0 +1,33 @@
+appId: com.depenses.mobile
+---
+# Parcours 10 — Versement (contribution d'épargne vers un sous-compte)
+- runFlow: common/login.yaml
+- tapOn: "Ajouter"
+- tapOn:
+    id: "ajouter-tile-SAVINGS_CONTRIBUTION"
+- tapOn:
+    id: "ajouter-tab-realisee"
+- tapOn:
+    id: "ajouter-amount"
+- inputText: "100"
+- tapOn:
+    text: "Choisir une date"
+- tapOn:
+    id: "android:id/button1"
+- tapOn:
+    id: "ajouter-label"
+- inputText: "Versement E2E Maestro"
+- hideKeyboard
+- tapOn:
+    id: "ajouter-source"
+- tapOn:
+    text: "^CIH$"
+- tapOn:
+    id: "ajouter-destination"
+- tapOn:
+    text: "^CIH — CIH-Voiture$"
+- tapOn:
+    id: "ajouter-submit"
+- assertVisible:
+    text: "MES COMPTES"
+    timeout: 10000

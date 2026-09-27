@@ -1,0 +1,18 @@
+appId: com.depenses.mobile
+---
+# Parcours 2 — Accueil
+# Vérifie que l'écran Accueil affiche les comptes et sous-comptes du foyer de
+# démonstration (jeu de données remis à l'état connu par POST /e2e/reset
+# avant la campagne — cf. backend/src/e2e/e2e.service.ts).
+- runFlow: common/login.yaml
+- assertVisible: "MES COMPTES"
+- assertVisible:
+    text: "^CIH$"
+- assertVisible: "CIH-Voiture"
+- assertVisible: "CIH-Voyage"
+- assertVisible: "CIH-Santé"
+- assertVisible:
+    text: "^BP Lamiaa$"
+- assertVisible:
+    text: "^BP Adil$"
+- assertVisible: "À FAIRE"

@@ -12,6 +12,7 @@ import { ChoiceSheet } from '../ui/ChoiceSheet';
 import { RenameModal } from '../ui/RenameModal';
 import { HelpButton } from '../ui/HelpButton';
 import { isSanteSubaccount } from '../ui/santeDetection';
+import { testIdSlug } from '../ui/testIdSlug';
 
 /**
  * Détail sous-compte — même écran très simple que Détail compte (§9), avec
@@ -95,7 +96,7 @@ export function SubaccountDetailScreen() {
           (operations ?? []).map((op) => {
             const amount = localAmount(op.ledgerEntries, { subaccountId: id });
             return (
-              <View key={op.id} style={styles.opRow}>
+              <View key={op.id} style={styles.opRow} testID={`transaction-row-${testIdSlug(op.label)}`}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.opLabel}>{op.label}</Text>
                   <Text style={styles.opMeta}>

@@ -1,0 +1,20 @@
+appId: com.depenses.mobile
+---
+# Parcours 19 — Objectifs (définir un objectif d'épargne)
+# Les objectifs (Goal) n'ont pas d'écran dédié séparé : ils se définissent
+# depuis une carte de l'écran Épargne (lien "+ Définir un objectif").
+- runFlow: common/login.yaml
+- tapOn: "Épargne"
+- tapOn:
+    text: "\\+ Définir un objectif"
+- assertVisible:
+    id: "goal-amount"
+- tapOn:
+    id: "goal-amount"
+- inputText: "10000"
+- hideKeyboard
+- tapOn:
+    id: "goal-submit"
+- assertVisible:
+    text: "Objectif"
+    timeout: 10000

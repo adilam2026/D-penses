@@ -1,0 +1,31 @@
+appId: com.depenses.mobile
+---
+# Parcours 9 — Transfert entre comptes
+- runFlow: common/login.yaml
+- tapOn: "Ajouter"
+- tapOn:
+    id: "ajouter-tile-TRANSFER"
+- tapOn:
+    id: "ajouter-amount"
+- inputText: "200"
+- tapOn:
+    text: "Choisir une date"
+- tapOn:
+    id: "android:id/button1"
+- tapOn:
+    id: "ajouter-label"
+- inputText: "Transfert E2E Maestro"
+- hideKeyboard
+- tapOn:
+    id: "ajouter-source"
+- tapOn:
+    text: "^CIH$"
+- tapOn:
+    id: "ajouter-destination"
+- tapOn:
+    text: "^BP Lamiaa$"
+- tapOn:
+    id: "ajouter-submit"
+- assertVisible:
+    text: "MES COMPTES"
+    timeout: 10000

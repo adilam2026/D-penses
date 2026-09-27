@@ -1,0 +1,41 @@
+appId: com.depenses.mobile
+---
+# Parcours 5 — Création d'une dépense réalisée
+#
+# Note sur la date : DateField ouvre le sélecteur natif Android
+# (DateTimePickerAndroid), une boîte de dialogue système — jamais un champ
+# texte libre. android:id/button1 est l'id de ressource standard AOSP du
+# bouton positif ("OK") de cette boîte, stable quelle que soit la langue du
+# device. La date du jour est pré-sélectionnée par défaut.
+- runFlow: common/login.yaml
+- tapOn: "Ajouter"
+- assertVisible:
+    id: "ajouter-tile-EXPENSE"
+- tapOn:
+    id: "ajouter-tile-EXPENSE"
+- tapOn:
+    id: "ajouter-tab-realisee"
+- tapOn:
+    id: "ajouter-amount"
+- inputText: "150"
+- tapOn:
+    text: "Choisir une date"
+- tapOn:
+    id: "android:id/button1"
+- tapOn:
+    id: "ajouter-label"
+- inputText: "Dépense E2E Maestro"
+- hideKeyboard
+- tapOn:
+    id: "ajouter-source"
+- tapOn:
+    text: "^CIH$"
+- tapOn:
+    id: "ajouter-category"
+- tapOn:
+    text: "Courses"
+- tapOn:
+    id: "ajouter-submit"
+- assertVisible:
+    text: "MES COMPTES"
+    timeout: 10000

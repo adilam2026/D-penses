@@ -1,0 +1,50 @@
+appId: com.depenses.mobile
+---
+# Parcours 7 — Annulation / reversal d'une transaction déjà réalisée
+#
+# Même gap produit documenté que le parcours 6 (aucune action Modifier/
+# Annuler accessible depuis l'historique d'un compte). Ce flow crée sa
+# propre transaction (indépendante de celle du parcours 6) pour rester
+# rejouable isolément. ÉCHEC ATTENDU à la dernière étape.
+- runFlow: common/login.yaml
+- tapOn: "Ajouter"
+- tapOn:
+    id: "ajouter-tile-EXPENSE"
+- tapOn:
+    id: "ajouter-tab-realisee"
+- tapOn:
+    id: "ajouter-amount"
+- inputText: "80"
+- tapOn:
+    text: "Choisir une date"
+- tapOn:
+    id: "android:id/button1"
+- tapOn:
+    id: "ajouter-label"
+- inputText: "Test annulation E2E"
+- hideKeyboard
+- tapOn:
+    id: "ajouter-source"
+- tapOn:
+    text: "^CIH$"
+- tapOn:
+    id: "ajouter-category"
+- tapOn:
+    text: "Courses"
+- tapOn:
+    id: "ajouter-submit"
+- assertVisible:
+    text: "MES COMPTES"
+    timeout: 10000
+- tapOn:
+    text: "^CIH$"
+- assertVisible:
+    id: "transaction-row-test-annulation-e2e"
+
+# Aucune action d'annulation logique n'est accessible depuis cette ligne —
+# ÉCHEC ATTENDU (cf. §4/§11 du cahier des charges, même gap que le parcours 6).
+- tapOn:
+    id: "transaction-row-test-annulation-e2e"
+- assertVisible:
+    text: "Annuler"
+    timeout: 5000

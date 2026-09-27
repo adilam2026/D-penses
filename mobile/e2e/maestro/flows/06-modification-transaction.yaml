@@ -1,0 +1,89 @@
+appId: com.depenses.mobile
+---
+# Parcours 6 — Modification d'une transaction (scénario obligatoire §4 du
+# cahier des charges de la recette E2E).
+#
+# Crée "Test transaction" 350 DH, puis tente : ouvrir le compte concerné,
+# retrouver la transaction, ouvrir son détail, vérifier qu'une action
+# "Modifier" existe, passer le montant à 420 DH, vérifier l'historique et le
+# solde, vérifier qu'une action d'annulation logique existe, l'exécuter,
+# vérifier le reversal / solde restauré.
+#
+# GAP PRODUIT DOCUMENTÉ (2026-09-27) : à ce jour, la ligne d'historique d'une
+# transaction (AccountDetailScreen.tsx / SubaccountDetailScreen.tsx) est une
+# simple <View>, sans onPress — aucun écran de détail de transaction
+# n'existe, donc aucune action "Modifier" ni "Annuler" n'est jamais
+# accessible pour une transaction déjà enregistrée. Conformément à
+# l'instruction explicite du cahier des charges ("Si l'utilisateur n'a aucun
+# moyen naturel de modifier une transaction, le test doit échouer"), ce flow
+# échoue INTENTIONNELLEMENT à l'étape "vérifier qu'une action Modifier
+# existe" ci-dessous — ce n'est pas un défaut de ce flow, c'est le rapport
+# honnête d'une fonctionnalité manquante. Les étapes suivantes sont
+# conservées telles quelles : elles ne s'exécuteront (et ne valideront le
+# scénario complet) que le jour où un écran de détail de transaction sera
+# ajouté côté application.
+- runFlow: common/login.yaml
+- tapOn: "Ajouter"
+- tapOn:
+    id: "ajouter-tile-EXPENSE"
+- tapOn:
+    id: "ajouter-tab-realisee"
+- tapOn:
+    id: "ajouter-amount"
+- inputText: "350"
+- tapOn:
+    text: "Choisir une date"
+- tapOn:
+    id: "android:id/button1"
+- tapOn:
+    id: "ajouter-label"
+- inputText: "Test transaction"
+- hideKeyboard
+- tapOn:
+    id: "ajouter-source"
+- tapOn:
+    text: "^CIH$"
+- tapOn:
+    id: "ajouter-category"
+- tapOn:
+    text: "Courses"
+- tapOn:
+    id: "ajouter-submit"
+- assertVisible:
+    text: "MES COMPTES"
+    timeout: 10000
+
+# Ouvrir le compte concerné.
+- tapOn:
+    text: "^CIH$"
+- assertVisible: "HISTORIQUE DES TRANSACTIONS"
+
+# Retrouver la transaction dans l'historique.
+- assertVisible:
+    id: "transaction-row-test-transaction"
+
+# Ouvrir le détail — ÉCHEC ATTENDU ici (cf. gap produit ci-dessus).
+- tapOn:
+    id: "transaction-row-test-transaction"
+- assertVisible:
+    text: "Modifier"
+    timeout: 5000
+
+# --- Suite du scénario (ne s'exécute que si l'assertion précédente finit
+# --- par passer, le jour où la fonctionnalité existera) ---
+- tapOn: "Modifier"
+- assertVisible:
+    id: "transaction-edit"
+- tapOn:
+    id: "transaction-edit"
+- eraseText
+- inputText: "420"
+- tapOn: "Enregistrer"
+- assertVisible: "420"
+- tapOn:
+    id: "transaction-row-test-transaction"
+- assertVisible:
+    id: "transaction-cancel"
+- tapOn:
+    id: "transaction-cancel"
+- assertVisible: "Annulée"

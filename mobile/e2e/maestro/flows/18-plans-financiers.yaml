@@ -1,0 +1,35 @@
+appId: com.depenses.mobile
+---
+# Parcours 18 — Plans financiers
+- runFlow: common/login.yaml
+- tapOn:
+    id: "app-shell-menu-button"
+- tapOn:
+    id: "menu-row-plans-financiers"
+- tapOn:
+    id: "plans-list-create"
+- tapOn:
+    id: "create-plan-label"
+- inputText: "Plan E2E Maestro"
+- hideKeyboard
+- tapOn:
+    id: "create-plan-submit"
+- assertVisible:
+    text: "Plan E2E Maestro"
+    timeout: 10000
+- tapOn:
+    id: "plan-detail-add-item"
+- assertVisible:
+    id: "add-item-label"
+- tapOn:
+    id: "add-item-label"
+- inputText: "Poste E2E"
+- tapOn:
+    id: "add-item-amount"
+- inputText: "500"
+- hideKeyboard
+- tapOn:
+    id: "add-item-submit"
+- assertVisible:
+    text: "Poste E2E"
+    timeout: 10000

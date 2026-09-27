@@ -9,6 +9,7 @@ import { FormField } from '../ui/FormField';
 import { DateField } from '../ui/DateField';
 import { ChoiceSheet } from '../ui/ChoiceSheet';
 import { useBottomInset } from '../ui/useBottomInset';
+import { testIdSlug } from '../ui/testIdSlug';
 
 const HORIZON_OPTIONS = [3, 6, 9, 12] as const;
 const LABEL_WIDTH = 130;
@@ -207,6 +208,7 @@ export function PlanningScreen() {
                               cell={row.cells[m]}
                               onPress={() => onCellPress(row.cells[m], row.label)}
                               onLongPress={() => onCellLongPress(row.cells[m], row.label)}
+                              testID={`planning-cell-${testIdSlug(row.label)}-${m}`}
                             />
                           ))}
                         </View>
@@ -307,7 +309,17 @@ export function PlanningScreen() {
   );
 }
 
-function PlanningCellView({ cell, onPress, onLongPress }: { cell: api.PlanningCellApi; onPress: () => void; onLongPress: () => void }) {
+function PlanningCellView({
+  cell,
+  onPress,
+  onLongPress,
+  testID,
+}: {
+  cell: api.PlanningCellApi;
+  onPress: () => void;
+  onLongPress: () => void;
+  testID: string;
+}) {
   const isRealized = cell.status === 'REALIZED';
   const isMixed = cell.status === 'MIXED';
   return (
@@ -316,7 +328,7 @@ function PlanningCellView({ cell, onPress, onLongPress }: { cell: api.PlanningCe
       onPress={onPress}
       onLongPress={onLongPress}
       disabled={cell.status === 'EMPTY'}
-      testID="planning-cell"
+      testID={testID}
     >
       {cell.status === 'EMPTY' ? (
         <Text style={styles.cellEmpty}>—</Text>

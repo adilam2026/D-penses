@@ -15,6 +15,7 @@ import { RecurrenceRulesModule } from './recurrence-rules/recurrence-rules.modul
 import { PlanningModule } from './planning/planning.module';
 import { FinancialPlansModule } from './financial-plans/financial-plans.module';
 import { GoalsModule } from './goals/goals.module';
+import { E2eModule } from './e2e/e2e.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -32,6 +33,7 @@ import { AppController } from './app.controller';
     PlanningModule,
     FinancialPlansModule,
     GoalsModule,
+    E2eModule,
   ],
   controllers: [AppController],
   providers: [

@@ -1,0 +1,29 @@
+appId: com.depenses.mobile
+---
+# Parcours 20 — Drawer / navigation (menu ☰)
+- runFlow: common/login.yaml
+- tapOn:
+    id: "app-shell-menu-button"
+- assertVisible: "Menu"
+- assertVisible:
+    id: "menu-row-comptes"
+- assertVisible:
+    id: "menu-row-epargne-sous-comptes"
+- assertVisible:
+    id: "menu-row-categories"
+- assertVisible:
+    id: "menu-row-plans-financiers"
+- assertVisible:
+    id: "menu-row-parametres"
+- assertVisible:
+    id: "menu-row-guide"
+- tapOn:
+    id: "menu-row-guide"
+- assertVisible: "Guide"
+- back
+- assertVisible: "Menu"
+- tapOn:
+    id: "menu-close"
+- assertVisible:
+    text: "MES COMPTES"
+    timeout: 10000

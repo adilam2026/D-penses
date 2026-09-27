@@ -1,0 +1,25 @@
+appId: com.depenses.mobile
+---
+# Parcours 13 — Planning : appui long pour ajuster un montant avant paiement
+#
+# Cible la case "Prime annuelle" (opération planifiée INCOME, 3000 DH,
+# échéance 2026-12-01 dans le jeu de données de démonstration), mois 2026-12.
+- runFlow: common/login.yaml
+- tapOn: "Planning"
+- scrollUntilVisible:
+    element:
+      id: "planning-cell-prime-annuelle-2026-12"
+    direction: RIGHT
+    timeout: 8000
+- longPressOn:
+    id: "planning-cell-prime-annuelle-2026-12"
+- assertVisible:
+    id: "planning-adjust-submit"
+- tapOn:
+    id: "planning-adjust-amount"
+- eraseText
+- inputText: "3200"
+- hideKeyboard
+- tapOn:
+    id: "planning-adjust-submit"
+- assertVisible: "✓"

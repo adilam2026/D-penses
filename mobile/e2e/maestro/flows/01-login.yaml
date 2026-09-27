@@ -1,0 +1,27 @@
+appId: com.depenses.mobile
+---
+# Parcours 1 — Connexion (login)
+# Vérifie que les champs email/mot de passe et le bouton de connexion amènent
+# bien, avec le compte de démonstration E2E, sur l'écran Accueil sous le
+# shell persistant "Finance Maison".
+- launchApp:
+    clearState: true
+- assertVisible: "Finance Maison"
+- assertVisible:
+    id: "login-email"
+- assertVisible:
+    id: "login-password"
+- tapOn:
+    id: "login-email"
+- inputText: "${E2E_EMAIL}"
+- tapOn:
+    id: "login-password"
+- inputText: "${E2E_PASSWORD}"
+- hideKeyboard
+- tapOn:
+    id: "login-submit"
+- assertVisible:
+    text: "MES COMPTES"
+    timeout: 15000
+- assertVisible:
+    id: "app-shell-menu-button"

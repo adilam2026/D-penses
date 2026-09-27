@@ -1,0 +1,14 @@
+appId: com.depenses.mobile
+---
+# Parcours 15 — Épargne (vue d'ensemble)
+- runFlow: common/login.yaml
+- tapOn: "Épargne"
+- assertVisible:
+    text: "^CIH-Voiture$"
+- assertVisible:
+    text: "^CIH-Voyage$"
+- assertVisible:
+    text: "^CIH-Santé$"
+- assertVisible:
+    text: "^BP Épargne-Scolarité$"
+- assertVisible: "Épargne Enfants"

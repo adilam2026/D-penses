@@ -1,0 +1,16 @@
+appId: com.depenses.mobile
+---
+# Parcours 11 — Planning (vue d'ensemble)
+- runFlow: common/login.yaml
+- tapOn: "Planning"
+- assertVisible: "REVENUS"
+- assertVisible: "DÉPENSES"
+- assertVisible: "ÉPARGNE / VERSEMENTS"
+- assertVisible:
+    id: "planning-horizon-6"
+- tapOn:
+    id: "planning-horizon-12"
+- assertVisible:
+    id: "planning-horizon-12"
+- tapOn:
+    id: "planning-horizon-6"

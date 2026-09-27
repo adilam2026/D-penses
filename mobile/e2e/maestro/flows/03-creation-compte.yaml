@@ -1,0 +1,30 @@
+appId: com.depenses.mobile
+---
+# Parcours 3 — Création d'un compte
+- runFlow: common/login.yaml
+- tapOn:
+    id: "app-shell-menu-button"
+- tapOn:
+    id: "menu-row-comptes"
+- assertVisible:
+    text: "^CIH$"
+- tapOn:
+    id: "accounts-add"
+- assertVisible: "Nouveau compte"
+- tapOn:
+    id: "create-account-name"
+- inputText: "Compte E2E Maestro"
+- tapOn:
+    id: "create-account-opening-balance"
+- inputText: "1000"
+- hideKeyboard
+- tapOn:
+    id: "create-account-submit"
+- assertVisible:
+    text: "Compte « Compte E2E Maestro » créé"
+    timeout: 10000
+- tapOn:
+    id: "create-account-done"
+- assertVisible:
+    text: "Compte E2E Maestro"
+    timeout: 10000

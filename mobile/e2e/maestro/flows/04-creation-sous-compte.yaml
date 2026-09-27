@@ -1,0 +1,25 @@
+appId: com.depenses.mobile
+---
+# Parcours 4 — Création d'un sous-compte
+- runFlow: common/login.yaml
+- tapOn:
+    id: "app-shell-menu-button"
+- tapOn:
+    id: "menu-row-epargne-sous-comptes"
+- tapOn:
+    id: "savings-subaccounts-add-global"
+- assertVisible: "Nouveau sous-compte"
+- tapOn:
+    id: "create-subaccount-name"
+- inputText: "Sous-compte E2E Maestro"
+- tapOn:
+    id: "create-subaccount-account"
+- tapOn:
+    text: "^CIH$"
+- tapOn:
+    id: "create-subaccount-submit"
+- assertVisible:
+    text: "Sous-compte « Sous-compte E2E Maestro » créé"
+    timeout: 10000
+- tapOn:
+    id: "create-subaccount-done"

@@ -1,0 +1,31 @@
+appId: com.depenses.mobile
+---
+# Parcours 17 — Santé : remboursement partiel d'un dossier en attente
+- runFlow: common/login.yaml
+- tapOn: "Épargne"
+- tapOn:
+    text: "^CIH-Santé$"
+- tapOn:
+    id: "health-tab-remboursements"
+- assertVisible: "Consultation santé"
+- tapOn:
+    text: "J'ai reçu un remboursement"
+- assertVisible:
+    id: "reimburse-amount"
+- tapOn:
+    id: "reimburse-amount"
+- inputText: "300"
+- hideKeyboard
+- tapOn:
+    text: "Choisir une date"
+- tapOn:
+    id: "android:id/button1"
+- tapOn:
+    id: "reimburse-account"
+- tapOn:
+    text: "^CIH$"
+- tapOn:
+    id: "reimburse-submit"
+- assertVisible:
+    text: "DOSSIERS EN ATTENTE"
+    timeout: 10000
