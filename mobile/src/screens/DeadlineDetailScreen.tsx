@@ -10,6 +10,7 @@ import { formatDh, formatShortDate } from '../ui/formatMoney';
 import { HelpButton } from '../ui/HelpButton';
 import { FormField } from '../ui/FormField';
 import { Select, SelectOption } from '../ui/Select';
+import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
 
 /**
  * Détail d'une échéance (§12) — breakdown par poste + TOTAL, "Modifier"
@@ -135,6 +136,7 @@ function EditDeadlineModal({
   onSaved: () => Promise<void>;
 }) {
   const bottomInset = useBottomInset(spacing.lg);
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [itemId, setItemId] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
   const [saving, setSaving] = useState(false);
@@ -143,6 +145,7 @@ function EditDeadlineModal({
     if (visible) {
       setItemId(null);
       setAmount('');
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
     }
   }, [visible]);
 
@@ -165,14 +168,14 @@ function EditDeadlineModal({
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.backdrop} />
       </TouchableWithoutFeedback>
-      <ScrollView style={styles.sheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
+      <ScrollView ref={scrollRef} style={styles.sheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
         <Text style={styles.sheetTitle}>Ajuster un poste</Text>
         {plan.items.length === 0 ? (
           <Text style={styles.emptyText}>Ajoutez d'abord un poste au plan.</Text>
         ) : (
           <>
             <Select label="Poste" value={itemId} options={itemOptions} onChange={setItemId} testID="deadline-edit-item" />
-            <FormField label="Montant pour cette échéance" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" testID="deadline-edit-amount" />
+            <FormField label="Montant pour cette échéance" value={amount} onChangeText={setAmount} onFocus={handleFocus} keyboardType="decimal-pad" testID="deadline-edit-amount" />
             <TouchableOpacity
               style={[styles.submitButton, (!itemId || !amount.trim() || saving) && styles.submitButtonDisabled]}
               onPress={submit}

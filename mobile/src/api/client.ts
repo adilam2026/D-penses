@@ -237,8 +237,16 @@ export interface FinancialOperationApi {
   budgetImpact: BudgetImpact;
   reversalOfOperationId: string | null;
   reversalReason: string | null;
+  correctionOfOperationId: string | null;
   createdAt: string;
   ledgerEntries: LedgerEntryApi[];
+}
+
+export interface FinancialOperationDetailApi extends FinancialOperationApi {
+  reversals: FinancialOperationApi[];
+  reversalOfOperation: FinancialOperationApi | null;
+  correctedByOperations: FinancialOperationApi[];
+  correctionOfOperation: FinancialOperationApi | null;
 }
 
 /** Historique filtré (Détail compte/sous-compte, §8/§9) — jamais un filtrage client sur tout l'historique du foyer. */
@@ -249,7 +257,7 @@ export const listFinancialOperations = (filters?: { accountId?: string; subaccou
   const qs = params.toString();
   return apiFetch(`/financial-operations${qs ? `?${qs}` : ''}`);
 };
-export const getFinancialOperation = (id: string) => apiFetch(`/financial-operations/${id}`);
+export const getFinancialOperation = (id: string): Promise<FinancialOperationDetailApi> => apiFetch(`/financial-operations/${id}`);
 
 export const createFinancialOperation = (data: {
   kind: OperationKind;
@@ -266,6 +274,16 @@ export const createFinancialOperation = (data: {
   /** Ajouter > "Remboursable par mutuelle ?" (visible si Catégorie=Santé). */
   createMedicalClaim?: boolean;
 }) => apiFetch('/financial-operations', { method: 'POST', body: data });
+
+/** "Annuler" une transaction réalisée (§4) — reversal exact construit côté serveur, jamais côté client. */
+export const cancelFinancialOperation = (id: string, data?: { reason?: string }): Promise<FinancialOperationApi> =>
+  apiFetch(`/financial-operations/${id}/cancel`, { method: 'POST', body: data ?? {} });
+
+/** "Modifier" une transaction réalisée (§4) — reversal + nouvelle opération corrigée, atomique côté serveur. */
+export const correctFinancialOperation = (
+  id: string,
+  data: { label: string; date: string; amount: string; categoryId?: string; reason?: string },
+): Promise<FinancialOperationApi> => apiFetch(`/financial-operations/${id}/correct`, { method: 'POST', body: data });
 
 // ---------- Opérations planifiées (Planning) ----------
 export type PlannedOperationKind = 'EXPENSE' | 'INCOME' | 'SAVINGS_CONTRIBUTION';
@@ -431,6 +449,8 @@ export interface PlanningSingleOccurrenceApi {
 export interface PlanningCellApi {
   displayAmount: number;
   budgetAmount: number;
+  pendingAmount: number;
+  realizedAmount: number;
   status: PlanningCellStatus;
   singleOccurrence: PlanningSingleOccurrenceApi | null;
   items: PlanningCellItemApi[];
@@ -475,6 +495,8 @@ export interface FinancialPlanDeadlineSummaryApi {
   deadlineId: string;
   label: string;
   dueDate: string;
+  /** Montant propre de l'échéance, saisi à sa création — jamais additionné à totalPrevu (déjà inclus dedans). */
+  expectedAmount: number | null;
   totalPrevu: number;
   disponible: number;
   reste: number;
@@ -521,7 +543,7 @@ export const updateFinancialPlan = (id: string, data: { label?: string; accountI
 export const addFinancialPlanItem = (planId: string, data: { label: string; expectedAmount?: string; frequency?: RecurrenceFrequency }): Promise<FinancialPlanItemApi> =>
   apiFetch(`/financial-plans/${planId}/items`, { method: 'POST', body: data });
 
-export const addFinancialPlanDeadline = (planId: string, data: { label: string; dueDate: string }) =>
+export const addFinancialPlanDeadline = (planId: string, data: { label: string; dueDate: string; amount: string }) =>
   apiFetch(`/financial-plans/${planId}/deadlines`, { method: 'POST', body: data });
 
 /** "Détail d'une échéance" (§12) — ajoute/ajuste le montant d'un poste pour CETTE échéance précisément. */

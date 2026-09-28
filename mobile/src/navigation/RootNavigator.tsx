@@ -13,6 +13,7 @@ import { MenuScreen } from '../screens/MenuScreen';
 import { PlaceholderScreen } from '../screens/PlaceholderScreen';
 import { AccountDetailScreen } from '../screens/AccountDetailScreen';
 import { SubaccountDetailScreen } from '../screens/SubaccountDetailScreen';
+import { TransactionDetailScreen } from '../screens/TransactionDetailScreen';
 import { HealthScreen } from '../screens/HealthScreen';
 import { FinancialPlansScreen } from '../screens/FinancialPlansScreen';
 import { FinancialPlanDetailScreen } from '../screens/FinancialPlanDetailScreen';
@@ -74,6 +75,7 @@ export function RootNavigator() {
       <Stack.Screen name="Menu" component={MenuScreen} options={{ presentation: 'modal' }} />
       <Stack.Screen name="AccountDetail" component={AccountDetailScreen} />
       <Stack.Screen name="SubaccountDetail" component={SubaccountDetailScreen} />
+      <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} />
       <Stack.Screen name="Health" component={HealthScreen} />
       <Stack.Screen name="FinancialPlans" component={FinancialPlansScreen} />
       <Stack.Screen name="FinancialPlanDetail" component={FinancialPlanDetailScreen} />

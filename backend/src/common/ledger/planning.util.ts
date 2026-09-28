@@ -58,6 +58,10 @@ export interface PlanningCellItem {
 export interface PlanningCell {
   displayAmount: number;
   budgetAmount: number;
+  /** Sous-total des items À VENIR (PLANNED_PENDING) uniquement — affichage MIXED, jamais sommé dans budgetAmount à part (déjà inclus via displayAmount/budgetAmount ci-dessus). */
+  pendingAmount: number;
+  /** Sous-total des items RÉALISÉS (PLANNED_REALIZED + REAL_UNPLANNED) uniquement — affichage MIXED. */
+  realizedAmount: number;
   status: 'EMPTY' | 'PENDING' | 'REALIZED' | 'MIXED';
   /** Non-null seulement quand la case correspond à EXACTEMENT une occurrence prévue,
    * sans aucun autre élément agrégé — c'est la cible du tap simple / appui long. */
@@ -114,7 +118,7 @@ export function monthRange(start: Date, count: number): PlanningMonthKey[] {
 }
 
 function emptyCell(): PlanningCell {
-  return { displayAmount: 0, budgetAmount: 0, status: 'EMPTY', singleOccurrence: null, items: [] };
+  return { displayAmount: 0, budgetAmount: 0, pendingAmount: 0, realizedAmount: 0, status: 'EMPTY', singleOccurrence: null, items: [] };
 }
 
 function toNumber(d: Prisma.Decimal | number): number {
@@ -141,6 +145,9 @@ function finalizeCellStatus(cell: PlanningCell) {
   const hasPending = cell.items.some((i) => i.type === 'PLANNED_PENDING');
   const hasRealized = cell.items.some((i) => i.type !== 'PLANNED_PENDING');
   cell.status = hasPending && hasRealized ? 'MIXED' : hasPending ? 'PENDING' : 'REALIZED';
+
+  cell.pendingAmount = cell.items.filter((i) => i.type === 'PLANNED_PENDING').reduce((sum, i) => sum + i.amount, 0);
+  cell.realizedAmount = cell.items.filter((i) => i.type !== 'PLANNED_PENDING').reduce((sum, i) => sum + i.amount, 0);
 
   if (cell.items.length === 1) {
     const only = cell.items[0];

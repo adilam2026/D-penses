@@ -10,6 +10,7 @@ import { DateField } from '../ui/DateField';
 import { ChoiceSheet } from '../ui/ChoiceSheet';
 import { useBottomInset } from '../ui/useBottomInset';
 import { testIdSlug } from '../ui/testIdSlug';
+import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
 
 const HORIZON_OPTIONS = [3, 6, 9, 12] as const;
 const LABEL_WIDTH = 130;
@@ -24,6 +25,8 @@ interface BlockDef {
   totalLabel: string;
   totalKey: 'totalRevenus' | 'totalDepenses' | 'totalEpargne';
   emptyText: string;
+  /** Teinte de section (§7, lisibilité visuelle uniquement — aucune logique) : distingue REVENUS/DÉPENSES/ÉPARGNE d'un coup d'œil. */
+  accentColor: string;
 }
 
 function accountLabel(accounts: api.AccountApi[], accountId: string | null, subaccountId: string | null): string {
@@ -112,9 +115,9 @@ export function PlanningScreen() {
   if (!data) return null;
 
   const blocks: BlockDef[] = [
-    { title: 'REVENUS', rows: data.revenus, totalLabel: 'TOTAL REVENUS', totalKey: 'totalRevenus', emptyText: 'Aucun revenu prévu.' },
-    { title: 'DÉPENSES', rows: data.depenses, totalLabel: 'TOTAL DÉPENSES', totalKey: 'totalDepenses', emptyText: 'Aucune dépense prévue.' },
-    { title: 'ÉPARGNE / VERSEMENTS', rows: data.epargne, totalLabel: 'TOTAL ÉPARGNE', totalKey: 'totalEpargne', emptyText: 'Aucun versement prévu.' },
+    { title: 'REVENUS', rows: data.revenus, totalLabel: 'TOTAL REVENUS', totalKey: 'totalRevenus', emptyText: 'Aucun revenu prévu.', accentColor: colors.success },
+    { title: 'DÉPENSES', rows: data.depenses, totalLabel: 'TOTAL DÉPENSES', totalKey: 'totalDepenses', emptyText: 'Aucune dépense prévue.', accentColor: colors.danger },
+    { title: 'ÉPARGNE / VERSEMENTS', rows: data.epargne, totalLabel: 'TOTAL ÉPARGNE', totalKey: 'totalEpargne', emptyText: 'Aucun versement prévu.', accentColor: colors.primary },
   ];
 
   return (
@@ -144,8 +147,8 @@ export function PlanningScreen() {
             <View style={[styles.labelCell, { height: HEADER_HEIGHT }]} />
             {blocks.map((block) => (
               <React.Fragment key={block.title}>
-                <View style={[styles.sectionLabelCell, { height: SECTION_HEIGHT }]}>
-                  <Text style={styles.sectionLabelText}>{block.title}</Text>
+                <View style={[styles.sectionLabelCell, { height: SECTION_HEIGHT, borderLeftColor: block.accentColor }]}>
+                  <Text style={[styles.sectionLabelText, { color: block.accentColor }]}>{block.title}</Text>
                 </View>
                 {block.rows.length === 0 ? (
                   <View style={[styles.labelCell, { height: ROW_HEIGHT }]}>
@@ -162,7 +165,7 @@ export function PlanningScreen() {
                     </View>
                   ))
                 )}
-                <View style={[styles.totalLabelCell, { height: ROW_HEIGHT }]}>
+                <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: block.accentColor }]}>
                   <Text style={styles.totalLabelText}>{block.totalLabel}</Text>
                 </View>
               </React.Fragment>
@@ -264,7 +267,14 @@ export function PlanningScreen() {
         }}
       />
 
-      <CategoryDetailModal target={detailTarget} onClose={() => setDetailTarget(null)} />
+      <CategoryDetailModal
+        target={detailTarget}
+        onClose={() => setDetailTarget(null)}
+        onRealized={async () => {
+          setDetailTarget(null);
+          await refresh();
+        }}
+      />
 
       <ChoiceSheet
         visible={!!realizedMenuTarget}
@@ -321,10 +331,11 @@ function PlanningCellView({
   testID: string;
 }) {
   const isRealized = cell.status === 'REALIZED';
+  const isPending = cell.status === 'PENDING';
   const isMixed = cell.status === 'MIXED';
   return (
     <TouchableOpacity
-      style={[styles.cell, { width: MONTH_WIDTH }, isRealized && styles.cellRealized, isMixed && styles.cellMixed]}
+      style={[styles.cell, { width: MONTH_WIDTH }, isRealized && styles.cellRealized, isPending && styles.cellPending, isMixed && styles.cellMixed]}
       onPress={onPress}
       onLongPress={onLongPress}
       disabled={cell.status === 'EMPTY'}
@@ -332,8 +343,14 @@ function PlanningCellView({
     >
       {cell.status === 'EMPTY' ? (
         <Text style={styles.cellEmpty}>—</Text>
+      ) : isMixed ? (
+        // Case MIXTE : réalisé ET à venir dans la même case — jamais fondus en un seul
+        // total ambigu (§ bug "270 DH ✓" en vert) : "réalisé/total" compact, sans ✓.
+        <Text style={styles.cellAmountMixed} numberOfLines={1} adjustsFontSizeToFit testID={`${testID}-mixed`}>
+          {Math.round(cell.realizedAmount).toLocaleString('fr-FR')}/{Math.round(cell.displayAmount).toLocaleString('fr-FR')} DH
+        </Text>
       ) : (
-        <Text style={[styles.cellAmount, isRealized && styles.cellAmountRealized]}>
+        <Text style={[styles.cellAmount, isRealized && styles.cellAmountRealized, isPending && styles.cellAmountPending]}>
           {formatDh(cell.displayAmount)}
           {isRealized ? ' ✓' : ''}
         </Text>
@@ -406,6 +423,7 @@ function AdjustModal({
   onDone: () => Promise<void>;
 }) {
   const bottomInset = useBottomInset(spacing.lg);
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const occ = target?.cell.singleOccurrence ?? null;
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState('');
@@ -438,10 +456,10 @@ function AdjustModal({
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.backdrop} />
       </TouchableWithoutFeedback>
-      <ScrollView style={styles.adjustSheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
+      <ScrollView ref={scrollRef} style={styles.adjustSheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
         <Text style={styles.confirmTitle}>{target.rowLabel}</Text>
         <Text style={styles.adjustPrevu}>Prévu {formatDh(occ.expectedAmount)}</Text>
-        <FormField label="Montant réel" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" testID="planning-adjust-amount" />
+        <FormField label="Montant réel" value={amount} onChangeText={setAmount} onFocus={handleFocus} keyboardType="decimal-pad" testID="planning-adjust-amount" />
         <DateField label="Date" value={date} onChange={setDate} />
         {label ? <Text style={styles.adjustAccount}>Compte : {label}</Text> : null}
         <View style={styles.confirmActions}>
@@ -457,10 +475,33 @@ function AdjustModal({
   );
 }
 
-function CategoryDetailModal({ target, onClose }: { target: { cell: api.PlanningCellApi; rowLabel: string; month: string } | null; onClose: () => void }) {
+function CategoryDetailModal({
+  target,
+  onClose,
+  onRealized,
+}: {
+  target: { cell: api.PlanningCellApi; rowLabel: string; month: string } | null;
+  onClose: () => void;
+  onRealized: () => Promise<void>;
+}) {
   const bottomInset = useBottomInset(spacing.lg);
+  const [markingId, setMarkingId] = useState<string | null>(null);
   if (!target) return null;
   const { cell, rowLabel } = target;
+  const realizedItems = cell.items.filter((i) => i.type !== 'PLANNED_PENDING');
+  const pendingItems = cell.items.filter((i) => i.type === 'PLANNED_PENDING');
+
+  async function markRealized(plannedOperationId: string, expectedAmount: number) {
+    if (markingId) return;
+    setMarkingId(plannedOperationId);
+    try {
+      await api.realizePlannedOperation(plannedOperationId, { actualAmount: String(expectedAmount) });
+      await onRealized();
+    } finally {
+      setMarkingId(null);
+    }
+  }
+
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <TouchableWithoutFeedback onPress={onClose}>
@@ -471,21 +512,58 @@ function CategoryDetailModal({ target, onClose }: { target: { cell: api.Planning
         {cell.items.length === 0 ? (
           <Text style={styles.emptyRowText}>Aucune opération.</Text>
         ) : (
-          cell.items.map((item, i) => (
-            <View key={`${item.plannedOperationId ?? item.financialOperationId}-${i}`} style={styles.detailRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.detailLabel}>{item.label}</Text>
-                <Text style={styles.detailMeta}>
-                  {formatShortDate(item.date)} · {item.type === 'PLANNED_PENDING' ? 'Prévu' : item.type === 'PLANNED_REALIZED' ? 'Réalisé' : 'Non prévu'}
-                </Text>
-              </View>
-              <Text style={styles.detailAmount}>{formatDh(item.amount)}</Text>
-            </View>
-          ))
+          <>
+            {realizedItems.length > 0 && (
+              <>
+                <Text style={styles.detailSectionLabel}>RÉALISÉ</Text>
+                {realizedItems.map((item, i) => (
+                  <View key={`r-${item.plannedOperationId ?? item.financialOperationId}-${i}`} style={styles.detailRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.detailLabel}>{item.label}</Text>
+                      <Text style={styles.detailMeta}>{formatShortDate(item.date)}</Text>
+                    </View>
+                    <Text style={[styles.detailAmount, styles.detailAmountRealized]}>{formatDh(item.amount)}</Text>
+                  </View>
+                ))}
+              </>
+            )}
+            {pendingItems.length > 0 && (
+              <>
+                <Text style={[styles.detailSectionLabel, { marginTop: realizedItems.length > 0 ? spacing.md : 0 }]}>À VENIR</Text>
+                {pendingItems.map((item, i) => (
+                  <View key={`p-${item.plannedOperationId}-${i}`} style={styles.detailRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.detailLabel}>{item.label}</Text>
+                      <Text style={styles.detailMeta}>{formatShortDate(item.date)}</Text>
+                    </View>
+                    <Text style={[styles.detailAmount, styles.detailAmountPending]}>{formatDh(item.amount)}</Text>
+                    {item.plannedOperationId && (
+                      <TouchableOpacity
+                        style={styles.markRealizedButton}
+                        onPress={() => markRealized(item.plannedOperationId!, item.amount)}
+                        disabled={markingId === item.plannedOperationId}
+                        testID={`planning-detail-mark-realized-${item.plannedOperationId}`}
+                      >
+                        <Text style={styles.markRealizedButtonText}>{markingId === item.plannedOperationId ? '…' : 'Marquer réalisé'}</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+              </>
+            )}
+          </>
         )}
         <View style={styles.detailTotalRow}>
           <Text style={styles.detailTotalLabel}>Total</Text>
           <Text style={styles.detailTotalAmount}>{formatDh(cell.displayAmount)}</Text>
+        </View>
+        <View style={styles.detailTotalRow}>
+          <Text style={styles.detailSynthLabel}>Réalisé</Text>
+          <Text style={[styles.detailSynthAmount, styles.detailAmountRealized]}>{formatDh(cell.realizedAmount)}</Text>
+        </View>
+        <View style={styles.detailTotalRow}>
+          <Text style={styles.detailSynthLabel}>Restant</Text>
+          <Text style={[styles.detailSynthAmount, styles.detailAmountPending]}>{formatDh(cell.pendingAmount)}</Text>
         </View>
       </ScrollView>
     </Modal>
@@ -559,22 +637,28 @@ const styles = StyleSheet.create({
   horizonPillTextActive: { color: colors.textOnPrimary },
   tableRow: { flexDirection: 'row', paddingLeft: spacing.lg },
   labelCell: { justifyContent: 'center', paddingRight: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },
-  sectionLabelCell: { justifyContent: 'flex-end', paddingBottom: 4 },
-  sectionLabelText: { ...typography.caption, fontWeight: '800', color: colors.textSecondary, letterSpacing: 0.5 },
+  sectionLabelCell: { justifyContent: 'flex-end', paddingBottom: 4, paddingLeft: spacing.xs, borderLeftWidth: 3 },
+  sectionLabelText: { ...typography.caption, fontWeight: '800', letterSpacing: 0.5 },
   rowLabelText: { ...typography.body, fontWeight: '600' },
   emptyRowText: { ...typography.caption, color: colors.textPlaceholder },
-  totalLabelCell: { justifyContent: 'center', borderTopWidth: 1, borderTopColor: colors.borderStrong, backgroundColor: colors.surfaceSecondary, paddingRight: spacing.sm },
+  totalLabelCell: { justifyContent: 'center', borderTopWidth: 2, borderTopColor: colors.borderStrong, backgroundColor: colors.surfaceSecondary, paddingRight: spacing.sm, paddingLeft: spacing.xs, borderLeftWidth: 3 },
   totalLabelText: { ...typography.caption, fontWeight: '800', color: colors.textPrimary },
   monthHeaderCell: { justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 4 },
   monthHeaderText: { ...typography.caption, fontWeight: '800', color: colors.textSecondary },
   sectionSpacerCell: {},
   cell: { alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: colors.divider, borderLeftWidth: 1, borderLeftColor: colors.divider },
   cellRealized: { backgroundColor: colors.successLight },
-  cellMixed: { backgroundColor: colors.warningLight },
+  cellPending: { backgroundColor: colors.warningLight },
+  // MIXTE : même teinte que "prévu" (jamais confondu avec 100% réalisé, vert) mais un
+  // liseré vert à gauche signale la part déjà réalisée dans la case — sobre, sans
+  // ajouter de nouvelle couleur au design system (§7, purement visuel).
+  cellMixed: { backgroundColor: colors.warningLight, borderLeftWidth: 3, borderLeftColor: colors.success },
   cellEmpty: { color: colors.textPlaceholder },
   cellAmount: { ...typography.body, fontWeight: '700' },
   cellAmountRealized: { color: colors.success },
-  totalCell: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceSecondary, borderTopWidth: 1, borderTopColor: colors.borderStrong, borderLeftWidth: 1, borderLeftColor: colors.divider },
+  cellAmountPending: { color: colors.warning },
+  cellAmountMixed: { ...typography.caption, fontWeight: '800', color: colors.warning, paddingHorizontal: 2 },
+  totalCell: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceSecondary, borderTopWidth: 2, borderTopColor: colors.borderStrong, borderLeftWidth: 1, borderLeftColor: colors.divider },
   totalCellText: { ...typography.body, fontWeight: '800' },
   syntheseCell: { backgroundColor: colors.surfaceActive },
   negativeText: { color: colors.danger },
@@ -598,13 +682,20 @@ const styles = StyleSheet.create({
   adjustSheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 6, borderTopRightRadius: radius.xl + 6, padding: spacing.xl, maxHeight: '85%' },
   adjustPrevu: { ...typography.bodySecondary, marginBottom: spacing.md },
   adjustAccount: { ...typography.bodySecondary, marginBottom: spacing.md },
-  detailRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  detailSectionLabel: { ...typography.caption, fontWeight: '800', color: colors.textSecondary, letterSpacing: 0.5, marginBottom: spacing.xs },
+  detailRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider, gap: spacing.sm },
   detailLabel: { ...typography.body, fontWeight: '600' },
   detailMeta: { ...typography.caption, marginTop: 2 },
   detailAmount: { ...typography.body, fontWeight: '700' },
-  detailTotalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: spacing.md },
-  detailTotalLabel: { ...typography.body, fontWeight: '800' },
-  detailTotalAmount: { ...typography.body, fontWeight: '800' },
+  detailAmountRealized: { color: colors.success },
+  detailAmountPending: { color: colors.warning },
+  markRealizedButton: { paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.successLight },
+  markRealizedButtonText: { ...typography.caption, fontWeight: '700', color: colors.success },
+  detailTotalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: spacing.sm },
+  detailTotalLabel: { ...typography.body, fontWeight: '800', marginTop: spacing.sm },
+  detailTotalAmount: { ...typography.body, fontWeight: '800', marginTop: spacing.sm },
+  detailSynthLabel: { ...typography.bodySecondary, fontWeight: '600' },
+  detailSynthAmount: { ...typography.bodySecondary, fontWeight: '700' },
   plansSection: { paddingHorizontal: spacing.lg, marginTop: spacing.xl },
   plansSectionTitle: { ...typography.caption, fontWeight: '800', color: colors.textSecondary, letterSpacing: 0.5, marginBottom: spacing.sm },
   planCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.sm },

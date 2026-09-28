@@ -10,6 +10,7 @@ import { formatDh, formatShortDate } from '../ui/formatMoney';
 import { HelpButton } from '../ui/HelpButton';
 import { FormField } from '../ui/FormField';
 import { Select, SelectOption } from '../ui/Select';
+import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
 
 /**
  * Liste des plans financiers (§13, §21 "Organisation > Plans financiers") —
@@ -117,6 +118,7 @@ function CreatePlanModal({
   onCreated: (id: string) => void;
 }) {
   const bottomInset = useBottomInset(spacing.lg);
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [label, setLabel] = useState('');
   const [accountId, setAccountId] = useState<string | null>(null);
   const [subaccountId, setSubaccountId] = useState<string | null>(null);
@@ -127,6 +129,7 @@ function CreatePlanModal({
       setLabel('');
       setAccountId(null);
       setSubaccountId(null);
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
     }
   }, [visible]);
 
@@ -150,9 +153,9 @@ function CreatePlanModal({
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.backdrop} />
       </TouchableWithoutFeedback>
-      <ScrollView style={styles.sheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
+      <ScrollView ref={scrollRef} style={styles.sheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
         <Text style={styles.sheetTitle}>Nouveau plan financier</Text>
-        <FormField label="Libellé" value={label} onChangeText={setLabel} placeholder="Ex. Scolarité" testID="create-plan-label" />
+        <FormField label="Libellé" value={label} onChangeText={setLabel} onFocus={handleFocus} placeholder="Ex. Scolarité" testID="create-plan-label" />
         <Select
           label="Compte lié (optionnel)"
           placeholder="Aucun"

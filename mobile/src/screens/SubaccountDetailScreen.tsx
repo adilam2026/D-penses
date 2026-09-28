@@ -96,7 +96,12 @@ export function SubaccountDetailScreen() {
           (operations ?? []).map((op) => {
             const amount = localAmount(op.ledgerEntries, { subaccountId: id });
             return (
-              <View key={op.id} style={styles.opRow} testID={`transaction-row-${testIdSlug(op.label)}`}>
+              <TouchableOpacity
+                key={op.id}
+                style={styles.opRow}
+                onPress={() => navigation.navigate('TransactionDetail', { id: op.id, subaccountId: id })}
+                testID={`transaction-row-${testIdSlug(op.label)}`}
+              >
                 <View style={{ flex: 1 }}>
                   <Text style={styles.opLabel}>{op.label}</Text>
                   <Text style={styles.opMeta}>
@@ -107,7 +112,7 @@ export function SubaccountDetailScreen() {
                   {amount > 0 ? '+' : ''}
                   {formatDh(amount)}
                 </Text>
-              </View>
+              </TouchableOpacity>
             );
           })
         )}

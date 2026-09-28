@@ -85,15 +85,41 @@ export class FinancialPlansService {
     });
   }
 
-  /** Ajouter une échéance (§13) — backfill immédiat des postes récurrents déjà définis sur cette nouvelle échéance. */
-  async addDeadline(userId: string, householdId: string, planId: string, dto: { label: string; dueDate: string }) {
+  /**
+   * Ajouter une échéance (§13) — le montant propre de l'échéance (dto.amount)
+   * est stocké sur financial_plan_deadline (affichage/édition directe) ET
+   * reflété par une planned_operation "sans poste" (financialPlanItemId:
+   * null) créée dans la même transaction, pour alimenter le calcul existant
+   * de totalPrevu/besoin sans jamais le sommer deux fois (cf.
+   * computeDeadlineSummary — expectedAmount n'y est jamais additionné
+   * directement). Backfill immédiat des postes récurrents déjà définis sur
+   * cette nouvelle échéance (additif à son propre montant, pas un doublon).
+   */
+  async addDeadline(userId: string, householdId: string, planId: string, dto: { label: string; dueDate: string; amount: string }) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
       const plan = await tx.financialPlan.findUnique({ where: { id: planId } });
       if (!plan || plan.householdId !== householdId) throw new NotFoundException('Plan financier introuvable');
 
+      const dueDate = new Date(dto.dueDate);
+      const amount = new Prisma.Decimal(dto.amount);
+
       const deadline = await tx.financialPlanDeadline.create({
-        data: { planId, label: dto.label, dueDate: new Date(dto.dueDate) },
+        data: { planId, label: dto.label, dueDate, expectedAmount: amount },
+      });
+
+      await tx.plannedOperation.create({
+        data: {
+          householdId,
+          kind: 'EXPENSE',
+          label: dto.label,
+          expectedAmount: amount,
+          expectedDate: dueDate,
+          financialPlanItemId: null,
+          financialPlanDeadlineId: deadline.id,
+          sourceAccountId: plan.accountId ?? undefined,
+          sourceSubaccountId: plan.subaccountId ?? undefined,
+        },
       });
 
       await ensurePlanItemOccurrences(tx, planId);

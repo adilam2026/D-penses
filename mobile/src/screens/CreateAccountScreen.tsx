@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { useTopInset } from '../ui/useTopInset';
@@ -8,6 +8,7 @@ import { useBottomInset } from '../ui/useBottomInset';
 import { colors, radius, spacing, typography } from '../ui/theme';
 import { FormField } from '../ui/FormField';
 import { Select } from '../ui/Select';
+import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
 
 const ACCOUNT_TYPE_OPTIONS = [
   { value: 'COURANT', label: 'Courant' },
@@ -26,35 +27,19 @@ export function CreateAccountScreen() {
   const navigation = useNavigation<any>();
   const topInset = useTopInset();
   const bottomInset = useBottomInset(spacing.lg);
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
 
-  const [members, setMembers] = useState<{ value: string; label: string }[]>([]);
   const [name, setName] = useState('');
   const [bank, setBank] = useState('');
-  const [ownerMemberId, setOwnerMemberId] = useState<string | null>(null);
   const [type, setType] = useState('COURANT');
   const [openingBalance, setOpeningBalance] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdName, setCreatedName] = useState<string | null>(null);
 
-  const loadMembers = useCallback(async () => {
-    const household = await api.getMyHousehold();
-    setMembers(
-      (household.memberships ?? []).map((m: any) => ({
-        value: m.id,
-        label: [m.user.firstName, m.user.lastName].filter(Boolean).join(' ') || m.user.email,
-      })),
-    );
-  }, []);
-
-  useEffect(() => {
-    loadMembers();
-  }, [loadMembers]);
-
   function resetForm() {
     setName('');
     setBank('');
-    setOwnerMemberId(null);
     setType('COURANT');
     setOpeningBalance('');
     setCreatedName(null);
@@ -70,7 +55,6 @@ export function CreateAccountScreen() {
         name: name.trim(),
         bank: bank.trim() || undefined,
         type,
-        ownerMemberId: ownerMemberId ?? undefined,
         openingBalance: openingBalance.trim() || undefined,
       });
       setCreatedName(name.trim());
@@ -103,42 +87,40 @@ export function CreateAccountScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView style={[styles.container, { paddingTop: topInset }]} contentContainerStyle={{ padding: spacing.lg, paddingBottom: bottomInset + spacing.xxl }}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backRow} onPress={() => navigation.goBack()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
-            <Text style={styles.backLabel}>Retour</Text>
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.title}>Nouveau compte</Text>
-
-        <FormField label="Nom du compte" placeholder="ex. CIH Courant" value={name} onChangeText={setName} testID="create-account-name" />
-        <FormField label="Banque (optionnel)" placeholder="ex. CIH Bank" value={bank} onChangeText={setBank} testID="create-account-bank" />
-        <Select label="Propriétaire" placeholder="Sélectionner un membre…" value={ownerMemberId} options={members} onChange={setOwnerMemberId} testID="create-account-owner" />
-        <Select label="Type" value={type} options={ACCOUNT_TYPE_OPTIONS} onChange={setType} testID="create-account-type" />
-        <FormField
-          label="Solde actuel (optionnel)"
-          placeholder="0"
-          value={openingBalance}
-          onChangeText={setOpeningBalance}
-          keyboardType="decimal-pad"
-          testID="create-account-opening-balance"
-          helperText="Le solde de départ crée automatiquement une opération d'ouverture — il n'est jamais modifiable directement ensuite."
-        />
-
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        <TouchableOpacity
-          style={[styles.primaryButton, (!name.trim() || saving) && styles.buttonDisabled]}
-          onPress={submit}
-          disabled={!name.trim() || saving}
-          testID="create-account-submit"
-        >
-          <Text style={styles.primaryButtonText}>{saving ? 'Création…' : 'Créer le compte'}</Text>
+    <ScrollView ref={scrollRef} style={[styles.container, { paddingTop: topInset }]} contentContainerStyle={{ padding: spacing.lg, paddingBottom: bottomInset + spacing.xxl }}>
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backRow} onPress={() => navigation.goBack()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
+          <Text style={styles.backLabel}>Retour</Text>
         </TouchableOpacity>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </View>
+      <Text style={styles.title}>Nouveau compte</Text>
+
+      <FormField label="Nom du compte" placeholder="ex. CIH Courant" value={name} onChangeText={setName} onFocus={handleFocus} testID="create-account-name" />
+      <FormField label="Banque (optionnel)" placeholder="ex. CIH Bank" value={bank} onChangeText={setBank} onFocus={handleFocus} testID="create-account-bank" />
+      <Select label="Type" value={type} options={ACCOUNT_TYPE_OPTIONS} onChange={setType} testID="create-account-type" />
+      <FormField
+        label="Solde actuel (optionnel)"
+        placeholder="0"
+        value={openingBalance}
+        onChangeText={setOpeningBalance}
+        onFocus={handleFocus}
+        keyboardType="decimal-pad"
+        testID="create-account-opening-balance"
+        helperText="Le solde de départ crée automatiquement une opération d'ouverture — il n'est jamais modifiable directement ensuite."
+      />
+
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+
+      <TouchableOpacity
+        style={[styles.primaryButton, (!name.trim() || saving) && styles.buttonDisabled]}
+        onPress={submit}
+        disabled={!name.trim() || saving}
+        testID="create-account-submit"
+      >
+        <Text style={styles.primaryButtonText}>{saving ? 'Création…' : 'Créer le compte'}</Text>
+      </TouchableOpacity>
+    </ScrollView>
   );
 }
 

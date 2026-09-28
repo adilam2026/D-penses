@@ -13,6 +13,7 @@ import { HelpButton } from '../ui/HelpButton';
 import { FormField } from '../ui/FormField';
 import { Select } from '../ui/Select';
 import { DateField } from '../ui/DateField';
+import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
 
 type Tab = 'depenses' | 'remboursements';
 
@@ -279,6 +280,7 @@ function ReimbursementModal({
   const [accounts, setAccounts] = useState<api.AccountApi[]>([]);
   const [saving, setSaving] = useState(false);
   const bottomInset = useBottomInset(spacing.lg);
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
 
   useFocusEffect(
     useCallback(() => {
@@ -315,9 +317,9 @@ function ReimbursementModal({
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
-      <ScrollView style={[styles.reimburseSheet]} contentContainerStyle={{ paddingBottom: bottomInset }}>
+      <ScrollView ref={scrollRef} style={[styles.reimburseSheet]} contentContainerStyle={{ paddingBottom: bottomInset }}>
         <Text style={styles.title}>Remboursement reçu</Text>
-        <FormField label="Montant reçu" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" testID="reimburse-amount" />
+        <FormField label="Montant reçu" value={amount} onChangeText={setAmount} onFocus={handleFocus} keyboardType="decimal-pad" testID="reimburse-amount" />
         <DateField label="Date" value={date} onChange={setDate} />
         <Select
           label="Compte bénéficiaire"

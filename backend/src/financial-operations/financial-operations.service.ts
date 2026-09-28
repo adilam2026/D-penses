@@ -1,7 +1,19 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { OperationKind, Prisma } from '@prisma/client';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { insertFinancialOperation } from '../common/ledger/ledger.util';
+
+export interface CancelFinancialOperationInput {
+  reason?: string;
+}
+
+export interface CorrectFinancialOperationInput {
+  label: string;
+  date: string;
+  amount: string;
+  categoryId?: string;
+  reason?: string;
+}
 
 export interface CreateFinancialOperationInput {
   kind: OperationKind;
@@ -58,6 +70,96 @@ export class FinancialOperationsService {
     });
   }
 
+  /**
+   * "Annuler" une opération réalisée (§4) — reversal exact construit à partir
+   * des valeurs ENREGISTRÉES de l'opération d'origine (jamais celles envoyées
+   * par le client), donc toujours cohérent avec l'historique. insertFinancialOperation
+   * refuse déjà d'annuler une opération qui est elle-même un reversal, mais ce
+   * garde-fou seul ne bloque PAS un second appel /cancel sur la MÊME opération
+   * d'origine (il ne regarde que l'opération ciblée, jamais si elle a déjà été
+   * renversée par ailleurs) — d'où la vérification explicite ci-dessous :
+   * double-annulation impossible dans tous les cas.
+   */
+  async cancel(userId: string, householdId: string, operationId: string, dto: CancelFinancialOperationInput) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const original = await tx.financialOperation.findUnique({ where: { id: operationId } });
+      if (!original || original.householdId !== householdId) throw new NotFoundException('Opération introuvable');
+
+      const alreadyReversed = await tx.financialOperation.findFirst({ where: { reversalOfOperationId: original.id } });
+      if (alreadyReversed) throw new BadRequestException('Cette opération a déjà été annulée');
+
+      return insertFinancialOperation(tx, {
+        householdId,
+        createdByUserId: userId,
+        kind: original.kind,
+        label: original.label,
+        date: new Date(),
+        amount: original.amount,
+        categoryId: original.categoryId,
+        sourceAccountId: original.sourceAccountId,
+        sourceSubaccountId: original.sourceSubaccountId,
+        destinationAccountId: original.destinationAccountId,
+        destinationSubaccountId: original.destinationSubaccountId,
+        reversalOfOperationId: original.id,
+        reversalReason: dto.reason ?? undefined,
+      });
+    });
+  }
+
+  /**
+   * "Modifier" une opération réalisée (§4) — jamais de mutation de la ligne
+   * d'origine : reversal de l'originale + nouvelle opération corrigée avec les
+   * valeurs ajustées, dans la MÊME transaction (atomique — pas 2 appels
+   * client séparés). La nouvelle opération pointe vers l'ORIGINALE via
+   * correction_of_operation_id pour une chaîne d'audit explicite. kind et
+   * comptes source/destination sont repris de l'originale (immuables ici).
+   * Vérifie "déjà renversée" (pas seulement "déjà corrigée") : une opération
+   * annulée via /cancel ne doit jamais pouvoir être corrigée ensuite, sous
+   * peine de la renverser une seconde fois (même risque que le double-cancel).
+   */
+  async correct(userId: string, householdId: string, operationId: string, dto: CorrectFinancialOperationInput) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const original = await tx.financialOperation.findUnique({ where: { id: operationId } });
+      if (!original || original.householdId !== householdId) throw new NotFoundException('Opération introuvable');
+
+      const alreadyReversed = await tx.financialOperation.findFirst({ where: { reversalOfOperationId: original.id } });
+      if (alreadyReversed) throw new BadRequestException('Cette opération a déjà été annulée ou corrigée');
+
+      await insertFinancialOperation(tx, {
+        householdId,
+        createdByUserId: userId,
+        kind: original.kind,
+        label: original.label,
+        date: new Date(),
+        amount: original.amount,
+        categoryId: original.categoryId,
+        sourceAccountId: original.sourceAccountId,
+        sourceSubaccountId: original.sourceSubaccountId,
+        destinationAccountId: original.destinationAccountId,
+        destinationSubaccountId: original.destinationSubaccountId,
+        reversalOfOperationId: original.id,
+        reversalReason: dto.reason ?? `Correction : ${dto.label}`,
+      });
+
+      return insertFinancialOperation(tx, {
+        householdId,
+        createdByUserId: userId,
+        kind: original.kind,
+        label: dto.label,
+        date: new Date(dto.date),
+        amount: new Prisma.Decimal(dto.amount),
+        categoryId: dto.categoryId ?? original.categoryId,
+        sourceAccountId: original.sourceAccountId,
+        sourceSubaccountId: original.sourceSubaccountId,
+        destinationAccountId: original.destinationAccountId,
+        destinationSubaccountId: original.destinationSubaccountId,
+        correctionOfOperationId: original.id,
+      });
+    });
+  }
+
   async list(userId: string, householdId: string, filters?: { accountId?: string; subaccountId?: string }) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
@@ -78,7 +180,16 @@ export class FinancialOperationsService {
   async getOne(userId: string, householdId: string, id: string) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
-      const operation = await tx.financialOperation.findUnique({ where: { id }, include: { ledgerEntries: true } });
+      const operation = await tx.financialOperation.findUnique({
+        where: { id },
+        include: {
+          ledgerEntries: true,
+          reversals: true,
+          reversalOfOperation: true,
+          correctedByOperations: true,
+          correctionOfOperation: true,
+        },
+      });
       if (!operation || operation.householdId !== householdId) throw new NotFoundException('Opération introuvable');
       return operation;
     });

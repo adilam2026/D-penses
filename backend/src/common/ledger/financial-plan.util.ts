@@ -16,6 +16,11 @@ export interface DeadlineSummaryInput {
   id: string;
   label: string;
   dueDate: Date;
+  /** Montant propre de l'échéance (affichage uniquement) — déjà reflété dans
+   * plannedOperations via une ligne "sans poste" maintenue en synchronisation
+   * par le service ; JAMAIS additionné ici en plus de plannedOperations, pour
+   * ne jamais compter deux fois le même montant. */
+  expectedAmount?: Prisma.Decimal | null;
   plannedOperations: DeadlinePlannedOperationInput[];
 }
 
@@ -31,6 +36,8 @@ export interface DeadlineSummary {
   deadlineId: string;
   label: string;
   dueDate: Date;
+  /** Montant propre de l'échéance, saisi à la création — affichage uniquement, jamais sommé en plus de totalPrevu (cf. DeadlineSummaryInput.expectedAmount). */
+  expectedAmount: number | null;
   totalPrevu: number;
   disponible: number;
   reste: number;
@@ -92,6 +99,7 @@ export function computeDeadlineSummary(deadline: DeadlineSummaryInput, now: Date
     deadlineId: deadline.id,
     label: deadline.label,
     dueDate: deadline.dueDate,
+    expectedAmount: deadline.expectedAmount != null ? round2(toNumber(deadline.expectedAmount)) : null,
     totalPrevu: round2(totalPrevu),
     disponible: round2(disponible),
     reste,

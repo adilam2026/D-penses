@@ -7,6 +7,7 @@ import { ApiError } from '../../api/client';
 import { FormField } from '../../ui/FormField';
 import { useBottomInset } from '../../ui/useBottomInset';
 import { colors, radius, spacing } from '../../ui/theme';
+import { useKeyboardAwareScroll } from '../../ui/useKeyboardAwareScroll';
 
 type Membership = { householdId: string; name: string; role: string; isActive: boolean };
 
@@ -24,6 +25,7 @@ type Membership = { householdId: string; name: string; role: string; isActive: b
 export function JoinHouseholdScreen() {
   const navigation = useNavigation<any>();
   const bottomInset = useBottomInset();
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const { joinHousehold, switchActiveHousehold } = useAuth();
   const [code, setCode] = useState('');
   const [joining, setJoining] = useState(false);
@@ -102,7 +104,7 @@ export function JoinHouseholdScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingBottom: bottomInset }]} keyboardShouldPersistTaps="handled">
         {showSwitcher && (
           <View style={styles.section} testID="household-switcher-section">
             <Text style={styles.sectionTitle}>Vos foyers</Text>
@@ -141,6 +143,7 @@ export function JoinHouseholdScreen() {
             autoCapitalize="characters"
             value={code}
             onChangeText={setCode}
+            onFocus={handleFocus}
           />
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <TouchableOpacity testID="join-household-submit" style={styles.button} onPress={onSubmit} disabled={joining}>

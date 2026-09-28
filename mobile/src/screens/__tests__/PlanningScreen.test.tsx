@@ -41,7 +41,7 @@ function renderWithSafeArea(ui: React.ReactElement) {
 }
 
 function emptyCell(): PlanningTableApi['depenses'][number]['cells'][string] {
-  return { displayAmount: 0, budgetAmount: 0, status: 'EMPTY', singleOccurrence: null, items: [] };
+  return { displayAmount: 0, budgetAmount: 0, pendingAmount: 0, realizedAmount: 0, status: 'EMPTY', singleOccurrence: null, items: [] };
 }
 
 function basePlanning(overrides?: Partial<PlanningTableApi>): PlanningTableApi {
@@ -96,6 +96,8 @@ it('case prévue (PENDING) : tap simple ouvre la confirmation "Payer" avec le co
             '2026-09': {
               displayAmount: 700,
               budgetAmount: 700,
+              pendingAmount: 700,
+              realizedAmount: 0,
               status: 'PENDING',
               singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null },
               items: [{ type: 'PLANNED_PENDING', plannedOperationId: 'po-1', label: 'Assurance voiture', amount: 700, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
@@ -131,6 +133,8 @@ it('case prévue : appui long ouvre le modal d\'ajustement pré-rempli avec le m
             '2026-09': {
               displayAmount: 700,
               budgetAmount: 700,
+              pendingAmount: 700,
+              realizedAmount: 0,
               status: 'PENDING',
               singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null },
               items: [{ type: 'PLANNED_PENDING', plannedOperationId: 'po-1', label: 'Assurance voiture', amount: 700, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
@@ -171,6 +175,8 @@ it('case réalisée (verte) : appui long propose Voir/Modifier/Annuler le paieme
             '2026-09': {
               displayAmount: 820,
               budgetAmount: 820,
+              pendingAmount: 0,
+              realizedAmount: 820,
               status: 'REALIZED',
               singleOccurrence: { plannedOperationId: 'po-1', status: 'REALIZED', expectedAmount: 700, realizedAmount: 820, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null },
               items: [{ type: 'PLANNED_REALIZED', plannedOperationId: 'po-1', financialOperationId: 'op-1', label: 'Assurance voiture', amount: 820, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
@@ -206,6 +212,8 @@ it('case agrégée (plusieurs éléments, ex. Autres) : tap ouvre le détail de 
             '2026-09': {
               displayAmount: 4800,
               budgetAmount: 4800,
+              pendingAmount: 0,
+              realizedAmount: 4800,
               status: 'REALIZED',
               singleOccurrence: null,
               items: [
@@ -229,6 +237,51 @@ it('case agrégée (plusieurs éléments, ex. Autres) : tap ouvre le détail de 
   await waitFor(() => screen.getByText('Aspirateur'));
   expect(screen.getByText('Cadeau')).toBeTruthy();
   expect(screen.getByText('Réparation maison')).toBeTruthy();
+});
+
+it("Item 6 : case MIXTE (200 réalisé + 70 à venir) affiche un split compact, jamais fondu en un seul total vert avec ✓", async () => {
+  mockGetPlanning.mockResolvedValue(
+    basePlanning({
+      depenses: [
+        {
+          key: 'cat-divers',
+          label: 'Divers',
+          categoryId: 'cat-divers',
+          cells: {
+            '2026-09': {
+              displayAmount: 270,
+              budgetAmount: 270,
+              pendingAmount: 70,
+              realizedAmount: 200,
+              status: 'MIXED',
+              singleOccurrence: null,
+              items: [
+                { type: 'PLANNED_REALIZED', plannedOperationId: 'po-1', financialOperationId: 'op-1', label: 'Poste A', amount: 200, date: '2026-09-05', sourceAccountId: 'cih', sourceSubaccountId: null, destinationAccountId: null, destinationSubaccountId: null },
+                { type: 'PLANNED_PENDING', plannedOperationId: 'po-2', label: 'Poste B', amount: 70, date: '2026-09-20', sourceAccountId: 'cih', sourceSubaccountId: null, destinationAccountId: null, destinationSubaccountId: null },
+              ],
+            },
+            '2026-10': emptyCell(),
+            '2026-11': emptyCell(),
+          },
+        },
+      ],
+    }),
+  );
+
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByText('200/270 DH'));
+  // Jamais affiché comme "270 DH ✓" (qui suggérerait à tort que tout est réalisé).
+  expect(screen.queryByText(/270 DH ✓/)).toBeNull();
+
+  fireEvent.press(screen.getAllByTestId(/^planning-cell-/)[0]);
+  await waitFor(() => screen.getByText('RÉALISÉ'));
+  expect(screen.getByText('À VENIR')).toBeTruthy();
+  expect(screen.getByText('Poste A')).toBeTruthy();
+  expect(screen.getByText('Poste B')).toBeTruthy();
+  expect(screen.getByTestId('planning-detail-mark-realized-po-2')).toBeTruthy();
+
+  fireEvent.press(screen.getByTestId('planning-detail-mark-realized-po-2'));
+  await waitFor(() => expect(mockRealizePlannedOperation).toHaveBeenCalledWith('po-2', { actualAmount: '70' }));
 });
 
 it('plans financiers : la carte affiche la prochaine échéance et navigue vers le détail du plan', async () => {

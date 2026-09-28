@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { useTopInset } from '../ui/useTopInset';
@@ -8,6 +8,7 @@ import { useBottomInset } from '../ui/useBottomInset';
 import { colors, radius, spacing, typography } from '../ui/theme';
 import { FormField } from '../ui/FormField';
 import { Select } from '../ui/Select';
+import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
 
 /**
  * Création d'un sous-compte (§5) — l'argent reste physiquement sur le compte
@@ -20,6 +21,7 @@ export function CreateSubaccountScreen() {
   const route = useRoute<RouteProp<{ CreateSubaccount: { accountId?: string } }, 'CreateSubaccount'>>();
   const topInset = useTopInset();
   const bottomInset = useBottomInset(spacing.lg);
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
 
   const [accounts, setAccounts] = useState<{ value: string; label: string; sublabel?: string }[]>([]);
   const [accountId, setAccountId] = useState<string | null>(route.params?.accountId ?? null);
@@ -77,50 +79,49 @@ export function CreateSubaccountScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView style={[styles.container, { paddingTop: topInset }]} contentContainerStyle={{ padding: spacing.lg, paddingBottom: bottomInset + spacing.xxl }}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backRow} onPress={() => navigation.goBack()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
-            <Text style={styles.backLabel}>Retour</Text>
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.title}>Nouveau sous-compte</Text>
-        <Text style={styles.intro}>
-          Cet argent reste sur votre compte bancaire. Finance Maison l'identifie simplement comme réservé à cet usage.
-        </Text>
-
-        <FormField label="Nom" placeholder="ex. Voiture" value={name} onChangeText={setName} testID="create-subaccount-name" />
-        <Select
-          label="Compte bancaire support"
-          placeholder="Sélectionner un compte…"
-          value={accountId}
-          options={accounts}
-          onChange={setAccountId}
-          testID="create-subaccount-account"
-        />
-        <FormField
-          label="Montant initial affecté (optionnel)"
-          placeholder="0"
-          value={initialAllocation}
-          onChangeText={setInitialAllocation}
-          keyboardType="decimal-pad"
-          testID="create-subaccount-allocation"
-          helperText="Ne peut pas dépasser le montant non affecté du compte support."
-        />
-
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        <TouchableOpacity
-          style={[styles.primaryButton, (!name.trim() || !accountId || saving) && styles.buttonDisabled]}
-          onPress={submit}
-          disabled={!name.trim() || !accountId || saving}
-          testID="create-subaccount-submit"
-        >
-          <Text style={styles.primaryButtonText}>{saving ? 'Création…' : 'Créer le sous-compte'}</Text>
+    <ScrollView ref={scrollRef} style={[styles.container, { paddingTop: topInset }]} contentContainerStyle={{ padding: spacing.lg, paddingBottom: bottomInset + spacing.xxl }}>
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backRow} onPress={() => navigation.goBack()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
+          <Text style={styles.backLabel}>Retour</Text>
         </TouchableOpacity>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </View>
+      <Text style={styles.title}>Nouveau sous-compte</Text>
+      <Text style={styles.intro}>
+        Cet argent reste sur votre compte bancaire. Finance Maison l'identifie simplement comme réservé à cet usage.
+      </Text>
+
+      <FormField label="Nom" placeholder="ex. Voiture" value={name} onChangeText={setName} onFocus={handleFocus} testID="create-subaccount-name" />
+      <Select
+        label="Compte bancaire support"
+        placeholder="Sélectionner un compte…"
+        value={accountId}
+        options={accounts}
+        onChange={setAccountId}
+        testID="create-subaccount-account"
+      />
+      <FormField
+        label="Montant initial affecté (optionnel)"
+        placeholder="0"
+        value={initialAllocation}
+        onChangeText={setInitialAllocation}
+        onFocus={handleFocus}
+        keyboardType="decimal-pad"
+        testID="create-subaccount-allocation"
+        helperText="Ne peut pas dépasser le montant non affecté du compte support."
+      />
+
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+
+      <TouchableOpacity
+        style={[styles.primaryButton, (!name.trim() || !accountId || saving) && styles.buttonDisabled]}
+        onPress={submit}
+        disabled={!name.trim() || !accountId || saving}
+        testID="create-subaccount-submit"
+      >
+        <Text style={styles.primaryButtonText}>{saving ? 'Création…' : 'Créer le sous-compte'}</Text>
+      </TouchableOpacity>
+    </ScrollView>
   );
 }
 

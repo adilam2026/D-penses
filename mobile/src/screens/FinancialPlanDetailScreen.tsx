@@ -12,6 +12,7 @@ import { ChoiceSheet } from '../ui/ChoiceSheet';
 import { FormField } from '../ui/FormField';
 import { DateField } from '../ui/DateField';
 import { Select, SelectOption } from '../ui/Select';
+import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
 
 const FREQUENCY_LABELS: Record<api.RecurrenceFrequency, string> = {
   ONCE: 'Ponctuel',
@@ -195,6 +196,7 @@ function EditPlanModal({
   onSaved: () => Promise<void>;
 }) {
   const bottomInset = useBottomInset(spacing.lg);
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [label, setLabel] = useState(plan.label);
   const [accountId, setAccountId] = useState<string | null>(plan.accountId);
   const [subaccountId, setSubaccountId] = useState<string | null>(plan.subaccountId);
@@ -205,6 +207,7 @@ function EditPlanModal({
       setLabel(plan.label);
       setAccountId(plan.accountId);
       setSubaccountId(plan.subaccountId);
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
     }
   }, [visible, plan]);
 
@@ -229,9 +232,9 @@ function EditPlanModal({
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.backdrop} />
       </TouchableWithoutFeedback>
-      <ScrollView style={styles.sheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
+      <ScrollView ref={scrollRef} style={styles.sheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
         <Text style={styles.sheetTitle}>Modifier le plan</Text>
-        <FormField label="Libellé" value={label} onChangeText={setLabel} testID="plan-edit-label" />
+        <FormField label="Libellé" value={label} onChangeText={setLabel} onFocus={handleFocus} testID="plan-edit-label" />
         <Select
           label="Compte lié"
           placeholder="Aucun"
@@ -256,22 +259,28 @@ function EditPlanModal({
 
 function AddDeadlineModal({ visible, planId, onClose, onSaved }: { visible: boolean; planId: string; onClose: () => void; onSaved: () => Promise<void> }) {
   const bottomInset = useBottomInset(spacing.lg);
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [label, setLabel] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [amount, setAmount] = useState('');
   const [saving, setSaving] = useState(false);
 
   React.useEffect(() => {
     if (visible) {
       setLabel('');
       setDueDate('');
+      setAmount('');
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
     }
   }, [visible]);
 
+  const canSubmit = !!label.trim() && !!dueDate && !!amount.trim() && !saving;
+
   async function submit() {
-    if (!label.trim() || !dueDate || saving) return;
+    if (!canSubmit) return;
     setSaving(true);
     try {
-      await api.addFinancialPlanDeadline(planId, { label: label.trim(), dueDate });
+      await api.addFinancialPlanDeadline(planId, { label: label.trim(), dueDate, amount: amount.trim() });
       await onSaved();
       onClose();
     } finally {
@@ -284,11 +293,12 @@ function AddDeadlineModal({ visible, planId, onClose, onSaved }: { visible: bool
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.backdrop} />
       </TouchableWithoutFeedback>
-      <ScrollView style={styles.sheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
+      <ScrollView ref={scrollRef} style={styles.sheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
         <Text style={styles.sheetTitle}>Ajouter une échéance</Text>
-        <FormField label="Libellé" value={label} onChangeText={setLabel} placeholder="Ex. Janvier" testID="add-deadline-label" />
+        <FormField label="Libellé" value={label} onChangeText={setLabel} onFocus={handleFocus} placeholder="Ex. Janvier" testID="add-deadline-label" />
         <DateField label="Date" value={dueDate} onChange={setDueDate} />
-        <TouchableOpacity style={[styles.submitButton, (!label.trim() || !dueDate || saving) && styles.submitButtonDisabled]} onPress={submit} disabled={!label.trim() || !dueDate || saving} testID="add-deadline-submit">
+        <FormField label="Montant" value={amount} onChangeText={setAmount} onFocus={handleFocus} placeholder="Ex. 3000" keyboardType="decimal-pad" testID="add-deadline-amount" />
+        <TouchableOpacity style={[styles.submitButton, !canSubmit && styles.submitButtonDisabled]} onPress={submit} disabled={!canSubmit} testID="add-deadline-submit">
           <Text style={styles.submitButtonText}>{saving ? 'Enregistrement…' : 'Ajouter'}</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -298,6 +308,7 @@ function AddDeadlineModal({ visible, planId, onClose, onSaved }: { visible: bool
 
 function AddItemModal({ visible, planId, onClose, onSaved }: { visible: boolean; planId: string; onClose: () => void; onSaved: () => Promise<void> }) {
   const bottomInset = useBottomInset(spacing.lg);
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [label, setLabel] = useState('');
   const [amount, setAmount] = useState('');
   const [frequency, setFrequency] = useState<api.RecurrenceFrequency>('ONCE');
@@ -308,6 +319,7 @@ function AddItemModal({ visible, planId, onClose, onSaved }: { visible: boolean;
       setLabel('');
       setAmount('');
       setFrequency('ONCE');
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
     }
   }, [visible]);
 
@@ -328,10 +340,10 @@ function AddItemModal({ visible, planId, onClose, onSaved }: { visible: boolean;
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.backdrop} />
       </TouchableWithoutFeedback>
-      <ScrollView style={styles.sheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
+      <ScrollView ref={scrollRef} style={styles.sheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
         <Text style={styles.sheetTitle}>Ajouter un poste</Text>
-        <FormField label="Libellé" value={label} onChangeText={setLabel} placeholder="Ex. Frais école" testID="add-item-label" />
-        <FormField label="Montant estimé" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" testID="add-item-amount" />
+        <FormField label="Libellé" value={label} onChangeText={setLabel} onFocus={handleFocus} placeholder="Ex. Frais école" testID="add-item-label" />
+        <FormField label="Montant estimé" value={amount} onChangeText={setAmount} onFocus={handleFocus} keyboardType="decimal-pad" testID="add-item-amount" />
         <Select label="Fréquence" value={frequency} options={FREQUENCY_OPTIONS} onChange={(v) => setFrequency(v as api.RecurrenceFrequency)} testID="add-item-frequency" />
         <Text style={styles.helperText}>
           Un poste récurrent s'applique automatiquement à chaque échéance existante du plan.

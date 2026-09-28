@@ -84,7 +84,12 @@ export function AccountDetailScreen() {
           (operations ?? []).map((op) => {
             const amount = localAmount(op.ledgerEntries, { accountId: id });
             return (
-              <View key={op.id} style={styles.opRow} testID={`transaction-row-${testIdSlug(op.label)}`}>
+              <TouchableOpacity
+                key={op.id}
+                style={styles.opRow}
+                onPress={() => navigation.navigate('TransactionDetail', { id: op.id, accountId: id })}
+                testID={`transaction-row-${testIdSlug(op.label)}`}
+              >
                 <View style={{ flex: 1 }}>
                   <Text style={styles.opLabel}>{op.label}</Text>
                   <Text style={styles.opMeta}>
@@ -95,7 +100,7 @@ export function AccountDetailScreen() {
                   {amount > 0 ? '+' : ''}
                   {formatDh(amount)}
                 </Text>
-              </View>
+              </TouchableOpacity>
             );
           })
         )}

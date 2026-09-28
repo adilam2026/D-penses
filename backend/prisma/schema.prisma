@@ -376,14 +376,20 @@ model FinancialPlanItem {
   @@map("financial_plan_item")
 }
 
-// Coquille simple uniquement : label + due_date. Aucun montant stocké ici — la
-// substance financière vit exclusivement dans planned_operations via
-// financial_plan_deadline_id (cf. rapport de reset).
+// Le montant propre de l'échéance (expectedAmount) est le montant à payer
+// pour CETTE échéance, indépendamment des postes du plan — les deux sont
+// additifs (jamais un remplaçant de l'autre) : le total prévu d'une échéance
+// reste TOUJOURS dérivé en sommant ses planned_operations (jamais stocké
+// directement, cf. computeDeadlineSummary), mais expectedAmount est
+// maintenant reflété par une planned_operation "sans poste"
+// (financialPlanItemId: null) créée/mise à jour en même temps que ce champ,
+// pour qu'il alimente ce calcul existant sans jamais être sommé deux fois.
 model FinancialPlanDeadline {
-  id      String   @id @default(uuid())
-  planId  String   @map("plan_id")
-  label   String
-  dueDate DateTime @map("due_date") @db.Date
+  id             String   @id @default(uuid())
+  planId         String   @map("plan_id")
+  label          String
+  dueDate        DateTime @map("due_date") @db.Date
+  expectedAmount Decimal? @map("expected_amount") @db.Decimal(14, 2)
 
   plan              FinancialPlan      @relation(fields: [planId], references: [id], onDelete: Cascade)
   plannedOperations PlannedOperation[]
@@ -438,6 +444,13 @@ model FinancialOperation {
   reversalOfOperationId String? @map("reversal_of_operation_id")
   reversalReason        String? @map("reversal_reason")
 
+  // "Modifier" une opération réalisée (§4) : jamais de mutation d'une ligne
+  // historique. La correction crée deux nouvelles opérations — un reversal de
+  // l'originale (reversalOfOperationId) et une nouvelle opération corrigée
+  // (correctionOfOperationId pointant vers l'ORIGINALE) — pour garder une
+  // chaîne d'audit explicite et traçable en base, pas seulement par libellé.
+  correctionOfOperationId String? @map("correction_of_operation_id")
+
   createdByUserId String   @map("created_by_user_id")
   createdAt       DateTime @default(now()) @map("created_at")
 
@@ -454,6 +467,9 @@ model FinancialOperation {
   reversalOfOperation FinancialOperation?  @relation("OperationReversal", fields: [reversalOfOperationId], references: [id])
   reversals           FinancialOperation[] @relation("OperationReversal")
 
+  correctionOfOperation FinancialOperation?  @relation("OperationCorrection", fields: [correctionOfOperationId], references: [id])
+  correctedByOperations FinancialOperation[] @relation("OperationCorrection")
+
   ledgerEntries         LedgerEntry[]
   realizesPlannedOps    PlannedOperation[]
   medicalClaimsSourced  MedicalClaim[]
@@ -461,6 +477,7 @@ model FinancialOperation {
 
   @@index([householdId])
   @@index([reversalOfOperationId])
+  @@index([correctionOfOperationId])
   @@map("financial_operation")
 }
 

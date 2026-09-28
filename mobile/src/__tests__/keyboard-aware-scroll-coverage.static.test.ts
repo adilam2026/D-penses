@@ -45,7 +45,12 @@ describe('Couverture useKeyboardAwareScroll (garde-fou Round 3 §1/§3)', () => 
     (relName, file) => {
       const source = fs.readFileSync(file, 'utf8');
       const hasScrollView = /<ScrollView/.test(source);
-      const hasRealTextInput = /<TextInput[\s\S]*?onChangeText/.test(source);
+      // La plupart des formulaires passent désormais par <FormField> (qui rend un
+      // TextInput en interne, cf. ui/FormField.tsx) plutôt qu'un <TextInput> brut dans
+      // l'écran lui-même — un écran utilisant <FormField ... onChangeText> reste un
+      // vrai champ de saisie à couvrir, jamais hors périmètre juste parce que le
+      // TextInput est encapsulé.
+      const hasRealTextInput = /<TextInput[\s\S]*?onChangeText/.test(source) || /<FormField[\s\S]*?onChangeText/.test(source);
       if (!hasScrollView || !hasRealTextInput) return; // hors périmètre du garde-fou
 
       const usesHook = /useKeyboardAwareScroll/.test(source);

@@ -202,7 +202,7 @@ export function AccueilScreen() {
 
             {hasSubaccounts && (
               <View style={styles.subaccountsList}>
-                {account.subaccounts.map((sub) => {
+                {account.subaccounts.map((sub, idx) => {
                   const sante = isSanteSubaccount(sub.name);
                   return (
                     <TouchableOpacity
@@ -211,13 +211,19 @@ export function AccueilScreen() {
                       onPress={() => navigation.navigate(sante ? 'Health' : 'SubaccountDetail', { id: sub.id })}
                       testID={`accueil-subaccount-${sub.id}`}
                     >
-                      <Text style={styles.subaccountName}>{sub.name}</Text>
+                      <View style={styles.subaccountNameRow}>
+                        <View style={[styles.colorDot, { backgroundColor: segmentColor(idx) }]} testID={`accueil-subaccount-dot-${sub.id}`} />
+                        <Text style={styles.subaccountName}>{sub.name}</Text>
+                      </View>
                       <Text style={styles.subaccountBalance}>{formatDh(sub.balance)}</Text>
                     </TouchableOpacity>
                   );
                 })}
                 <View style={styles.subaccountRow}>
-                  <Text style={styles.nonAffecteLabel}>Non affecté</Text>
+                  <View style={styles.subaccountNameRow}>
+                    <View style={[styles.colorDot, { backgroundColor: colors.borderStrong }]} />
+                    <Text style={styles.nonAffecteLabel}>Non affecté</Text>
+                  </View>
                   <Text style={styles.nonAffecteValue}>{formatDh(account.nonAffecte)}</Text>
                 </View>
               </View>
@@ -273,7 +279,9 @@ const styles = StyleSheet.create({
   accountBank: { ...typography.caption, marginTop: 2 },
   accountBalance: { ...typography.amountSecondary },
   subaccountsList: { marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.divider },
-  subaccountRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.xs },
+  subaccountRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.xs },
+  subaccountNameRow: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  colorDot: { width: 8, height: 8, borderRadius: 4, marginRight: spacing.xs },
   subaccountName: { ...typography.body },
   subaccountBalance: { ...typography.body, fontWeight: '600' },
   nonAffecteLabel: { ...typography.bodySecondary },

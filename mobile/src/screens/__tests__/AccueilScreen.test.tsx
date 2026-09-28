@@ -101,6 +101,22 @@ it('tap sur le sous-compte Santé -> navigue directement vers Health (jamais Sub
   expect(mockNavigate).toHaveBeenCalledWith('Health', { id: 'sante' });
 });
 
+it("Item 3 : chaque sous-compte affiche une pastille de couleur (légende) — Non affecté aussi", async () => {
+  mockListAccounts.mockResolvedValue([
+    {
+      id: 'cih', name: 'CIH', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, balance: 12000, nonAffecte: 4000,
+      subaccounts: [
+        { id: 'voiture', accountId: 'cih', name: 'CIH-Voiture', balance: 5000 },
+        { id: 'voyage', accountId: 'cih', name: 'CIH-Voyage', balance: 3000 },
+      ],
+    },
+  ]);
+  renderWithSafeArea(<AccueilScreen />);
+  await waitFor(() => screen.getByTestId('accueil-subaccount-voiture'));
+  expect(screen.getByTestId('accueil-subaccount-dot-voiture')).toBeTruthy();
+  expect(screen.getByTestId('accueil-subaccount-dot-voyage')).toBeTruthy();
+});
+
 it('tap sur un sous-compte non-Santé -> navigue vers SubaccountDetail', async () => {
   mockListAccounts.mockResolvedValue([
     {

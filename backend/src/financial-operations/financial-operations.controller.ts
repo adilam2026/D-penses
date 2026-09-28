@@ -1,6 +1,8 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { FinancialOperationsService } from './financial-operations.service';
 import { CreateFinancialOperationDto } from './dto/create-financial-operation.dto';
+import { CancelFinancialOperationDto } from './dto/cancel-financial-operation.dto';
+import { CorrectFinancialOperationDto } from './dto/correct-financial-operation.dto';
 import { CurrentUser, AuthenticatedUser } from '../common/decorators/current-user.decorator';
 import { HouseholdRequiredGuard } from '../common/guards/household-required.guard';
 
@@ -22,5 +24,15 @@ export class FinancialOperationsController {
   @Post()
   create(@Body() dto: CreateFinancialOperationDto, @CurrentUser() user: AuthenticatedUser) {
     return this.operations.create(user.sub, user.householdId!, dto);
+  }
+
+  @Post(':id/cancel')
+  cancel(@Param('id') id: string, @Body() dto: CancelFinancialOperationDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.operations.cancel(user.sub, user.householdId!, id, dto);
+  }
+
+  @Post(':id/correct')
+  correct(@Param('id') id: string, @Body() dto: CorrectFinancialOperationDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.operations.correct(user.sub, user.householdId!, id, dto);
   }
 }

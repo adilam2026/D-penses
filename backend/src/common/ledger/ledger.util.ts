@@ -212,6 +212,9 @@ export interface InsertOperationParams {
   destinationSubaccountId?: string | null;
   reversalOfOperationId?: string | null;
   reversalReason?: string | null;
+  /** "Modifier" une opération réalisée (§4) : pointe vers l'opération ORIGINALE
+   * (pas vers son reversal) pour garder une chaîne d'audit explicite en base. */
+  correctionOfOperationId?: string | null;
 }
 
 /**
@@ -272,6 +275,7 @@ export async function insertFinancialOperation(tx: TxClient, params: InsertOpera
       budgetImpact,
       reversalOfOperationId: params.reversalOfOperationId ?? undefined,
       reversalReason: params.reversalReason ?? undefined,
+      correctionOfOperationId: params.correctionOfOperationId ?? undefined,
       createdByUserId: params.createdByUserId,
     },
   });

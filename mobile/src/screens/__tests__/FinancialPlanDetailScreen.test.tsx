@@ -3,6 +3,17 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react-nativ
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { FinancialPlanDetailScreen } from '../FinancialPlanDetailScreen';
 
+// Remplace le calendrier natif par un simple champ texte testable — le comportement du
+// calendrier natif lui-même est déjà couvert par ui/__tests__/DateField.test.tsx ; ici
+// on veut seulement piloter la valeur de date sans dépendre du module natif.
+jest.mock('../../ui/DateField', () => {
+  const { TextInput: RNTextInput } = require('react-native');
+  return {
+    DateField: ({ value, onChange, label }: { value: string; onChange: (v: string) => void; label?: string }) =>
+      require('react').createElement(RNTextInput, { testID: 'date-field-stub', accessibilityLabel: label, value, onChangeText: onChange }),
+  };
+});
+
 const mockNavigate = jest.fn();
 const mockGoBack = jest.fn();
 jest.mock('@react-navigation/native', () => ({
@@ -77,4 +88,28 @@ it('§12 : une échéance déjà payée affiche "Payée ✓"', async () => {
   renderWithSafeArea(<FinancialPlanDetailScreen />);
 
   await waitFor(() => screen.getByText('Payée ✓'));
+});
+
+it('Item 8 : "Ajouter une échéance" exige un Montant et l\'envoie à addFinancialPlanDeadline', async () => {
+  const api = require('../../api/client');
+  mockGetFinancialPlan.mockResolvedValue(scolaritePlan);
+  api.addFinancialPlanDeadline.mockResolvedValue({});
+  renderWithSafeArea(<FinancialPlanDetailScreen />);
+
+  await waitFor(() => screen.getByTestId('plan-detail-add-deadline'));
+  fireEvent.press(screen.getByTestId('plan-detail-add-deadline'));
+  await waitFor(() => screen.getByTestId('add-deadline-submit'));
+
+  // Sans montant renseigné, le bouton reste désactivé (montant désormais obligatoire).
+  fireEvent.changeText(screen.getByTestId('add-deadline-label'), 'Février');
+  await waitFor(() => expect(screen.getByTestId('add-deadline-label').props.value).toBe('Février'));
+  fireEvent.changeText(screen.getByTestId('date-field-stub'), '2027-02-28');
+  await waitFor(() => expect(screen.getByTestId('date-field-stub').props.value).toBe('2027-02-28'));
+  fireEvent.press(screen.getByTestId('add-deadline-submit'));
+  expect(api.addFinancialPlanDeadline).not.toHaveBeenCalled();
+
+  fireEvent.changeText(screen.getByTestId('add-deadline-amount'), '3500');
+  await waitFor(() => expect(screen.getByTestId('add-deadline-amount').props.value).toBe('3500'));
+  fireEvent.press(screen.getByTestId('add-deadline-submit'));
+  await waitFor(() => expect(api.addFinancialPlanDeadline).toHaveBeenCalledWith('plan-scolarite', expect.objectContaining({ label: 'Février', amount: '3500' })));
 });

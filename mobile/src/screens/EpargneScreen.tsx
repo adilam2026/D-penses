@@ -10,6 +10,7 @@ import { isSanteSubaccount } from '../ui/santeDetection';
 import { FormField } from '../ui/FormField';
 import { DateField } from '../ui/DateField';
 import { useBottomInset } from '../ui/useBottomInset';
+import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
 
 interface Card {
   key: string;
@@ -181,6 +182,7 @@ function GoalModal({
   onSaved: () => Promise<void>;
 }) {
   const bottomInset = useBottomInset(spacing.lg);
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [targetAmount, setTargetAmount] = useState('');
   const [targetDate, setTargetDate] = useState('');
   const [saving, setSaving] = useState(false);
@@ -228,9 +230,9 @@ function GoalModal({
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.backdrop} />
       </TouchableWithoutFeedback>
-      <ScrollView style={styles.sheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
+      <ScrollView ref={scrollRef} style={styles.sheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
         <Text style={styles.sheetTitle}>Objectif — {target.name}</Text>
-        <FormField label="Montant objectif" value={targetAmount} onChangeText={setTargetAmount} keyboardType="decimal-pad" testID="goal-amount" />
+        <FormField label="Montant objectif" value={targetAmount} onChangeText={setTargetAmount} onFocus={handleFocus} keyboardType="decimal-pad" testID="goal-amount" />
         <DateField label="Date (optionnelle)" value={targetDate} onChange={setTargetDate} />
         <TouchableOpacity style={[styles.submitButton, (!targetAmount.trim() || saving) && styles.submitButtonDisabled]} onPress={submit} disabled={!targetAmount.trim() || saving} testID="goal-submit">
           <Text style={styles.submitButtonText}>{saving ? 'Enregistrement…' : target.goal ? 'Mettre à jour' : "Définir l'objectif"}</Text>

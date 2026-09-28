@@ -43,6 +43,7 @@ export function MenuScreen() {
       entries: [
         { label: 'Membres', icon: 'people-outline', onPress: () => navigation.navigate('HouseholdMembers') },
         { label: 'Inviter', icon: 'person-add-outline', onPress: () => navigation.navigate('HouseholdMembers') },
+        { label: 'Rejoindre un foyer', icon: 'enter-outline', onPress: () => navigation.navigate('JoinHousehold') },
       ],
     },
     {

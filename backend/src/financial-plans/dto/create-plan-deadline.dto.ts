@@ -7,4 +7,8 @@ export class CreatePlanDeadlineDto {
 
   @IsDateString()
   dueDate!: string;
+
+  /** Montant à payer pour cette échéance — additif aux postes éventuellement rattachés, jamais un remplaçant (cf. FinancialPlanDeadline). */
+  @IsString()
+  amount!: string;
 }
