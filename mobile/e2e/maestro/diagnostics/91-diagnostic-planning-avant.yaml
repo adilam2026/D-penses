@@ -1,0 +1,13 @@
+appId: com.depenses.mobile
+---
+# Flow de DIAGNOSTIC uniquement — capture l'état de la case "Voyage" du
+# Planning AVANT toute action de réalisation (référence pour comparer avec
+# 90-diagnostic-planning-juste-apres et 95-diagnostic-planning-realiser).
+# Hors de mobile/e2e/maestro/flows/.
+- runFlow: ../flows/common/login.yaml
+- tapOn: "Planning"
+- scrollUntilVisible:
+    element:
+      id: "planning-cell-voyage-2026-12"
+    direction: RIGHT
+- takeScreenshot: diagnostic-planning-avant-action

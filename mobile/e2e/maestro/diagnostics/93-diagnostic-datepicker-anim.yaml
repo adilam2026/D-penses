@@ -1,0 +1,28 @@
+appId: com.depenses.mobile
+---
+# Flow de DIAGNOSTIC uniquement — campagne ciblée "animations réactivées"
+# (hypothèse : les réglages animator_duration_scale=0 etc. empêchent le
+# DatePicker natif de s'attacher à l'arbre d'accessibilité). Identique à
+# 98-diagnostic-datepicker.yaml jusqu'au tap sur "Choisir une date", mais
+# tente ensuite optionnellement de valider le dialogue (optional: true —
+# n'échoue pas la campagne ciblée si le dialogue ne s'affiche toujours
+# pas, pour que le diagnostic suivant puisse quand même s'exécuter). Hors
+# de mobile/e2e/maestro/flows/.
+- runFlow: ../flows/common/login.yaml
+- tapOn: "Ajouter"
+- assertVisible:
+    id: "ajouter-tile-EXPENSE"
+- tapOn:
+    id: "ajouter-tile-EXPENSE"
+- tapOn:
+    id: "ajouter-tab-realisee"
+- tapOn:
+    id: "ajouter-amount"
+- inputText: "150"
+- tapOn:
+    text: "Choisir une date"
+- takeScreenshot: diagnostic-datepicker-anim-open
+- tapOn:
+    text: "^OK$"
+    optional: true
+- takeScreenshot: diagnostic-datepicker-anim-after-ok-attempt

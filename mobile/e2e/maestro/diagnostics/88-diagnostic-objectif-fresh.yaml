@@ -1,0 +1,24 @@
+appId: com.depenses.mobile
+---
+# Flow de DIAGNOSTIC uniquement — crée un objectif fraîchement (pas une
+# simple revisite) puis attend explicitement (extendedWaitUntil, optional
+# pour ne pas faire échouer la campagne ciblée si le texte n'apparaît
+# jamais) avant de capturer l'état final. Hors de mobile/e2e/maestro/flows/.
+- runFlow: ../flows/common/login.yaml
+- tapOn: "Épargne"
+- tapOn:
+    text: "\\+ Définir un objectif"
+- assertVisible:
+    id: "goal-amount"
+- tapOn:
+    id: "goal-amount"
+- inputText: "10000"
+- hideKeyboard
+- tapOn:
+    id: "goal-submit"
+- extendedWaitUntil:
+    visible:
+      text: "Objectif"
+    timeout: 15000
+    optional: true
+- takeScreenshot: diagnostic-objectif-fresh-after-wait

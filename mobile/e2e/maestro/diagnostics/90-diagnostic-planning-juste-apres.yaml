@@ -1,0 +1,20 @@
+appId: com.depenses.mobile
+---
+# Flow de DIAGNOSTIC uniquement — tape réellement sur planning-confirm-pay
+# puis capture IMMÉDIATEMENT l'écran (sans attente), pour observer l'état
+# exact juste après l'action, avant tout rafraîchissement réseau. À
+# exécuter avant 95-diagnostic-planning-realiser (qui revisite ensuite en
+# lecture seule, après attente). Hors de mobile/e2e/maestro/flows/.
+- runFlow: ../flows/common/login.yaml
+- tapOn: "Planning"
+- scrollUntilVisible:
+    element:
+      id: "planning-cell-voyage-2026-12"
+    direction: RIGHT
+- tapOn:
+    id: "planning-cell-voyage-2026-12"
+- assertVisible:
+    id: "planning-confirm-pay"
+- tapOn:
+    id: "planning-confirm-pay"
+- takeScreenshot: diagnostic-planning-juste-apres-action
