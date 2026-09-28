@@ -4,12 +4,15 @@ import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, Toucha
 import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { cached } from '../state/cache';
-import { colors, radius, spacing, typography } from '../ui/theme';
+import { colors, elevation, radius, spacing, typography } from '../ui/theme';
 import { formatDh, formatShortDate } from '../ui/formatMoney';
 import { HelpButton } from '../ui/HelpButton';
 import { SegmentBar, segmentColor } from '../ui/SegmentBar';
 import { isSanteSubaccount } from '../ui/santeDetection';
 import { PlannedOperationActionsModal } from '../ui/PlannedOperationActionsModal';
+import { accountPalette } from '../ui/accountPalette';
+import { accountLabelFor } from '../ui/accountLabel';
+import { PLANNED_OPERATION_KIND_VISUALS } from '../ui/plannedOperationVisuals';
 
 interface ActionItem {
   key: string;
@@ -159,33 +162,33 @@ export function AccueilScreen() {
 
       {(accounts ?? []).map((account, accountIdx) => {
         const hasSubaccounts = account.subaccounts.length > 0;
-        const accentColor = segmentColor(accountIdx);
+        const palette = accountPalette(accountIdx);
         const segments = hasSubaccounts
           ? [
               ...account.subaccounts.map((s, idx) => ({ key: s.id, value: s.balance, color: segmentColor(idx) })),
-              { key: 'non-affecte', value: account.nonAffecte, color: colors.borderStrong },
+              { key: 'non-affecte', value: account.nonAffecte, color: 'rgba(255,255,255,0.55)' },
             ]
           : [];
 
         return (
-          <View key={account.id} style={[styles.accountCard, { borderLeftColor: accentColor }]}>
+          <View key={account.id} style={[styles.accountCard, { backgroundColor: palette.bg }]}>
             <TouchableOpacity onPress={() => navigation.navigate('AccountDetail', { id: account.id })} testID={`accueil-account-${account.id}`}>
               <View style={styles.accountHeaderRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.accountName}>{account.name}</Text>
-                  {account.bank ? <Text style={styles.accountBank}>{account.bank}</Text> : null}
+                  <Text style={[styles.accountName, { color: palette.text }]}>{account.name}</Text>
+                  {account.bank ? <Text style={[styles.accountBank, { color: palette.textSecondary }]}>{account.bank}</Text> : null}
                 </View>
-                <Text style={styles.accountBalance}>{formatDh(account.balance)}</Text>
+                <Text style={[styles.accountBalance, { color: palette.text }]}>{formatDh(account.balance)}</Text>
               </View>
               {hasSubaccounts && (
                 <View style={{ marginTop: spacing.sm }}>
-                  <SegmentBar items={segments} total={account.balance} />
+                  <SegmentBar items={segments} total={account.balance} trackColor={palette.track} />
                 </View>
               )}
             </TouchableOpacity>
 
             {hasSubaccounts && (
-              <View style={styles.subaccountsList}>
+              <View style={[styles.subaccountsList, { borderTopColor: palette.divider }]}>
                 {account.subaccounts.map((sub, idx) => {
                   const sante = isSanteSubaccount(sub.name);
                   return (
@@ -196,19 +199,19 @@ export function AccueilScreen() {
                       testID={`accueil-subaccount-${sub.id}`}
                     >
                       <View style={styles.subaccountNameRow}>
-                        <View style={[styles.colorDot, { backgroundColor: segmentColor(idx) }]} testID={`accueil-subaccount-dot-${sub.id}`} />
-                        <Text style={styles.subaccountName}>{sub.name}</Text>
+                        <View style={[styles.colorDot, { backgroundColor: segmentColor(idx), borderColor: palette.bg }]} testID={`accueil-subaccount-dot-${sub.id}`} />
+                        <Text style={[styles.subaccountName, { color: palette.text }]}>{sub.name}</Text>
                       </View>
-                      <Text style={styles.subaccountBalance}>{formatDh(sub.balance)}</Text>
+                      <Text style={[styles.subaccountBalance, { color: palette.text }]}>{formatDh(sub.balance)}</Text>
                     </TouchableOpacity>
                   );
                 })}
                 <View style={styles.subaccountRow}>
                   <View style={styles.subaccountNameRow}>
-                    <View style={[styles.colorDot, { backgroundColor: colors.borderStrong }]} />
-                    <Text style={styles.nonAffecteLabel}>Non affecté</Text>
+                    <View style={[styles.colorDot, { backgroundColor: 'rgba(255,255,255,0.55)', borderColor: palette.bg }]} />
+                    <Text style={[styles.nonAffecteLabel, { color: palette.textSecondary }]}>Non affecté</Text>
                   </View>
-                  <Text style={styles.nonAffecteValue}>{formatDh(account.nonAffecte)}</Text>
+                  <Text style={[styles.nonAffecteValue, { color: palette.textSecondary }]}>{formatDh(account.nonAffecte)}</Text>
                 </View>
               </View>
             )}
@@ -224,18 +227,22 @@ export function AccueilScreen() {
           {upcomingTransactions.slice(0, UPCOMING_PREVIEW_COUNT).map((op) => {
             const today = new Date().toISOString().slice(0, 10);
             const overdue = op.expectedDate < today;
+            const kind = PLANNED_OPERATION_KIND_VISUALS[op.kind];
+            const account = accountLabelFor(accounts ?? [], op.sourceAccountId ?? op.destinationAccountId, op.sourceSubaccountId ?? op.destinationSubaccountId);
             return (
-              <TouchableOpacity
-                key={op.id}
-                style={[styles.actionCard, { borderLeftColor: overdue ? colors.danger : colors.warning }]}
-                onPress={() => setTransactionTarget(op)}
-                testID={`accueil-upcoming-${op.id}`}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.actionLabel}>{op.label}</Text>
-                  <Text style={styles.actionMeta}>Prévu le {formatShortDate(op.expectedDate)} · {formatDh(op.expectedAmount)}</Text>
+              <TouchableOpacity key={op.id} style={styles.upcomingCard} onPress={() => setTransactionTarget(op)} testID={`accueil-upcoming-${op.id}`}>
+                <View style={[styles.kindBadge, { backgroundColor: kind.background }]}>
+                  <Ionicons name={kind.icon} size={18} color={kind.color} />
                 </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textPlaceholder} />
+                <View style={{ flex: 1, marginLeft: spacing.sm }}>
+                  <Text style={styles.upcomingLabel} numberOfLines={1}>{op.label}</Text>
+                  <Text style={styles.upcomingMeta} numberOfLines={1}>
+                    {formatShortDate(op.expectedDate)}
+                    {account ? ` · ${account}` : ''}
+                    {overdue ? ' · En retard' : ''}
+                  </Text>
+                </View>
+                <Text style={[styles.upcomingAmount, { color: kind.color }]}>{formatDh(op.expectedAmount)}</Text>
               </TouchableOpacity>
             );
           })}
@@ -300,24 +307,40 @@ const styles = StyleSheet.create({
   welcomePrimaryButtonText: { color: colors.textOnPrimary, fontWeight: '700', fontSize: 14 },
   welcomeSecondaryButton: { paddingVertical: spacing.md, alignItems: 'center', marginTop: spacing.sm },
   welcomeSecondaryButtonText: { ...typography.body, fontWeight: '700', color: colors.textSecondary },
-  // Identité visuelle par compte (§2) : liseré coloré (palette rotative
-  // segmentColor, la même que la barre de répartition) — jamais deux cartes
-  // consécutives identiques, sans nuire à la lisibilité du solde.
-  accountCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.md, borderLeftWidth: 4 },
+  // Identité visuelle par compte (§6, revert) : la carte ENTIÈRE porte la
+  // couleur (palette accountPalette, rotation par compte) — jamais deux
+  // cartes consécutives identiques, texte blanc pour rester lisible, ombre
+  // pour la détacher du fond blanc (§7).
+  accountCard: { borderRadius: radius.xl, padding: spacing.lg, marginBottom: spacing.md, ...elevation.raised },
   accountHeaderRow: { flexDirection: 'row', alignItems: 'center' },
-  accountName: { ...typography.sectionTitle },
+  accountName: { ...typography.sectionTitle, color: colors.textOnPrimary },
   accountBank: { ...typography.caption, marginTop: 2 },
-  accountBalance: { ...typography.amountSecondary, fontSize: 20 },
-  subaccountsList: { marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.divider },
+  accountBalance: { ...typography.amountSecondary, fontSize: 22, fontWeight: '800' },
+  subaccountsList: { marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1 },
   subaccountRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.xs },
   subaccountNameRow: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  // Légende couleurs (§8) : même taille/forme que les segments de la barre,
-  // liseré blanc pour rester net sur n'importe quelle teinte de segment.
-  colorDot: { width: 10, height: 10, borderRadius: 5, marginRight: spacing.sm, borderWidth: 1, borderColor: colors.surface },
+  // Légende couleurs (§8 lot précédent) : même taille/forme que les segments
+  // de la barre, liseré assorti au fond de la carte pour rester net.
+  colorDot: { width: 10, height: 10, borderRadius: 5, marginRight: spacing.sm, borderWidth: 1.5 },
   subaccountName: { ...typography.body },
   subaccountBalance: { ...typography.body, fontWeight: '600' },
   nonAffecteLabel: { ...typography.bodySecondary },
   nonAffecteValue: { ...typography.bodySecondary, fontWeight: '600' },
+  // "Prochaines transactions" (§9) — badge de type, montant coloré et
+  // proéminent, compte en secondaire : jamais des cartes plates identiques.
+  upcomingCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    ...elevation.card,
+  },
+  kindBadge: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  upcomingLabel: { ...typography.body, fontWeight: '700' },
+  upcomingMeta: { ...typography.caption, marginTop: 2 },
+  upcomingAmount: { fontSize: 15, fontWeight: '800', marginLeft: spacing.sm },
   actionCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -326,6 +349,7 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     padding: spacing.md,
     marginBottom: spacing.sm,
+    ...elevation.card,
   },
   actionLabel: { ...typography.body, fontWeight: '700' },
   actionMeta: { ...typography.caption, marginTop: 2 },

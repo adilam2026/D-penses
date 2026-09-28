@@ -6,7 +6,7 @@ import * as api from '../api/client';
 import { useTopInset } from '../ui/useTopInset';
 import { useBottomInset } from '../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
-import { colors, radius, spacing, typography } from '../ui/theme';
+import { colors, elevation, radius, spacing, typography } from '../ui/theme';
 
 /**
  * Application → Réinitialiser les données (§17) — action dangereuse à double
@@ -149,7 +149,7 @@ const styles = StyleSheet.create({
   dangerButton: { backgroundColor: colors.danger, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center' },
   dangerButtonText: { color: colors.textOnPrimary, fontWeight: '700', fontSize: 14 },
   buttonDisabled: { opacity: 0.5 },
-  primaryButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.xl, alignItems: 'center', marginTop: spacing.xl },
+  primaryButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.xl, alignItems: 'center', marginTop: spacing.xl, ...elevation.button },
   primaryButtonText: { color: colors.textOnPrimary, fontWeight: '700', fontSize: 14 },
   doneCard: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   doneTitle: { ...typography.sectionTitle, marginTop: spacing.md, textAlign: 'center' },

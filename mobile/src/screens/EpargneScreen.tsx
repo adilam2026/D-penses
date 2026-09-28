@@ -3,7 +3,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import * as api from '../api/client';
 import { cached } from '../state/cache';
-import { colors, radius, spacing, typography } from '../ui/theme';
+import { colors, elevation, radius, spacing, typography } from '../ui/theme';
 import { formatDh } from '../ui/formatMoney';
 import { HelpButton } from '../ui/HelpButton';
 import { isSanteSubaccount } from '../ui/santeDetection';
@@ -276,7 +276,7 @@ const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)' },
   sheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 6, borderTopRightRadius: radius.xl + 6, padding: spacing.xl, maxHeight: '85%' },
   sheetTitle: { ...typography.sectionTitle, marginBottom: spacing.lg },
-  submitButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginTop: spacing.sm },
+  submitButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginTop: spacing.sm, ...elevation.button },
   submitButtonDisabled: { opacity: 0.5 },
   submitButtonText: { color: colors.textOnPrimary, fontWeight: '700', fontSize: 14 },
   removeButton: { alignItems: 'center', paddingVertical: spacing.md, marginTop: spacing.sm },

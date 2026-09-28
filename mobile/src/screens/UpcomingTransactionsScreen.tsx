@@ -5,10 +5,11 @@ import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { useTopInset } from '../ui/useTopInset';
 import { useBottomInset } from '../ui/useBottomInset';
-import { colors, radius, spacing, typography } from '../ui/theme';
+import { colors, elevation, radius, spacing, typography } from '../ui/theme';
 import { formatDh, formatMonthLabel, formatShortDate } from '../ui/formatMoney';
-import { OPERATION_KIND_LABELS } from '../ui/operationKindLabel';
 import { PlannedOperationActionsModal } from '../ui/PlannedOperationActionsModal';
+import { PLANNED_OPERATION_KIND_VISUALS } from '../ui/plannedOperationVisuals';
+import { accountLabelFor } from '../ui/accountLabel';
 
 function monthKeyOf(iso: string): string {
   return iso.slice(0, 7);
@@ -81,17 +82,25 @@ export function UpcomingTransactionsScreen() {
           groups.map(([month, items]) => (
             <View key={month} style={styles.monthBlock}>
               <Text style={styles.monthLabel}>{formatMonthLabel(month)}</Text>
-              {items.map((op) => (
-                <TouchableOpacity key={op.id} style={styles.row} onPress={() => setTarget(op)} testID={`upcoming-transaction-${op.id}`}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.rowLabel}>{op.label}</Text>
-                    <Text style={styles.rowMeta}>
-                      {OPERATION_KIND_LABELS[op.kind]} · {formatShortDate(op.expectedDate)}
-                    </Text>
-                  </View>
-                  <Text style={styles.rowAmount}>{formatDh(op.expectedAmount)}</Text>
-                </TouchableOpacity>
-              ))}
+              {items.map((op) => {
+                const kind = PLANNED_OPERATION_KIND_VISUALS[op.kind];
+                const account = accountLabelFor(accounts, op.sourceAccountId ?? op.destinationAccountId, op.sourceSubaccountId ?? op.destinationSubaccountId);
+                return (
+                  <TouchableOpacity key={op.id} style={styles.row} onPress={() => setTarget(op)} testID={`upcoming-transaction-${op.id}`}>
+                    <View style={[styles.kindBadge, { backgroundColor: kind.background }]}>
+                      <Ionicons name={kind.icon} size={18} color={kind.color} />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: spacing.sm }}>
+                      <Text style={styles.rowLabel} numberOfLines={1}>{op.label}</Text>
+                      <Text style={styles.rowMeta} numberOfLines={1}>
+                        {formatShortDate(op.expectedDate)}
+                        {account ? ` · ${account}` : ''}
+                      </Text>
+                    </View>
+                    <Text style={[styles.rowAmount, { color: kind.color }]}>{formatDh(op.expectedAmount)}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           ))
         )}
@@ -120,8 +129,10 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginHorizontal: spacing.lg,
     marginBottom: spacing.sm,
+    ...elevation.card,
   },
+  kindBadge: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   rowLabel: { ...typography.body, fontWeight: '700' },
   rowMeta: { ...typography.caption, marginTop: 2 },
-  rowAmount: { ...typography.body, fontWeight: '800', color: colors.warning, marginLeft: spacing.sm },
+  rowAmount: { fontSize: 15, fontWeight: '800', marginLeft: spacing.sm },
 });

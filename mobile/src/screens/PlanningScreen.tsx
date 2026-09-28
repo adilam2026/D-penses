@@ -1,14 +1,14 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
-import { colors, radius, spacing, typography } from '../ui/theme';
+import { colors, elevation, radius, spacing, typography } from '../ui/theme';
 import { formatDh, formatMonthLabel, formatShortDate } from '../ui/formatMoney';
 import { HelpButton } from '../ui/HelpButton';
 import { FormField } from '../ui/FormField';
 import { DateField } from '../ui/DateField';
 import { ChoiceSheet } from '../ui/ChoiceSheet';
+import { Toast } from '../ui/Toast';
 import { useBottomInset } from '../ui/useBottomInset';
 import { testIdSlug } from '../ui/testIdSlug';
 import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
@@ -17,9 +17,9 @@ const HORIZON_OPTIONS = [3, 6, 9, 12] as const;
 const LABEL_WIDTH = 130;
 const MONTH_WIDTH = 108;
 const ROW_HEIGHT = 46;
-const ROW_EXPAND_HEIGHT = 30;
 const SECTION_HEIGHT = 30;
 const HEADER_HEIGHT = 40;
+const TOAST_DURATION_MS = 1800;
 
 interface BlockDef {
   title: string;
@@ -61,15 +61,15 @@ export function PlanningScreen() {
   const [plans, setPlans] = useState<api.FinancialPlanApi[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [confirmTarget, setConfirmTarget] = useState<{ cell: api.PlanningCellApi; rowLabel: string } | null>(null);
   const [adjustTarget, setAdjustTarget] = useState<{ cell: api.PlanningCellApi; rowLabel: string } | null>(null);
   const [detailTarget, setDetailTarget] = useState<{ cell: api.PlanningCellApi; rowLabel: string; month: string } | null>(null);
   const [realizedMenuTarget, setRealizedMenuTarget] = useState<{ cell: api.PlanningCellApi; rowLabel: string } | null>(null);
-  // Expand/collapse par ligne (§12) : alternative légère à la modale — un
-  // chevron sur la ligne (colonne figée) déplie un bandeau pleine largeur
-  // avec le cumul Réalisé/À venir de la ligne sur tout l'horizon affiché,
-  // sans ouvrir de modale ni changer la hauteur des autres lignes.
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Verrou anti-double-tap (§1) : le tap simple agit immédiatement, sans
+  // confirmation — évite un double realize/unrealize si l'utilisateur retape
+  // avant que la liste ait rafraîchi.
+  const togglingRef = useRef<Set<string>>(new Set());
 
   const load = useCallback(async (h: number) => {
     const [planning, accountList, planList] = await Promise.all([api.getPlanning(h), api.listAccounts(), api.listFinancialPlans()]);
@@ -89,15 +89,43 @@ export function PlanningScreen() {
     await load(months);
   }
 
-  function onCellPress(cell: api.PlanningCellApi, rowLabel: string) {
-    if (cell.status === 'EMPTY') return;
-    if (cell.singleOccurrence && cell.singleOccurrence.status === 'PENDING') {
-      setConfirmTarget({ cell, rowLabel });
-      return;
-    }
-    setDetailTarget({ cell, rowLabel, month: '' });
+  function showToast(message: string) {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(message);
+    toastTimer.current = setTimeout(() => setToast(null), TOAST_DURATION_MS);
   }
 
+  /**
+   * Tap simple (§1, revert de l'évolution chevron) : sur une occurrence
+   * unique, bascule directement payé <-> à venir, sans étape de confirmation
+   * — feedback par toast plutôt que par modale. Sur une case agrégée
+   * (plusieurs opérations), ouvre toujours le détail — impossible de savoir
+   * laquelle basculer sans ambiguïté.
+   */
+  async function onCellPress(cell: api.PlanningCellApi, rowLabel: string) {
+    if (cell.status === 'EMPTY') return;
+    const occ = cell.singleOccurrence;
+    if (!occ) {
+      setDetailTarget({ cell, rowLabel, month: '' });
+      return;
+    }
+    if (togglingRef.current.has(occ.plannedOperationId)) return;
+    togglingRef.current.add(occ.plannedOperationId);
+    try {
+      if (occ.status === 'PENDING') {
+        await api.realizePlannedOperation(occ.plannedOperationId, { actualAmount: String(occ.expectedAmount) });
+        showToast('Transaction marquée comme payée');
+      } else {
+        await api.unrealizePlannedOperation(occ.plannedOperationId);
+        showToast('Transaction remise à venir');
+      }
+      await refresh();
+    } finally {
+      togglingRef.current.delete(occ.plannedOperationId);
+    }
+  }
+
+  /** Appui long (§1) : ouvre le détail/modifier — jamais le toggle direct. */
   function onCellLongPress(cell: api.PlanningCellApi, rowLabel: string) {
     if (cell.status === 'EMPTY') return;
     if (cell.singleOccurrence?.status === 'PENDING') {
@@ -109,25 +137,6 @@ export function PlanningScreen() {
       return;
     }
     setDetailTarget({ cell, rowLabel, month: '' });
-  }
-
-  function toggleRowExpand(key: string) {
-    setExpandedRows((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }
-
-  function rowRollup(row: api.PlanningRowApi, months: string[]) {
-    let realized = 0;
-    let pending = 0;
-    for (const m of months) {
-      realized += row.cells[m].realizedAmount;
-      pending += row.cells[m].pendingAmount;
-    }
-    return { realized, pending };
   }
 
   if (loading && !data) {
@@ -182,31 +191,13 @@ export function PlanningScreen() {
                     </Text>
                   </View>
                 ) : (
-                  block.rows.map((row) => {
-                    const expanded = expandedRows.has(row.key);
-                    const rollup = rowRollup(row, data.months);
-                    return (
-                      <React.Fragment key={row.key}>
-                        <TouchableOpacity
-                          style={[styles.labelCell, { height: ROW_HEIGHT }]}
-                          onPress={() => toggleRowExpand(row.key)}
-                          testID={`planning-row-toggle-${testIdSlug(row.label)}`}
-                        >
-                          <Text style={styles.rowLabelText} numberOfLines={2}>
-                            {row.label}
-                          </Text>
-                          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textPlaceholder} />
-                        </TouchableOpacity>
-                        {expanded && (
-                          <View style={[styles.rowExpandLabelCell, { height: ROW_EXPAND_HEIGHT }]}>
-                            <Text style={styles.rowExpandText} numberOfLines={2} testID={`planning-row-rollup-${testIdSlug(row.label)}`}>
-                              Réalisé {formatDh(rollup.realized)} · À venir {formatDh(rollup.pending)}
-                            </Text>
-                          </View>
-                        )}
-                      </React.Fragment>
-                    );
-                  })
+                  block.rows.map((row) => (
+                    <View key={row.key} style={[styles.labelCell, { height: ROW_HEIGHT }]}>
+                      <Text style={styles.rowLabelText} numberOfLines={2}>
+                        {row.label}
+                      </Text>
+                    </View>
+                  ))
                 )}
                 <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: block.accentColor }]}>
                   <Text style={styles.totalLabelText}>{block.totalLabel}</Text>
@@ -247,22 +238,17 @@ export function PlanningScreen() {
                         </View>,
                       ]
                     : block.rows.map((row) => (
-                        <React.Fragment key={row.key}>
-                          <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                            {data.months.map((m) => (
-                              <PlanningCellView
-                                key={m}
-                                cell={row.cells[m]}
-                                onPress={() => onCellPress(row.cells[m], row.label)}
-                                onLongPress={() => onCellLongPress(row.cells[m], row.label)}
-                                testID={`planning-cell-${testIdSlug(row.label)}-${m}`}
-                              />
-                            ))}
-                          </View>
-                          {expandedRows.has(row.key) && (
-                            <View style={[styles.rowExpandMonthsCell, { height: ROW_EXPAND_HEIGHT, width: MONTH_WIDTH * data.months.length }]} />
-                          )}
-                        </React.Fragment>
+                        <View key={row.key} style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
+                          {data.months.map((m) => (
+                            <PlanningCellView
+                              key={m}
+                              cell={row.cells[m]}
+                              onPress={() => onCellPress(row.cells[m], row.label)}
+                              onLongPress={() => onCellLongPress(row.cells[m], row.label)}
+                              testID={`planning-cell-${testIdSlug(row.label)}-${m}`}
+                            />
+                          ))}
+                        </View>
                       ))}
                   <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
                     {data.months.map((m) => (
@@ -294,16 +280,6 @@ export function PlanningScreen() {
 
         <PlansSection plans={plans} onOpen={(id) => navigation.navigate('FinancialPlanDetail', { id })} />
       </ScrollView>
-
-      <ConfirmPayModal
-        target={confirmTarget}
-        accounts={accounts}
-        onClose={() => setConfirmTarget(null)}
-        onDone={async () => {
-          setConfirmTarget(null);
-          await refresh();
-        }}
-      />
 
       <AdjustModal
         target={adjustTarget}
@@ -365,6 +341,8 @@ export function PlanningScreen() {
           },
         ]}
       />
+
+      <Toast message={toast} />
     </View>
   );
 }
@@ -413,58 +391,6 @@ function PlanningCellView({
         </Text>
       )}
     </TouchableOpacity>
-  );
-}
-
-function ConfirmPayModal({
-  target,
-  accounts,
-  onClose,
-  onDone,
-}: {
-  target: { cell: api.PlanningCellApi; rowLabel: string } | null;
-  accounts: api.AccountApi[];
-  onClose: () => void;
-  onDone: () => Promise<void>;
-}) {
-  const [saving, setSaving] = useState(false);
-  if (!target?.cell.singleOccurrence) return null;
-  const occ = target.cell.singleOccurrence;
-  const { accountId, subaccountId, preposition } = relevantAccount(occ);
-  const label = accountLabel(accounts, accountId, subaccountId);
-
-  async function confirm() {
-    if (saving) return;
-    setSaving(true);
-    try {
-      await api.realizePlannedOperation(occ.plannedOperationId, { actualAmount: String(occ.expectedAmount) });
-      await onDone();
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.backdrop} />
-      </TouchableWithoutFeedback>
-      <View style={styles.confirmBox}>
-        <Text style={styles.confirmTitle}>{target.rowLabel}</Text>
-        <Text style={styles.confirmText}>
-          Payer {formatDh(occ.expectedAmount)}
-          {label ? ` ${preposition} ${label}` : ''} ?
-        </Text>
-        <View style={styles.confirmActions}>
-          <TouchableOpacity style={styles.confirmCancel} onPress={onClose} testID="planning-confirm-cancel">
-            <Text style={styles.confirmCancelText}>Annuler</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.confirmPay} onPress={confirm} testID="planning-confirm-pay">
-            <Text style={styles.confirmPayText}>{saving ? '…' : 'Payer'}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
   );
 }
 
@@ -701,11 +627,6 @@ const styles = StyleSheet.create({
   rowLabelText: { ...typography.body, fontWeight: '600' },
   emptyRowText: { ...typography.caption, color: colors.textPlaceholder },
   totalLabelCell: { justifyContent: 'center', borderTopWidth: 2, borderTopColor: colors.borderStrong, backgroundColor: colors.surfaceSecondary, paddingRight: spacing.sm, paddingLeft: spacing.xs, borderLeftWidth: 3 },
-  // Expand/collapse par ligne (§12) : bandeau compact, même teinte que
-  // surfaceSecondary pour rester subordonné à la ligne qu'il détaille.
-  rowExpandLabelCell: { justifyContent: 'center', paddingRight: spacing.sm, backgroundColor: colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: colors.divider },
-  rowExpandText: { ...typography.caption, fontWeight: '700', color: colors.textSecondary },
-  rowExpandMonthsCell: { backgroundColor: colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: colors.divider },
   totalLabelText: { ...typography.caption, fontWeight: '800', color: colors.textPrimary },
   monthHeaderCell: { justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 4 },
   monthHeaderText: { ...typography.caption, fontWeight: '800', color: colors.textSecondary },
@@ -743,7 +664,7 @@ const styles = StyleSheet.create({
   confirmActions: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
   confirmCancel: { flex: 1, paddingVertical: spacing.md, borderRadius: radius.md, alignItems: 'center', backgroundColor: colors.surfaceSecondary },
   confirmCancelText: { ...typography.body, fontWeight: '700', color: colors.textSecondary },
-  confirmPay: { flex: 1, paddingVertical: spacing.md, borderRadius: radius.md, alignItems: 'center', backgroundColor: colors.primary },
+  confirmPay: { flex: 1, paddingVertical: spacing.md, borderRadius: radius.md, alignItems: 'center', backgroundColor: colors.primary, ...elevation.button },
   confirmPayText: { ...typography.body, fontWeight: '700', color: colors.textOnPrimary },
   adjustSheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 6, borderTopRightRadius: radius.xl + 6, padding: spacing.xl, maxHeight: '85%' },
   adjustPrevu: { ...typography.bodySecondary, marginBottom: spacing.md },
@@ -768,7 +689,7 @@ const styles = StyleSheet.create({
   detailSynthAmount: { ...typography.bodySecondary, fontWeight: '700' },
   plansSection: { paddingHorizontal: spacing.lg, marginTop: spacing.xl },
   plansSectionTitle: { ...typography.caption, fontWeight: '800', color: colors.textSecondary, letterSpacing: 0.5, marginBottom: spacing.sm },
-  planCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.sm },
+  planCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.sm, ...elevation.card },
   planHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   planLabel: { ...typography.body, fontWeight: '700' },
   planNextDeadline: { ...typography.bodySecondary },

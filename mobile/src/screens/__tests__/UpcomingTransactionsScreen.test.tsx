@@ -55,7 +55,7 @@ it("Item 3 : liste chronologique groupée par mois, tap ouvre les 3 actions expl
   await waitFor(() => screen.getByTestId('planned-op-cancel'));
   expect(screen.getByText('Modifier la transaction')).toBeTruthy();
   expect(screen.getByText('Annuler la transaction')).toBeTruthy();
-  expect(screen.getByText('Fermer')).toBeTruthy();
+  expect(screen.getByTestId('planned-op-close')).toBeTruthy();
 
   fireEvent.press(screen.getByTestId('planned-op-cancel'));
   await waitFor(() => screen.getByTestId('planned-op-cancel-confirm'));

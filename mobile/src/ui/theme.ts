@@ -22,11 +22,13 @@ export const colors = {
   textPlaceholder: '#9BA39D',
   textOnPrimary: '#FFFFFF',
 
-  // Fond blanc / très clair (Lot recette §1) — jamais teinté gris-vert pastel
+  // Fond BLANC (Lot recette §5, reconfirmé) — jamais teinté gris-vert pastel
   // (ancienne valeur #EEF1EC) : l'app doit rester lumineuse même téléphone en
   // mode sombre système (userInterfaceStyle "light" figé dans app.json, donc
   // ces valeurs sont TOUJOURS celles rendues, jamais remplacées par l'OS).
-  background: '#F7F8F7',
+  // La séparation fond/carte vient désormais de l'ombre (elevation), pas d'une
+  // teinte de fond différente.
+  background: '#FFFFFF',
   surface: '#FFFFFF',
   surfaceSecondary: '#F0F1EF',
   // Teinte volontairement gardée proche du vert de marque (primary) — utilisée
@@ -41,14 +43,22 @@ export const colors = {
   donutTrackWarn: '#F5EEDC',
 } as const;
 
+// Profondeur (§7) : le fond passant au blanc pur, les cartes doivent se
+// détacher par l'ombre seule — valeurs légèrement plus marquées qu'avant pour
+// une sensation "premium" sans surcharge visuelle.
 export const elevation = {
   card: Platform.select({
-    android: { elevation: 3 },
-    default: { shadowColor: colors.primaryDark, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6 },
+    android: { elevation: 4 },
+    default: { shadowColor: colors.primaryDark, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.1, shadowRadius: 8 },
   }),
   raised: Platform.select({
-    android: { elevation: 6 },
-    default: { shadowColor: colors.primaryDark, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 12 },
+    android: { elevation: 8 },
+    default: { shadowColor: colors.primaryDark, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.16, shadowRadius: 16 },
+  }),
+  /** Relief léger pour les boutons pleins (primaire/danger) — jamais sur les boutons secondaires plats. */
+  button: Platform.select({
+    android: { elevation: 2 },
+    default: { shadowColor: colors.primaryDark, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.14, shadowRadius: 4 },
   }),
 } as const;
 

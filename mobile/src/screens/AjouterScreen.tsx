@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as api from '../api/client';
-import { colors, radius, spacing, typography } from '../ui/theme';
+import { colors, elevation, radius, spacing, typography } from '../ui/theme';
 import { HelpButton } from '../ui/HelpButton';
 import { FormField } from '../ui/FormField';
 import { Select, SelectOption } from '../ui/Select';
@@ -473,7 +473,7 @@ const styles = StyleSheet.create({
   checkmark: { color: colors.textOnPrimary, fontSize: 12, fontWeight: '700' },
   switchLabel: { ...typography.body },
   errorText: { ...typography.body, color: colors.danger, marginTop: spacing.sm },
-  submitButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginTop: spacing.lg },
+  submitButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginTop: spacing.lg, ...elevation.button },
   buttonDisabled: { opacity: 0.5 },
   submitButtonText: { color: colors.textOnPrimary, fontWeight: '700', fontSize: 14 },
   linkText: { ...typography.body, color: colors.primary, fontWeight: '600', marginBottom: spacing.md },

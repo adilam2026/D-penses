@@ -19,11 +19,14 @@ export function segmentColor(index: number): string {
  * Barre de répartition proportionnelle compacte (Accueil — maquette §4) : un
  * compte avec sous-comptes affiche immédiatement la part de chaque
  * sous-compte + le non-affecté, jamais juste une liste de montants bruts.
+ * `trackColor` optionnel — piste translucide blanche quand la barre est
+ * posée sur une carte de compte en couleur pleine (jamais la piste neutre
+ * par défaut, invisible sur fond coloré).
  */
-export function SegmentBar({ items, total }: { items: SegmentBarItem[]; total: number }) {
+export function SegmentBar({ items, total, trackColor }: { items: SegmentBarItem[]; total: number; trackColor?: string }) {
   if (total <= 0) return null;
   return (
-    <View style={styles.track}>
+    <View style={[styles.track, trackColor ? { backgroundColor: trackColor } : null]}>
       {items
         .filter((item) => item.value > 0)
         .map((item) => (

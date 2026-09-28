@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
-import { colors, radius, spacing, typography } from './theme';
+import { colors, elevation, radius, spacing, typography } from './theme';
 import { formatDh, formatShortDate } from './formatMoney';
 import { OPERATION_KIND_LABELS } from './operationKindLabel';
 import { FormField } from './FormField';
@@ -9,19 +10,9 @@ import { DateField } from './DateField';
 import { useBottomInset } from './useBottomInset';
 import { useKeyboardAwareScroll } from './useKeyboardAwareScroll';
 import { TRANSACTION_ACTION_LABELS } from './transactionLabels';
+import { accountLabelFor } from './accountLabel';
 
 type Mode = 'view' | 'edit' | 'cancelConfirm';
-
-function accountLabelFor(accounts: api.AccountApi[], accountId: string | null, subaccountId: string | null): string | null {
-  if (!accountId) return null;
-  const account = accounts.find((a) => a.id === accountId);
-  if (!account) return null;
-  if (subaccountId) {
-    const sub = account.subaccounts.find((s) => s.id === subaccountId);
-    if (sub) return `${account.name} — ${sub.name}`;
-  }
-  return account.name;
-}
 
 /**
  * Détail d'une transaction pas encore réalisée (Prochaines transactions §3/§4) —
@@ -108,33 +99,45 @@ export function PlannedOperationActionsModal({
         <View style={styles.backdrop} />
       </TouchableWithoutFeedback>
       <ScrollView ref={scrollRef} style={styles.sheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
+        {/* Fermer/Retour en haut (§3/§4, écran allégé) — jamais un bouton pleine
+            largeur en plus, en bas, qui empile les actions. */}
+        <View style={styles.headerRow}>
+          <Text style={styles.title}>{mode === 'view' ? target.label : mode === 'edit' ? TRANSACTION_ACTION_LABELS.modify : `${TRANSACTION_ACTION_LABELS.cancel} ?`}</Text>
+          <TouchableOpacity
+            onPress={mode === 'view' ? onClose : () => setMode('view')}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            testID={mode === 'view' ? 'planned-op-close' : mode === 'edit' ? 'planned-op-edit-back' : 'planned-op-cancel-back'}
+          >
+            <Ionicons name={mode === 'view' ? 'close' : 'chevron-back'} size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+
         {mode === 'view' && (
           <>
-            <Text style={styles.title}>{target.label}</Text>
             <Text style={styles.kind}>{OPERATION_KIND_LABELS[target.kind]}</Text>
             <View style={styles.card}>
               <Row label="Montant prévu" value={formatDh(target.expectedAmount)} />
               <Row label="Date prévue" value={formatShortDate(target.expectedDate)} />
               <Row label="Compte" value={accountLabel ? `${accountLabel} (sera ${preposition})` : '—'} last />
             </View>
+            {/* Action principale mise en avant ; actions secondaires plus
+                discrètes côte à côte (§4) — jamais 4 gros boutons empilés. */}
             <TouchableOpacity style={styles.primaryButton} onPress={realize} disabled={saving} testID="planned-op-realize">
-              <Text style={styles.primaryButtonText}>{saving ? '…' : 'Marquer réalisé'}</Text>
+              <Text style={styles.primaryButtonText}>{saving ? '…' : 'Marquer réalisée'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.modifyButton} onPress={() => setMode('edit')} testID="planned-op-modify">
-              <Text style={styles.modifyButtonText}>{TRANSACTION_ACTION_LABELS.modify}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelButton} onPress={() => setMode('cancelConfirm')} testID="planned-op-cancel">
-              <Text style={styles.cancelButtonText}>{TRANSACTION_ACTION_LABELS.cancel}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.closeButton} onPress={onClose} testID="planned-op-close">
-              <Text style={styles.closeButtonText}>{TRANSACTION_ACTION_LABELS.close}</Text>
-            </TouchableOpacity>
+            <View style={styles.secondaryRow}>
+              <TouchableOpacity style={styles.modifyButton} onPress={() => setMode('edit')} testID="planned-op-modify">
+                <Text style={styles.modifyButtonText}>{TRANSACTION_ACTION_LABELS.modify}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.cancelButton} onPress={() => setMode('cancelConfirm')} testID="planned-op-cancel">
+                <Text style={styles.cancelButtonText}>{TRANSACTION_ACTION_LABELS.cancel}</Text>
+              </TouchableOpacity>
+            </View>
           </>
         )}
 
         {mode === 'edit' && (
           <>
-            <Text style={styles.title}>{TRANSACTION_ACTION_LABELS.modify}</Text>
             <FormField label="Libellé" value={label} onChangeText={setLabel} onFocus={handleFocus} testID="planned-op-edit-label" />
             <DateField label="Date prévue" value={date} onChange={setDate} />
             <FormField label="Montant prévu" value={amount} onChangeText={setAmount} onFocus={handleFocus} keyboardType="decimal-pad" testID="planned-op-edit-amount" />
@@ -146,21 +149,14 @@ export function PlannedOperationActionsModal({
             >
               <Text style={styles.primaryButtonText}>{saving ? '…' : 'Enregistrer'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.closeButton} onPress={() => setMode('view')} testID="planned-op-edit-back">
-              <Text style={styles.closeButtonText}>Retour</Text>
-            </TouchableOpacity>
           </>
         )}
 
         {mode === 'cancelConfirm' && (
           <>
-            <Text style={styles.title}>{TRANSACTION_ACTION_LABELS.cancel} ?</Text>
             <Text style={styles.confirmText}>« {target.label} » ne sera plus prévue. Cette transaction n'a pas encore eu lieu — elle est simplement retirée.</Text>
-            <TouchableOpacity style={styles.cancelButton} onPress={confirmCancel} disabled={saving} testID="planned-op-cancel-confirm">
-              <Text style={styles.cancelButtonText}>{saving ? '…' : "Confirmer l'annulation"}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.closeButton} onPress={() => setMode('view')} testID="planned-op-cancel-back">
-              <Text style={styles.closeButtonText}>Retour</Text>
+            <TouchableOpacity style={styles.dangerButton} onPress={confirmCancel} disabled={saving} testID="planned-op-cancel-confirm">
+              <Text style={styles.dangerButtonText}>{saving ? '…' : "Confirmer l'annulation"}</Text>
             </TouchableOpacity>
           </>
         )}
@@ -181,21 +177,26 @@ function Row({ label, value, last }: { label: string; value: string; last?: bool
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)' },
   sheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 6, borderTopRightRadius: radius.xl + 6, padding: spacing.xl, maxHeight: '85%' },
-  title: { ...typography.sectionTitle, marginBottom: spacing.xs },
+  headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: spacing.xs },
+  title: { ...typography.sectionTitle, flex: 1, marginRight: spacing.md },
   kind: { ...typography.bodySecondary, marginBottom: spacing.md },
-  card: { backgroundColor: colors.surface, borderRadius: radius.lg, marginBottom: spacing.lg },
+  card: { backgroundColor: colors.surface, borderRadius: radius.lg, marginBottom: spacing.lg, ...elevation.card },
   row: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider },
   rowLast: { borderBottomWidth: 0 },
   rowLabel: { ...typography.bodySecondary },
   rowValue: { ...typography.body, fontWeight: '600', flexShrink: 1, textAlign: 'right' },
   confirmText: { ...typography.bodySecondary, marginBottom: spacing.lg },
-  primaryButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginBottom: spacing.sm },
+  // Action principale (§4) : seule pleine largeur, avec relief.
+  primaryButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', ...elevation.button },
   primaryButtonText: { color: colors.textOnPrimary, fontWeight: '700', fontSize: 14 },
   buttonDisabled: { opacity: 0.5 },
-  modifyButton: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginBottom: spacing.sm },
-  modifyButtonText: { ...typography.body, fontWeight: '700', color: colors.textSecondary },
-  cancelButton: { backgroundColor: colors.danger, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginBottom: spacing.sm },
-  cancelButtonText: { ...typography.body, fontWeight: '700', color: colors.textOnPrimary },
-  closeButton: { alignItems: 'center', paddingVertical: spacing.md },
-  closeButtonText: { ...typography.body, fontWeight: '700', color: colors.textSecondary },
+  // Actions secondaires (§4) : côte à côte, plus petites, sans relief — se
+  // distinguent clairement de l'action principale au lieu de s'empiler.
+  secondaryRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+  modifyButton: { flex: 1, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, paddingVertical: spacing.sm, alignItems: 'center' },
+  modifyButtonText: { ...typography.caption, fontWeight: '700', color: colors.textSecondary },
+  cancelButton: { flex: 1, backgroundColor: colors.dangerLight, borderRadius: radius.md, paddingVertical: spacing.sm, alignItems: 'center' },
+  cancelButtonText: { ...typography.caption, fontWeight: '700', color: colors.danger },
+  dangerButton: { backgroundColor: colors.danger, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', ...elevation.button },
+  dangerButtonText: { ...typography.body, fontWeight: '700', color: colors.textOnPrimary },
 });

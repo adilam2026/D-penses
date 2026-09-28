@@ -84,7 +84,7 @@ it('changer d\'horizon relance getPlanning avec le nouveau nombre de mois', asyn
   await waitFor(() => expect(mockGetPlanning).toHaveBeenCalledWith(12));
 });
 
-it('case prévue (PENDING) : tap simple ouvre la confirmation "Payer" avec le compte source', async () => {
+it('case prévue (PENDING) : tap simple bascule directement en payé, sans confirmation, avec un toast', async () => {
   mockGetPlanning.mockResolvedValue(
     basePlanning({
       depenses: [
@@ -109,16 +109,50 @@ it('case prévue (PENDING) : tap simple ouvre la confirmation "Payer" avec le co
       ],
     }),
   );
+  mockRealizePlannedOperation.mockResolvedValue({});
+
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
+  // Jamais de modale de confirmation (revert §1) : aucune boîte "Payer" à l'écran.
+  expect(screen.queryByTestId('planning-confirm-pay')).toBeNull();
+
+  fireEvent.press(screen.getAllByTestId(/^planning-cell-/)[0]);
+  await waitFor(() => expect(mockRealizePlannedOperation).toHaveBeenCalledWith('po-1', { actualAmount: '700' }));
+  await waitFor(() => screen.getByText('Transaction marquée comme payée'));
+});
+
+it('case déjà payée : tap simple bascule directement à venir, sans détail, avec un toast', async () => {
+  mockGetPlanning.mockResolvedValue(
+    basePlanning({
+      depenses: [
+        {
+          key: 'cat-voiture',
+          label: 'Voiture',
+          categoryId: 'cat-voiture',
+          cells: {
+            '2026-09': {
+              displayAmount: 820,
+              budgetAmount: 820,
+              pendingAmount: 0,
+              realizedAmount: 820,
+              status: 'REALIZED',
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'REALIZED', expectedAmount: 700, realizedAmount: 820, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null },
+              items: [{ type: 'PLANNED_REALIZED', plannedOperationId: 'po-1', financialOperationId: 'op-1', label: 'Assurance voiture', amount: 820, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
+            },
+            '2026-10': emptyCell(),
+            '2026-11': emptyCell(),
+          },
+        },
+      ],
+    }),
+  );
+  mockUnrealizePlannedOperation.mockResolvedValue({});
 
   renderWithSafeArea(<PlanningScreen />);
   await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
   fireEvent.press(screen.getAllByTestId(/^planning-cell-/)[0]);
-
-  await waitFor(() => screen.getByTestId('planning-confirm-pay'));
-  expect(screen.getByText(/Payer 700 DH depuis CIH-Voiture/)).toBeTruthy();
-
-  fireEvent.press(screen.getByTestId('planning-confirm-pay'));
-  await waitFor(() => expect(mockRealizePlannedOperation).toHaveBeenCalledWith('po-1', { actualAmount: '700' }));
+  await waitFor(() => expect(mockUnrealizePlannedOperation).toHaveBeenCalledWith('po-1'));
+  await waitFor(() => screen.getByText('Transaction remise à venir'));
 });
 
 it('case prévue : appui long ouvre le modal d\'ajustement pré-rempli avec le montant prévu', async () => {
@@ -305,52 +339,6 @@ it("Item 6 : case MIXTE (200 réalisé + 70 à venir) affiche un split compact, 
   await waitFor(() => screen.getByTestId('planning-detail-mark-realized-po-2'));
   fireEvent.press(screen.getByTestId('planning-detail-mark-realized-po-2'));
   await waitFor(() => expect(mockRealizePlannedOperation).toHaveBeenCalledWith('po-2', { actualAmount: '70' }));
-});
-
-it("Item 12 : le chevron d'une ligne déplie un bandeau Réalisé/À venir cumulé sans ouvrir de modale", async () => {
-  mockGetPlanning.mockResolvedValue(
-    basePlanning({
-      depenses: [
-        {
-          key: 'cat-voiture',
-          label: 'Voiture',
-          categoryId: 'cat-voiture',
-          cells: {
-            '2026-09': {
-              displayAmount: 700,
-              budgetAmount: 700,
-              pendingAmount: 0,
-              realizedAmount: 700,
-              status: 'REALIZED',
-              singleOccurrence: { plannedOperationId: 'po-1', status: 'REALIZED', expectedAmount: 700, realizedAmount: 700, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null },
-              items: [{ type: 'PLANNED_REALIZED', plannedOperationId: 'po-1', financialOperationId: 'op-1', label: 'Assurance voiture', amount: 700, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
-            },
-            '2026-10': {
-              displayAmount: 300,
-              budgetAmount: 300,
-              pendingAmount: 300,
-              realizedAmount: 0,
-              status: 'PENDING',
-              singleOccurrence: { plannedOperationId: 'po-2', status: 'PENDING', expectedAmount: 300, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null },
-              items: [{ type: 'PLANNED_PENDING', plannedOperationId: 'po-2', label: 'Vidange', amount: 300, date: '2026-10-05', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
-            },
-            '2026-11': emptyCell(),
-          },
-        },
-      ],
-    }),
-  );
-
-  renderWithSafeArea(<PlanningScreen />);
-  await waitFor(() => screen.getByTestId('planning-row-toggle-voiture'));
-  expect(screen.queryByTestId('planning-row-rollup-voiture')).toBeNull();
-
-  fireEvent.press(screen.getByTestId('planning-row-toggle-voiture'));
-  await waitFor(() => screen.getByTestId('planning-row-rollup-voiture'));
-  expect(screen.getByText('Réalisé 700 DH · À venir 300 DH')).toBeTruthy();
-
-  fireEvent.press(screen.getByTestId('planning-row-toggle-voiture'));
-  await waitFor(() => expect(screen.queryByTestId('planning-row-rollup-voiture')).toBeNull());
 });
 
 it('plans financiers : la carte affiche la prochaine échéance et navigue vers le détail du plan', async () => {

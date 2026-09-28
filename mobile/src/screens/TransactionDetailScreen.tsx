@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { useTopInset } from '../ui/useTopInset';
 import { useBottomInset } from '../ui/useBottomInset';
-import { colors, radius, spacing, typography } from '../ui/theme';
+import { colors, elevation, radius, spacing, typography } from '../ui/theme';
 import { formatDh, formatShortDate } from '../ui/formatMoney';
 import { OPERATION_KIND_LABELS, localAmount } from '../ui/operationKindLabel';
 import { FormField } from '../ui/FormField';
@@ -14,17 +14,7 @@ import { Select, SelectOption } from '../ui/Select';
 import { HelpButton } from '../ui/HelpButton';
 import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
 import { TRANSACTION_ACTION_LABELS } from '../ui/transactionLabels';
-
-function accountLabelFor(accounts: api.AccountApi[], accountId: string | null, subaccountId: string | null): string | null {
-  if (!accountId) return null;
-  const account = accounts.find((a) => a.id === accountId);
-  if (!account) return null;
-  if (subaccountId) {
-    const sub = account.subaccounts.find((s) => s.id === subaccountId);
-    if (sub) return `${account.name} — ${sub.name}`;
-  }
-  return account.name;
-}
+import { accountLabelFor } from '../ui/accountLabel';
 
 /**
  * Détail d'une transaction (§4) — jamais de suppression physique d'une
@@ -309,12 +299,13 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.lg,
     marginTop: spacing.lg,
     marginBottom: spacing.lg,
+    ...elevation.raised,
   },
   amountLabel: { ...typography.bodySecondary, marginBottom: spacing.xs },
   amountValue: { ...typography.amountPrimary },
   amountPlus: { color: colors.success },
   amountMinus: { color: colors.danger },
-  card: { backgroundColor: colors.surface, borderRadius: radius.lg, marginHorizontal: spacing.lg, marginBottom: spacing.lg },
+  card: { backgroundColor: colors.surface, borderRadius: radius.lg, marginHorizontal: spacing.lg, marginBottom: spacing.lg, ...elevation.card },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -329,7 +320,7 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.lg, marginBottom: spacing.lg },
   modifyButton: { flex: 1, paddingVertical: spacing.md, borderRadius: radius.md, alignItems: 'center', backgroundColor: colors.surfaceSecondary },
   modifyButtonText: { ...typography.body, fontWeight: '700', color: colors.textSecondary },
-  cancelButton: { flex: 1, paddingVertical: spacing.md, borderRadius: radius.md, alignItems: 'center', backgroundColor: colors.danger },
+  cancelButton: { flex: 1, paddingVertical: spacing.md, borderRadius: radius.md, alignItems: 'center', backgroundColor: colors.danger, ...elevation.button },
   cancelButtonText: { ...typography.body, fontWeight: '700', color: colors.textOnPrimary },
   linkNote: { ...typography.caption, paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
   backdrop: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)' },
@@ -339,12 +330,12 @@ const styles = StyleSheet.create({
   confirmActions: { flexDirection: 'row', gap: spacing.md },
   confirmCancel: { flex: 1, paddingVertical: spacing.md, borderRadius: radius.md, alignItems: 'center', backgroundColor: colors.surfaceSecondary },
   confirmCancelText: { ...typography.body, fontWeight: '700', color: colors.textSecondary },
-  confirmDanger: { flex: 1, paddingVertical: spacing.md, borderRadius: radius.md, alignItems: 'center', backgroundColor: colors.danger },
+  confirmDanger: { flex: 1, paddingVertical: spacing.md, borderRadius: radius.md, alignItems: 'center', backgroundColor: colors.danger, ...elevation.button },
   confirmDangerText: { ...typography.body, fontWeight: '700', color: colors.textOnPrimary },
   sheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 6, borderTopRightRadius: radius.xl + 6, padding: spacing.xl, maxHeight: '85%' },
   sheetTitle: { ...typography.sectionTitle, marginBottom: spacing.sm },
   sheetHelper: { ...typography.caption, marginBottom: spacing.lg },
-  submitButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginTop: spacing.sm },
+  submitButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginTop: spacing.sm, ...elevation.button },
   submitButtonDisabled: { opacity: 0.5 },
   submitButtonText: { color: colors.textOnPrimary, fontWeight: '700', fontSize: 14 },
 });

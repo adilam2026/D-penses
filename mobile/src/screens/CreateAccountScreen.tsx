@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { useTopInset } from '../ui/useTopInset';
 import { useBottomInset } from '../ui/useBottomInset';
-import { colors, radius, spacing, typography } from '../ui/theme';
+import { colors, elevation, radius, spacing, typography } from '../ui/theme';
 import { FormField } from '../ui/FormField';
 import { Select } from '../ui/Select';
 import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
   backLabel: { ...typography.body, fontWeight: '600', marginLeft: 2 },
   title: { ...typography.screenTitle, marginBottom: spacing.lg },
   error: { color: colors.danger, fontSize: 13, marginBottom: spacing.sm, fontWeight: '600' },
-  primaryButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginTop: spacing.sm },
+  primaryButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginTop: spacing.sm, ...elevation.button },
   primaryButtonText: { color: colors.textOnPrimary, fontWeight: '700', fontSize: 14 },
   buttonDisabled: { opacity: 0.5 },
   secondaryButton: { alignItems: 'center', paddingVertical: spacing.md, marginTop: spacing.sm },

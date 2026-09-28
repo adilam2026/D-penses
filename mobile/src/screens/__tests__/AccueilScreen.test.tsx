@@ -151,7 +151,8 @@ it('section "Prochaines transactions" : échéance prévue en attente -> tap ouv
   // Item 3/4 : les actions doivent être explicites, jamais un "Annuler" nu.
   expect(screen.getByText('Modifier la transaction')).toBeTruthy();
   expect(screen.getByText('Annuler la transaction')).toBeTruthy();
-  expect(screen.getByText('Fermer')).toBeTruthy();
+  // Fermer = icône en en-tête (écran allégé, revert §3/§4), plus un bouton texte séparé.
+  expect(screen.getByTestId('planned-op-close')).toBeTruthy();
 
   fireEvent.press(screen.getByTestId('planned-op-realize'));
   await waitFor(() => expect(mockRealizePlannedOperation).toHaveBeenCalledWith('p1', { actualAmount: '8000' }));
