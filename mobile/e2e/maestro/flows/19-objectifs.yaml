@@ -15,9 +15,7 @@ appId: com.depenses.mobile
 - hideKeyboard
 - tapOn:
     id: "goal-submit"
-- scrollUntilVisible:
-    element:
+- extendedWaitUntil:
+    visible:
       text: "Objectif"
-    direction: DOWN
-- assertVisible:
-    text: "Objectif"
+    timeout: 15000
