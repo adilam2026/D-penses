@@ -218,15 +218,21 @@ export function AjouterScreen() {
         <FormField label="Libellé" value={label} onChangeText={setLabel} onFocus={handleFocus} testID="ajouter-label" />
 
         {mode === 'EXPENSE' && (
-          <Select label="Compte" value={source} options={options} onChange={setSource} testID="ajouter-source" />
+          <>
+            <Select label="Compte débité" placeholder="Sélectionner le compte débité…" value={source} options={options} onChange={setSource} testID="ajouter-source" />
+            <Text style={styles.accountHint}>Ce compte sera débité du montant de la dépense.</Text>
+          </>
         )}
         {mode === 'INCOME' && (
-          <Select label="Compte" value={destination} options={options} onChange={setDestination} testID="ajouter-destination" />
+          <>
+            <Select label="Compte crédité" placeholder="Sélectionner le compte crédité…" value={destination} options={options} onChange={setDestination} testID="ajouter-destination" />
+            <Text style={styles.accountHint}>Ce compte sera crédité du montant du revenu.</Text>
+          </>
         )}
         {(mode === 'TRANSFER' || mode === 'SAVINGS_CONTRIBUTION') && (
           <>
-            <Select label="Depuis" value={source} options={options} onChange={setSource} testID="ajouter-source" />
-            <Select label="Vers" value={destination} options={options} onChange={setDestination} testID="ajouter-destination" />
+            <Select label="Depuis (compte débité)" value={source} options={options} onChange={setSource} testID="ajouter-source" />
+            <Select label="Vers (compte crédité)" value={destination} options={options} onChange={setDestination} testID="ajouter-destination" />
           </>
         )}
 
@@ -471,6 +477,7 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.5 },
   submitButtonText: { color: colors.textOnPrimary, fontWeight: '700', fontSize: 14 },
   linkText: { ...typography.body, color: colors.primary, fontWeight: '600', marginBottom: spacing.md },
+  accountHint: { ...typography.caption, marginTop: -4, marginBottom: spacing.md },
   backdrop: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)' },
   sheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 6, borderTopRightRadius: radius.xl + 6, padding: spacing.xl },
   sheetTitle: { ...typography.sectionTitle, marginBottom: spacing.lg },

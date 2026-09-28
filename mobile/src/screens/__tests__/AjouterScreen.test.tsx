@@ -56,6 +56,18 @@ beforeEach(() => {
   ]);
 });
 
+it('Item 14 : le libellé du compte précise s\'il sera débité ou crédité (Dépense/Revenu)', async () => {
+  renderWithSafeArea(<AjouterScreen />);
+  await waitFor(() => screen.getByTestId('ajouter-source'));
+  expect(screen.getByText('Compte débité')).toBeTruthy();
+  expect(screen.getByText('Ce compte sera débité du montant de la dépense.')).toBeTruthy();
+
+  fireEvent.press(screen.getByTestId('ajouter-tile-INCOME'));
+  await waitFor(() => screen.getByTestId('ajouter-destination'));
+  expect(screen.getByText('Compte crédité')).toBeTruthy();
+  expect(screen.getByText('Ce compte sera crédité du montant du revenu.')).toBeTruthy();
+});
+
 it('mode Dépense (défaut) : "Remboursable par mutuelle ?" apparaît seulement si Catégorie=Santé', async () => {
   renderWithSafeArea(<AjouterScreen />);
   await waitFor(() => screen.getByTestId('ajouter-category'));

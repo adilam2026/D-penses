@@ -18,12 +18,16 @@ const mockListPlannedOperations = jest.fn();
 const mockListMedicalClaims = jest.fn();
 const mockListFinancialPlans = jest.fn();
 const mockRealizePlannedOperation = jest.fn();
+const mockUpdatePlannedOperation = jest.fn();
+const mockCancelPlannedOperation = jest.fn();
 jest.mock('../../api/client', () => ({
   listAccounts: () => mockListAccounts(),
   listPlannedOperations: () => mockListPlannedOperations(),
   listMedicalClaims: () => mockListMedicalClaims(),
   listFinancialPlans: () => mockListFinancialPlans(),
   realizePlannedOperation: (...args: unknown[]) => mockRealizePlannedOperation(...args),
+  updatePlannedOperation: (...args: unknown[]) => mockUpdatePlannedOperation(...args),
+  cancelPlannedOperation: (...args: unknown[]) => mockCancelPlannedOperation(...args),
 }));
 
 const TEST_INSET_METRICS = {
@@ -130,7 +134,7 @@ it('tap sur un sous-compte non-Santé -> navigue vers SubaccountDetail', async (
   expect(mockNavigate).toHaveBeenCalledWith('SubaccountDetail', { id: 'voiture' });
 });
 
-it('section "À faire" : échéance prévue en attente -> carte avec action Payer qui réalise l\'opération', async () => {
+it('section "Prochaines transactions" : échéance prévue en attente -> tap ouvre le détail, "Marquer réalisé" réalise l\'opération', async () => {
   mockListAccounts.mockResolvedValue([
     { id: 'cih', name: 'CIH', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, active: true, balance: 0, nonAffecte: 0, subaccounts: [] },
   ]);
@@ -141,12 +145,40 @@ it('section "À faire" : échéance prévue en attente -> carte avec action Paye
 
   renderWithSafeArea(<AccueilScreen />);
   await waitFor(() => screen.getByText('Voyage Été'));
-  expect(screen.getByText('Payer')).toBeTruthy();
-  fireEvent.press(screen.getByTestId('accueil-action-planned-p1'));
+  fireEvent.press(screen.getByTestId('accueil-upcoming-p1'));
+
+  await waitFor(() => screen.getByTestId('planned-op-realize'));
+  // Item 3/4 : les actions doivent être explicites, jamais un "Annuler" nu.
+  expect(screen.getByText('Modifier la transaction')).toBeTruthy();
+  expect(screen.getByText('Annuler la transaction')).toBeTruthy();
+  expect(screen.getByText('Fermer')).toBeTruthy();
+
+  fireEvent.press(screen.getByTestId('planned-op-realize'));
   await waitFor(() => expect(mockRealizePlannedOperation).toHaveBeenCalledWith('p1', { actualAmount: '8000' }));
 });
 
-it('section "À faire" : dossier santé en attente -> carte "Voir" qui navigue vers Health', async () => {
+it('section "Prochaines transactions" : "Annuler la transaction" appelle cancelPlannedOperation', async () => {
+  mockListAccounts.mockResolvedValue([
+    { id: 'cih', name: 'CIH', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, active: true, balance: 0, nonAffecte: 0, subaccounts: [] },
+  ]);
+  mockListPlannedOperations.mockResolvedValue([
+    { id: 'p1', kind: 'EXPENSE', label: 'Voyage Été', expectedDate: '2020-01-01', expectedAmount: 8000, categoryId: null, sourceAccountId: 'cih', sourceSubaccountId: null, destinationAccountId: null, destinationSubaccountId: null, status: 'PENDING', realizedOperationId: null },
+  ]);
+  mockCancelPlannedOperation.mockResolvedValue({});
+
+  renderWithSafeArea(<AccueilScreen />);
+  await waitFor(() => screen.getByText('Voyage Été'));
+  fireEvent.press(screen.getByTestId('accueil-upcoming-p1'));
+
+  await waitFor(() => screen.getByTestId('planned-op-cancel'));
+  fireEvent.press(screen.getByTestId('planned-op-cancel'));
+  await waitFor(() => screen.getByTestId('planned-op-cancel-confirm'));
+  fireEvent.press(screen.getByTestId('planned-op-cancel-confirm'));
+
+  await waitFor(() => expect(mockCancelPlannedOperation).toHaveBeenCalledWith('p1'));
+});
+
+it('section "Autres actions" : dossier santé en attente -> carte "Voir" qui navigue vers Health', async () => {
   mockListAccounts.mockResolvedValue([
     { id: 'cih', name: 'CIH', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, active: true, balance: 0, nonAffecte: 0, subaccounts: [] },
   ]);
@@ -160,7 +192,7 @@ it('section "À faire" : dossier santé en attente -> carte "Voir" qui navigue v
   expect(mockNavigate).toHaveBeenCalledWith('Health', { id: 'sante' });
 });
 
-it('§18/test M : "À faire" ne remonte que les actions utiles (échéance de plan avec reste > 0, jamais celle déjà couverte)', async () => {
+it('§18/test M : "Autres actions" ne remonte que les actions utiles (échéance de plan avec reste > 0, jamais celle déjà couverte)', async () => {
   mockListAccounts.mockResolvedValue([
     { id: 'cih', name: 'CIH', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, active: true, balance: 0, nonAffecte: 0, subaccounts: [] },
   ]);

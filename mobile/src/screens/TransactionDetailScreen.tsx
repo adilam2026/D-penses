@@ -13,6 +13,7 @@ import { DateField } from '../ui/DateField';
 import { Select, SelectOption } from '../ui/Select';
 import { HelpButton } from '../ui/HelpButton';
 import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
+import { TRANSACTION_ACTION_LABELS } from '../ui/transactionLabels';
 
 function accountLabelFor(accounts: api.AccountApi[], accountId: string | null, subaccountId: string | null): string | null {
   if (!accountId) return null;
@@ -105,9 +106,14 @@ export function TransactionDetailScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView style={[styles.container, { paddingTop: topInset }]} contentContainerStyle={{ paddingBottom: bottomInset + spacing.xxl }}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backRow} onPress={() => navigation.goBack()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
-            <Text style={styles.backLabel}>Retour</Text>
+          <TouchableOpacity
+            style={styles.backRow}
+            onPress={() => navigation.goBack()}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            testID="transaction-detail-close"
+          >
+            <Ionicons name="close" size={20} color={colors.textPrimary} />
+            <Text style={styles.backLabel}>{TRANSACTION_ACTION_LABELS.close}</Text>
           </TouchableOpacity>
           <HelpButton
             title="Détail de la transaction"
@@ -138,12 +144,12 @@ export function TransactionDetailScreen() {
           <View style={styles.actions}>
             {canModify && (
               <TouchableOpacity style={styles.modifyButton} onPress={() => setCorrectOpen(true)} testID="transaction-detail-modify">
-                <Text style={styles.modifyButtonText}>Modifier</Text>
+                <Text style={styles.modifyButtonText}>{TRANSACTION_ACTION_LABELS.modify}</Text>
               </TouchableOpacity>
             )}
             {canCancel && (
               <TouchableOpacity style={styles.cancelButton} onPress={() => setCancelConfirmOpen(true)} testID="transaction-detail-cancel">
-                <Text style={styles.cancelButtonText}>Annuler</Text>
+                <Text style={styles.cancelButtonText}>{TRANSACTION_ACTION_LABELS.cancel}</Text>
               </TouchableOpacity>
             )}
           </View>

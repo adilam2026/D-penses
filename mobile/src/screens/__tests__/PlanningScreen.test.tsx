@@ -195,9 +195,20 @@ it('case réalisée (verte) : appui long propose Voir/Modifier/Annuler le paieme
 
   fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
   await waitFor(() => screen.getByTestId('planning-realized-menu-option-cancel'));
+  // Vocabulaire Planning ("le paiement") volontairement distinct de "la transaction"
+  // (TransactionDetailScreen) — jamais un "Modifier"/"Annuler" nu et ambigu.
+  expect(screen.getByText('Modifier le paiement')).toBeTruthy();
+  expect(screen.getByText('Annuler le paiement')).toBeTruthy();
   fireEvent.press(screen.getByTestId('planning-realized-menu-option-cancel'));
 
   await waitFor(() => expect(mockUnrealizePlannedOperation).toHaveBeenCalledWith('po-1'));
+
+  // "Voir la transaction" navigue vers l'écran de détail canonique (jamais une
+  // mini-modale ad hoc) — même flux Modifier/Annuler/Fermer que partout ailleurs.
+  fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
+  await waitFor(() => screen.getByTestId('planning-realized-menu-option-view'));
+  fireEvent.press(screen.getByTestId('planning-realized-menu-option-view'));
+  expect(mockNavigate).toHaveBeenCalledWith('TransactionDetail', { id: 'op-1' });
 });
 
 it('case agrégée (plusieurs éléments, ex. Autres) : tap ouvre le détail de la catégorie', async () => {
@@ -272,6 +283,8 @@ it("Item 6 : case MIXTE (200 réalisé + 70 à venir) affiche un split compact, 
   await waitFor(() => screen.getByText('200/270 DH'));
   // Jamais affiché comme "270 DH ✓" (qui suggérerait à tort que tout est réalisé).
   expect(screen.queryByText(/270 DH ✓/)).toBeNull();
+  // Item 9 : le restant doit être explicite, pas seulement déductible du split.
+  expect(screen.getByText('reste 70 DH')).toBeTruthy();
 
   fireEvent.press(screen.getAllByTestId(/^planning-cell-/)[0]);
   await waitFor(() => screen.getByText('RÉALISÉ'));
@@ -280,8 +293,64 @@ it("Item 6 : case MIXTE (200 réalisé + 70 à venir) affiche un split compact, 
   expect(screen.getByText('Poste B')).toBeTruthy();
   expect(screen.getByTestId('planning-detail-mark-realized-po-2')).toBeTruthy();
 
+  // Item 11 : revenir sur le paiement déjà confirmé (Poste A), même dans une case
+  // à plusieurs éléments — pas seulement via l'appui long singleOccurrence. Comme
+  // pour "Marquer réalisé", toute action referme la modale (comportement existant) :
+  // on la rouvre pour vérifier la seconde action indépendamment.
+  fireEvent.press(screen.getByTestId('planning-detail-unrealize-po-1'));
+  await waitFor(() => expect(mockUnrealizePlannedOperation).toHaveBeenCalledWith('po-1'));
+  await waitFor(() => expect(screen.queryByTestId('planning-detail-unrealize-po-1')).toBeNull());
+
+  fireEvent.press(screen.getAllByTestId(/^planning-cell-/)[0]);
+  await waitFor(() => screen.getByTestId('planning-detail-mark-realized-po-2'));
   fireEvent.press(screen.getByTestId('planning-detail-mark-realized-po-2'));
   await waitFor(() => expect(mockRealizePlannedOperation).toHaveBeenCalledWith('po-2', { actualAmount: '70' }));
+});
+
+it("Item 12 : le chevron d'une ligne déplie un bandeau Réalisé/À venir cumulé sans ouvrir de modale", async () => {
+  mockGetPlanning.mockResolvedValue(
+    basePlanning({
+      depenses: [
+        {
+          key: 'cat-voiture',
+          label: 'Voiture',
+          categoryId: 'cat-voiture',
+          cells: {
+            '2026-09': {
+              displayAmount: 700,
+              budgetAmount: 700,
+              pendingAmount: 0,
+              realizedAmount: 700,
+              status: 'REALIZED',
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'REALIZED', expectedAmount: 700, realizedAmount: 700, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null },
+              items: [{ type: 'PLANNED_REALIZED', plannedOperationId: 'po-1', financialOperationId: 'op-1', label: 'Assurance voiture', amount: 700, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
+            },
+            '2026-10': {
+              displayAmount: 300,
+              budgetAmount: 300,
+              pendingAmount: 300,
+              realizedAmount: 0,
+              status: 'PENDING',
+              singleOccurrence: { plannedOperationId: 'po-2', status: 'PENDING', expectedAmount: 300, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null },
+              items: [{ type: 'PLANNED_PENDING', plannedOperationId: 'po-2', label: 'Vidange', amount: 300, date: '2026-10-05', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
+            },
+            '2026-11': emptyCell(),
+          },
+        },
+      ],
+    }),
+  );
+
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByTestId('planning-row-toggle-voiture'));
+  expect(screen.queryByTestId('planning-row-rollup-voiture')).toBeNull();
+
+  fireEvent.press(screen.getByTestId('planning-row-toggle-voiture'));
+  await waitFor(() => screen.getByTestId('planning-row-rollup-voiture'));
+  expect(screen.getByText('Réalisé 700 DH · À venir 300 DH')).toBeTruthy();
+
+  fireEvent.press(screen.getByTestId('planning-row-toggle-voiture'));
+  await waitFor(() => expect(screen.queryByTestId('planning-row-rollup-voiture')).toBeNull());
 });
 
 it('plans financiers : la carte affiche la prochaine échéance et navigue vers le détail du plan', async () => {

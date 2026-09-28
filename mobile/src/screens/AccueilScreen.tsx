@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { cached } from '../state/cache';
 import { colors, radius, spacing, typography } from '../ui/theme';
@@ -8,6 +9,7 @@ import { formatDh, formatShortDate } from '../ui/formatMoney';
 import { HelpButton } from '../ui/HelpButton';
 import { SegmentBar, segmentColor } from '../ui/SegmentBar';
 import { isSanteSubaccount } from '../ui/santeDetection';
+import { PlannedOperationActionsModal } from '../ui/PlannedOperationActionsModal';
 
 interface ActionItem {
   key: string;
@@ -19,14 +21,15 @@ interface ActionItem {
   onPress: () => void;
 }
 
+const UPCOMING_PREVIEW_COUNT = 5;
+
 /**
  * Accueil Finance Maison — conforme à la maquette validée (audit Checkpoint 2) :
  * pas de métrique globale inventée, comptes avec barre de répartition,
  * sous-comptes imbriqués (le sous-compte Santé ouvre directement Health), puis
- * "À faire" — construit à partir des données réelles déjà exposées
- * (planned_operations en attente + dossiers santé en attente), jamais d'une
- * logique parallèle à jeter au Checkpoint 3 (Planning réutilisera les mêmes
- * planned_operations).
+ * "Prochaines transactions" (les planned_operations PENDING, mêmes données que
+ * Planning) et enfin "Autres actions" (remboursements mutuelle + échéances de
+ * plan financier) — jamais de logique parallèle à celle de Planning.
  */
 export function AccueilScreen() {
   const navigation = useNavigation<any>();
@@ -36,6 +39,7 @@ export function AccueilScreen() {
   const [plans, setPlans] = useState<api.FinancialPlanApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [transactionTarget, setTransactionTarget] = useState<api.PlannedOperationApi | null>(null);
 
   const load = useCallback(async (force = false) => {
     const [accountsData, planned, claimsData, plansData] = await Promise.all([
@@ -63,33 +67,12 @@ export function AccueilScreen() {
     setRefreshing(false);
   }, [load]);
 
-  const realize = useCallback(
-    async (op: api.PlannedOperationApi) => {
-      await api.realizePlannedOperation(op.id, { actualAmount: String(op.expectedAmount) });
-      await load(true);
-    },
-    [load],
+  const upcomingTransactions = useMemo(
+    () => plannedOps.filter((op) => op.status === 'PENDING').sort((a, b) => a.expectedDate.localeCompare(b.expectedDate)),
+    [plannedOps],
   );
 
-  const actionItems = useMemo<ActionItem[]>(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    const pendingOps = plannedOps
-      .filter((op) => op.status === 'PENDING')
-      .sort((a, b) => a.expectedDate.localeCompare(b.expectedDate))
-      .slice(0, 3)
-      .map((op) => {
-        const overdue = op.expectedDate < today;
-        return {
-          key: `planned-${op.id}`,
-          label: op.label,
-          meta: `Prévu le ${formatShortDate(op.expectedDate)} · ${formatDh(op.expectedAmount)}`,
-          actionLabel: op.kind === 'SAVINGS_CONTRIBUTION' ? 'Verser' : 'Payer',
-          color: overdue ? colors.danger : colors.warning,
-          backgroundColor: overdue ? colors.dangerLight : colors.warningLight,
-          onPress: () => realize(op),
-        };
-      });
-
+  const otherActionItems = useMemo<ActionItem[]>(() => {
     const pendingClaimItems = claims
       .filter((c) => c.status === 'PENDING' && c.subaccountId)
       .slice(0, 2)
@@ -116,8 +99,8 @@ export function AccueilScreen() {
         onPress: () => navigation.navigate('FinancialPlanDetail', { id: plan.id }),
       }));
 
-    return [...pendingOps, ...pendingClaimItems, ...planDeadlineItems];
-  }, [plannedOps, claims, plans, realize, navigation]);
+    return [...pendingClaimItems, ...planDeadlineItems];
+  }, [claims, plans, navigation]);
 
   if (loading && !accounts) {
     return (
@@ -168,14 +151,15 @@ export function AccueilScreen() {
         </View>
         <HelpButton
           title="Accueil"
-          text="Retrouvez vos comptes, leurs sous-comptes (enveloppes réservées) et la section « À faire » qui regroupe les échéances prévues et les remboursements en attente."
+          text="Retrouvez vos comptes, leurs sous-comptes (enveloppes réservées) et vos prochaines transactions. Touchez une transaction à venir pour la modifier, l'annuler ou simplement la consulter."
         />
       </View>
 
       <Text style={styles.sectionLabel}>MES COMPTES</Text>
 
-      {(accounts ?? []).map((account) => {
+      {(accounts ?? []).map((account, accountIdx) => {
         const hasSubaccounts = account.subaccounts.length > 0;
+        const accentColor = segmentColor(accountIdx);
         const segments = hasSubaccounts
           ? [
               ...account.subaccounts.map((s, idx) => ({ key: s.id, value: s.balance, color: segmentColor(idx) })),
@@ -184,7 +168,7 @@ export function AccueilScreen() {
           : [];
 
         return (
-          <View key={account.id} style={styles.accountCard}>
+          <View key={account.id} style={[styles.accountCard, { borderLeftColor: accentColor }]}>
             <TouchableOpacity onPress={() => navigation.navigate('AccountDetail', { id: account.id })} testID={`accueil-account-${account.id}`}>
               <View style={styles.accountHeaderRow}>
                 <View style={{ flex: 1 }}>
@@ -232,26 +216,69 @@ export function AccueilScreen() {
         );
       })}
 
-      <Text style={[styles.sectionLabel, { marginTop: spacing.lg }]}>À FAIRE</Text>
-      {actionItems.length === 0 ? (
-        <Text style={styles.emptyText}>Rien à faire pour l'instant.</Text>
+      <Text style={[styles.sectionLabel, { marginTop: spacing.lg }]}>PROCHAINES TRANSACTIONS</Text>
+      {upcomingTransactions.length === 0 ? (
+        <Text style={styles.emptyText}>Aucune transaction à venir.</Text>
       ) : (
-        actionItems.map((item) => (
-          <View key={item.key} style={[styles.actionCard, { borderLeftColor: item.color }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.actionLabel}>{item.label}</Text>
-              <Text style={styles.actionMeta}>{item.meta}</Text>
-            </View>
+        <>
+          {upcomingTransactions.slice(0, UPCOMING_PREVIEW_COUNT).map((op) => {
+            const today = new Date().toISOString().slice(0, 10);
+            const overdue = op.expectedDate < today;
+            return (
+              <TouchableOpacity
+                key={op.id}
+                style={[styles.actionCard, { borderLeftColor: overdue ? colors.danger : colors.warning }]}
+                onPress={() => setTransactionTarget(op)}
+                testID={`accueil-upcoming-${op.id}`}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.actionLabel}>{op.label}</Text>
+                  <Text style={styles.actionMeta}>Prévu le {formatShortDate(op.expectedDate)} · {formatDh(op.expectedAmount)}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textPlaceholder} />
+              </TouchableOpacity>
+            );
+          })}
+          {upcomingTransactions.length > UPCOMING_PREVIEW_COUNT && (
             <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: item.backgroundColor }]}
-              onPress={item.onPress}
-              testID={`accueil-action-${item.key}`}
+              style={styles.showAllButton}
+              onPress={() => navigation.navigate('UpcomingTransactions')}
+              testID="accueil-upcoming-show-all"
             >
-              <Text style={[styles.actionButtonText, { color: item.color }]}>{item.actionLabel}</Text>
+              <Text style={styles.showAllButtonText}>Afficher tout ({upcomingTransactions.length})</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.primary} />
             </TouchableOpacity>
-          </View>
-        ))
+          )}
+        </>
       )}
+
+      {otherActionItems.length > 0 && (
+        <>
+          <Text style={[styles.sectionLabel, { marginTop: spacing.lg }]}>AUTRES ACTIONS</Text>
+          {otherActionItems.map((item) => (
+            <View key={item.key} style={[styles.actionCard, { borderLeftColor: item.color }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.actionLabel}>{item.label}</Text>
+                <Text style={styles.actionMeta}>{item.meta}</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.actionButton, { backgroundColor: item.backgroundColor }]}
+                onPress={item.onPress}
+                testID={`accueil-action-${item.key}`}
+              >
+                <Text style={[styles.actionButtonText, { color: item.color }]}>{item.actionLabel}</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </>
+      )}
+
+      <PlannedOperationActionsModal
+        target={transactionTarget}
+        accounts={accounts ?? []}
+        onClose={() => setTransactionTarget(null)}
+        onChanged={() => load(true)}
+      />
     </ScrollView>
   );
 }
@@ -273,15 +300,20 @@ const styles = StyleSheet.create({
   welcomePrimaryButtonText: { color: colors.textOnPrimary, fontWeight: '700', fontSize: 14 },
   welcomeSecondaryButton: { paddingVertical: spacing.md, alignItems: 'center', marginTop: spacing.sm },
   welcomeSecondaryButtonText: { ...typography.body, fontWeight: '700', color: colors.textSecondary },
-  accountCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.md },
+  // Identité visuelle par compte (§2) : liseré coloré (palette rotative
+  // segmentColor, la même que la barre de répartition) — jamais deux cartes
+  // consécutives identiques, sans nuire à la lisibilité du solde.
+  accountCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.md, borderLeftWidth: 4 },
   accountHeaderRow: { flexDirection: 'row', alignItems: 'center' },
   accountName: { ...typography.sectionTitle },
   accountBank: { ...typography.caption, marginTop: 2 },
-  accountBalance: { ...typography.amountSecondary },
+  accountBalance: { ...typography.amountSecondary, fontSize: 20 },
   subaccountsList: { marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.divider },
   subaccountRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.xs },
   subaccountNameRow: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  colorDot: { width: 8, height: 8, borderRadius: 4, marginRight: spacing.xs },
+  // Légende couleurs (§8) : même taille/forme que les segments de la barre,
+  // liseré blanc pour rester net sur n'importe quelle teinte de segment.
+  colorDot: { width: 10, height: 10, borderRadius: 5, marginRight: spacing.sm, borderWidth: 1, borderColor: colors.surface },
   subaccountName: { ...typography.body },
   subaccountBalance: { ...typography.body, fontWeight: '600' },
   nonAffecteLabel: { ...typography.bodySecondary },
@@ -299,4 +331,12 @@ const styles = StyleSheet.create({
   actionMeta: { ...typography.caption, marginTop: 2 },
   actionButton: { borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, marginLeft: spacing.sm },
   actionButtonText: { fontSize: 13, fontWeight: '700' },
+  showAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  showAllButtonText: { ...typography.body, fontWeight: '700', color: colors.primary, marginRight: 4 },
 });

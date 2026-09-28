@@ -22,17 +22,23 @@ export const colors = {
   textPlaceholder: '#9BA39D',
   textOnPrimary: '#FFFFFF',
 
-  background: '#EEF1EC',
+  // Fond blanc / très clair (Lot recette §1) — jamais teinté gris-vert pastel
+  // (ancienne valeur #EEF1EC) : l'app doit rester lumineuse même téléphone en
+  // mode sombre système (userInterfaceStyle "light" figé dans app.json, donc
+  // ces valeurs sont TOUJOURS celles rendues, jamais remplacées par l'OS).
+  background: '#F7F8F7',
   surface: '#FFFFFF',
-  surfaceSecondary: '#E7EBE4',
-  surfaceActive: '#E2ECE6',
+  surfaceSecondary: '#F0F1EF',
+  // Teinte volontairement gardée proche du vert de marque (primary) — utilisée
+  // uniquement pour des états actifs/sélectionnés, jamais comme fond passif.
+  surfaceActive: '#E6F1EA',
 
-  border: '#DDE3D8',
-  borderStrong: '#C7D0C0',
-  divider: '#E7EBE4',
+  border: '#E2E4E0',
+  borderStrong: '#CBCFC9',
+  divider: '#EEF0ED',
 
-  donutTrack: '#E3EEE8',
-  donutTrackWarn: '#F3E8D2',
+  donutTrack: '#EEF2EF',
+  donutTrackWarn: '#F5EEDC',
 } as const;
 
 export const elevation = {
