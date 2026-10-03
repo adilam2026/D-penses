@@ -45,6 +45,30 @@ jobs:
           npx prisma migrate status > migrate-status.txt 2>&1 || true
           cat migrate-status.txt
 
+      - name: "Introspection du schéma réel (db pull --print, lecture seule, aucun fichier écrit)"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+        run: |
+          set -o pipefail
+          echo "============================================================"
+          echo "SCHEMA REEL (introspection db pull --print) :"
+          npx prisma db pull --print 2>&1 || true
+          echo "============================================================"
+          echo "TABLES ET COLONNES (information_schema, lecture seule) :"
+          npx prisma db execute --stdin <<'SQL' 2>&1 || true
+          SELECT table_name, column_name, data_type
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+          ORDER BY table_name, ordinal_position;
+          SQL
+          echo "============================================================"
+          echo "TABLE _prisma_migrations (etat exact) :"
+          npx prisma db execute --stdin <<'SQL' 2>&1 || true
+          SELECT migration_name, started_at, finished_at, applied_steps_count, rolled_back_at
+          FROM _prisma_migrations
+          ORDER BY started_at;
+          SQL
+
       - name: Interpréter le résultat (connexion / migrations en attente / migration R6.2)
         run: |
           set -o pipefail
