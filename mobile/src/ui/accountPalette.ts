@@ -57,3 +57,22 @@ export function paletteForAccount(colorKey: string | null | undefined, fallbackI
   const option = colorKey ? ACCOUNT_COLOR_OPTIONS.find((o) => o.key === colorKey) : undefined;
   return option ? paletteFromBg(option.bg) : accountPalette(fallbackIndex);
 }
+
+function darken(hex: string, amount: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.max(0, Math.round(((n >> 16) & 0xff) * (1 - amount)));
+  const g = Math.max(0, Math.round(((n >> 8) & 0xff) * (1 - amount)));
+  const b = Math.max(0, Math.round((n & 0xff) * (1 - amount)));
+  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/**
+ * Dégradé 2 tons pour une carte héro (Détail compte/sous-compte/plan — maquette
+ * « Foyer » validée) — dérivé de la même couleur de compte que `paletteForAccount`,
+ * jamais une 2e liste de teintes qui diverge.
+ */
+export function gradientForAccount(colorKey: string | null | undefined, fallbackIndex: number): [string, string] {
+  const option = colorKey ? ACCOUNT_COLOR_OPTIONS.find((o) => o.key === colorKey) : undefined;
+  const bg = option ? option.bg : ACCOUNT_COLOR_OPTIONS[fallbackIndex % ACCOUNT_COLOR_OPTIONS.length].bg;
+  return [bg, darken(bg, 0.28)];
+}

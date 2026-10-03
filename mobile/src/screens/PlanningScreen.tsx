@@ -2,7 +2,7 @@ import React, { useCallback, useRef, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import * as api from '../api/client';
-import { colors, elevation, radius, spacing, typography } from '../ui/theme';
+import { colors, elevation, fontFamily, radius, spacing, typography } from '../ui/theme';
 import { formatDh, formatMonthLabel, formatShortDate } from '../ui/formatMoney';
 import { HelpButton } from '../ui/HelpButton';
 import { FormField } from '../ui/FormField';
@@ -486,10 +486,12 @@ function PlanningCellView({
           </Text>
         </View>
       ) : (
-        <Text style={[styles.cellAmount, isRealized && styles.cellAmountRealized, isPending && styles.cellAmountPending]}>
-          {formatDh(cell.displayAmount)}
-          {isRealized ? ' ✓' : ''}
-        </Text>
+        <View style={[styles.cellChip, isRealized && styles.cellChipRealized, isPending && styles.cellChipPending]}>
+          <Text style={[styles.cellAmount, isRealized && styles.cellAmountRealized, isPending && styles.cellAmountPending]} numberOfLines={1} adjustsFontSizeToFit>
+            {formatDh(cell.displayAmount)}
+            {isRealized ? ' ✓' : ''}
+          </Text>
+        </View>
       )}
     </TouchableOpacity>
   );
@@ -768,40 +770,46 @@ const styles = StyleSheet.create({
   horizonBar: { flexDirection: 'row', paddingHorizontal: spacing.lg, marginBottom: spacing.md, gap: spacing.sm },
   horizonPill: { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary },
   horizonPillActive: { backgroundColor: colors.primary },
-  horizonPillText: { ...typography.caption, fontWeight: '700', color: colors.textSecondary },
+  horizonPillText: { fontSize: 11, fontFamily: fontFamily.sansBold, color: colors.textSecondary },
   horizonPillTextActive: { color: colors.textOnPrimary },
   tableRow: { flexDirection: 'row', paddingLeft: spacing.lg },
   labelCell: { justifyContent: 'center', paddingRight: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },
   sectionLabelCell: { justifyContent: 'flex-end', paddingBottom: 4, paddingLeft: spacing.xs, borderLeftWidth: 3 },
-  sectionLabelText: { ...typography.caption, fontWeight: '800', letterSpacing: 0.5 },
-  rowLabelText: { ...typography.body, fontWeight: '600' },
+  sectionLabelText: { fontSize: 11, fontFamily: fontFamily.sansExtraBold, letterSpacing: 0.5 },
+  rowLabelText: { fontSize: 13, fontFamily: fontFamily.sansSemiBold, color: colors.textPrimary },
   emptyRowText: { ...typography.caption, color: colors.textPlaceholder },
   totalLabelCell: { justifyContent: 'center', borderTopWidth: 2, borderTopColor: colors.borderStrong, backgroundColor: colors.surfaceSecondary, paddingRight: spacing.sm, paddingLeft: spacing.xs, borderLeftWidth: 3 },
-  totalLabelText: { ...typography.caption, fontWeight: '800', color: colors.textPrimary },
+  totalLabelText: { fontSize: 11, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
   monthHeaderCell: { justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 4 },
-  monthHeaderText: { ...typography.caption, fontWeight: '800', color: colors.textSecondary },
+  monthHeaderText: { fontSize: 11, fontFamily: fontFamily.sansExtraBold, color: colors.textSecondary },
   sectionSpacerCell: {},
   // Titre de regroupement catégorie (Lot ciblé §5) — jamais une ligne financière :
   // pas de bordure de cellule, pas de fond de statut, juste un libellé discret.
   categoryHeaderCell: { justifyContent: 'flex-end', paddingBottom: 2 },
-  categoryHeaderText: { fontSize: 10, fontWeight: '700', color: colors.textPlaceholder, letterSpacing: 0.4 },
+  categoryHeaderText: { fontSize: 10, fontFamily: fontFamily.sansBold, color: colors.textPlaceholder, letterSpacing: 0.4, textTransform: 'uppercase' },
   categoryHeaderSpacerCell: {},
   cell: { alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: colors.divider, borderLeftWidth: 1, borderLeftColor: colors.divider },
-  cellRealized: { backgroundColor: colors.successLight },
-  cellPending: { backgroundColor: colors.warningLight },
+  cellRealized: {},
+  cellPending: {},
   // MIXTE : même teinte que "prévu" (jamais confondu avec 100% réalisé, vert) mais un
   // liseré vert à gauche signale la part déjà réalisée dans la case — sobre, sans
   // ajouter de nouvelle couleur au design system (§7, purement visuel).
   cellMixed: { backgroundColor: colors.warningLight, borderLeftWidth: 3, borderLeftColor: colors.success },
   cellEmpty: { color: colors.textPlaceholder },
-  cellAmount: { ...typography.body, fontWeight: '700' },
+  // Montant affiché en chip/pill (maquette Planning validée) plutôt qu'en
+  // fond de cellule plein — la cellule-grille (alignement multi-mois) reste
+  // neutre, seul le badge de statut porte la couleur.
+  cellChip: { borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 4, maxWidth: '92%' },
+  cellChipRealized: { backgroundColor: colors.successLight },
+  cellChipPending: { backgroundColor: colors.warningLight },
+  cellAmount: { fontSize: 12.5, fontFamily: fontFamily.sansBold, color: colors.textPrimary },
   cellAmountRealized: { color: colors.success },
   cellAmountPending: { color: colors.warning },
   cellMixedWrap: { alignItems: 'center' },
-  cellAmountMixed: { ...typography.caption, fontWeight: '800', color: colors.warning, paddingHorizontal: 2 },
-  cellRestantMixed: { fontSize: 9, fontWeight: '700', color: colors.danger, paddingHorizontal: 2, marginTop: 1 },
+  cellAmountMixed: { fontSize: 11, fontFamily: fontFamily.sansExtraBold, color: colors.warning, paddingHorizontal: 2 },
+  cellRestantMixed: { fontSize: 9, fontFamily: fontFamily.sansBold, color: colors.danger, paddingHorizontal: 2, marginTop: 1 },
   totalCell: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceSecondary, borderTopWidth: 2, borderTopColor: colors.borderStrong, borderLeftWidth: 1, borderLeftColor: colors.divider },
-  totalCellText: { ...typography.body, fontWeight: '800' },
+  totalCellText: { fontSize: 13, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
   syntheseCell: { backgroundColor: colors.surfaceActive },
   negativeText: { color: colors.danger },
   backdrop: { flex: 1, backgroundColor: colors.backdrop },

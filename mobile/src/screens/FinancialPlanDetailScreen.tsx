@@ -2,10 +2,11 @@ import React, { useCallback, useState } from 'react';
 import { RouteProp, useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as api from '../api/client';
 import { useTopInset } from '../ui/useTopInset';
 import { useBottomInset } from '../ui/useBottomInset';
-import { colors, elevation, radius, spacing, typography } from '../ui/theme';
+import { colors, elevation, fontFamily, radius, spacing, typography } from '../ui/theme';
 import { formatDh, formatShortDate } from '../ui/formatMoney';
 import { HelpButton } from '../ui/HelpButton';
 import { ChoiceSheet } from '../ui/ChoiceSheet';
@@ -93,13 +94,15 @@ export function FinancialPlanDetailScreen() {
         <Text style={styles.title}>{plan.label}</Text>
 
         {next ? (
-          <View style={styles.heroCard} testID="plan-detail-next-deadline">
+          <LinearGradient colors={['#4C5FA6', '#36488A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.heroCard} testID="plan-detail-next-deadline">
             <Text style={styles.heroKicker}>TOTAL PRÉVU — {next.label.toUpperCase()}</Text>
             <Text style={styles.heroAmount}>{formatDh(next.totalPrevu)}</Text>
             <View style={styles.heroBarTrack}>
               <View style={[styles.heroBarFill, { width: `${Math.min(100, next.totalPrevu > 0 ? (next.disponible / next.totalPrevu) * 100 : 0)}%` }]} />
             </View>
-            <Text style={styles.heroDeadlineMeta}>Échéance le {formatShortDate(next.dueDate)}</Text>
+            <Text style={styles.heroDeadlineMeta}>
+              {formatDh(next.disponible)} déjà épargnés · reste {formatDh(next.reste)} · échéance le {formatShortDate(next.dueDate)}
+            </Text>
             <View style={styles.heroStatsRow}>
               <View style={styles.heroStat}>
                 <Text style={styles.heroRowLabel}>Disponible</Text>
@@ -107,14 +110,14 @@ export function FinancialPlanDetailScreen() {
               </View>
               <View style={styles.heroStat}>
                 <Text style={styles.heroRowLabel}>Reste</Text>
-                <Text style={[styles.heroRowValue, next.reste > 0 && styles.heroRowValueWarning]}>{formatDh(next.reste)}</Text>
+                <Text style={styles.heroRowValue}>{formatDh(next.reste)}</Text>
               </View>
               <View style={styles.heroStat}>
                 <Text style={styles.heroRowLabel}>Recommandation</Text>
                 <Text style={styles.heroRowValue}>{formatDh(next.recommendedMonthly)}/mois</Text>
               </View>
             </View>
-          </View>
+          </LinearGradient>
         ) : (
           <View style={styles.balanceCard}>
             <Text style={styles.balanceLabel}>Disponible actuel</Text>
@@ -396,11 +399,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
     ...elevation.card,
   },
-  heroKicker: { ...typography.caption, fontWeight: '800', color: colors.primaryDark, letterSpacing: 0.5 },
-  heroAmount: { ...typography.amountPrimary, marginTop: 4 },
-  heroBarTrack: { height: 8, borderRadius: 4, backgroundColor: colors.surface, overflow: 'hidden', marginTop: spacing.md },
-  heroBarFill: { height: 8, borderRadius: 4, backgroundColor: colors.secondary },
-  heroDeadlineMeta: { ...typography.caption, marginTop: spacing.sm },
+  heroKicker: { fontSize: 11, fontFamily: fontFamily.sansBold, color: 'rgba(255,255,255,0.85)', letterSpacing: 0.5 },
+  heroAmount: { fontSize: 30, fontFamily: fontFamily.displayBold, color: colors.textOnPrimary, marginTop: 4 },
+  heroBarTrack: { height: 7, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.3)', overflow: 'hidden', marginTop: spacing.md },
+  heroBarFill: { height: 7, borderRadius: 4, backgroundColor: '#FFFFFF' },
+  heroDeadlineMeta: { fontSize: 11.5, fontFamily: fontFamily.sansMedium, color: 'rgba(255,255,255,0.85)', marginTop: spacing.sm },
   heroStatsRow: { flexDirection: 'row', marginTop: spacing.md, gap: spacing.md },
   heroStat: { flex: 1 },
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
@@ -431,9 +434,8 @@ const styles = StyleSheet.create({
   },
   itemLabel: { ...typography.body, fontWeight: '600' },
   itemMeta: { ...typography.caption },
-  heroRowLabel: { ...typography.caption },
-  heroRowValue: { ...typography.body, fontWeight: '700', marginTop: 2 },
-  heroRowValueWarning: { color: colors.warning },
+  heroRowLabel: { fontSize: 10.5, fontFamily: fontFamily.sansMedium, color: 'rgba(255,255,255,0.75)' },
+  heroRowValue: { fontSize: 13, fontFamily: fontFamily.sansBold, color: colors.textOnPrimary, marginTop: 2 },
   backdrop: { flex: 1, backgroundColor: colors.backdrop },
   sheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 6, borderTopRightRadius: radius.xl + 6, padding: spacing.xl, maxHeight: '85%' },
   sheetTitle: { ...typography.sectionTitle, marginBottom: spacing.lg },

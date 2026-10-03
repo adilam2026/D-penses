@@ -2,10 +2,11 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { RouteProp, useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as api from '../api/client';
 import { useTopInset } from '../ui/useTopInset';
 import { useBottomInset } from '../ui/useBottomInset';
-import { colors, elevation, radius, spacing, typography } from '../ui/theme';
+import { colors, elevation, fontFamily, radius, spacing, typography } from '../ui/theme';
 import { formatDh, formatShortDate } from '../ui/formatMoney';
 import { OPERATION_KIND_LABELS, localAmount } from '../ui/operationKindLabel';
 import { ChoiceSheet } from '../ui/ChoiceSheet';
@@ -13,7 +14,7 @@ import { RenameModal } from '../ui/RenameModal';
 import { HelpButton } from '../ui/HelpButton';
 import { isSanteSubaccount } from '../ui/santeDetection';
 import { testIdSlug } from '../ui/testIdSlug';
-import { paletteForAccount } from '../ui/accountPalette';
+import { gradientForAccount, paletteForAccount } from '../ui/accountPalette';
 import { ProgressRing } from '../ui/ProgressRing';
 import { GoalModal } from './EpargneScreen';
 
@@ -70,6 +71,7 @@ export function SubaccountDetailScreen() {
   }
 
   const palette = paletteForAccount(account.colorKey, 0);
+  const [gradientFrom, gradientTo] = gradientForAccount(account.colorKey, 0);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -91,45 +93,47 @@ export function SubaccountDetailScreen() {
         </View>
 
         {goal ? (
-          <View style={[styles.goalCard, { backgroundColor: palette.bg }]} testID="subaccount-goal-card">
-            <Text style={[styles.title, { color: palette.text }]}>{subaccount.name}</Text>
-            <Text style={[styles.subtitle, { color: palette.textSecondary }]}>Rattaché à {account.name}{subaccount.active ? '' : ' · Désactivé'}</Text>
-            <View style={styles.ringWrap}>
-              <ProgressRing
-                percent={goal.percent}
-                color={palette.text}
-                trackColor="rgba(255,255,255,0.3)"
-                labelColor={palette.text}
-                subLabelColor={palette.textSecondary}
-                subLabel={`${formatDh(goal.current)} / ${formatDh(goal.targetAmount)}`}
-              />
-            </View>
-            {goal.targetDate ? (
-              <Text style={[styles.goalDeadline, { color: palette.textSecondary }]}>Objectif pour {formatShortDate(goal.targetDate)}</Text>
-            ) : null}
+          <>
+            <LinearGradient colors={[gradientFrom, gradientTo]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.goalCard} testID="subaccount-goal-card">
+              <Text style={styles.heroName}>{subaccount.name}</Text>
+              <Text style={styles.heroSubtitle}>Rattaché à {account.name}{subaccount.active ? '' : ' · Désactivé'}</Text>
+              <View style={styles.ringWrap}>
+                <ProgressRing
+                  percent={goal.percent}
+                  color={palette.text}
+                  trackColor="rgba(255,255,255,0.3)"
+                  labelColor={palette.text}
+                  subLabelColor={palette.textSecondary}
+                  subLabel={`${formatDh(goal.current)} / ${formatDh(goal.targetAmount)}`}
+                />
+              </View>
+              {goal.targetDate ? (
+                <Text style={styles.goalDeadline}>Objectif pour {formatShortDate(goal.targetDate)}</Text>
+              ) : null}
+            </LinearGradient>
             <View style={styles.ctaRow}>
               <TouchableOpacity
-                style={styles.ctaPrimary}
+                style={[styles.ctaPrimary, !subaccount.active && styles.ctaDisabled]}
                 disabled={!subaccount.active}
                 onPress={() =>
                   navigation.navigate('Tabs', { screen: 'Ajouter', params: { prefill: { kind: 'SAVINGS_CONTRIBUTION', destinationAccountId: account.id, destinationSubaccountId: subaccount.id } } })
                 }
                 testID="subaccount-goal-contribute"
               >
-                <Text style={styles.ctaPrimaryText}>+ Faire un versement</Text>
+                <Text style={styles.ctaPrimaryText}>+ Verser</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.ctaSecondary} onPress={() => setGoalOpen(true)} testID="subaccount-goal-edit">
                 <Text style={styles.ctaSecondaryText}>Modifier l'objectif</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </>
         ) : (
-          <View style={[styles.balanceCard, { backgroundColor: palette.bg }]}>
-            <Text style={[styles.title, { color: palette.text }]}>{subaccount.name}</Text>
-            <Text style={[styles.subtitle, { color: palette.textSecondary }]}>Rattaché à {account.name}{subaccount.active ? '' : ' · Désactivé'}</Text>
-            <Text style={[styles.balanceLabel, { color: palette.textSecondary }]}>Disponible</Text>
-            <Text style={[styles.balanceAmount, { color: palette.text }]}>{formatDh(subaccount.balance)}</Text>
-          </View>
+          <LinearGradient colors={[gradientFrom, gradientTo]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.balanceCard}>
+            <Text style={styles.heroName}>{subaccount.name}</Text>
+            <Text style={styles.heroSubtitle}>Rattaché à {account.name}{subaccount.active ? '' : ' · Désactivé'}</Text>
+            <Text style={styles.balanceLabel}>Disponible</Text>
+            <Text style={styles.balanceAmount}>{formatDh(subaccount.balance)}</Text>
+          </LinearGradient>
         )}
 
         <View style={styles.historyCard}>
@@ -242,22 +246,11 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, marginBottom: spacing.md },
   backRow: { flexDirection: 'row', alignItems: 'center' },
-  backLabel: { ...typography.body, fontWeight: '600', marginLeft: 2 },
+  backLabel: { fontSize: 14, fontFamily: fontFamily.sansSemiBold, color: colors.textPrimary, marginLeft: 2 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  title: { ...typography.screenTitle },
-  subtitle: { ...typography.bodySecondary, marginBottom: spacing.lg },
+  heroName: { fontSize: 18, fontFamily: fontFamily.displayBold, color: colors.textOnPrimary, textAlign: 'center' },
+  heroSubtitle: { fontSize: 12, fontFamily: fontFamily.sansMedium, color: 'rgba(255,255,255,0.85)', marginTop: 2, marginBottom: spacing.md, textAlign: 'center' },
   balanceCard: {
-    borderRadius: radius.xl,
-    padding: spacing.xl,
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
-    ...elevation.raised,
-  },
-  balanceLabel: { ...typography.bodySecondary, marginBottom: spacing.xs },
-  balanceAmount: { ...typography.amountPrimary },
-  // Carte objectif (maquette « Foyer » validée — Détail Épargne/sous-compte) :
-  // jauge circulaire centrée, échéance, puis les deux CTA (verser/modifier).
-  goalCard: {
     borderRadius: radius.xl,
     padding: spacing.xl,
     marginHorizontal: spacing.lg,
@@ -265,13 +258,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     ...elevation.raised,
   },
+  balanceLabel: { fontSize: 11, fontFamily: fontFamily.sansBold, color: 'rgba(255,255,255,0.8)', marginBottom: 2 },
+  balanceAmount: { fontSize: 32, fontFamily: fontFamily.displayBold, color: colors.textOnPrimary },
+  // Carte objectif (maquette « Foyer » validée — Détail Épargne/sous-compte) :
+  // jauge circulaire centrée, échéance, CTA en-dessous de la carte (pas en
+  // superposition translucide dessus, comme sur la maquette).
+  goalCard: {
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    alignItems: 'center',
+    ...elevation.raised,
+  },
   ringWrap: { marginTop: spacing.md, marginBottom: spacing.sm },
-  goalDeadline: { ...typography.caption, marginBottom: spacing.lg },
-  ctaRow: { width: '100%', gap: spacing.sm },
-  ctaPrimary: { backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center' },
-  ctaPrimaryText: { ...typography.body, fontWeight: '700', color: colors.textOnPrimary },
-  ctaSecondary: { alignItems: 'center', paddingVertical: spacing.sm },
-  ctaSecondaryText: { ...typography.bodySecondary, fontWeight: '700', color: colors.textOnPrimary, textDecorationLine: 'underline' },
+  goalDeadline: { fontSize: 11, fontFamily: fontFamily.sansMedium, color: 'rgba(255,255,255,0.85)' },
+  ctaRow: { flexDirection: 'row', gap: spacing.sm, marginHorizontal: spacing.lg, marginBottom: spacing.lg },
+  ctaPrimary: { flex: 1, backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', ...elevation.button },
+  ctaDisabled: { opacity: 0.5 },
+  ctaPrimaryText: { fontSize: 13.5, fontFamily: fontFamily.sansBold, color: colors.textOnPrimary },
+  ctaSecondary: { flex: 1, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center' },
+  ctaSecondaryText: { fontSize: 13.5, fontFamily: fontFamily.sansBold, color: colors.textPrimary },
   historyCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.xl,

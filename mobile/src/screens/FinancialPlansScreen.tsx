@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { useTopInset } from '../ui/useTopInset';
 import { useBottomInset } from '../ui/useBottomInset';
-import { colors, elevation, radius, spacing, typography } from '../ui/theme';
+import { colors, elevation, fontFamily, radius, spacing, typography } from '../ui/theme';
 import { formatDh, formatShortDate } from '../ui/formatMoney';
 import { HelpButton } from '../ui/HelpButton';
 import { FormField } from '../ui/FormField';
@@ -62,35 +62,59 @@ export function FinancialPlansScreen() {
 
         <Text style={styles.title}>Plans financiers</Text>
 
-        <TouchableOpacity style={styles.createButton} onPress={() => setCreateOpen(true)} testID="plans-list-create">
-          <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
-          <Text style={styles.createButtonText}>Nouveau plan</Text>
-        </TouchableOpacity>
-
         {plans.length === 0 ? (
           <Text style={styles.emptyText}>Aucun plan financier pour l'instant.</Text>
         ) : (
-          plans.map((plan) => (
-            <TouchableOpacity
-              key={plan.id}
-              style={styles.planCard}
-              onPress={() => navigation.navigate('FinancialPlanDetail', { id: plan.id })}
-              testID={`plans-list-plan-${plan.id}`}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.planLabel}>{plan.label}</Text>
-                {plan.nextDeadline ? (
-                  <Text style={styles.planMeta}>
-                    Prochaine échéance : {plan.nextDeadline.label} le {formatShortDate(plan.nextDeadline.dueDate)}
-                  </Text>
+          plans.map((plan) => {
+            const totalPrevu = plan.nextDeadline?.totalPrevu ?? null;
+            const disponible = plan.disponibleActuel ?? 0;
+            const percent = totalPrevu && totalPrevu > 0 ? Math.min(100, Math.round((disponible / totalPrevu) * 100)) : null;
+            return (
+              <TouchableOpacity
+                key={plan.id}
+                style={styles.planCard}
+                onPress={() => navigation.navigate('FinancialPlanDetail', { id: plan.id })}
+                testID={`plans-list-plan-${plan.id}`}
+              >
+                <View style={styles.planTopRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.planLabel}>{plan.label}</Text>
+                    {plan.nextDeadline ? (
+                      <Text style={styles.planMeta}>Prochaine échéance · {plan.nextDeadline.label}</Text>
+                    ) : (
+                      <Text style={styles.planMeta}>Aucune échéance planifiée.</Text>
+                    )}
+                  </View>
+                  {totalPrevu !== null ? (
+                    <View style={styles.planBadge}>
+                      <Text style={styles.planBadgeText}>{formatDh(totalPrevu)}</Text>
+                    </View>
+                  ) : null}
+                </View>
+                {percent !== null ? (
+                  <>
+                    <View style={styles.planBarTrack}>
+                      <View style={[styles.planBarFill, { width: `${percent}%` }]} />
+                    </View>
+                    <View style={styles.planBottomRow}>
+                      <Text style={styles.planFooterText}>{formatDh(disponible)} épargnés</Text>
+                      <Text style={styles.planFooterLink}>Voir le plan ›</Text>
+                    </View>
+                  </>
                 ) : (
-                  <Text style={styles.planMeta}>Aucune échéance planifiée.</Text>
+                  <View style={styles.planBottomRow}>
+                    <Text style={styles.planFooterText} />
+                    <Text style={styles.planFooterLink}>Voir le plan ›</Text>
+                  </View>
                 )}
-              </View>
-              <Text style={styles.planAmount}>{formatDh(plan.disponibleActuel ?? 0)}</Text>
-            </TouchableOpacity>
-          ))
+              </TouchableOpacity>
+            );
+          })
         )}
+
+        <TouchableOpacity style={styles.createButton} onPress={() => setCreateOpen(true)} testID="plans-list-create">
+          <Text style={styles.createButtonText}>+ Nouveau plan financier</Text>
+        </TouchableOpacity>
       </ScrollView>
 
       <CreatePlanModal
@@ -183,32 +207,36 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, marginBottom: spacing.md },
   backRow: { flexDirection: 'row', alignItems: 'center' },
-  backLabel: { ...typography.body, fontWeight: '600', marginLeft: 2 },
+  backLabel: { fontSize: 14, fontFamily: fontFamily.sansSemiBold, color: colors.textPrimary, marginLeft: 2 },
   title: { ...typography.screenTitle, paddingHorizontal: spacing.lg, marginBottom: spacing.lg },
   createButton: {
-    flexDirection: 'row',
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
     alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.md,
     marginHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
+    marginTop: spacing.sm,
   },
-  createButtonText: { ...typography.body, fontWeight: '700', color: colors.primary },
+  createButtonText: { fontSize: 13.5, fontFamily: fontFamily.sansBold, color: colors.textPrimary },
   emptyText: { ...typography.bodySecondary, paddingHorizontal: spacing.lg },
   planCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.md,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
     marginHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
+    ...elevation.card,
   },
-  planLabel: { ...typography.body, fontWeight: '700' },
-  planMeta: { ...typography.caption, marginTop: 2 },
-  planAmount: { ...typography.body, fontWeight: '700' },
+  planTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  planLabel: { fontSize: 16, fontFamily: fontFamily.displayBold, color: colors.textPrimary },
+  planMeta: { ...typography.caption, marginTop: 3 },
+  planBadge: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 5 },
+  planBadgeText: { fontSize: 10.5, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
+  planBarTrack: { height: 7, borderRadius: 4, backgroundColor: colors.surfaceSecondary, marginTop: spacing.md, overflow: 'hidden' },
+  planBarFill: { height: 7, borderRadius: 4, backgroundColor: colors.secondary },
+  planBottomRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.sm },
+  planFooterText: { fontSize: 11, fontFamily: fontFamily.sansMedium, color: colors.textSecondary },
+  planFooterLink: { fontSize: 11, fontFamily: fontFamily.sansMedium, color: colors.textSecondary },
   backdrop: { flex: 1, backgroundColor: colors.backdrop },
   sheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 6, borderTopRightRadius: radius.xl + 6, padding: spacing.xl, maxHeight: '85%' },
   sheetTitle: { ...typography.sectionTitle, marginBottom: spacing.lg },

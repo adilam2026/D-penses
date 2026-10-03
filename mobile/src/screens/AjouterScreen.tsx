@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as api from '../api/client';
-import { colors, elevation, radius, spacing, typography } from '../ui/theme';
+import { colors, elevation, fontFamily, radius, spacing, typography } from '../ui/theme';
 import { HelpButton } from '../ui/HelpButton';
 import { FormField } from '../ui/FormField';
 import { Select, SelectOption } from '../ui/Select';
@@ -16,11 +18,11 @@ type QuickMode = 'EXPENSE' | 'INCOME' | 'TRANSFER' | 'SAVINGS_CONTRIBUTION';
 type EntryTab = 'realisee' | 'a_venir';
 type RecurrenceOption = 'WEEKLY' | 'MONTHLY' | 'BIMONTHLY' | 'QUARTERLY' | 'SEMIANNUAL' | 'YEARLY';
 
-const QUICK_TILES: { mode: QuickMode; label: string; icon: string }[] = [
-  { mode: 'EXPENSE', label: 'Dépense', icon: '↓' },
-  { mode: 'INCOME', label: 'Revenu', icon: '↑' },
-  { mode: 'TRANSFER', label: 'Transfert', icon: '⇄' },
-  { mode: 'SAVINGS_CONTRIBUTION', label: 'Versement', icon: '＋' },
+const QUICK_TILES: { mode: QuickMode; label: string; description: string; icon: keyof typeof Ionicons.glyphMap; colors: [string, string] }[] = [
+  { mode: 'EXPENSE', label: 'Dépense', description: 'Loyer, courses, factures…', icon: 'arrow-forward', colors: ['#E85D3B', '#C24322'] },
+  { mode: 'INCOME', label: 'Revenu', description: 'Salaire, prime, remboursement…', icon: 'arrow-back', colors: ['#6FA347', '#3F8F5B'] },
+  { mode: 'TRANSFER', label: 'Transfert', description: 'Entre deux comptes du foyer', icon: 'swap-horizontal', colors: ['#4C5FA6', '#36488A'] },
+  { mode: 'SAVINGS_CONTRIBUTION', label: 'Versement', description: "Vers une enveloppe d'épargne", icon: 'wallet-outline', colors: ['#1FA3A3', '#0F6E6E'] },
 ];
 
 const RECURRENCE_LABELS: Record<RecurrenceOption, string> = {
@@ -191,13 +193,19 @@ export function AjouterScreen() {
       <View style={styles.tiles}>
         {QUICK_TILES.map((tile) => (
           <View key={tile.mode} style={styles.tile}>
-            <TouchableOpacity
-              style={[styles.tileCard, mode === tile.mode && styles.tileCardActive]}
-              onPress={() => selectMode(tile.mode)}
-              testID={`ajouter-tile-${tile.mode}`}
-            >
-              <Text style={[styles.tileIcon, mode === tile.mode && styles.tileTextActive]}>{tile.icon}</Text>
-              <Text style={[styles.tileLabel, mode === tile.mode && styles.tileTextActive]}>{tile.label}</Text>
+            <TouchableOpacity activeOpacity={0.9} onPress={() => selectMode(tile.mode)} testID={`ajouter-tile-${tile.mode}`}>
+              <LinearGradient
+                colors={tile.colors}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[styles.tileCard, mode === tile.mode && styles.tileCardActive]}
+              >
+                <Ionicons name={tile.icon} size={24} color="#fff" />
+                <View>
+                  <Text style={styles.tileLabel}>{tile.label}</Text>
+                  <Text style={styles.tileDescription}>{tile.description}</Text>
+                </View>
+              </LinearGradient>
             </TouchableOpacity>
           </View>
         ))}
@@ -449,20 +457,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   tileCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    height: 128,
+    justifyContent: 'space-between',
+    ...elevation.floating,
   },
-  tileCardActive: { borderColor: colors.primary, backgroundColor: colors.surfaceActive },
-  tileIcon: { fontSize: 20, fontWeight: '700', color: colors.textSecondary },
-  tileLabel: { ...typography.body, fontWeight: '600', color: colors.textSecondary, marginTop: 2 },
-  tileTextActive: { color: colors.primary },
+  tileCardActive: { borderWidth: 2, borderColor: colors.textOnPrimary },
+  tileLabel: { fontSize: 14, fontFamily: fontFamily.sansBold, color: colors.textOnPrimary },
+  tileDescription: { fontSize: 11, fontFamily: fontFamily.sansMedium, color: 'rgba(255,255,255,0.85)', marginTop: 2 },
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.lg },
   tabs: { flexDirection: 'row', backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: 4, marginBottom: spacing.md },
   tab: { flex: 1, paddingVertical: spacing.sm, borderRadius: radius.sm, alignItems: 'center' },

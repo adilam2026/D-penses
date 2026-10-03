@@ -13,6 +13,7 @@ jest.mock('@react-navigation/native', () => ({
   },
 }));
 
+const mockGetMyHousehold = jest.fn();
 const mockListAccounts = jest.fn();
 const mockListPlannedOperations = jest.fn();
 const mockListMedicalClaims = jest.fn();
@@ -21,6 +22,7 @@ const mockRealizePlannedOperation = jest.fn();
 const mockUpdatePlannedOperation = jest.fn();
 const mockCancelPlannedOperation = jest.fn();
 jest.mock('../../api/client', () => ({
+  getMyHousehold: () => mockGetMyHousehold(),
   listAccounts: () => mockListAccounts(),
   listPlannedOperations: () => mockListPlannedOperations(),
   listMedicalClaims: () => mockListMedicalClaims(),
@@ -42,6 +44,7 @@ function renderWithSafeArea(ui: React.ReactElement) {
 beforeEach(() => {
   jest.clearAllMocks();
   clearCache();
+  mockGetMyHousehold.mockResolvedValue({ name: 'Foyer Test' });
   mockListPlannedOperations.mockResolvedValue([]);
   mockListMedicalClaims.mockResolvedValue([]);
   mockListFinancialPlans.mockResolvedValue([]);

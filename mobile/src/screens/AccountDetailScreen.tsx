@@ -2,10 +2,11 @@ import React, { useCallback, useState } from 'react';
 import { RouteProp, useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as api from '../api/client';
 import { useTopInset } from '../ui/useTopInset';
 import { useBottomInset } from '../ui/useBottomInset';
-import { colors, elevation, radius, spacing, typography } from '../ui/theme';
+import { colors, elevation, fontFamily, radius, spacing, typography } from '../ui/theme';
 import { formatDh, formatShortDate } from '../ui/formatMoney';
 import { OPERATION_KIND_LABELS, localAmount } from '../ui/operationKindLabel';
 import { ChoiceSheet } from '../ui/ChoiceSheet';
@@ -13,7 +14,7 @@ import { RenameModal } from '../ui/RenameModal';
 import { ColorPickerModal } from '../ui/ColorPickerModal';
 import { HelpButton } from '../ui/HelpButton';
 import { testIdSlug } from '../ui/testIdSlug';
-import { paletteForAccount } from '../ui/accountPalette';
+import { gradientForAccount } from '../ui/accountPalette';
 
 /**
  * Détail compte (Lot ciblé §3) — carte de synthèse en relief (couleur du
@@ -54,7 +55,7 @@ export function AccountDetailScreen() {
     );
   }
 
-  const palette = paletteForAccount(account.colorKey, 0);
+  const [gradientFrom, gradientTo] = gradientForAccount(account.colorKey, 0);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -75,12 +76,12 @@ export function AccountDetailScreen() {
           </View>
         </View>
 
-        <View style={[styles.balanceCard, { backgroundColor: palette.bg }]}>
-          <Text style={[styles.title, { color: palette.text }]}>{account.name}</Text>
-          <Text style={[styles.subtitle, { color: palette.textSecondary }]}>Compte bancaire{account.active ? '' : ' · Désactivé'}</Text>
-          <Text style={[styles.balanceLabel, { color: palette.textSecondary }]}>Solde</Text>
-          <Text style={[styles.balanceAmount, { color: palette.text }]}>{formatDh(account.balance)}</Text>
-        </View>
+        <LinearGradient colors={[gradientFrom, gradientTo]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.balanceCard}>
+          <Text style={styles.heroName}>{account.name}</Text>
+          <Text style={styles.heroSubtitle}>Compte bancaire{account.active ? '' : ' · Désactivé'}</Text>
+          <Text style={styles.balanceLabel}>Solde</Text>
+          <Text style={styles.balanceAmount}>{formatDh(account.balance)}</Text>
+        </LinearGradient>
 
         <View style={styles.historyCard}>
           <Text style={styles.sectionLabel}>HISTORIQUE DES TRANSACTIONS</Text>
@@ -180,12 +181,12 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, marginBottom: spacing.md },
   backRow: { flexDirection: 'row', alignItems: 'center' },
-  backLabel: { ...typography.body, fontWeight: '600', marginLeft: 2 },
+  backLabel: { fontSize: 14, fontFamily: fontFamily.sansSemiBold, color: colors.textPrimary, marginLeft: 2 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   title: { ...typography.screenTitle },
   subtitle: { ...typography.bodySecondary, marginBottom: spacing.lg },
-  // Carte de synthèse en relief, colorée par compte (Lot ciblé §3) — remplace
-  // l'ancien enchaînement nom/solde à plat sur fond blanc.
+  // Carte de synthèse en relief, dégradé par compte (maquette « Foyer »
+  // 02-DétailCompte validée) — remplace l'ancien fond plat.
   balanceCard: {
     borderRadius: radius.xl,
     padding: spacing.xl,
@@ -193,8 +194,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
     ...elevation.raised,
   },
-  balanceLabel: { ...typography.bodySecondary, marginBottom: spacing.xs },
-  balanceAmount: { ...typography.amountPrimary },
+  heroName: { fontSize: 18, fontFamily: fontFamily.displayBold, color: colors.textOnPrimary },
+  heroSubtitle: { fontSize: 12, fontFamily: fontFamily.sansMedium, color: 'rgba(255,255,255,0.85)', marginTop: 2, marginBottom: spacing.md },
+  balanceLabel: { fontSize: 11, fontFamily: fontFamily.sansBold, color: 'rgba(255,255,255,0.8)', marginBottom: 2 },
+  balanceAmount: { fontSize: 32, fontFamily: fontFamily.displayBold, color: colors.textOnPrimary },
   // "Historique des transactions" dans sa propre section visuelle (Lot ciblé §3).
   historyCard: {
     backgroundColor: colors.surface,
@@ -212,9 +215,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.divider,
   },
-  opLabel: { ...typography.body, fontWeight: '600' },
+  opLabel: { fontSize: 13, fontFamily: fontFamily.sansBold, color: colors.textPrimary },
   opMeta: { ...typography.caption, marginTop: 2 },
-  opAmount: { ...typography.body, fontWeight: '700' },
+  opAmount: { fontSize: 13, fontFamily: fontFamily.sansBold },
   opAmountPlus: { color: colors.success },
   opAmountMinus: { color: colors.danger },
 });

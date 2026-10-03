@@ -1,9 +1,10 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as api from '../api/client';
 import { cached } from '../state/cache';
-import { colors, elevation, radius, spacing, typography } from '../ui/theme';
+import { colors, elevation, fontFamily, radius, spacing, typography } from '../ui/theme';
 import { formatDh } from '../ui/formatMoney';
 import { HelpButton } from '../ui/HelpButton';
 import { isSanteSubaccount } from '../ui/santeDetection';
@@ -11,7 +12,15 @@ import { FormField } from '../ui/FormField';
 import { DateField } from '../ui/DateField';
 import { useBottomInset } from '../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
-import { accountPalette } from '../ui/accountPalette';
+
+// Dégradés d'enveloppe (maquette « Foyer » 07-Épargne validée) — rotation
+// fixe de 4 paires de teintes, jamais une seule couleur plate par carte.
+const ENVELOPE_GRADIENTS: [string, string][] = [
+  ['#1FA3A3', '#0F6E6E'],
+  ['#E2567C', '#B33B61'],
+  ['#8E4F97', '#6A3B74'],
+  ['#4C5FA6', '#36488A'],
+];
 
 interface Card {
   key: string;
@@ -109,12 +118,19 @@ export function EpargneScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Épargne</Text>
-          <Text style={styles.subtitle}>Comptes d'épargne et enveloppes de réserve du foyer.</Text>
+          <Text style={styles.subtitle}>
+            {cards.length} enveloppe{cards.length > 1 ? 's' : ''} · {formatDh(cards.reduce((sum, c) => sum + c.amount, 0))} épargnés
+          </Text>
         </View>
-        <HelpButton
-          title="Épargne"
-          text="Retrouvez ici tous vos comptes d'épargne ainsi que les enveloppes réservées à l'intérieur de vos comptes courants (voiture, voyage, santé, scolarité…)."
-        />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          <TouchableOpacity style={styles.newButton} onPress={() => navigation.navigate('CreateSubaccount')} testID="epargne-new">
+            <Text style={styles.newButtonText}>+ Nouvelle</Text>
+          </TouchableOpacity>
+          <HelpButton
+            title="Épargne"
+            text="Retrouvez ici tous vos comptes d'épargne ainsi que les enveloppes réservées à l'intérieur de vos comptes courants (voiture, voyage, santé, scolarité…)."
+          />
+        </View>
       </View>
 
       {cards.length === 0 ? (
@@ -122,41 +138,43 @@ export function EpargneScreen() {
       ) : (
         <View style={styles.list}>
           {cards.map((card, idx) => {
-            const palette = accountPalette(idx);
+            const [from, to] = ENVELOPE_GRADIENTS[idx % ENVELOPE_GRADIENTS.length];
             return (
-              <TouchableOpacity key={card.key} style={[styles.card, { backgroundColor: palette.bg }]} onPress={card.onPress} testID={`epargne-card-${card.key}`}>
-                <View style={styles.cardTopRow}>
-                  <Text style={[styles.cardName, { color: palette.text }]} numberOfLines={1}>
-                    {card.name}
-                  </Text>
-                  {card.goal ? <Text style={[styles.cardPercent, { color: palette.text }]}>{Math.round(card.goal.percent)}%</Text> : null}
-                </View>
-                <Text style={[typography.amountSecondary, styles.cardAmount, { color: palette.text }]}>
-                  {formatDh(card.amount)}
-                  {card.goal ? <Text style={[styles.cardAmountTarget, { color: palette.textSecondary }]}> / {formatDh(card.goal.targetAmount)} DH</Text> : null}
-                </Text>
-                {card.goal ? (
-                  <View testID={`epargne-goal-${card.key}`}>
-                    <View style={styles.goalBarTrack}>
-                      <View style={[styles.goalBarFill, { width: `${Math.min(100, card.goal.percent)}%`, backgroundColor: palette.text }]} />
-                    </View>
-                    <Text style={[styles.cardMeta, { color: palette.textSecondary, marginTop: spacing.xs }]}>
-                      Objectif {formatDh(card.goal.targetAmount)} · {Math.round(card.goal.percent)}%
+              <TouchableOpacity key={card.key} activeOpacity={0.9} onPress={card.onPress} testID={`epargne-card-${card.key}`}>
+                <LinearGradient colors={[from, to]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.card}>
+                  <View style={styles.cardTopRow}>
+                    <Text style={styles.cardName} numberOfLines={1}>
+                      {card.name}
                     </Text>
+                    {card.goal ? <Text style={styles.cardPercent}>{Math.round(card.goal.percent)}%</Text> : null}
                   </View>
-                ) : (
-                  <Text style={[styles.cardMeta, { color: palette.textSecondary }]}>{card.meta}</Text>
-                )}
-                {card.extraLine ? <Text style={styles.cardExtra}>{card.extraLine}</Text> : null}
-                {!card.goal ? (
-                  <TouchableOpacity
-                    style={styles.goalAddLink}
-                    onPress={() => setGoalTarget({ accountId: card.accountId, subaccountId: card.subaccountId, name: card.name, goal: null })}
-                    testID={`epargne-add-goal-${card.key}`}
-                  >
-                    <Text style={styles.goalAddLinkText}>+ Définir un objectif</Text>
-                  </TouchableOpacity>
-                ) : null}
+                  <Text style={[typography.amountSecondary, styles.cardAmount]}>
+                    {formatDh(card.amount)}
+                    {card.goal ? <Text style={styles.cardAmountTarget}> / {formatDh(card.goal.targetAmount)}</Text> : null}
+                  </Text>
+                  {card.goal ? (
+                    <View testID={`epargne-goal-${card.key}`}>
+                      <View style={styles.goalBarTrack}>
+                        <View style={[styles.goalBarFill, { width: `${Math.min(100, card.goal.percent)}%` }]} />
+                      </View>
+                      <Text style={[styles.cardMeta, { marginTop: spacing.xs }]}>
+                        Objectif {formatDh(card.goal.targetAmount)} · {Math.round(card.goal.percent)}%
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.cardMeta}>{card.meta}</Text>
+                  )}
+                  {card.extraLine ? <Text style={styles.cardExtra}>{card.extraLine}</Text> : null}
+                  {!card.goal ? (
+                    <TouchableOpacity
+                      style={styles.goalAddLink}
+                      onPress={() => setGoalTarget({ accountId: card.accountId, subaccountId: card.subaccountId, name: card.name, goal: null })}
+                      testID={`epargne-add-goal-${card.key}`}
+                    >
+                      <Text style={styles.goalAddLinkText}>+ Définir un objectif</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </LinearGradient>
               </TouchableOpacity>
             );
           })}
@@ -256,13 +274,13 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.lg },
   title: { ...typography.screenTitle },
-  subtitle: { ...typography.bodySecondary, marginTop: spacing.xs, maxWidth: 260 },
+  subtitle: { ...typography.bodySecondary, marginTop: spacing.xs, maxWidth: 220 },
+  newButton: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  newButtonText: { fontSize: 11.5, fontFamily: fontFamily.sansBold, color: colors.textPrimary },
   emptyText: { ...typography.bodySecondary },
-  // Une carte pleine largeur par enveloppe (maquette « Foyer » validée) — plus
-  // de grille 2 colonnes : chaque carte porte son propre dégradé de couleur,
-  // son pourcentage d'objectif en en-tête, et sa barre de progression propre
-  // (blanche translucide) directement DANS la carte, jamais une barre neutre
-  // accolée en dessous sur fond blanc.
+  // Une carte pleine largeur par enveloppe, dégradé propre (maquette « Foyer »
+  // 07-Épargne validée) — pourcentage d'objectif en en-tête, montant en
+  // Fraunces, barre de progression blanche translucide DANS la carte.
   list: { gap: spacing.md },
   card: {
     borderRadius: radius.xl,
@@ -270,16 +288,16 @@ const styles = StyleSheet.create({
     ...elevation.floating,
   },
   cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cardName: { ...typography.sectionTitle, fontSize: 15 },
-  cardPercent: { ...typography.caption, fontWeight: '700', opacity: 0.9 },
-  cardMeta: { ...typography.caption, marginTop: spacing.xs },
-  cardAmount: { marginTop: 4 },
-  cardAmountTarget: { ...typography.body, opacity: 0.85 },
-  cardExtra: { fontSize: 11, fontWeight: '700', color: '#FFFFFF', marginTop: spacing.xs },
+  cardName: { fontSize: 14, fontFamily: fontFamily.sansBold, color: colors.textOnPrimary },
+  cardPercent: { fontSize: 11, fontFamily: fontFamily.sansBold, color: colors.textOnPrimary, opacity: 0.9 },
+  cardMeta: { fontSize: 11, fontFamily: fontFamily.sansMedium, color: 'rgba(255,255,255,0.85)', marginTop: spacing.xs },
+  cardAmount: { marginTop: 4, color: colors.textOnPrimary },
+  cardAmountTarget: { fontSize: 13, fontFamily: fontFamily.sans, color: 'rgba(255,255,255,0.8)' },
+  cardExtra: { fontSize: 11, fontFamily: fontFamily.sansBold, color: '#FFFFFF', marginTop: spacing.xs },
   goalBarTrack: { height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.3)', overflow: 'hidden', marginTop: spacing.sm },
-  goalBarFill: { height: 6, borderRadius: 3 },
+  goalBarFill: { height: 6, borderRadius: 3, backgroundColor: '#FFFFFF' },
   goalAddLink: { marginTop: spacing.sm },
-  goalAddLinkText: { ...typography.caption, color: colors.textOnPrimary, fontWeight: '700', textDecorationLine: 'underline' },
+  goalAddLinkText: { fontSize: 11, fontFamily: fontFamily.sansBold, color: colors.textOnPrimary, textDecorationLine: 'underline' },
   backdrop: { flex: 1, backgroundColor: colors.backdrop },
   sheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 6, borderTopRightRadius: radius.xl + 6, padding: spacing.xl, maxHeight: '85%' },
   sheetTitle: { ...typography.sectionTitle, marginBottom: spacing.lg },
