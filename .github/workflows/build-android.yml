@@ -78,7 +78,7 @@ jobs:
       - name: Générer le projet Android natif (expo prebuild)
         run: npx expo prebuild --platform android --no-install
 
-      - name: Augmenter la mémoire JVM Gradle (OutOfMemoryError: Metaspace observé après ajout de react-native-svg + polices Google)
+      - name: "Augmenter la mémoire JVM Gradle (OutOfMemoryError Metaspace observé après ajout de react-native-svg + polices Google)"
         # expo prebuild régénère gradle.properties avec des valeurs par défaut
         # (-Xmx2048m -XX:MaxMetaspaceSize=512m) insuffisantes depuis l'ajout de
         # react-native-svg (codegen/Kotlin natif supplémentaire) et des deux
