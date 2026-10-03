@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ACCOUNT_COLOR_OPTIONS } from './accountPalette';
-import { radius, spacing } from './theme';
+import { colors, radius, spacing } from './theme';
 
 /**
  * Palette compacte de couleur de carte (Lot ciblé §1) — ~10 teintes prédéfinies,
@@ -34,5 +34,5 @@ const SWATCH_SIZE = 40;
 const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
   swatch: { width: SWATCH_SIZE, height: SWATCH_SIZE, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
-  swatchSelected: { borderWidth: 3, borderColor: '#1C2420' },
+  swatchSelected: { borderWidth: 3, borderColor: colors.textPrimary },
 });
