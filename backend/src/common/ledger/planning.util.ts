@@ -3,6 +3,9 @@ import { effectiveAmount } from './ledger.util';
 
 export type PlanningMonthKey = string; // 'YYYY-MM'
 
+/** Titre affiché pour une dépense sans catégorie choisie — jamais le nom technique "Autres" (§5 correction). */
+export const CHARGES_PONCTUELLES_LABEL = 'Charges ponctuelles';
+
 export interface PlanningPlannedOperationRow {
   id: string;
   kind: 'EXPENSE' | 'INCOME' | 'SAVINGS_CONTRIBUTION';
@@ -274,11 +277,14 @@ export function buildPlanningTable(params: {
 
     // EXPENSE : une ligne par libellé (Lot ciblé §5) — la catégorie ne fait plus
     // qu'un titre de regroupement affiché côté mobile, jamais une ligne fondant
-    // plusieurs libellés en un seul montant.
+    // plusieurs libellés en un seul montant. Une dépense (ponctuelle, le cas
+    // courant) sans catégorie choisie retombe sur "Autres" en base, mais est
+    // affichée sous le titre littéral "Charges ponctuelles" (§5 correction) —
+    // jamais "Autres", qui resterait trompeur pour l'utilisateur.
     const categoryId = planned.categoryId ?? fallback?.id;
     if (!categoryId) continue;
-    const category = categoryById.get(categoryId);
-    const row = ensureRow(depenseRows, labelRowKey(categoryId, planned.label), planned.label, categoryId, category?.name);
+    const categoryLabel = categoryId === fallback?.id ? CHARGES_PONCTUELLES_LABEL : categoryById.get(categoryId)?.name;
+    const row = ensureRow(depenseRows, labelRowKey(categoryId, planned.label), planned.label, categoryId, categoryLabel);
     const cell = row.cells[mKey];
     if (planned.status === 'PENDING') {
       pushItem(cell, { type: 'PLANNED_PENDING', plannedOperationId: planned.id, label: planned.label, amount: toNumber(planned.expectedAmount), date: planned.expectedDate.toISOString(), ...plannedAccounts }, toNumber(planned.expectedAmount), toNumber(planned.expectedAmount));
@@ -327,8 +333,8 @@ export function buildPlanningTable(params: {
     } else if (op.kind === 'EXPENSE') {
       const categoryId = op.categoryId ?? fallback?.id;
       if (!categoryId) continue;
-      const category = categoryById.get(categoryId);
-      const row = ensureRow(depenseRows, labelRowKey(categoryId, op.label), op.label, categoryId, category?.name);
+      const categoryLabel = categoryId === fallback?.id ? CHARGES_PONCTUELLES_LABEL : categoryById.get(categoryId)?.name;
+      const row = ensureRow(depenseRows, labelRowKey(categoryId, op.label), op.label, categoryId, categoryLabel);
       pushItem(row.cells[mKey], { type: 'REAL_UNPLANNED', financialOperationId: op.id, label: op.label, amount, date: op.date.toISOString(), ...opAccounts }, amount, budget);
     }
   }
@@ -343,15 +349,11 @@ export function buildPlanningTable(params: {
     const totalRevenus = sumRowsBudget(revenueRows, m);
     const totalDepenses = sumRowsBudget(depenseRows, m);
     const totalEpargne = sumRowsBudget(epargneRows, m);
-    // Règle comptable (correction ciblée) : un versement entre deux comptes/
-    // sous-comptes internes du foyer n'est JAMAIS une dépense — l'argent reste
-    // dans le foyer, juste réalloué (ex. BP Lamiaa -> Épargne Scolarité :
-    // -3000 ici, +3000 là, 0 DH de dépense réelle). Il ne doit donc jamais
-    // diminuer la balance mensuelle/cumulée, qui représente la richesse
-    // globale du foyer — seul un revenu ou une dépense réelle la fait varier.
-    // TOTAL ÉPARGNE/VERSEMENTS reste affiché (information utile) mais n'est
-    // plus soustrait ici.
-    const balanceMensuelle = totalRevenus - totalDepenses;
+    // Règle comptable (correction ciblée) : un versement/épargne n'est JAMAIS
+    // une dépense (il n'entre donc jamais dans totalDepenses), mais il réduit
+    // bien la trésorerie disponible du mois — la BALANCE MENSUELLE doit donc
+    // le soustraire : Balance mensuelle = Revenus - Dépenses - Versements/Épargne.
+    const balanceMensuelle = totalRevenus - totalDepenses - totalEpargne;
     cumulative += balanceMensuelle;
     synthese[m] = { totalRevenus, totalDepenses, totalEpargne, balanceMensuelle, balanceCumulee: cumulative };
   }

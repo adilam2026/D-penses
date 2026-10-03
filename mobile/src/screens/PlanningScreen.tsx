@@ -37,11 +37,14 @@ interface BlockDef {
 type BlockItem = { kind: 'header'; label: string } | { kind: 'row'; row: api.PlanningRowApi };
 
 /**
- * Regroupe les lignes d'un bloc par catégorie (Lot ciblé §5) — la catégorie
- * est un PUR TITRE VISUEL inséré entre les lignes, jamais une ligne portant un
- * montant. Si AUCUNE ligne du bloc n'a de catégorie, aucun titre n'est inséré
- * (comportement plat inchangé). Les lignes arrivent déjà groupées par
- * catégorie (tri backend) : un seul passage suffit.
+ * Regroupe les lignes d'un bloc par catégorie (correction ciblée §4) — la
+ * catégorie est un PUR TITRE VISUEL inséré entre les lignes, jamais une ligne
+ * portant un montant. Le titre s'affiche TOUJOURS dès qu'une catégorie est
+ * présente (même pour un seul libellé dessous — ex. "LOGEMENT" au-dessus du
+ * seul "Loyer") : la catégorie reste le repère de l'utilisateur, jamais
+ * masquée pour "redondance". Si AUCUNE ligne du bloc n'a de catégorie, aucun
+ * titre n'est inséré (comportement plat inchangé). Les lignes arrivent déjà
+ * groupées par catégorie (tri backend) : un seul passage suffit.
  */
 function buildBlockItems(rows: api.PlanningRowApi[], uncategorizedLabel: string): BlockItem[] {
   if (!rows.some((r) => r.categoryLabel)) return rows.map((row) => ({ kind: 'row', row }));
@@ -52,14 +55,7 @@ function buildBlockItems(rows: api.PlanningRowApi[], uncategorizedLabel: string)
     let j = i + 1;
     while (j < rows.length && rows[j].categoryLabel === header) j++;
     const group = rows.slice(i, j);
-    // Titre affiché seulement si c'est une VRAIE catégorie de regroupement
-    // (au moins 2 libellés distincts dessous) — sinon le titre répète juste
-    // le seul libellé de la ligne du dessous (ex. catégorie "App Adil"
-    // contenant la seule opération "App Adil") : redondant, jamais affiché.
-    // Les libellés sans catégorie restent toujours sous leur propre titre
-    // générique ("AUTRES ... SANS CATÉGORIE"), jamais identique à une ligne.
-    const showHeader = header ? group.length > 1 : true;
-    if (showHeader) items.push({ kind: 'header', label: header ?? uncategorizedLabel });
+    items.push({ kind: 'header', label: header ?? uncategorizedLabel });
     for (const row of group) items.push({ kind: 'row', row });
     i = j;
   }
@@ -517,12 +513,14 @@ function AdjustModal({
   const [date, setDate] = useState('');
   const [partialAmount, setPartialAmount] = useState('');
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (occ) {
       setAmount(String(occ.expectedAmount));
       setDate(new Date().toISOString().slice(0, 10));
       setPartialAmount('');
+      setError(null);
     }
   }, [occ?.plannedOperationId]);
 
@@ -535,9 +533,12 @@ function AdjustModal({
   async function submit() {
     if (!amount.trim() || saving || !occ) return;
     setSaving(true);
+    setError(null);
     try {
       await api.realizePlannedOperation(occ.plannedOperationId, { actualAmount: amount, actualDate: date || undefined });
       await onDone();
+    } catch (e) {
+      setError(e instanceof api.ApiError ? e.message : "Erreur lors de l'enregistrement du paiement");
     } finally {
       setSaving(false);
     }
@@ -552,9 +553,12 @@ function AdjustModal({
   async function submitPartial() {
     if (!canSubmitPartial || saving || !occ) return;
     setSaving(true);
+    setError(null);
     try {
       await api.partialRealizePlannedOperation(occ.plannedOperationId, { actualAmount: partialAmount, actualDate: date || undefined });
       await onDone();
+    } catch (e) {
+      setError(e instanceof api.ApiError ? e.message : "Erreur lors de l'enregistrement du paiement partiel");
     } finally {
       setSaving(false);
     }
@@ -571,6 +575,7 @@ function AdjustModal({
         <FormField label="Montant réel" value={amount} onChangeText={setAmount} onFocus={handleFocus} keyboardType="decimal-pad" testID="planning-adjust-amount" />
         <DateField label="Date" value={date} onChange={setDate} />
         {label ? <Text style={styles.adjustAccount}>Compte : {label}</Text> : null}
+        {error ? <Text style={styles.errorText} testID="planning-adjust-error">{error}</Text> : null}
         <View style={styles.confirmActions}>
           <TouchableOpacity style={styles.confirmCancel} onPress={onClose} testID="planning-adjust-cancel">
             <Text style={styles.confirmCancelText}>Annuler</Text>
@@ -823,6 +828,7 @@ const styles = StyleSheet.create({
   partialButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginTop: spacing.sm, ...elevation.button },
   partialButtonText: { ...typography.body, fontWeight: '700', color: colors.textOnPrimary },
   buttonDisabled: { opacity: 0.5 },
+  errorText: { ...typography.body, color: colors.danger, marginTop: spacing.sm },
   detailSectionLabel: { ...typography.caption, fontWeight: '800', color: colors.textSecondary, letterSpacing: 0.5, marginBottom: spacing.xs },
   detailRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider, gap: spacing.sm },
   detailLabel: { ...typography.body, fontWeight: '600' },

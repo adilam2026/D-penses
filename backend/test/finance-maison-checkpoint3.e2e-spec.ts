@@ -195,6 +195,12 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
     expect(cell.status).toBe('REALIZED');
     expect(cell.displayAmount).toBe(2500);
     expect(cell.items[0].label).toBe('Aspirateur');
+
+    // Correction ciblée §5 : une dépense ponctuelle SANS catégorie doit
+    // apparaître sous le titre littéral "Charges ponctuelles" — jamais le nom
+    // technique "Autres" de la catégorie de repli.
+    const row = planning.depenses.find((r: any) => r.categoryId === autres.id && r.label === 'Aspirateur');
+    expect(row.categoryLabel).toBe('Charges ponctuelles');
   });
 
   it('F. annuler un paiement réalisé -> la case redevient prévue (jamais de suppression de la transaction d\'origine)', async () => {
@@ -272,7 +278,7 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
     expect(synthese.totalDepenses).toBe(0); // aucune double-déduction dans Balance
   });
 
-  it('I. balance mensuelle correcte (revenus - dépenses, sur les montants BUDGET — un versement interne ne diminue jamais la richesse du foyer)', async () => {
+  it('I. balance mensuelle correcte (revenus - dépenses - versements/épargne, sur les montants BUDGET)', async () => {
     const token = await freshHousehold();
     const bp = await createAccount(token, 'BP Lamiaa', 25000);
     const cih = await createAccount(token, 'CIH', 20000);
@@ -298,9 +304,10 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
     expect(synthese.totalRevenus).toBe(12000);
     expect(synthese.totalDepenses).toBe(2000);
     expect(synthese.totalEpargne).toBe(1000);
-    // Règle comptable (correction ciblée) : un versement interne au foyer n'est
-    // jamais une dépense — il ne doit jamais diminuer la balance.
-    expect(synthese.balanceMensuelle).toBe(12000 - 2000);
+    // Règle comptable (correction ciblée) : un versement/épargne n'est JAMAIS une
+    // dépense (totalDepenses l'exclut toujours), mais il réduit bien la
+    // trésorerie disponible du mois -> soustrait de la balance mensuelle.
+    expect(synthese.balanceMensuelle).toBe(12000 - 2000 - 1000);
   });
 
   it('J. balance cumulée = somme progressive des balances mensuelles', async () => {
