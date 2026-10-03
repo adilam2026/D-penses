@@ -10,6 +10,20 @@ name: Railway PROD — Appliquer les migrations Prisma (migrate deploy)
 # aucune étape ci-dessous.
 on:
   workflow_dispatch:
+    inputs:
+      resolve_init_failed_migration:
+        description: >
+          DERNIER RECOURS (P3009) — si `migrate deploy` refuse tout avec
+          "migrate found failed migrations", cocher ceci rejoue
+          `prisma migrate resolve --applied 20260927000000_init_finance_maison`
+          AVANT le deploy (remédiation standard Prisma : marque cette
+          migration comme déjà appliquée, sans la rejouer — légitime
+          uniquement si son schéma est déjà effectivement en base, ce que
+          /health + les endpoints applicatifs confirment déjà). Laisser décoché
+          pour un déploiement de routine.
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   migrate-deploy:
@@ -31,6 +45,12 @@ jobs:
 
       - name: Générer le client Prisma
         run: npx prisma generate
+
+      - name: "DERNIER RECOURS P3009 — marquer 20260927000000_init_finance_maison comme appliquée"
+        if: github.event.inputs.resolve_init_failed_migration == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+        run: npx prisma migrate resolve --applied 20260927000000_init_finance_maison
 
       - name: prisma migrate deploy sur PROD
         env:
