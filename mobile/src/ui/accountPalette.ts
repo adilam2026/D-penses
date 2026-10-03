@@ -6,46 +6,45 @@ export interface AccountPalette {
   track: string;
 }
 
-/**
- * Identité couleur pleine carte par compte (Lot revert §6) — teintes riches
- * mais élégantes, jamais criardes, toujours avec du texte blanc lisible.
- * Rotation par index de compte (pas de logique métier, purement visuel).
- */
-const ACCOUNT_PALETTES: AccountPalette[] = [
-  { bg: '#2C4C86', text: '#FFFFFF', textSecondary: 'rgba(255,255,255,0.76)', divider: 'rgba(255,255,255,0.18)', track: 'rgba(255,255,255,0.28)' }, // bleu profond
-  { bg: '#9C3F63', text: '#FFFFFF', textSecondary: 'rgba(255,255,255,0.76)', divider: 'rgba(255,255,255,0.18)', track: 'rgba(255,255,255,0.28)' }, // rose/bordeaux
-  { bg: '#B8712A', text: '#FFFFFF', textSecondary: 'rgba(255,255,255,0.82)', divider: 'rgba(255,255,255,0.2)', track: 'rgba(255,255,255,0.3)' }, // ambre
-  { bg: '#2F7A4F', text: '#FFFFFF', textSecondary: 'rgba(255,255,255,0.76)', divider: 'rgba(255,255,255,0.18)', track: 'rgba(255,255,255,0.28)' }, // vert
-  { bg: '#8B3A3A', text: '#FFFFFF', textSecondary: 'rgba(255,255,255,0.8)', divider: 'rgba(255,255,255,0.18)', track: 'rgba(255,255,255,0.28)' }, // rouge brique
-  { bg: '#5E4B8B', text: '#FFFFFF', textSecondary: 'rgba(255,255,255,0.8)', divider: 'rgba(255,255,255,0.18)', track: 'rgba(255,255,255,0.28)' }, // violet
-];
-
-export function accountPalette(index: number): AccountPalette {
-  return ACCOUNT_PALETTES[index % ACCOUNT_PALETTES.length];
-}
-
 export interface AccountColorOption {
   key: string;
   label: string;
   bg: string;
 }
 
-/** Palette compacte proposée à la création/édition d'un compte (Lot ciblé §1) — ~10 teintes vives et élégantes, choix explicite, jamais de color picker libre. */
+/**
+ * Palette compacte proposée à la création/édition d'un compte (Lot design §—
+ * correction vivacité) — ~10 teintes franchement vives et lumineuses, jamais
+ * grisées/marron/bordeaux sombre/pastel terne. Chaque hex est repris quasi
+ * tel quel ; seuls les tons les plus clairs (turquoise, émeraude, corail,
+ * orange, ambre) sont très légèrement assombris pour garantir un texte
+ * blanc lisible — jamais au point de virer au terne/marron.
+ */
 export const ACCOUNT_COLOR_OPTIONS: AccountColorOption[] = [
-  { key: 'bleu', label: 'Bleu', bg: '#2E5FA3' },
-  { key: 'bleu_petrole', label: 'Bleu pétrole', bg: '#1F5C63' },
-  { key: 'turquoise', label: 'Turquoise', bg: '#1B8A93' },
-  { key: 'vert', label: 'Vert', bg: '#2F7A4F' },
-  { key: 'violet', label: 'Violet', bg: '#6C4B9E' },
-  { key: 'mauve', label: 'Mauve', bg: '#8A5A9E' },
-  { key: 'framboise', label: 'Framboise', bg: '#B23A6B' },
-  { key: 'corail', label: 'Corail', bg: '#C1523A' },
-  { key: 'orange', label: 'Orange', bg: '#C97A2B' },
-  { key: 'ambre', label: 'Ambre', bg: '#B8862A' },
+  { key: 'bleu_electrique', label: 'Bleu électrique', bg: '#2563EB' },
+  { key: 'bleu_azur', label: 'Bleu azur', bg: '#0284C7' },
+  { key: 'turquoise', label: 'Turquoise', bg: '#0B8A8A' },
+  { key: 'emeraude', label: 'Émeraude', bg: '#0E8A53' },
+  { key: 'violet', label: 'Violet', bg: '#7C3AED' },
+  { key: 'mauve', label: 'Mauve', bg: '#9742D9' },
+  { key: 'fuchsia', label: 'Fuchsia', bg: '#DB2777' },
+  { key: 'corail', label: 'Corail', bg: '#D93C3C' },
+  { key: 'orange', label: 'Orange', bg: '#C2570E' },
+  { key: 'ambre', label: 'Ambre', bg: '#A8740A' },
 ];
 
 function paletteFromBg(bg: string): AccountPalette {
-  return { bg, text: '#FFFFFF', textSecondary: 'rgba(255,255,255,0.78)', divider: 'rgba(255,255,255,0.18)', track: 'rgba(255,255,255,0.28)' };
+  return { bg, text: '#FFFFFF', textSecondary: 'rgba(255,255,255,0.82)', divider: 'rgba(255,255,255,0.2)', track: 'rgba(255,255,255,0.3)' };
+}
+
+// Rotation automatique (comptes créés avant le choix de couleur, ou sans
+// colorKey reconnu) — dérivée directement de ACCOUNT_COLOR_OPTIONS pour que
+// la carte affichée corresponde toujours exactement à une couleur de la
+// palette de sélection (jamais une 2e liste de teintes qui diverge).
+const ACCOUNT_PALETTES: AccountPalette[] = ACCOUNT_COLOR_OPTIONS.map((o) => paletteFromBg(o.bg));
+
+export function accountPalette(index: number): AccountPalette {
+  return ACCOUNT_PALETTES[index % ACCOUNT_PALETTES.length];
 }
 
 /**
