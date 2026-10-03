@@ -101,16 +101,44 @@ export const radius = {
   pill: 999,
 } as const;
 
+/**
+ * Polices « Foyer » (maquettes validées) : Fraunces (display, montants/titres)
+ * + Plus Jakarta Sans (interface). Chargées via expo-font/@expo-google-fonts
+ * dans App.tsx (useFonts) — chaque poids est un fichier TTF séparé sous son
+ * propre nom (RN ne synthétise pas un poids à partir d'une police custom) :
+ * les tokens ci-dessous pointent donc vers le fichier exact pour les
+ * libellés structurants (titres, montants, labels de section, badges).
+ * LIMITE DOCUMENTÉE : de nombreux écrans ajoutent encore un `fontWeight`
+ * inline par-dessus `typography.body`/`bodySecondary` pour une emphase
+ * ponctuelle (ex. `{ ...typography.body, fontWeight: '700' }`) — avec une
+ * police custom à poids unique, Android retombe alors sur un gras synthétique
+ * (embolden) au lieu du fichier Bold dédié. Visuellement très proche de la
+ * maquette, mais pas au pixel pour ces emphases ponctuelles ; réécrire les
+ * ~100+ occurrences avec une fonction de résolution de poids dépasserait le
+ * cadre d'une refonte visuelle. Les éléments les plus visibles de la maquette
+ * (titres d'écran, montants, labels de section, badges) utilisent eux le
+ * fichier exact et rendent donc fidèlement.
+ */
+export const fontFamily = {
+  display: 'Fraunces_600SemiBold',
+  displayBold: 'Fraunces_700Bold',
+  sans: 'PlusJakartaSans_400Regular',
+  sansMedium: 'PlusJakartaSans_500Medium',
+  sansSemiBold: 'PlusJakartaSans_600SemiBold',
+  sansBold: 'PlusJakartaSans_700Bold',
+  sansExtraBold: 'PlusJakartaSans_800ExtraBold',
+} as const;
+
 export const typography = {
-  screenTitle: { fontSize: 22, fontWeight: '700' as const, color: colors.textPrimary },
-  sectionTitle: { fontSize: 15, fontWeight: '700' as const, color: colors.textPrimary },
-  sectionLabel: { fontSize: 13, fontWeight: '700' as const, color: colors.textPrimary },
-  amountPrimary: { fontSize: 32, fontWeight: '800' as const, color: colors.textPrimary },
-  amountSecondary: { fontSize: 17, fontWeight: '700' as const, color: colors.textPrimary },
-  body: { fontSize: 14, color: colors.textPrimary },
-  bodySecondary: { fontSize: 13, color: colors.textSecondary },
-  caption: { fontSize: 11, color: colors.textSecondary },
-  badge: { fontSize: 10, fontWeight: '700' as const },
+  screenTitle: { fontSize: 22, fontFamily: fontFamily.displayBold, color: colors.textPrimary },
+  sectionTitle: { fontSize: 16, fontFamily: fontFamily.display, color: colors.textPrimary },
+  sectionLabel: { fontSize: 13, fontFamily: fontFamily.sansBold, color: colors.textPrimary },
+  amountPrimary: { fontSize: 32, fontFamily: fontFamily.displayBold, color: colors.textPrimary },
+  amountSecondary: { fontSize: 19, fontFamily: fontFamily.display, color: colors.textPrimary },
+  body: { fontSize: 14, fontFamily: fontFamily.sans, color: colors.textPrimary },
+  bodySecondary: { fontSize: 13, fontFamily: fontFamily.sans, color: colors.textSecondary },
+  caption: { fontSize: 11, fontFamily: fontFamily.sansMedium, color: colors.textSecondary },
+  badge: { fontSize: 10, fontFamily: fontFamily.sansExtraBold },
 };
 
 /** Niveaux de carte réutilisables : info (neutre), action (mise en avant), result (chiffre clé). */

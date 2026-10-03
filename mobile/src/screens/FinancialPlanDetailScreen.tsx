@@ -92,33 +92,56 @@ export function FinancialPlanDetailScreen() {
 
         <Text style={styles.title}>{plan.label}</Text>
 
-        <View style={styles.balanceCard}>
-          <Text style={styles.balanceLabel}>Disponible actuel</Text>
-          <Text style={styles.balanceAmount}>{formatDh(plan.disponibleActuel ?? 0)}</Text>
-        </View>
-
         {next ? (
-          <View style={styles.nextCard} testID="plan-detail-next-deadline">
-            <Text style={styles.nextTitle}>PROCHAINE ÉCHÉANCE — {next.label.toUpperCase()}</Text>
-            <Text style={styles.nextMeta}>Le {formatShortDate(next.dueDate)}</Text>
-            <View style={styles.nextRow}>
-              <Text style={styles.nextRowLabel}>Besoin</Text>
-              <Text style={styles.nextRowValue}>{formatDh(next.totalPrevu)}</Text>
+          <View style={styles.heroCard} testID="plan-detail-next-deadline">
+            <Text style={styles.heroKicker}>TOTAL PRÉVU — {next.label.toUpperCase()}</Text>
+            <Text style={styles.heroAmount}>{formatDh(next.totalPrevu)}</Text>
+            <View style={styles.heroBarTrack}>
+              <View style={[styles.heroBarFill, { width: `${Math.min(100, next.totalPrevu > 0 ? (next.disponible / next.totalPrevu) * 100 : 0)}%` }]} />
             </View>
-            <View style={styles.nextRow}>
-              <Text style={styles.nextRowLabel}>Disponible</Text>
-              <Text style={styles.nextRowValue}>{formatDh(next.disponible)}</Text>
-            </View>
-            <View style={styles.nextRow}>
-              <Text style={styles.nextRowLabel}>Reste</Text>
-              <Text style={[styles.nextRowValue, next.reste > 0 && styles.nextRowValueWarning]}>{formatDh(next.reste)}</Text>
-            </View>
-            <View style={styles.nextRow}>
-              <Text style={styles.nextRowLabel}>Recommandation</Text>
-              <Text style={styles.nextRowValue}>{formatDh(next.recommendedMonthly)}/mois</Text>
+            <Text style={styles.heroDeadlineMeta}>Échéance le {formatShortDate(next.dueDate)}</Text>
+            <View style={styles.heroStatsRow}>
+              <View style={styles.heroStat}>
+                <Text style={styles.heroRowLabel}>Disponible</Text>
+                <Text style={styles.heroRowValue}>{formatDh(next.disponible)}</Text>
+              </View>
+              <View style={styles.heroStat}>
+                <Text style={styles.heroRowLabel}>Reste</Text>
+                <Text style={[styles.heroRowValue, next.reste > 0 && styles.heroRowValueWarning]}>{formatDh(next.reste)}</Text>
+              </View>
+              <View style={styles.heroStat}>
+                <Text style={styles.heroRowLabel}>Recommandation</Text>
+                <Text style={styles.heroRowValue}>{formatDh(next.recommendedMonthly)}/mois</Text>
+              </View>
             </View>
           </View>
-        ) : null}
+        ) : (
+          <View style={styles.balanceCard}>
+            <Text style={styles.balanceLabel}>Disponible actuel</Text>
+            <Text style={styles.balanceAmount}>{formatDh(plan.disponibleActuel ?? 0)}</Text>
+          </View>
+        )}
+
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionLabel}>POSTES DU PLAN</Text>
+          <TouchableOpacity onPress={() => setAddItemOpen(true)} testID="plan-detail-add-item">
+            <Text style={styles.addLink}>+ Ajouter un poste</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.card}>
+          {plan.items.length === 0 ? (
+            <Text style={styles.emptyText}>Aucun poste pour l'instant.</Text>
+          ) : (
+            plan.items.map((item, idx) => (
+              <View key={item.id} style={[styles.itemRow, idx < plan.items.length - 1 && styles.rowBorder]}>
+                <Text style={styles.itemLabel}>{item.label}</Text>
+                <Text style={styles.itemMeta}>
+                  {item.expectedAmount != null ? formatDh(item.expectedAmount) : '—'} · {FREQUENCY_LABELS[item.frequency]}
+                </Text>
+              </View>
+            ))
+          )}
+        </View>
 
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionLabel}>ÉCHÉANCES</Text>
@@ -126,45 +149,32 @@ export function FinancialPlanDetailScreen() {
             <Text style={styles.addLink}>+ Ajouter</Text>
           </TouchableOpacity>
         </View>
-        {plan.deadlines.length === 0 ? (
-          <Text style={styles.emptyText}>Aucune échéance pour l'instant.</Text>
-        ) : (
-          plan.deadlines.map((d) => (
-            <TouchableOpacity
-              key={d.deadlineId}
-              style={styles.deadlineRow}
-              onPress={() => navigation.navigate('DeadlineDetail', { planId: plan.id, deadlineId: d.deadlineId })}
-              testID={`plan-detail-deadline-${d.deadlineId}`}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.deadlineLabel}>{d.label}</Text>
-                <Text style={styles.deadlineMeta}>
-                  {formatShortDate(d.dueDate)} · {formatDh(d.totalPrevu)}
-                </Text>
-              </View>
-              {d.paid ? <Text style={styles.paidBadge}>Payée ✓</Text> : <Ionicons name="chevron-forward" size={18} color={colors.textPlaceholder} />}
-            </TouchableOpacity>
-          ))
-        )}
-
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionLabel}>POSTES</Text>
-          <TouchableOpacity onPress={() => setAddItemOpen(true)} testID="plan-detail-add-item">
-            <Text style={styles.addLink}>+ Ajouter</Text>
-          </TouchableOpacity>
+        <View style={styles.card}>
+          {plan.deadlines.length === 0 ? (
+            <Text style={styles.emptyText}>Aucune échéance pour l'instant.</Text>
+          ) : (
+            plan.deadlines.map((d, idx) => (
+              <TouchableOpacity
+                key={d.deadlineId}
+                style={[styles.deadlineRow, idx < plan.deadlines.length - 1 && styles.rowBorder]}
+                onPress={() => navigation.navigate('DeadlineDetail', { planId: plan.id, deadlineId: d.deadlineId })}
+                testID={`plan-detail-deadline-${d.deadlineId}`}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.deadlineLabel}>{d.label}</Text>
+                  <Text style={styles.deadlineMeta}>
+                    {formatShortDate(d.dueDate)} · {formatDh(d.totalPrevu)}
+                  </Text>
+                </View>
+                {d.paid ? (
+                  <Text style={styles.paidBadge}>Payée ✓</Text>
+                ) : (
+                  <Text style={styles.pendingBadge}>À venir</Text>
+                )}
+              </TouchableOpacity>
+            ))
+          )}
         </View>
-        {plan.items.length === 0 ? (
-          <Text style={styles.emptyText}>Aucun poste pour l'instant.</Text>
-        ) : (
-          plan.items.map((item) => (
-            <View key={item.id} style={styles.itemRow}>
-              <Text style={styles.itemLabel}>{item.label}</Text>
-              <Text style={styles.itemMeta}>
-                {item.expectedAmount != null ? formatDh(item.expectedAmount) : '—'} · {FREQUENCY_LABELS[item.frequency]}
-              </Text>
-            </View>
-          ))
-        )}
       </ScrollView>
 
       <ChoiceSheet
@@ -374,46 +384,56 @@ const styles = StyleSheet.create({
   },
   balanceLabel: { ...typography.bodySecondary, marginBottom: spacing.xs },
   balanceAmount: { ...typography.amountPrimary },
-  nextCard: {
+  // Carte récapitulative « TOTAL PRÉVU » (maquette « Foyer » validée) :
+  // montant mis en avant, barre de progression déjà épargné/besoin, puis une
+  // rangée de statistiques compactes — jamais une simple liste de lignes
+  // à plat sur fond neutre.
+  heroCard: {
     backgroundColor: colors.surfaceActive,
     borderRadius: radius.xl,
     padding: spacing.lg,
     marginHorizontal: spacing.lg,
     marginBottom: spacing.xl,
+    ...elevation.card,
   },
-  nextTitle: { ...typography.caption, fontWeight: '800', color: colors.textSecondary, letterSpacing: 0.5 },
-  nextMeta: { ...typography.bodySecondary, marginTop: 2, marginBottom: spacing.md },
-  nextRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
-  nextRowLabel: { ...typography.body },
-  nextRowValue: { ...typography.body, fontWeight: '700' },
-  nextRowValueWarning: { color: colors.warning },
+  heroKicker: { ...typography.caption, fontWeight: '800', color: colors.primaryDark, letterSpacing: 0.5 },
+  heroAmount: { ...typography.amountPrimary, marginTop: 4 },
+  heroBarTrack: { height: 8, borderRadius: 4, backgroundColor: colors.surface, overflow: 'hidden', marginTop: spacing.md },
+  heroBarFill: { height: 8, borderRadius: 4, backgroundColor: colors.secondary },
+  heroDeadlineMeta: { ...typography.caption, marginTop: spacing.sm },
+  heroStatsRow: { flexDirection: 'row', marginTop: spacing.md, gap: spacing.md },
+  heroStat: { flex: 1 },
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
   sectionLabel: { ...typography.sectionLabel, color: colors.textSecondary, letterSpacing: 0.5 },
   addLink: { ...typography.body, fontWeight: '700', color: colors.primary },
-  emptyText: { ...typography.bodySecondary, paddingHorizontal: spacing.lg, marginBottom: spacing.lg },
-  deadlineRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  emptyText: { ...typography.bodySecondary, padding: spacing.md },
+  // Blocs POSTES/ÉCHÉANCES (maquette validée) : une carte blanche unique par
+  // bloc, lignes internes séparées par un filet (rowBorder), jamais une carte
+  // par ligne.
+  card: {
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.md,
+    borderRadius: radius.xl,
     marginHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.lg,
+    ...elevation.card,
   },
+  rowBorder: { borderBottomWidth: 1, borderBottomColor: colors.divider },
+  deadlineRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.md },
   deadlineLabel: { ...typography.body, fontWeight: '700' },
   deadlineMeta: { ...typography.caption, marginTop: 2 },
-  paidBadge: { ...typography.caption, fontWeight: '800', color: colors.success },
+  paidBadge: { ...typography.caption, fontWeight: '800', color: colors.success, backgroundColor: colors.successLight, paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.pill },
+  pendingBadge: { ...typography.caption, fontWeight: '800', color: colors.warning, backgroundColor: colors.warningLight, paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.pill },
   itemRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
+    padding: spacing.md,
   },
   itemLabel: { ...typography.body, fontWeight: '600' },
   itemMeta: { ...typography.caption },
+  heroRowLabel: { ...typography.caption },
+  heroRowValue: { ...typography.body, fontWeight: '700', marginTop: 2 },
+  heroRowValueWarning: { color: colors.warning },
   backdrop: { flex: 1, backgroundColor: colors.backdrop },
   sheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 6, borderTopRightRadius: radius.xl + 6, padding: spacing.xl, maxHeight: '85%' },
   sheetTitle: { ...typography.sectionTitle, marginBottom: spacing.lg },

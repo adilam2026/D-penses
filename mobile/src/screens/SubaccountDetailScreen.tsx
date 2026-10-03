@@ -14,6 +14,8 @@ import { HelpButton } from '../ui/HelpButton';
 import { isSanteSubaccount } from '../ui/santeDetection';
 import { testIdSlug } from '../ui/testIdSlug';
 import { paletteForAccount } from '../ui/accountPalette';
+import { ProgressRing } from '../ui/ProgressRing';
+import { GoalModal } from './EpargneScreen';
 
 /**
  * Détail sous-compte (Lot ciblé §3) — carte de synthèse en relief (couleur du
@@ -32,15 +34,18 @@ export function SubaccountDetailScreen() {
   const [account, setAccount] = useState<api.AccountApi | null>(null);
   const [subaccount, setSubaccount] = useState<api.SubaccountApi | null>(null);
   const [operations, setOperations] = useState<api.FinancialOperationApi[] | null>(null);
+  const [goal, setGoal] = useState<api.GoalApi | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [goalOpen, setGoalOpen] = useState(false);
 
   const load = useCallback(async () => {
-    const accounts = await api.listAccounts();
+    const [accounts, goals] = await Promise.all([api.listAccounts(), api.listGoals()]);
     const parent = accounts.find((a) => a.subaccounts.some((s) => s.id === id));
     const sub = parent?.subaccounts.find((s) => s.id === id) ?? null;
     setAccount(parent ?? null);
     setSubaccount(sub);
+    setGoal(goals.find((g) => g.subaccountId === id) ?? null);
     if (sub) setOperations(await api.listFinancialOperations({ subaccountId: id }));
   }, [id]);
 
@@ -85,12 +90,47 @@ export function SubaccountDetailScreen() {
           </View>
         </View>
 
-        <View style={[styles.balanceCard, { backgroundColor: palette.bg }]}>
-          <Text style={[styles.title, { color: palette.text }]}>{subaccount.name}</Text>
-          <Text style={[styles.subtitle, { color: palette.textSecondary }]}>Rattaché à {account.name}{subaccount.active ? '' : ' · Désactivé'}</Text>
-          <Text style={[styles.balanceLabel, { color: palette.textSecondary }]}>Disponible</Text>
-          <Text style={[styles.balanceAmount, { color: palette.text }]}>{formatDh(subaccount.balance)}</Text>
-        </View>
+        {goal ? (
+          <View style={[styles.goalCard, { backgroundColor: palette.bg }]} testID="subaccount-goal-card">
+            <Text style={[styles.title, { color: palette.text }]}>{subaccount.name}</Text>
+            <Text style={[styles.subtitle, { color: palette.textSecondary }]}>Rattaché à {account.name}{subaccount.active ? '' : ' · Désactivé'}</Text>
+            <View style={styles.ringWrap}>
+              <ProgressRing
+                percent={goal.percent}
+                color={palette.text}
+                trackColor="rgba(255,255,255,0.3)"
+                labelColor={palette.text}
+                subLabelColor={palette.textSecondary}
+                subLabel={`${formatDh(goal.current)} / ${formatDh(goal.targetAmount)}`}
+              />
+            </View>
+            {goal.targetDate ? (
+              <Text style={[styles.goalDeadline, { color: palette.textSecondary }]}>Objectif pour {formatShortDate(goal.targetDate)}</Text>
+            ) : null}
+            <View style={styles.ctaRow}>
+              <TouchableOpacity
+                style={styles.ctaPrimary}
+                disabled={!subaccount.active}
+                onPress={() =>
+                  navigation.navigate('Tabs', { screen: 'Ajouter', params: { prefill: { kind: 'SAVINGS_CONTRIBUTION', destinationAccountId: account.id, destinationSubaccountId: subaccount.id } } })
+                }
+                testID="subaccount-goal-contribute"
+              >
+                <Text style={styles.ctaPrimaryText}>+ Faire un versement</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.ctaSecondary} onPress={() => setGoalOpen(true)} testID="subaccount-goal-edit">
+                <Text style={styles.ctaSecondaryText}>Modifier l'objectif</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <View style={[styles.balanceCard, { backgroundColor: palette.bg }]}>
+            <Text style={[styles.title, { color: palette.text }]}>{subaccount.name}</Text>
+            <Text style={[styles.subtitle, { color: palette.textSecondary }]}>Rattaché à {account.name}{subaccount.active ? '' : ' · Désactivé'}</Text>
+            <Text style={[styles.balanceLabel, { color: palette.textSecondary }]}>Disponible</Text>
+            <Text style={[styles.balanceAmount, { color: palette.text }]}>{formatDh(subaccount.balance)}</Text>
+          </View>
+        )}
 
         <View style={styles.historyCard}>
           <Text style={styles.sectionLabel}>HISTORIQUE DES TRANSACTIONS</Text>
@@ -184,6 +224,15 @@ export function SubaccountDetailScreen() {
           await load();
         }}
       />
+
+      <GoalModal
+        target={goalOpen ? { subaccountId: subaccount.id, name: subaccount.name, goal } : null}
+        onClose={() => setGoalOpen(false)}
+        onSaved={async () => {
+          setGoalOpen(false);
+          await load();
+        }}
+      />
     </View>
   );
 }
@@ -206,6 +255,23 @@ const styles = StyleSheet.create({
   },
   balanceLabel: { ...typography.bodySecondary, marginBottom: spacing.xs },
   balanceAmount: { ...typography.amountPrimary },
+  // Carte objectif (maquette « Foyer » validée — Détail Épargne/sous-compte) :
+  // jauge circulaire centrée, échéance, puis les deux CTA (verser/modifier).
+  goalCard: {
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+    alignItems: 'center',
+    ...elevation.raised,
+  },
+  ringWrap: { marginTop: spacing.md, marginBottom: spacing.sm },
+  goalDeadline: { ...typography.caption, marginBottom: spacing.lg },
+  ctaRow: { width: '100%', gap: spacing.sm },
+  ctaPrimary: { backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center' },
+  ctaPrimaryText: { ...typography.body, fontWeight: '700', color: colors.textOnPrimary },
+  ctaSecondary: { alignItems: 'center', paddingVertical: spacing.sm },
+  ctaSecondaryText: { ...typography.bodySecondary, fontWeight: '700', color: colors.textOnPrimary, textDecorationLine: 'underline' },
   historyCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.xl,

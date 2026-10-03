@@ -17,9 +17,11 @@ jest.mock('@react-navigation/native', () => ({
 
 const mockListAccounts = jest.fn();
 const mockListFinancialOperations = jest.fn();
+const mockListGoals = jest.fn();
 jest.mock('../../api/client', () => ({
   listAccounts: () => mockListAccounts(),
   listFinancialOperations: (...args: unknown[]) => mockListFinancialOperations(...args),
+  listGoals: () => mockListGoals(),
   renameSubaccount: jest.fn(),
 }));
 
@@ -35,6 +37,7 @@ function renderWithSafeArea(ui: React.ReactElement) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockListFinancialOperations.mockResolvedValue([]);
+  mockListGoals.mockResolvedValue([]);
 });
 
 it('affiche "Disponible" + "Rattaché à {compte}" (jamais "Solde")', async () => {

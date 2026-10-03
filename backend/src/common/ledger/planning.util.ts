@@ -108,16 +108,72 @@ export interface PlanningTable {
   synthese: Record<PlanningMonthKey, PlanningMonthSynthese>;
 }
 
-function monthKey(date: Date): PlanningMonthKey {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+/**
+ * Mois financier paramétrable (§ Début du mois) — jour 1 par défaut : se
+ * comporte alors EXACTEMENT comme le mois calendaire (aucune régression).
+ * Jour > 1 (ex. 28) : le mois financier "octobre" ne commence pas le 1er
+ * octobre mais le 28 septembre (jour `startDay` du mois précédent) et finit
+ * le 27 octobre (jour `startDay - 1` du mois lui-même) — ex. explicite de la
+ * spec : début=28 -> octobre = 28/09 → 27/10, novembre = 28/10 → 27/11.
+ *
+ * Le libellé affiché suit le mois qui contient la MAJORITÉ des jours de la
+ * période (jour <= 15 -> la période reste nommée par le mois où elle
+ * commence ; jour > 15 -> elle est nommée par le mois où elle se termine,
+ * qui en contient alors la plus grande part) — règle qui se réduit
+ * naturellement au mois calendaire quand `startDay` vaut 1.
+ */
+function labelMonthOffset(startDay: number): 0 | 1 {
+  return startDay <= 15 ? 0 : 1;
 }
 
-export function monthRange(start: Date, count: number): PlanningMonthKey[] {
+function monthKey(date: Date, startDay = 1): PlanningMonthKey {
+  const day = date.getUTCDate();
+  let refMonth = date.getUTCMonth();
+  let refYear = date.getUTCFullYear();
+  if (day < startDay) {
+    refMonth -= 1;
+    if (refMonth < 0) {
+      refMonth = 11;
+      refYear -= 1;
+    }
+  }
+  let labelMonth = refMonth + labelMonthOffset(startDay);
+  let labelYear = refYear;
+  if (labelMonth > 11) {
+    labelMonth -= 12;
+    labelYear += 1;
+  }
+  return `${labelYear}-${String(labelMonth + 1).padStart(2, '0')}`;
+}
+
+/** Bornes réelles [début, fin] (inclusives) de la période financière désignée par `key`, pour construire la fenêtre de requête DB — jamais déduites naïvement du 1er/dernier jour calendaire quand `startDay` ≠ 1. */
+export function monthBounds(key: PlanningMonthKey, startDay = 1): { start: Date; end: Date } {
+  const [yearStr, monthStr] = key.split('-');
+  const labelYear = Number(yearStr);
+  const labelMonth = Number(monthStr) - 1;
+  let refMonth = labelMonth - labelMonthOffset(startDay);
+  let refYear = labelYear;
+  if (refMonth < 0) {
+    refMonth = 11;
+    refYear -= 1;
+  }
+  const start = new Date(Date.UTC(refYear, refMonth, startDay));
+  const end = new Date(Date.UTC(refYear, refMonth + 1, startDay - 1));
+  return { start, end };
+}
+
+export function monthRange(start: Date, count: number, startDay = 1): PlanningMonthKey[] {
   const keys: PlanningMonthKey[] = [];
-  const cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+  const firstKey = monthKey(start, startDay);
+  let [year, month] = firstKey.split('-').map(Number);
+  month -= 1; // 0-indexed pour l'arithmétique
   for (let i = 0; i < count; i++) {
-    keys.push(monthKey(cursor));
-    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    keys.push(`${year}-${String(month + 1).padStart(2, '0')}`);
+    month += 1;
+    if (month > 11) {
+      month = 0;
+      year += 1;
+    }
   }
   return keys;
 }
@@ -192,8 +248,10 @@ export function buildPlanningTable(params: {
   categories: PlanningCategoryRow[];
   accountNames: Map<string, string>;
   subaccountNames: Map<string, string>;
+  /** Jour de début du mois financier (§ Paramètres > début du mois) — 1 par défaut (mois calendaire, inchangé). */
+  monthStartDay?: number;
 }): PlanningTable {
-  const { months, plannedOperations, financialOperations, categories, accountNames, subaccountNames } = params;
+  const { months, plannedOperations, financialOperations, categories, accountNames, subaccountNames, monthStartDay = 1 } = params;
   const monthSet = new Set(months);
 
   const linkedRealOperationIds = new Set(plannedOperations.map((p) => p.realizedOperationId).filter((x): x is string => !!x));
@@ -229,7 +287,7 @@ export function buildPlanningTable(params: {
     if (planned.status === 'CANCELLED') continue;
     if (planned.financialPlanItemId || planned.financialPlanDeadlineId) continue; // affiché via le plan, jamais ici
 
-    const mKey = monthKey(planned.expectedDate);
+    const mKey = monthKey(planned.expectedDate, monthStartDay);
     if (!monthSet.has(mKey)) continue;
 
     const plannedAccounts = {
@@ -302,7 +360,7 @@ export function buildPlanningTable(params: {
     if (op.reversalOfOperationId) continue; // l'opération de renversement elle-même
     if (reversedOriginalIds.has(op.id)) continue; // l'opération d'origine, désormais renversée -> net zéro, jamais résiduelle
 
-    const mKey = monthKey(op.date);
+    const mKey = monthKey(op.date, monthStartDay);
     if (!monthSet.has(mKey)) continue;
 
     const amount = toNumber(effectiveAmount(op));

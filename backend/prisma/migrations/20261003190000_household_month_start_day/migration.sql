@@ -1,0 +1,1 @@
+ALTER TABLE "household" ADD COLUMN "month_start_day" INTEGER NOT NULL DEFAULT 1;

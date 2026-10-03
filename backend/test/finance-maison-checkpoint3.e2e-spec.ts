@@ -480,4 +480,26 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
     await http.post(`/planned-operations/${planned.body.id}/partial-realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '350' }).expect(400);
     await http.post(`/planned-operations/${planned.body.id}/partial-realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '500' }).expect(400);
   });
+
+  it('P. début du mois paramétrable (§ Paramètres) : jour 28 -> le mois "octobre" couvre 28/09 → 27/10', async () => {
+    const token = await freshHousehold();
+    const cih = await createAccount(token, 'CIH', 20000);
+
+    await http.patch('/households/settings').set('Authorization', `Bearer ${token}`).send({ monthStartDay: 28 }).expect(200);
+
+    // 30 septembre -> doit tomber dans la période financière "octobre" (28/09 → 27/10), jamais "septembre".
+    await http
+      .post('/financial-operations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ kind: 'EXPENSE', label: 'Aspirateur', date: '2026-09-30', amount: '500', sourceAccountId: cih.id })
+      .expect(201);
+
+    const planning = await getPlanning(token, 3);
+    expect(planning.months[0]).toBe('2026-10');
+    const categories = await http.get('/categories').set('Authorization', `Bearer ${token}`).expect(200);
+    const autres = categories.body.find((c: any) => c.isDefaultFallback);
+    const cell = findCell(planning, 'depenses', autres.id, 0);
+    expect(cell.status).toBe('REALIZED');
+    expect(cell.displayAmount).toBe(500);
+  });
 });

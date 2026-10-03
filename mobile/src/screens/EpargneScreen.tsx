@@ -120,33 +120,35 @@ export function EpargneScreen() {
       {cards.length === 0 ? (
         <Text style={styles.emptyText}>Aucune épargne pour l'instant.</Text>
       ) : (
-        <View style={styles.grid}>
+        <View style={styles.list}>
           {cards.map((card, idx) => {
             const palette = accountPalette(idx);
             return (
-              <View key={card.key} style={styles.cardSlot}>
-                <TouchableOpacity style={[styles.card, { backgroundColor: palette.bg }]} onPress={card.onPress} testID={`epargne-card-${card.key}`}>
+              <TouchableOpacity key={card.key} style={[styles.card, { backgroundColor: palette.bg }]} onPress={card.onPress} testID={`epargne-card-${card.key}`}>
+                <View style={styles.cardTopRow}>
                   <Text style={[styles.cardName, { color: palette.text }]} numberOfLines={1}>
                     {card.name}
                   </Text>
-                  <Text style={[styles.cardMeta, { color: palette.textSecondary }]}>{card.meta}</Text>
-                  <Text style={[styles.cardAmount, { color: palette.text }]}>{formatDh(card.amount)}</Text>
-                  {card.extraLine ? <Text style={styles.cardExtra}>{card.extraLine}</Text> : null}
-                </TouchableOpacity>
+                  {card.goal ? <Text style={[styles.cardPercent, { color: palette.text }]}>{Math.round(card.goal.percent)}%</Text> : null}
+                </View>
+                <Text style={[typography.amountSecondary, styles.cardAmount, { color: palette.text }]}>
+                  {formatDh(card.amount)}
+                  {card.goal ? <Text style={[styles.cardAmountTarget, { color: palette.textSecondary }]}> / {formatDh(card.goal.targetAmount)} DH</Text> : null}
+                </Text>
                 {card.goal ? (
-                  <TouchableOpacity
-                    style={styles.goalRow}
-                    onPress={() => setGoalTarget({ accountId: card.accountId, subaccountId: card.subaccountId, name: card.name, goal: card.goal })}
-                    testID={`epargne-goal-${card.key}`}
-                  >
+                  <View testID={`epargne-goal-${card.key}`}>
                     <View style={styles.goalBarTrack}>
-                      <View style={[styles.goalBarFill, { width: `${Math.min(100, card.goal.percent)}%` }]} />
+                      <View style={[styles.goalBarFill, { width: `${Math.min(100, card.goal.percent)}%`, backgroundColor: palette.text }]} />
                     </View>
-                    <Text style={styles.goalText}>
+                    <Text style={[styles.cardMeta, { color: palette.textSecondary, marginTop: spacing.xs }]}>
                       Objectif {formatDh(card.goal.targetAmount)} · {Math.round(card.goal.percent)}%
                     </Text>
-                  </TouchableOpacity>
+                  </View>
                 ) : (
+                  <Text style={[styles.cardMeta, { color: palette.textSecondary }]}>{card.meta}</Text>
+                )}
+                {card.extraLine ? <Text style={styles.cardExtra}>{card.extraLine}</Text> : null}
+                {!card.goal ? (
                   <TouchableOpacity
                     style={styles.goalAddLink}
                     onPress={() => setGoalTarget({ accountId: card.accountId, subaccountId: card.subaccountId, name: card.name, goal: null })}
@@ -154,8 +156,8 @@ export function EpargneScreen() {
                   >
                     <Text style={styles.goalAddLinkText}>+ Définir un objectif</Text>
                   </TouchableOpacity>
-                )}
-              </View>
+                ) : null}
+              </TouchableOpacity>
             );
           })}
         </View>
@@ -173,7 +175,7 @@ export function EpargneScreen() {
   );
 }
 
-function GoalModal({
+export function GoalModal({
   target,
   onClose,
   onSaved,
@@ -256,23 +258,28 @@ const styles = StyleSheet.create({
   title: { ...typography.screenTitle },
   subtitle: { ...typography.bodySecondary, marginTop: spacing.xs, maxWidth: 260 },
   emptyText: { ...typography.bodySecondary },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -spacing.xs },
-  cardSlot: { width: '50%', paddingHorizontal: spacing.xs, marginBottom: spacing.md },
+  // Une carte pleine largeur par enveloppe (maquette « Foyer » validée) — plus
+  // de grille 2 colonnes : chaque carte porte son propre dégradé de couleur,
+  // son pourcentage d'objectif en en-tête, et sa barre de progression propre
+  // (blanche translucide) directement DANS la carte, jamais une barre neutre
+  // accolée en dessous sur fond blanc.
+  list: { gap: spacing.md },
   card: {
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    ...elevation.card,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    ...elevation.floating,
   },
-  cardName: { ...typography.body, fontWeight: '700' },
-  cardMeta: { ...typography.caption, marginTop: 2 },
-  cardAmount: { ...typography.amountSecondary, marginTop: spacing.sm },
+  cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  cardName: { ...typography.sectionTitle, fontSize: 15 },
+  cardPercent: { ...typography.caption, fontWeight: '700', opacity: 0.9 },
+  cardMeta: { ...typography.caption, marginTop: spacing.xs },
+  cardAmount: { marginTop: 4 },
+  cardAmountTarget: { ...typography.body, opacity: 0.85 },
   cardExtra: { fontSize: 11, fontWeight: '700', color: '#FFFFFF', marginTop: spacing.xs },
-  goalRow: { marginTop: spacing.xs, paddingHorizontal: spacing.xs },
-  goalBarTrack: { height: 5, borderRadius: 3, backgroundColor: colors.surfaceSecondary, overflow: 'hidden' },
-  goalBarFill: { height: 5, borderRadius: 3, backgroundColor: colors.success },
-  goalText: { ...typography.caption, marginTop: 3 },
-  goalAddLink: { marginTop: spacing.xs, paddingHorizontal: spacing.xs },
-  goalAddLinkText: { ...typography.caption, color: colors.primary, fontWeight: '700' },
+  goalBarTrack: { height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.3)', overflow: 'hidden', marginTop: spacing.sm },
+  goalBarFill: { height: 6, borderRadius: 3 },
+  goalAddLink: { marginTop: spacing.sm },
+  goalAddLinkText: { ...typography.caption, color: colors.textOnPrimary, fontWeight: '700', textDecorationLine: 'underline' },
   backdrop: { flex: 1, backgroundColor: colors.backdrop },
   sheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 6, borderTopRightRadius: radius.xl + 6, padding: spacing.xl, maxHeight: '85%' },
   sheetTitle: { ...typography.sectionTitle, marginBottom: spacing.lg },

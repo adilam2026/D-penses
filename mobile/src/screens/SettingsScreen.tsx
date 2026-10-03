@@ -7,6 +7,7 @@ import { useTopInset } from '../ui/useTopInset';
 import { useBottomInset } from '../ui/useBottomInset';
 import { colors, radius, spacing, typography } from '../ui/theme';
 import { HelpButton } from '../ui/HelpButton';
+import { ChoiceSheet } from '../ui/ChoiceSheet';
 
 /**
  * Application → Paramètres (§14) — volontairement minimal : nom du foyer,
@@ -19,6 +20,8 @@ export function SettingsScreen() {
   const bottomInset = useBottomInset();
   const [household, setHousehold] = useState<any>(null);
   const [me, setMe] = useState<{ email: string; name: string } | null>(null);
+  const [monthStartOpen, setMonthStartOpen] = useState(false);
+  const [savingMonthStart, setSavingMonthStart] = useState(false);
 
   const load = useCallback(async () => {
     const [h, meRaw] = await Promise.all([api.getMyHousehold(), api.getMe()]);
@@ -26,6 +29,17 @@ export function SettingsScreen() {
     const mine = (h.memberships ?? []).find((m: any) => m.userId === meRaw.sub);
     if (mine) setMe({ email: mine.user.email, name: [mine.user.firstName, mine.user.lastName].filter(Boolean).join(' ') });
   }, []);
+
+  async function setMonthStartDay(day: number) {
+    if (savingMonthStart) return;
+    setSavingMonthStart(true);
+    try {
+      const updated = await api.updateHouseholdSettings({ monthStartDay: day });
+      setHousehold((prev: any) => ({ ...prev, monthStartDay: updated.monthStartDay }));
+    } finally {
+      setSavingMonthStart(false);
+    }
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -57,6 +71,13 @@ export function SettingsScreen() {
               <Text style={styles.rowLabel}>Devise</Text>
               <Text style={styles.rowValue}>{household.currency ?? 'MAD'}</Text>
             </View>
+            <TouchableOpacity style={[styles.row, styles.rowBorder]} onPress={() => setMonthStartOpen(true)} testID="settings-month-start-row">
+              <Text style={styles.rowLabel}>Début du mois</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+                <Text style={styles.rowValue}>Jour {household.monthStartDay ?? 1}</Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.textPlaceholder} />
+              </View>
+            </TouchableOpacity>
           </View>
 
           {me ? (
@@ -76,6 +97,18 @@ export function SettingsScreen() {
           ) : null}
         </>
       )}
+
+      <ChoiceSheet
+        visible={monthStartOpen}
+        title="Début du mois financier"
+        onClose={() => setMonthStartOpen(false)}
+        testID="settings-month-start-sheet"
+        options={[1, 5, 10, 15, 20, 25, 28].map((day) => ({
+          key: String(day),
+          label: day === 1 ? 'Jour 1 (mois calendaire)' : `Jour ${day}`,
+          onPress: () => setMonthStartDay(day),
+        }))}
+      />
     </ScrollView>
   );
 }

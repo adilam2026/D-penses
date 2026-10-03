@@ -30,6 +30,20 @@ export class HouseholdsService {
     });
   }
 
+  /** Paramètres du foyer (§ début du mois) — réservé aux admins, structurant pour tout le Planning/les synthèses. */
+  async updateSettings(userId: string, householdId: string, data: { monthStartDay: number }) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const membership = await tx.householdMembership.findUnique({
+        where: { householdId_userId: { householdId, userId } },
+      });
+      if (!membership || membership.role !== 'admin') {
+        throw new ForbiddenException('Seul un administrateur du foyer peut modifier ces paramètres');
+      }
+      return tx.household.update({ where: { id: householdId }, data: { monthStartDay: data.monthStartDay } });
+    });
+  }
+
   async getMine(userId: string, householdId: string) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();

@@ -131,6 +131,9 @@ export const createHousehold = (name: string) => apiFetch('/households', { metho
 
 export const getMyHousehold = () => apiFetch('/households/me');
 
+/** Début du mois financier (§ Paramètres) — 1 à 28, réservé aux admins du foyer. */
+export const updateHouseholdSettings = (data: { monthStartDay: number }) => apiFetch('/households/settings', { method: 'PATCH', body: data });
+
 export const createInvite = () => apiFetch('/households/invites', { method: 'POST', body: {} });
 
 export const joinHousehold = (code: string) => apiFetch('/households/join', { method: 'POST', body: { code } });

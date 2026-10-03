@@ -52,8 +52,12 @@ model Household {
   id        String   @id @default(uuid())
   name      String
   currency  String   @default("MAD")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  // Jour de début du mois financier (Paramètres > début du mois) — 1 par
+  // défaut (mois calendaire, comportement inchangé) ; ex. 28 décale le mois
+  // "octobre" à la fenêtre 28/09 → 27/10.
+  monthStartDay Int      @default(1) @map("month_start_day")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   memberships         HouseholdMembership[]
   usersWithThisActive User[]

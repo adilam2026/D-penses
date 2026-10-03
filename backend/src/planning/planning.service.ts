@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { ensurePlannedOccurrences } from '../common/ledger/recurrence.util';
-import { buildPlanningTable, monthRange, PlanningMonthKey } from '../common/ledger/planning.util';
+import { buildPlanningTable, monthBounds, monthRange, PlanningMonthKey } from '../common/ledger/planning.util';
 
 export const PLANNING_MIN_MONTHS = 3;
 export const PLANNING_MAX_MONTHS = 12;
@@ -27,11 +27,16 @@ export class PlanningService {
       // Fenêtre glissante toujours à jour (§génération des occurrences) avant lecture.
       await ensurePlannedOccurrences(tx, householdId);
 
+      const household = await tx.household.findUniqueOrThrow({ where: { id: householdId }, select: { monthStartDay: true } });
+      const monthStartDay = household.monthStartDay;
+
       const horizonMonths = clampMonths(months);
       const now = new Date();
-      const monthsList: PlanningMonthKey[] = monthRange(now, horizonMonths);
-      const rangeStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-      const rangeEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + horizonMonths, 0));
+      const monthsList: PlanningMonthKey[] = monthRange(now, horizonMonths, monthStartDay);
+      // Bornes réelles de la fenêtre financière (§ début du mois) — jamais le
+      // 1er/dernier jour calendaire naïf quand monthStartDay ≠ 1.
+      const rangeStart = monthBounds(monthsList[0], monthStartDay).start;
+      const rangeEnd = monthBounds(monthsList[monthsList.length - 1], monthStartDay).end;
 
       const [plannedOperations, financialOperations, categories, accounts, subaccounts] = await Promise.all([
         tx.plannedOperation.findMany({
@@ -53,6 +58,7 @@ export class PlanningService {
         categories,
         accountNames: new Map(accounts.map((a) => [a.id, a.name])),
         subaccountNames: new Map(subaccounts.map((s) => [s.id, s.name])),
+        monthStartDay,
       });
     });
   }
