@@ -223,29 +223,19 @@ export function PlanningScreen() {
         ))}
       </View>
 
-      <View style={styles.monthNav}>
-        <TouchableOpacity
-          onPress={() => goToWindow(windowStart - 1)}
-          disabled={windowStart === 0}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          testID="planning-month-prev"
-        >
-          <Ionicons name="chevron-back" size={20} color={windowStart === 0 ? colors.textPlaceholder : colors.textPrimary} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => goToWindow(windowStart + 1)}
-          disabled={windowStart >= maxWindowStart}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          testID="planning-month-next"
-        >
-          <Ionicons name="chevron-forward" size={20} color={windowStart >= maxWindowStart ? colors.textPlaceholder : colors.textPrimary} />
-        </TouchableOpacity>
-      </View>
-
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: spacing.xxl }}>
         <View style={styles.tableRow}>
           <View style={{ width: LABEL_WIDTH }}>
-            <View style={[styles.labelCell, { height: HEADER_HEIGHT }]} />
+            <View style={[styles.labelCell, styles.headerLabelCell, { height: HEADER_HEIGHT }]}>
+              <TouchableOpacity
+                onPress={() => goToWindow(windowStart - 1)}
+                disabled={windowStart === 0}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                testID="planning-month-prev"
+              >
+                <Ionicons name="chevron-back" size={16} color={windowStart === 0 ? colors.textPlaceholder : colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
             {blocks.map((block) => (
               <React.Fragment key={block.title}>
                 <View style={[styles.sectionLabelCell, { height: SECTION_HEIGHT, borderLeftColor: block.accentColor }]}>
@@ -289,7 +279,16 @@ export function PlanningScreen() {
             </View>
           </View>
 
-          <View style={{ flex: 1 }} onLayout={(e) => setAreaWidth(e.nativeEvent.layout.width)}>
+          <View style={{ flex: 1, position: 'relative' }} onLayout={(e) => setAreaWidth(e.nativeEvent.layout.width)}>
+            <TouchableOpacity
+              style={styles.monthNextButton}
+              onPress={() => goToWindow(windowStart + 1)}
+              disabled={windowStart >= maxWindowStart}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              testID="planning-month-next"
+            >
+              <Ionicons name="chevron-forward" size={16} color={windowStart >= maxWindowStart ? colors.textPlaceholder : colors.textPrimary} />
+            </TouchableOpacity>
             <ScrollView
               ref={monthScrollRef}
               horizontal
@@ -843,16 +842,29 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
   title: { ...typography.screenTitle },
   subtitle: { ...typography.bodySecondary, marginTop: spacing.xs, maxWidth: 260 },
-  horizonBar: { flexDirection: 'row', paddingHorizontal: spacing.lg, marginBottom: spacing.sm, gap: spacing.sm },
+  horizonBar: { flexDirection: 'row', paddingHorizontal: spacing.lg, marginBottom: spacing.xs, gap: spacing.sm },
   horizonPill: { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary },
   horizonPillActive: { backgroundColor: colors.primary },
   horizonPillText: { fontSize: 11, fontFamily: fontFamily.sansBold, color: colors.textSecondary },
   horizonPillTextActive: { color: colors.textOnPrimary },
-  // Flèches ‹ › en haut (correctif fenêtre multi-mois) — déplacent la même
-  // fenêtre de 3 mois que le swipe (goToWindow), jamais un mécanisme séparé.
-  monthNav: { flexDirection: 'row', justifyContent: 'flex-end', gap: spacing.lg, paddingHorizontal: spacing.lg, marginBottom: spacing.xs },
   tableRow: { flexDirection: 'row', paddingLeft: spacing.lg },
   labelCell: { justifyContent: 'center', paddingRight: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  // Flèches ‹ › intégrées à l'en-tête des mois (correctif finition) — ‹ dans
+  // la cellule d'en-tête de la colonne de libellés figée, › en superposition
+  // compacte au-dessus du défilement, jamais une rangée séparée qui ajoute
+  // de la hauteur. Déplacent la même fenêtre que le swipe (goToWindow).
+  headerLabelCell: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' },
+  monthNextButton: {
+    position: 'absolute',
+    top: 0,
+    right: 2,
+    height: HEADER_HEIGHT,
+    width: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background,
+    zIndex: 2,
+  },
   sectionLabelCell: { justifyContent: 'flex-end', paddingBottom: 4, paddingLeft: spacing.xs, borderLeftWidth: 3 },
   sectionLabelText: { fontSize: 11, fontFamily: fontFamily.sansExtraBold, letterSpacing: 0.5 },
   rowLabelText: { fontSize: 13, fontFamily: fontFamily.sansSemiBold, color: colors.textPrimary },
