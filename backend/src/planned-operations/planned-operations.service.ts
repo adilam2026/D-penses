@@ -107,6 +107,52 @@ export class PlannedOperationsService {
     });
   }
 
+  /**
+   * Paiement partiel (Planning, appui long, §correction) — enregistre le
+   * montant réellement payé maintenant comme une vraie opération réelle,
+   * SANS clore l'échéance : son expectedAmount est réduit du montant payé,
+   * elle reste PENDING pour le reste à payer. La case Planning affiche alors
+   * naturellement "payé/total" + "reste X" (même mécanique que les cases
+   * MIXTES déjà existantes — réalisé + à venir dans la même case), sans
+   * logique d'affichage dédiée. Si le reste est payé plus tard via `realize`,
+   * l'échéance devient entièrement réalisée.
+   */
+  async partialRealize(userId: string, householdId: string, id: string, dto: { actualAmount: string; actualDate?: string; label?: string }) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const planned = await tx.plannedOperation.findUnique({ where: { id } });
+      if (!planned || planned.householdId !== householdId) throw new NotFoundException('Échéance prévue introuvable');
+      if (planned.status !== 'PENDING') throw new BadRequestException('Cette échéance a déjà été réalisée ou annulée');
+
+      const partialAmount = new Prisma.Decimal(dto.actualAmount);
+      if (partialAmount.lte(0)) throw new BadRequestException('Le montant payé doit être positif');
+      if (partialAmount.gte(planned.expectedAmount)) {
+        throw new BadRequestException('Pour un montant couvrant la totalité, utilisez "Marquer réalisée" plutôt que le paiement partiel');
+      }
+
+      const operation = await insertFinancialOperation(tx, {
+        householdId,
+        createdByUserId: userId,
+        kind: planned.kind as unknown as OperationKind,
+        label: dto.label ?? planned.label,
+        date: dto.actualDate ? new Date(dto.actualDate) : new Date(),
+        amount: partialAmount,
+        categoryId: planned.categoryId,
+        sourceAccountId: planned.sourceAccountId,
+        sourceSubaccountId: planned.sourceSubaccountId,
+        destinationAccountId: planned.destinationAccountId,
+        destinationSubaccountId: planned.destinationSubaccountId,
+      });
+
+      await tx.plannedOperation.update({
+        where: { id },
+        data: { expectedAmount: planned.expectedAmount.sub(partialAmount) },
+      });
+
+      return operation;
+    });
+  }
+
   async cancel(userId: string, householdId: string, id: string) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();

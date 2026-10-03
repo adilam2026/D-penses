@@ -272,7 +272,7 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
     expect(synthese.totalDepenses).toBe(0); // aucune double-déduction dans Balance
   });
 
-  it('I. balance mensuelle correcte (revenus - dépenses - épargne, sur les montants BUDGET)', async () => {
+  it('I. balance mensuelle correcte (revenus - dépenses, sur les montants BUDGET — un versement interne ne diminue jamais la richesse du foyer)', async () => {
     const token = await freshHousehold();
     const bp = await createAccount(token, 'BP Lamiaa', 25000);
     const cih = await createAccount(token, 'CIH', 20000);
@@ -298,7 +298,9 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
     expect(synthese.totalRevenus).toBe(12000);
     expect(synthese.totalDepenses).toBe(2000);
     expect(synthese.totalEpargne).toBe(1000);
-    expect(synthese.balanceMensuelle).toBe(12000 - 2000 - 1000);
+    // Règle comptable (correction ciblée) : un versement interne au foyer n'est
+    // jamais une dépense — il ne doit jamais diminuer la balance.
+    expect(synthese.balanceMensuelle).toBe(12000 - 2000);
   });
 
   it('J. balance cumulée = somme progressive des balances mensuelles', async () => {
@@ -425,5 +427,50 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
     expect(scolarite.deadlines[0].reste).toBe(18000);
     expect(scolarite.deadlines[0].monthsRemaining).toBe(3);
     expect(scolarite.deadlines[0].recommendedMonthly).toBe(6000);
+  });
+
+  it('N. paiement partiel (§correction) : 400 payés sur 1000 prévus -> case MIXTE 400/1000, reste 600 ; puis le reste payé -> entièrement réalisée', async () => {
+    const token = await freshHousehold();
+    const cih = await createAccount(token, 'CIH', 20000);
+    const voiture = await createCategory(token, 'Voiture');
+
+    const planned = await http
+      .post('/planned-operations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ kind: 'EXPENSE', label: 'Assurance voiture', expectedDate: todayIso(), expectedAmount: '1000', categoryId: voiture.id, sourceAccountId: cih.id })
+      .expect(201);
+
+    await http.post(`/planned-operations/${planned.body.id}/partial-realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '400' }).expect(201);
+
+    let planning = await getPlanning(token, 3);
+    let cell = findCell(planning, 'depenses', voiture.id, 0);
+    expect(cell.status).toBe('MIXED');
+    expect(cell.displayAmount).toBe(1000);
+    expect(cell.realizedAmount).toBe(400);
+    expect(cell.pendingAmount).toBe(600);
+    expect(cell.singleOccurrence).toBeNull(); // case agrégée (2 items) -> jamais de tap simple ambigu
+
+    // Le reste (600) est payé -> l'échéance devient entièrement réalisée.
+    await http.post(`/planned-operations/${planned.body.id}/realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '600' }).expect(201);
+
+    planning = await getPlanning(token, 3);
+    cell = findCell(planning, 'depenses', voiture.id, 0);
+    expect(cell.status).toBe('REALIZED');
+    expect(cell.displayAmount).toBe(1000);
+    expect(cell.pendingAmount).toBe(0);
+  });
+
+  it('O. paiement partiel refusé si le montant couvre déjà la totalité (doit utiliser "Marquer réalisée")', async () => {
+    const token = await freshHousehold();
+    const cih = await createAccount(token, 'CIH', 20000);
+
+    const planned = await http
+      .post('/planned-operations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ kind: 'EXPENSE', label: 'Internet', expectedDate: todayIso(), expectedAmount: '350', sourceAccountId: cih.id })
+      .expect(201);
+
+    await http.post(`/planned-operations/${planned.body.id}/partial-realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '350' }).expect(400);
+    await http.post(`/planned-operations/${planned.body.id}/partial-realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '500' }).expect(400);
   });
 });

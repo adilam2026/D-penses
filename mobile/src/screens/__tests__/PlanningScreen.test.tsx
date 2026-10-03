@@ -23,6 +23,7 @@ const mockListAccounts = jest.fn();
 const mockListFinancialPlans = jest.fn();
 const mockRealizePlannedOperation = jest.fn();
 const mockUnrealizePlannedOperation = jest.fn();
+const mockPartialRealizePlannedOperation = jest.fn();
 const mockGetFinancialOperation = jest.fn();
 
 jest.mock('../../api/client', () => ({
@@ -31,6 +32,7 @@ jest.mock('../../api/client', () => ({
   listFinancialPlans: () => mockListFinancialPlans(),
   realizePlannedOperation: (...args: unknown[]) => mockRealizePlannedOperation(...args),
   unrealizePlannedOperation: (...args: unknown[]) => mockUnrealizePlannedOperation(...args),
+  partialRealizePlannedOperation: (...args: unknown[]) => mockPartialRealizePlannedOperation(...args),
   getFinancialOperation: (...args: unknown[]) => mockGetFinancialOperation(...args),
 }));
 
@@ -237,6 +239,50 @@ it('case prévue : appui long ouvre le modal d\'ajustement pré-rempli avec le m
   fireEvent.press(screen.getByTestId('planning-adjust-submit'));
 
   await waitFor(() => expect(mockRealizePlannedOperation).toHaveBeenCalledWith('po-1', expect.objectContaining({ actualAmount: '820' })));
+});
+
+it('case prévue : appui long permet un paiement partiel (montant payé < prévu) sans clore l\'échéance', async () => {
+  mockGetPlanning.mockResolvedValue(
+    basePlanning({
+      depenses: [
+        {
+          key: 'cat-voiture',
+          label: 'Voiture',
+          categoryId: 'cat-voiture',
+          cells: {
+            '2026-09': {
+              displayAmount: 1000,
+              budgetAmount: 1000,
+              pendingAmount: 1000,
+              realizedAmount: 0,
+              status: 'PENDING',
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 1000, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null },
+              items: [{ type: 'PLANNED_PENDING', plannedOperationId: 'po-1', label: 'Assurance voiture', amount: 1000, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
+            },
+            '2026-10': emptyCell(),
+            '2026-11': emptyCell(),
+          },
+        },
+      ],
+    }),
+  );
+  mockPartialRealizePlannedOperation.mockResolvedValue({});
+
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
+  fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
+  await waitFor(() => screen.getByTestId('planning-adjust-partial-submit'));
+
+  // Bouton désactivé sans montant saisi.
+  expect(screen.getByTestId('planning-adjust-partial-submit').props.accessibilityState?.disabled).toBe(true);
+
+  fireEvent.changeText(screen.getByTestId('planning-adjust-partial-amount'), '400');
+  await waitFor(() => expect(screen.getByTestId('planning-adjust-partial-submit').props.accessibilityState?.disabled).toBe(false));
+  fireEvent.press(screen.getByTestId('planning-adjust-partial-submit'));
+
+  await waitFor(() => expect(mockPartialRealizePlannedOperation).toHaveBeenCalledWith('po-1', expect.objectContaining({ actualAmount: '400' })));
+  // Le paiement partiel n'appelle jamais le realize complet.
+  expect(mockRealizePlannedOperation).not.toHaveBeenCalled();
 });
 
 it('case réalisée (verte) : appui long propose Voir/Modifier/Annuler le paiement', async () => {

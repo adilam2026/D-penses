@@ -46,16 +46,22 @@ type BlockItem = { kind: 'header'; label: string } | { kind: 'row'; row: api.Pla
 function buildBlockItems(rows: api.PlanningRowApi[], uncategorizedLabel: string): BlockItem[] {
   if (!rows.some((r) => r.categoryLabel)) return rows.map((row) => ({ kind: 'row', row }));
   const items: BlockItem[] = [];
-  let currentHeader: string | undefined;
-  let started = false;
-  for (const row of rows) {
-    const header = row.categoryLabel ?? uncategorizedLabel;
-    if (!started || header !== currentHeader) {
-      items.push({ kind: 'header', label: header });
-      currentHeader = header;
-      started = true;
-    }
-    items.push({ kind: 'row', row });
+  let i = 0;
+  while (i < rows.length) {
+    const header = rows[i].categoryLabel;
+    let j = i + 1;
+    while (j < rows.length && rows[j].categoryLabel === header) j++;
+    const group = rows.slice(i, j);
+    // Titre affiché seulement si c'est une VRAIE catégorie de regroupement
+    // (au moins 2 libellés distincts dessous) — sinon le titre répète juste
+    // le seul libellé de la ligne du dessous (ex. catégorie "App Adil"
+    // contenant la seule opération "App Adil") : redondant, jamais affiché.
+    // Les libellés sans catégorie restent toujours sous leur propre titre
+    // générique ("AUTRES ... SANS CATÉGORIE"), jamais identique à une ligne.
+    const showHeader = header ? group.length > 1 : true;
+    if (showHeader) items.push({ kind: 'header', label: header ?? uncategorizedLabel });
+    for (const row of group) items.push({ kind: 'row', row });
+    i = j;
   }
   return items;
 }
@@ -164,7 +170,7 @@ export function PlanningScreen() {
   const blocks: BlockDef[] = [
     { title: 'REVENUS', rows: data.revenus, totalLabel: 'TOTAL REVENUS', totalKey: 'totalRevenus', emptyText: 'Aucun revenu prévu.', accentColor: colors.success, uncategorizedLabel: 'AUTRES REVENUS SANS CATÉGORIE' },
     { title: 'DÉPENSES', rows: data.depenses, totalLabel: 'TOTAL DÉPENSES', totalKey: 'totalDepenses', emptyText: 'Aucune dépense prévue.', accentColor: colors.danger, uncategorizedLabel: 'AUTRES DÉPENSES SANS CATÉGORIE' },
-    { title: 'ÉPARGNE / VERSEMENTS', rows: data.epargne, totalLabel: 'TOTAL ÉPARGNE', totalKey: 'totalEpargne', emptyText: 'Aucun versement prévu.', accentColor: colors.primary, uncategorizedLabel: 'AUTRES VERSEMENTS SANS CATÉGORIE' },
+    { title: 'ÉPARGNE / VERSEMENTS', rows: data.epargne, totalLabel: 'TOTAL VERSEMENTS', totalKey: 'totalEpargne', emptyText: 'Aucun versement prévu.', accentColor: colors.primary, uncategorizedLabel: 'AUTRES VERSEMENTS SANS CATÉGORIE' },
   ];
   const blockItemsByTitle = new Map(blocks.map((b) => [b.title, buildBlockItems(b.rows, b.uncategorizedLabel)]));
 
@@ -509,24 +515,45 @@ function AdjustModal({
   const occ = target?.cell.singleOccurrence ?? null;
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState('');
+  const [partialAmount, setPartialAmount] = useState('');
   const [saving, setSaving] = useState(false);
 
   React.useEffect(() => {
     if (occ) {
       setAmount(String(occ.expectedAmount));
       setDate(new Date().toISOString().slice(0, 10));
+      setPartialAmount('');
     }
   }, [occ?.plannedOperationId]);
 
   if (!target || !occ) return null;
   const { accountId, subaccountId } = relevantAccount(occ);
   const label = accountLabel(accounts, accountId, subaccountId);
+  const partialValue = Number(partialAmount);
+  const canSubmitPartial = partialAmount.trim() !== '' && partialValue > 0 && partialValue < occ.expectedAmount;
 
   async function submit() {
     if (!amount.trim() || saving || !occ) return;
     setSaving(true);
     try {
       await api.realizePlannedOperation(occ.plannedOperationId, { actualAmount: amount, actualDate: date || undefined });
+      await onDone();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /**
+   * Paiement partiel (§correction) : enregistre le montant réellement payé
+   * sans clore l'échéance — le reste continue d'apparaître comme à venir
+   * (même case, affichage "payé/total" + "reste X" déjà géré par la case
+   * MIXTE existante, aucune UI dédiée nécessaire côté affichage).
+   */
+  async function submitPartial() {
+    if (!canSubmitPartial || saving || !occ) return;
+    setSaving(true);
+    try {
+      await api.partialRealizePlannedOperation(occ.plannedOperationId, { actualAmount: partialAmount, actualDate: date || undefined });
       await onDone();
     } finally {
       setSaving(false);
@@ -552,6 +579,25 @@ function AdjustModal({
             <Text style={styles.confirmPayText}>{saving ? '…' : `Payer ${amount ? formatDh(Number(amount)) : ''}`}</Text>
           </TouchableOpacity>
         </View>
+
+        <Text style={styles.partialSectionLabel}>PAIEMENT PARTIEL</Text>
+        <Text style={styles.adjustPrevu}>Enregistre un paiement sans clore l'échéance — le reste continue d'apparaître comme à venir.</Text>
+        <FormField
+          label="Montant payé maintenant"
+          value={partialAmount}
+          onChangeText={setPartialAmount}
+          onFocus={handleFocus}
+          keyboardType="decimal-pad"
+          testID="planning-adjust-partial-amount"
+        />
+        <TouchableOpacity
+          style={[styles.partialButton, !canSubmitPartial && styles.buttonDisabled]}
+          onPress={submitPartial}
+          disabled={!canSubmitPartial || saving}
+          testID="planning-adjust-partial-submit"
+        >
+          <Text style={styles.partialButtonText}>{saving ? '…' : 'Enregistrer le paiement partiel'}</Text>
+        </TouchableOpacity>
       </ScrollView>
     </Modal>
   );
@@ -773,6 +819,10 @@ const styles = StyleSheet.create({
   adjustSheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 6, borderTopRightRadius: radius.xl + 6, padding: spacing.xl, maxHeight: '85%' },
   adjustPrevu: { ...typography.bodySecondary, marginBottom: spacing.md },
   adjustAccount: { ...typography.bodySecondary, marginBottom: spacing.md },
+  partialSectionLabel: { ...typography.sectionLabel, color: colors.textSecondary, letterSpacing: 0.5, marginTop: spacing.lg, marginBottom: spacing.xs },
+  partialButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginTop: spacing.sm, ...elevation.button },
+  partialButtonText: { ...typography.body, fontWeight: '700', color: colors.textOnPrimary },
+  buttonDisabled: { opacity: 0.5 },
   detailSectionLabel: { ...typography.caption, fontWeight: '800', color: colors.textSecondary, letterSpacing: 0.5, marginBottom: spacing.xs },
   detailRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider, gap: spacing.sm },
   detailLabel: { ...typography.body, fontWeight: '600' },

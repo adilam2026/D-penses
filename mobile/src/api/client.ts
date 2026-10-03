@@ -326,6 +326,10 @@ export const realizePlannedOperation = (id: string, data: { actualAmount: string
 
 export const cancelPlannedOperation = (id: string) => apiFetch(`/planned-operations/${id}/cancel`, { method: 'POST' });
 
+/** Paiement partiel (Planning, appui long, §correction) — enregistre le montant réellement payé maintenant sans clore l'échéance : le reste à payer continue d'exister (expectedAmount réduit, status reste PENDING). */
+export const partialRealizePlannedOperation = (id: string, data: { actualAmount: string; actualDate?: string; label?: string }) =>
+  apiFetch(`/planned-operations/${id}/partial-realize`, { method: 'POST', body: data });
+
 /** Modifier UNE occurrence (appui long, ex. prévu 700 -> réel ajusté avant paiement) — ne touche jamais la règle. */
 export const updatePlannedOperation = (
   id: string,

@@ -31,6 +31,12 @@ export class PlannedOperationsController {
     return this.plannedOperations.realize(user.sub, user.householdId!, id, dto);
   }
 
+  /** Paiement partiel (Planning, appui long, §correction) — enregistre le montant réellement payé sans clore l'échéance : le reste à payer continue d'exister. */
+  @Post(':id/partial-realize')
+  partialRealize(@Param('id') id: string, @Body() dto: RealizePlannedOperationDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.plannedOperations.partialRealize(user.sub, user.householdId!, id, dto);
+  }
+
   @Post(':id/cancel')
   cancel(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.plannedOperations.cancel(user.sub, user.householdId!, id);

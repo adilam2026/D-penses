@@ -343,7 +343,15 @@ export function buildPlanningTable(params: {
     const totalRevenus = sumRowsBudget(revenueRows, m);
     const totalDepenses = sumRowsBudget(depenseRows, m);
     const totalEpargne = sumRowsBudget(epargneRows, m);
-    const balanceMensuelle = totalRevenus - totalDepenses - totalEpargne;
+    // Règle comptable (correction ciblée) : un versement entre deux comptes/
+    // sous-comptes internes du foyer n'est JAMAIS une dépense — l'argent reste
+    // dans le foyer, juste réalloué (ex. BP Lamiaa -> Épargne Scolarité :
+    // -3000 ici, +3000 là, 0 DH de dépense réelle). Il ne doit donc jamais
+    // diminuer la balance mensuelle/cumulée, qui représente la richesse
+    // globale du foyer — seul un revenu ou une dépense réelle la fait varier.
+    // TOTAL ÉPARGNE/VERSEMENTS reste affiché (information utile) mais n'est
+    // plus soustrait ici.
+    const balanceMensuelle = totalRevenus - totalDepenses;
     cumulative += balanceMensuelle;
     synthese[m] = { totalRevenus, totalDepenses, totalEpargne, balanceMensuelle, balanceCumulee: cumulative };
   }
