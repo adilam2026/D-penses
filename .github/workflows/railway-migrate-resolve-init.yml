@@ -1,0 +1,40 @@
+name: Railway — Résoudre la migration initiale marquée en échec (P3009)
+
+# Débogage ponctuel : `prisma migrate deploy` refuse d'appliquer toute
+# nouvelle migration tant que `20260927000000_init_finance_maison` reste
+# marquée FAILED dans _prisma_migrations (P3009), même si son schéma a
+# manifestement été appliqué en base (le backend fonctionne dessus depuis
+# des semaines : /health, signup, comptes, catégories... tout répond).
+# Marque donc cette migration comme APPLIQUÉE (jamais rejouée), ce qui est
+# la remédiation standard documentée par Prisma pour P3009 quand l'état réel
+# de la base est déjà cohérent avec la migration : https://pris.ly/d/migrate-resolve
+#
+# Sécurité : DATABASE_URL_PROD n'est jamais échoué (echo/cat/set -x).
+on:
+  workflow_dispatch:
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Installer les dépendances (backend)
+        run: npm ci
+
+      - name: Générer le client Prisma
+        run: npx prisma generate
+
+      - name: Marquer 20260927000000_init_finance_maison comme appliquée (jamais rejouée)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+        run: npx prisma migrate resolve --applied 20260927000000_init_finance_maison
