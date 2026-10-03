@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import DateTimePicker, { DateTimePickerAndroid, DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { colors, radius, spacing, typography } from './theme';
 
 function toIso(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -74,21 +75,20 @@ export function DateField({
 }
 
 const styles = StyleSheet.create({
-  label: { fontSize: 11, color: '#6B747C', fontWeight: '600', marginBottom: 4 },
+  label: { ...typography.caption, fontWeight: '600', marginBottom: spacing.xs },
   field: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    marginBottom: 10,
-    fontSize: 14,
+    marginBottom: spacing.sm,
     borderWidth: 1,
-    borderColor: '#E3E1DC',
+    borderColor: colors.border,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  value: { fontSize: 14, color: '#172436' },
-  placeholder: { fontSize: 14, color: '#9AA0A6' },
+  value: { ...typography.body },
+  placeholder: { fontSize: 14, color: colors.textPlaceholder },
   icon: { fontSize: 14 },
 });

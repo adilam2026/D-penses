@@ -414,7 +414,7 @@ const styles = StyleSheet.create({
   },
   itemLabel: { ...typography.body, fontWeight: '600' },
   itemMeta: { ...typography.caption },
-  backdrop: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)' },
+  backdrop: { flex: 1, backgroundColor: colors.backdrop },
   sheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 6, borderTopRightRadius: radius.xl + 6, padding: spacing.xl, maxHeight: '85%' },
   sheetTitle: { ...typography.sectionTitle, marginBottom: spacing.lg },
   helperText: { ...typography.caption, marginBottom: spacing.md },

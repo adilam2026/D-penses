@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { colors } from './theme';
 
 function toIso(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -41,21 +42,21 @@ export function DateField({
 }
 
 const webInputStyle: React.CSSProperties = {
-  backgroundColor: '#fff',
-  borderRadius: 10,
+  backgroundColor: colors.surface,
+  borderRadius: 12,
   paddingLeft: 14,
   paddingRight: 14,
   paddingTop: 12,
   paddingBottom: 12,
   marginBottom: 10,
   fontSize: 14,
-  border: '1px solid #E3E1DC',
-  color: '#172436',
+  border: `1px solid ${colors.border}`,
+  color: colors.textPrimary,
   width: '100%',
   boxSizing: 'border-box',
   fontFamily: 'inherit',
 };
 
 const styles = StyleSheet.create({
-  label: { fontSize: 11, color: '#6B747C', fontWeight: '600', marginBottom: 4 },
+  label: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', marginBottom: 4 },
 });

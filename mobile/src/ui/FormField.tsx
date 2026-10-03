@@ -64,7 +64,7 @@ const styles = StyleSheet.create({
   label: { fontSize: typography.sectionLabel.fontSize, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.xs },
   input: {
     backgroundColor: colors.surface,
-    borderRadius: radius.sm,
+    borderRadius: radius.md,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: typography.body.fontSize,

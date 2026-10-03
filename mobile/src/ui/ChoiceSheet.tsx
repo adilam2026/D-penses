@@ -79,7 +79,7 @@ export function ChoiceSheet({ visible, title, options, onClose, cancelLabel = 'A
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)' },
+  backdrop: { flex: 1, backgroundColor: colors.backdrop },
   sheet: {
     backgroundColor: colors.background,
     borderTopLeftRadius: radius.xl + 6,
@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.md,
   },
-  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D9D5CC', alignSelf: 'center', marginBottom: spacing.md },
+  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.borderStrong, alignSelf: 'center', marginBottom: spacing.md },
   title: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.lg },
   option: {
     flexDirection: 'row',

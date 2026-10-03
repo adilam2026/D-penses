@@ -323,7 +323,7 @@ const styles = StyleSheet.create({
   cancelButton: { flex: 1, paddingVertical: spacing.md, borderRadius: radius.md, alignItems: 'center', backgroundColor: colors.danger, ...elevation.button },
   cancelButtonText: { ...typography.body, fontWeight: '700', color: colors.textOnPrimary },
   linkNote: { ...typography.caption, paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
-  backdrop: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)' },
+  backdrop: { flex: 1, backgroundColor: colors.backdrop },
   confirmBox: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.xl, marginHorizontal: spacing.lg, position: 'absolute', bottom: 0, left: 0, right: 0 },
   confirmTitle: { ...typography.sectionTitle, marginBottom: spacing.sm },
   confirmText: { ...typography.bodySecondary, marginBottom: spacing.lg },

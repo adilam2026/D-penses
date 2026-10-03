@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { colors, spacing, typography } from '../ui/theme';
 
 /**
  * Écran vide (Lot 0 — socle) : la navigation applicative existe et correspond
@@ -17,7 +18,7 @@ export function PlaceholderScreen({ title, subtitle }: { title: string; subtitle
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#F6F5F2' },
-  title: { fontSize: 20, fontWeight: '600', color: '#172436', marginBottom: 8 },
-  subtitle: { fontSize: 14, color: '#6B747C', textAlign: 'center' },
+  container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, backgroundColor: colors.background },
+  title: { ...typography.sectionTitle, marginBottom: spacing.sm },
+  subtitle: { ...typography.bodySecondary, textAlign: 'center' },
 });

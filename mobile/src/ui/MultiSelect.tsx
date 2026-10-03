@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
   fieldText: { fontSize: 14, color: colors.textPrimary, flex: 1, marginRight: spacing.sm },
   fieldPlaceholder: { color: colors.textPlaceholder },
   chevron: { fontSize: 12, color: colors.textSecondary },
-  backdrop: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)' },
+  backdrop: { flex: 1, backgroundColor: colors.backdrop },
   sheet: { backgroundColor: colors.background, borderTopLeftRadius: 18, borderTopRightRadius: 18, maxHeight: '70%' },
   sheetHeader: {
     flexDirection: 'row',

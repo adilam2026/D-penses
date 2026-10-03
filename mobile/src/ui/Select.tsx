@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useBottomInset } from './useBottomInset';
+import { colors, radius, spacing, typography } from './theme';
 
 export interface SelectOption {
   value: string;
@@ -74,6 +75,7 @@ export function Select({ label, placeholder = 'Sélectionner…', value, options
             <TextInput
               style={styles.search}
               placeholder="Rechercher…"
+              placeholderTextColor={colors.textPlaceholder}
               value={query}
               onChangeText={setQuery}
               autoCapitalize="none"
@@ -107,51 +109,52 @@ export function Select({ label, placeholder = 'Sélectionner…', value, options
 }
 
 const styles = StyleSheet.create({
-  label: { fontSize: 13, fontWeight: '600', color: '#172436', marginBottom: 6 },
+  label: { ...typography.sectionLabel, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.xs },
   field: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#fff',
-    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderWidth: 1,
-    borderColor: '#E3E1DC',
-    marginBottom: 8,
+    borderColor: colors.border,
+    marginBottom: spacing.sm,
   },
   fieldDisabled: { opacity: 0.5 },
-  fieldText: { fontSize: 14, color: '#172436', flex: 1, marginRight: 8 },
-  fieldPlaceholder: { color: '#9AA0A6' },
-  chevron: { fontSize: 12, color: '#6B747C' },
-  backdrop: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)' },
-  sheet: { backgroundColor: '#F6F5F2', borderTopLeftRadius: 18, borderTopRightRadius: 18, maxHeight: '70%' },
+  fieldText: { ...typography.body, flex: 1, marginRight: spacing.sm },
+  fieldPlaceholder: { color: colors.textPlaceholder },
+  chevron: { fontSize: 12, color: colors.textSecondary },
+  backdrop: { flex: 1, backgroundColor: colors.backdrop },
+  sheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 6, borderTopRightRadius: radius.xl + 6, maxHeight: '70%' },
   sheetHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 10,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.sm,
   },
-  sheetTitle: { fontSize: 15, fontWeight: '700', color: '#172436' },
-  sheetClose: { fontSize: 13, fontWeight: '600', color: '#2E7D5B' },
+  sheetTitle: { ...typography.sectionTitle },
+  sheetClose: { fontSize: 13, fontWeight: '600', color: colors.primary },
   search: {
-    marginHorizontal: 20,
-    marginBottom: 8,
-    backgroundColor: '#fff',
-    borderRadius: 10,
+    marginHorizontal: spacing.xl,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 14,
+    color: colors.textPrimary,
     borderWidth: 1,
-    borderColor: '#E3E1DC',
+    borderColor: colors.border,
   },
-  list: { paddingHorizontal: 20 },
-  empty: { color: '#6B747C', fontSize: 13, textAlign: 'center', paddingVertical: 16 },
-  option: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#EDEBE6' },
-  optionActive: { backgroundColor: '#EEF3F0' },
-  optionText: { fontSize: 14, color: '#172436' },
-  optionTextActive: { fontWeight: '700', color: '#2E7D5B' },
-  optionSublabel: { fontSize: 11, color: '#6B747C', marginTop: 2 },
+  list: { paddingHorizontal: spacing.xl },
+  empty: { color: colors.textSecondary, fontSize: 13, textAlign: 'center', paddingVertical: spacing.lg },
+  option: { paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  optionActive: { backgroundColor: colors.surfaceActive },
+  optionText: { ...typography.body },
+  optionTextActive: { fontWeight: '700', color: colors.primary },
+  optionSublabel: { ...typography.caption, marginTop: 2 },
 });

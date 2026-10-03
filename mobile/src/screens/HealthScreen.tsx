@@ -424,7 +424,7 @@ const styles = StyleSheet.create({
   confirmConfirmText: { ...typography.body, fontWeight: '700', color: colors.textOnPrimary },
   historyButton: { marginHorizontal: spacing.lg, alignItems: 'center', paddingVertical: spacing.md },
   historyButtonText: { ...typography.body, color: colors.primary, fontWeight: '600' },
-  backdrop: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)' },
+  backdrop: { flex: 1, backgroundColor: colors.backdrop },
   reimburseSheet: {
     backgroundColor: colors.background,
     borderTopLeftRadius: radius.xl + 6,

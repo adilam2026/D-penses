@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
   goalText: { ...typography.caption, marginTop: 3 },
   goalAddLink: { marginTop: spacing.xs, paddingHorizontal: spacing.xs },
   goalAddLinkText: { ...typography.caption, color: colors.primary, fontWeight: '700' },
-  backdrop: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)' },
+  backdrop: { flex: 1, backgroundColor: colors.backdrop },
   sheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 6, borderTopRightRadius: radius.xl + 6, padding: spacing.xl, maxHeight: '85%' },
   sheetTitle: { ...typography.sectionTitle, marginBottom: spacing.lg },
   submitButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginTop: spacing.sm, ...elevation.button },

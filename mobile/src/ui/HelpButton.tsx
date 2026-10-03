@@ -46,7 +46,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   buttonText: { fontSize: 14, fontWeight: '700', color: colors.textSecondary },
-  backdrop: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)' },
+  backdrop: { flex: 1, backgroundColor: colors.backdrop },
   sheet: {
     backgroundColor: colors.background,
     borderTopLeftRadius: radius.xl + 6,
