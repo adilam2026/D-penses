@@ -48,7 +48,7 @@ export class AccountsService {
   async create(
     userId: string,
     householdId: string,
-    dto: { name: string; bank?: string; type?: string; ownerMemberId?: string; ownerLabel?: string; openingBalance?: string },
+    dto: { name: string; bank?: string; type?: string; ownerMemberId?: string; ownerLabel?: string; openingBalance?: string; colorKey?: string },
   ) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
@@ -60,6 +60,7 @@ export class AccountsService {
           type: (dto.type as never) ?? undefined,
           ownerMemberId: dto.ownerMemberId,
           ownerLabel: dto.ownerLabel,
+          colorKey: dto.colorKey,
         },
       });
 
@@ -135,7 +136,7 @@ export class AccountsService {
     userId: string,
     householdId: string,
     id: string,
-    dto: { name?: string; bank?: string; type?: string; ownerMemberId?: string; ownerLabel?: string; active?: boolean },
+    dto: { name?: string; bank?: string; type?: string; ownerMemberId?: string; ownerLabel?: string; active?: boolean; colorKey?: string },
   ) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
@@ -150,6 +151,7 @@ export class AccountsService {
           ownerMemberId: dto.ownerMemberId,
           ownerLabel: dto.ownerLabel,
           active: dto.active,
+          colorKey: dto.colorKey,
         },
       });
       return this.toAccountDto(tx, id);

@@ -11,13 +11,13 @@ import { FormField } from '../ui/FormField';
 import { DateField } from '../ui/DateField';
 import { useBottomInset } from '../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
+import { accountPalette } from '../ui/accountPalette';
 
 interface Card {
   key: string;
   name: string;
   meta: string;
   amount: number;
-  borderColor: string;
   extraLine?: string;
   goal: api.GoalApi | null;
   accountId?: string;
@@ -79,7 +79,6 @@ export function EpargneScreen() {
         name: account.name,
         meta: 'Compte bancaire',
         amount: account.balance,
-        borderColor: colors.success,
         goal: goals.find((g) => g.accountId === account.id) ?? null,
         accountId: account.id,
         onPress: () => navigation.navigate('AccountDetail', { id: account.id }),
@@ -93,7 +92,6 @@ export function EpargneScreen() {
         name: sub.name,
         meta: 'Disponible',
         amount: sub.balance,
-        borderColor: sante ? colors.success : colors.primary,
         extraLine: pendingCount > 0 ? `${pendingCount} remboursement${pendingCount > 1 ? 's' : ''} en attente` : undefined,
         goal: goals.find((g) => g.subaccountId === sub.id) ?? null,
         subaccountId: sub.id,
@@ -123,40 +121,43 @@ export function EpargneScreen() {
         <Text style={styles.emptyText}>Aucune épargne pour l'instant.</Text>
       ) : (
         <View style={styles.grid}>
-          {cards.map((card) => (
-            <View key={card.key} style={styles.cardSlot}>
-              <TouchableOpacity style={[styles.card, { borderLeftColor: card.borderColor }]} onPress={card.onPress} testID={`epargne-card-${card.key}`}>
-                <Text style={styles.cardName} numberOfLines={1}>
-                  {card.name}
-                </Text>
-                <Text style={styles.cardMeta}>{card.meta}</Text>
-                <Text style={styles.cardAmount}>{formatDh(card.amount)}</Text>
-                {card.extraLine ? <Text style={styles.cardExtra}>{card.extraLine}</Text> : null}
-              </TouchableOpacity>
-              {card.goal ? (
-                <TouchableOpacity
-                  style={styles.goalRow}
-                  onPress={() => setGoalTarget({ accountId: card.accountId, subaccountId: card.subaccountId, name: card.name, goal: card.goal })}
-                  testID={`epargne-goal-${card.key}`}
-                >
-                  <View style={styles.goalBarTrack}>
-                    <View style={[styles.goalBarFill, { width: `${Math.min(100, card.goal.percent)}%` }]} />
-                  </View>
-                  <Text style={styles.goalText}>
-                    Objectif {formatDh(card.goal.targetAmount)} · {Math.round(card.goal.percent)}%
+          {cards.map((card, idx) => {
+            const palette = accountPalette(idx);
+            return (
+              <View key={card.key} style={styles.cardSlot}>
+                <TouchableOpacity style={[styles.card, { backgroundColor: palette.bg }]} onPress={card.onPress} testID={`epargne-card-${card.key}`}>
+                  <Text style={[styles.cardName, { color: palette.text }]} numberOfLines={1}>
+                    {card.name}
                   </Text>
+                  <Text style={[styles.cardMeta, { color: palette.textSecondary }]}>{card.meta}</Text>
+                  <Text style={[styles.cardAmount, { color: palette.text }]}>{formatDh(card.amount)}</Text>
+                  {card.extraLine ? <Text style={styles.cardExtra}>{card.extraLine}</Text> : null}
                 </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={styles.goalAddLink}
-                  onPress={() => setGoalTarget({ accountId: card.accountId, subaccountId: card.subaccountId, name: card.name, goal: null })}
-                  testID={`epargne-add-goal-${card.key}`}
-                >
-                  <Text style={styles.goalAddLinkText}>+ Définir un objectif</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          ))}
+                {card.goal ? (
+                  <TouchableOpacity
+                    style={styles.goalRow}
+                    onPress={() => setGoalTarget({ accountId: card.accountId, subaccountId: card.subaccountId, name: card.name, goal: card.goal })}
+                    testID={`epargne-goal-${card.key}`}
+                  >
+                    <View style={styles.goalBarTrack}>
+                      <View style={[styles.goalBarFill, { width: `${Math.min(100, card.goal.percent)}%` }]} />
+                    </View>
+                    <Text style={styles.goalText}>
+                      Objectif {formatDh(card.goal.targetAmount)} · {Math.round(card.goal.percent)}%
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.goalAddLink}
+                    onPress={() => setGoalTarget({ accountId: card.accountId, subaccountId: card.subaccountId, name: card.name, goal: null })}
+                    testID={`epargne-add-goal-${card.key}`}
+                  >
+                    <Text style={styles.goalAddLinkText}>+ Définir un objectif</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            );
+          })}
         </View>
       )}
 
@@ -258,15 +259,14 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -spacing.xs },
   cardSlot: { width: '50%', paddingHorizontal: spacing.xs, marginBottom: spacing.md },
   card: {
-    backgroundColor: colors.surface,
     borderRadius: radius.lg,
-    borderLeftWidth: 4,
     padding: spacing.md,
+    ...elevation.card,
   },
   cardName: { ...typography.body, fontWeight: '700' },
   cardMeta: { ...typography.caption, marginTop: 2 },
   cardAmount: { ...typography.amountSecondary, marginTop: spacing.sm },
-  cardExtra: { ...typography.caption, color: colors.warning, marginTop: spacing.xs },
+  cardExtra: { fontSize: 11, fontWeight: '700', color: '#FFFFFF', marginTop: spacing.xs },
   goalRow: { marginTop: spacing.xs, paddingHorizontal: spacing.xs },
   goalBarTrack: { height: 5, borderRadius: 3, backgroundColor: colors.surfaceSecondary, overflow: 'hidden' },
   goalBarFill: { height: 5, borderRadius: 3, backgroundColor: colors.success },

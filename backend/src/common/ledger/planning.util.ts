@@ -84,6 +84,8 @@ export interface PlanningRow {
   key: string;
   label: string;
   categoryId?: string;
+  /** Nom de la catégorie — PUR TITRE DE REGROUPEMENT visuel côté mobile (Lot ciblé §5), jamais une ligne financière : le montant reste toujours porté par la ligne (libellé), jamais par la catégorie. Absent quand l'opération n'a aucune catégorie. */
+  categoryLabel?: string;
   cells: Record<PlanningMonthKey, PlanningCell>;
 }
 
@@ -202,21 +204,23 @@ export function buildPlanningTable(params: {
   const depenseRows = new Map<string, PlanningRow>();
   const epargneRows = new Map<string, PlanningRow>();
 
-  const ensureRow = (map: Map<string, PlanningRow>, key: string, label: string, categoryId?: string): PlanningRow => {
+  const ensureRow = (map: Map<string, PlanningRow>, key: string, label: string, categoryId?: string, categoryLabel?: string): PlanningRow => {
     let row = map.get(key);
     if (!row) {
-      row = { key, label, categoryId, cells: {} };
+      row = { key, label, categoryId, categoryLabel, cells: {} };
       for (const m of months) row.cells[m] = emptyCell();
       map.set(key, row);
     }
     return row;
   };
 
-  // "Autres" toujours visible même vide (jamais les autres catégories vides).
   const fallback = categories.find((c) => c.isDefaultFallback);
-  if (fallback) ensureRow(depenseRows, fallback.id, fallback.name, fallback.id);
-
   const categoryById = new Map(categories.map((c) => [c.id, c]));
+
+  /** Clé de ligne (Lot ciblé §5) : une ligne = UN libellé, jamais une catégorie agrégée — la catégorie ne sert plus qu'à regrouper visuellement plusieurs lignes sous un même titre côté mobile. */
+  function labelRowKey(categoryId: string | undefined, label: string): string {
+    return `${categoryId ?? '∅'}::${label}`;
+  }
 
   for (const planned of plannedOperations) {
     if (planned.status === 'CANCELLED') continue;
@@ -233,7 +237,9 @@ export function buildPlanningTable(params: {
     };
 
     if (planned.kind === 'INCOME') {
-      const row = ensureRow(revenueRows, planned.label, planned.label);
+      const incomeCategoryId = planned.categoryId ?? undefined;
+      const incomeCategory = incomeCategoryId ? categoryById.get(incomeCategoryId) : undefined;
+      const row = ensureRow(revenueRows, labelRowKey(incomeCategoryId, planned.label), planned.label, incomeCategoryId, incomeCategory?.name);
       const cell = row.cells[mKey];
       if (planned.status === 'PENDING') {
         pushItem(cell, { type: 'PLANNED_PENDING', plannedOperationId: planned.id, label: planned.label, amount: toNumber(planned.expectedAmount), date: planned.expectedDate.toISOString(), ...plannedAccounts }, toNumber(planned.expectedAmount), toNumber(planned.expectedAmount));
@@ -252,7 +258,9 @@ export function buildPlanningTable(params: {
         : planned.destinationAccountId
           ? (accountNames.get(planned.destinationAccountId) ?? planned.label)
           : planned.label;
-      const row = ensureRow(epargneRows, key, label);
+      const savingsCategoryId = planned.categoryId ?? undefined;
+      const savingsCategory = savingsCategoryId ? categoryById.get(savingsCategoryId) : undefined;
+      const row = ensureRow(epargneRows, key, label, savingsCategoryId, savingsCategory?.name);
       const cell = row.cells[mKey];
       if (planned.status === 'PENDING') {
         pushItem(cell, { type: 'PLANNED_PENDING', plannedOperationId: planned.id, label: planned.label, amount: toNumber(planned.expectedAmount), date: planned.expectedDate.toISOString(), ...plannedAccounts }, toNumber(planned.expectedAmount), toNumber(planned.expectedAmount));
@@ -264,11 +272,13 @@ export function buildPlanningTable(params: {
       continue;
     }
 
-    // EXPENSE : groupé STRICTEMENT par catégorie (jamais une ligne par transaction).
+    // EXPENSE : une ligne par libellé (Lot ciblé §5) — la catégorie ne fait plus
+    // qu'un titre de regroupement affiché côté mobile, jamais une ligne fondant
+    // plusieurs libellés en un seul montant.
     const categoryId = planned.categoryId ?? fallback?.id;
     if (!categoryId) continue;
     const category = categoryById.get(categoryId);
-    const row = ensureRow(depenseRows, categoryId, category?.name ?? 'Autres', categoryId);
+    const row = ensureRow(depenseRows, labelRowKey(categoryId, planned.label), planned.label, categoryId, category?.name);
     const cell = row.cells[mKey];
     if (planned.status === 'PENDING') {
       pushItem(cell, { type: 'PLANNED_PENDING', plannedOperationId: planned.id, label: planned.label, amount: toNumber(planned.expectedAmount), date: planned.expectedDate.toISOString(), ...plannedAccounts }, toNumber(planned.expectedAmount), toNumber(planned.expectedAmount));
@@ -299,7 +309,9 @@ export function buildPlanningTable(params: {
     };
 
     if (op.kind === 'INCOME') {
-      const row = ensureRow(revenueRows, op.label, op.label);
+      const incomeCategoryId = op.categoryId ?? undefined;
+      const incomeCategory = incomeCategoryId ? categoryById.get(incomeCategoryId) : undefined;
+      const row = ensureRow(revenueRows, labelRowKey(incomeCategoryId, op.label), op.label, incomeCategoryId, incomeCategory?.name);
       pushItem(row.cells[mKey], { type: 'REAL_UNPLANNED', financialOperationId: op.id, label: op.label, amount, date: op.date.toISOString(), ...opAccounts }, amount, budget);
     } else if (op.kind === 'SAVINGS_CONTRIBUTION') {
       const key = op.destinationSubaccountId ?? op.destinationAccountId ?? op.label;
@@ -308,13 +320,15 @@ export function buildPlanningTable(params: {
         : op.destinationAccountId
           ? (accountNames.get(op.destinationAccountId) ?? op.label)
           : op.label;
-      const row = ensureRow(epargneRows, key, label);
+      const savingsCategoryId = op.categoryId ?? undefined;
+      const savingsCategory = savingsCategoryId ? categoryById.get(savingsCategoryId) : undefined;
+      const row = ensureRow(epargneRows, key, label, savingsCategoryId, savingsCategory?.name);
       pushItem(row.cells[mKey], { type: 'REAL_UNPLANNED', financialOperationId: op.id, label: op.label, amount, date: op.date.toISOString(), ...opAccounts }, amount, budget);
     } else if (op.kind === 'EXPENSE') {
       const categoryId = op.categoryId ?? fallback?.id;
       if (!categoryId) continue;
       const category = categoryById.get(categoryId);
-      const row = ensureRow(depenseRows, categoryId, category?.name ?? 'Autres', categoryId);
+      const row = ensureRow(depenseRows, labelRowKey(categoryId, op.label), op.label, categoryId, category?.name);
       pushItem(row.cells[mKey], { type: 'REAL_UNPLANNED', financialOperationId: op.id, label: op.label, amount, date: op.date.toISOString(), ...opAccounts }, amount, budget);
     }
   }
@@ -334,7 +348,17 @@ export function buildPlanningTable(params: {
     synthese[m] = { totalRevenus, totalDepenses, totalEpargne, balanceMensuelle, balanceCumulee: cumulative };
   }
 
-  const sortRows = (map: Map<string, PlanningRow>) => Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
+  // Tri : lignes catégorisées groupées par catégorie (ordre alphabétique du titre),
+  // puis les lignes sans catégorie en dernier — pour que le mobile puisse afficher
+  // des groupes contigus sans re-trier (Lot ciblé §5).
+  const sortRows = (map: Map<string, PlanningRow>) =>
+    Array.from(map.values()).sort((a, b) => {
+      if (!a.categoryLabel && !b.categoryLabel) return a.label.localeCompare(b.label);
+      if (!a.categoryLabel) return 1;
+      if (!b.categoryLabel) return -1;
+      const catCompare = a.categoryLabel.localeCompare(b.categoryLabel);
+      return catCompare !== 0 ? catCompare : a.label.localeCompare(b.label);
+    });
 
   return {
     months,

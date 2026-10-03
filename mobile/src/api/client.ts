@@ -181,6 +181,8 @@ export interface AccountApi {
   ownerMemberId: string | null;
   ownerLabel: string | null;
   active: boolean;
+  /** Couleur de carte choisie par l'utilisateur (Lot ciblé §1) — clé de palette prédéfinie, null si compte créé avant cette fonctionnalité. */
+  colorKey: string | null;
   balance: number;
   nonAffecte: number;
   subaccounts: SubaccountApi[];
@@ -191,7 +193,7 @@ export const listAccounts = (includeInactive = false): Promise<AccountApi[]> =>
   apiFetch(`/accounts${includeInactive ? '?includeInactive=true' : ''}`);
 export const getAccount = (id: string): Promise<AccountApi> => apiFetch(`/accounts/${id}`);
 
-export const createAccount = (data: { name: string; bank?: string; type?: string; ownerMemberId?: string; ownerLabel?: string; openingBalance?: string }) =>
+export const createAccount = (data: { name: string; bank?: string; type?: string; ownerMemberId?: string; ownerLabel?: string; openingBalance?: string; colorKey?: string }) =>
   apiFetch('/accounts', { method: 'POST', body: data });
 
 export const createSubaccount = (data: { accountId: string; name: string; initialAllocation?: string }) =>
@@ -204,7 +206,7 @@ export const renameSubaccount = (id: string, name: string): Promise<SubaccountAp
 /** Comptes (Organisation → Comptes, §7-§8) — édition complète + désactivation/réactivation logique, jamais de suppression physique. */
 export const updateAccount = (
   id: string,
-  data: { name?: string; bank?: string; type?: string; ownerMemberId?: string; ownerLabel?: string; active?: boolean },
+  data: { name?: string; bank?: string; type?: string; ownerMemberId?: string; ownerLabel?: string; active?: boolean; colorKey?: string },
 ): Promise<AccountApi> => apiFetch(`/accounts/${id}`, { method: 'PATCH', body: data });
 
 /** Épargne & sous-comptes (§9-§10) — renommage + désactivation/réactivation logique, jamais de suppression physique. */
@@ -460,6 +462,8 @@ export interface PlanningRowApi {
   key: string;
   label: string;
   categoryId?: string;
+  /** Titre de regroupement visuel uniquement (Lot ciblé §5) — jamais une ligne financière. */
+  categoryLabel?: string;
   cells: Record<string, PlanningCellApi>;
 }
 

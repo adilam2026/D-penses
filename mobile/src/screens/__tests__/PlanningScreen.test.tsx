@@ -84,7 +84,7 @@ it('changer d\'horizon relance getPlanning avec le nouveau nombre de mois', asyn
   await waitFor(() => expect(mockGetPlanning).toHaveBeenCalledWith(12));
 });
 
-it('case prévue (PENDING) : tap simple bascule directement en payé, sans confirmation, avec un toast', async () => {
+it('case prévue (PENDING) : tap simple ouvre un mini pop-up ; seul "Marquer comme payé" déclenche le paiement, avec un toast', async () => {
   mockGetPlanning.mockResolvedValue(
     basePlanning({
       depenses: [
@@ -113,15 +113,53 @@ it('case prévue (PENDING) : tap simple bascule directement en payé, sans confi
 
   renderWithSafeArea(<PlanningScreen />);
   await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
-  // Jamais de modale de confirmation (revert §1) : aucune boîte "Payer" à l'écran.
-  expect(screen.queryByTestId('planning-confirm-pay')).toBeNull();
 
   fireEvent.press(screen.getAllByTestId(/^planning-cell-/)[0]);
+  await waitFor(() => screen.getByTestId('planning-popup-confirm'));
+  // Le paiement n'a pas encore eu lieu tant que "Marquer comme payé" n'a pas été cliqué.
+  expect(mockRealizePlannedOperation).not.toHaveBeenCalled();
+
+  fireEvent.press(screen.getByTestId('planning-popup-confirm'));
   await waitFor(() => expect(mockRealizePlannedOperation).toHaveBeenCalledWith('po-1', { actualAmount: '700' }));
   await waitFor(() => screen.getByText('Transaction marquée comme payée'));
 });
 
-it('case déjà payée : tap simple bascule directement à venir, sans détail, avec un toast', async () => {
+it('case prévue : "Fermer" ferme le pop-up sans déclencher de paiement', async () => {
+  mockGetPlanning.mockResolvedValue(
+    basePlanning({
+      depenses: [
+        {
+          key: 'cat-voiture',
+          label: 'Voiture',
+          categoryId: 'cat-voiture',
+          cells: {
+            '2026-09': {
+              displayAmount: 700,
+              budgetAmount: 700,
+              pendingAmount: 700,
+              realizedAmount: 0,
+              status: 'PENDING',
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null },
+              items: [{ type: 'PLANNED_PENDING', plannedOperationId: 'po-1', label: 'Assurance voiture', amount: 700, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
+            },
+            '2026-10': emptyCell(),
+            '2026-11': emptyCell(),
+          },
+        },
+      ],
+    }),
+  );
+
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
+  fireEvent.press(screen.getAllByTestId(/^planning-cell-/)[0]);
+  await waitFor(() => screen.getByTestId('planning-popup-close'));
+  fireEvent.press(screen.getByTestId('planning-popup-close'));
+  await waitFor(() => expect(screen.queryByTestId('planning-popup-close')).toBeNull());
+  expect(mockRealizePlannedOperation).not.toHaveBeenCalled();
+});
+
+it('case déjà payée : tap simple ouvre un mini pop-up avec "Annuler le paiement", avec un toast après confirmation', async () => {
   mockGetPlanning.mockResolvedValue(
     basePlanning({
       depenses: [
@@ -151,6 +189,10 @@ it('case déjà payée : tap simple bascule directement à venir, sans détail, 
   renderWithSafeArea(<PlanningScreen />);
   await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
   fireEvent.press(screen.getAllByTestId(/^planning-cell-/)[0]);
+  await waitFor(() => screen.getByText('Annuler le paiement'));
+  expect(mockUnrealizePlannedOperation).not.toHaveBeenCalled();
+
+  fireEvent.press(screen.getByTestId('planning-popup-confirm'));
   await waitFor(() => expect(mockUnrealizePlannedOperation).toHaveBeenCalledWith('po-1'));
   await waitFor(() => screen.getByText('Transaction remise à venir'));
 });

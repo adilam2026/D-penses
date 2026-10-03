@@ -9,6 +9,8 @@ import { Select, SelectOption } from '../ui/Select';
 import { DateField } from '../ui/DateField';
 import { useBottomInset } from '../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
+import { AccountColorSwatchGrid } from '../ui/AccountColorPicker';
+import { ACCOUNT_COLOR_OPTIONS } from '../ui/accountPalette';
 
 type QuickMode = 'EXPENSE' | 'INCOME' | 'TRANSFER' | 'SAVINGS_CONTRIBUTION';
 type EntryTab = 'realisee' | 'a_venir';
@@ -312,6 +314,7 @@ function NewCategoryModal({ onClose, onCreated }: { onClose: () => void; onCreat
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
   const bottomInset = useBottomInset(spacing.lg);
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
 
   async function submit() {
     if (!name.trim() || saving) return;
@@ -329,13 +332,13 @@ function NewCategoryModal({ onClose, onCreated }: { onClose: () => void; onCreat
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
-      <View style={[styles.sheet, { paddingBottom: bottomInset }]}>
+      <ScrollView ref={scrollRef} style={styles.sheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
         <Text style={styles.sheetTitle}>Nouvelle catégorie</Text>
-        <FormField label="Nom" value={name} onChangeText={setName} testID="new-category-name" />
+        <FormField label="Nom" value={name} onChangeText={setName} onFocus={handleFocus} testID="new-category-name" />
         <TouchableOpacity style={[styles.submitButton, !name.trim() && styles.buttonDisabled]} disabled={!name.trim() || saving} onPress={submit} testID="new-category-submit">
           <Text style={styles.submitButtonText}>{saving ? 'Enregistrement…' : 'Créer'}</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     </Modal>
   );
 }
@@ -344,14 +347,16 @@ function NewAccountModal({ onClose, onCreated }: { onClose: () => void; onCreate
   const [name, setName] = useState('');
   const [bank, setBank] = useState('');
   const [openingBalance, setOpeningBalance] = useState('');
+  const [colorKey, setColorKey] = useState<string | null>(ACCOUNT_COLOR_OPTIONS[0].key);
   const [saving, setSaving] = useState(false);
   const bottomInset = useBottomInset(spacing.lg);
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
 
   async function submit() {
     if (!name.trim() || saving) return;
     setSaving(true);
     try {
-      const acc = await api.createAccount({ name: name.trim(), bank: bank.trim() || undefined, openingBalance: openingBalance.trim() || undefined });
+      const acc = await api.createAccount({ name: name.trim(), bank: bank.trim() || undefined, openingBalance: openingBalance.trim() || undefined, colorKey: colorKey ?? undefined });
       onCreated(acc);
       setName('');
       setBank('');
@@ -365,15 +370,16 @@ function NewAccountModal({ onClose, onCreated }: { onClose: () => void; onCreate
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
-      <View style={[styles.sheet, { paddingBottom: bottomInset }]}>
+      <ScrollView ref={scrollRef} style={styles.sheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
         <Text style={styles.sheetTitle}>Créer un compte</Text>
-        <FormField label="Nom" value={name} onChangeText={setName} testID="new-account-name" />
-        <FormField label="Banque (optionnel)" value={bank} onChangeText={setBank} />
-        <FormField label="Solde d'ouverture (optionnel)" value={openingBalance} onChangeText={setOpeningBalance} keyboardType="decimal-pad" />
+        <FormField label="Nom" value={name} onChangeText={setName} onFocus={handleFocus} testID="new-account-name" />
+        <FormField label="Banque (optionnel)" value={bank} onChangeText={setBank} onFocus={handleFocus} />
+        <FormField label="Solde d'ouverture (optionnel)" value={openingBalance} onChangeText={setOpeningBalance} onFocus={handleFocus} keyboardType="decimal-pad" />
+        <AccountColorSwatchGrid selected={colorKey} onSelect={setColorKey} />
         <TouchableOpacity style={[styles.submitButton, !name.trim() && styles.buttonDisabled]} disabled={!name.trim() || saving} onPress={submit} testID="new-account-submit">
           <Text style={styles.submitButtonText}>{saving ? 'Enregistrement…' : 'Créer'}</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     </Modal>
   );
 }
@@ -392,6 +398,7 @@ function NewSubaccountModal({
   const [initialAllocation, setInitialAllocation] = useState('');
   const [saving, setSaving] = useState(false);
   const bottomInset = useBottomInset(spacing.lg);
+  const { scrollRef, handleFocus } = useKeyboardAwareScroll();
 
   async function submit() {
     if (!accountId || !name.trim() || saving) return;
@@ -411,11 +418,11 @@ function NewSubaccountModal({
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
-      <View style={[styles.sheet, { paddingBottom: bottomInset }]}>
+      <ScrollView ref={scrollRef} style={styles.sheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
         <Text style={styles.sheetTitle}>Créer un sous-compte</Text>
         <Select label="Compte parent" value={accountId} options={accounts.map((a) => ({ value: a.id, label: a.name }))} onChange={setAccountId} testID="new-subaccount-account" />
-        <FormField label="Nom" value={name} onChangeText={setName} testID="new-subaccount-name" />
-        <FormField label="Allocation initiale (optionnel)" value={initialAllocation} onChangeText={setInitialAllocation} keyboardType="decimal-pad" />
+        <FormField label="Nom" value={name} onChangeText={setName} onFocus={handleFocus} testID="new-subaccount-name" />
+        <FormField label="Allocation initiale (optionnel)" value={initialAllocation} onChangeText={setInitialAllocation} onFocus={handleFocus} keyboardType="decimal-pad" />
         <TouchableOpacity
           style={[styles.submitButton, (!accountId || !name.trim()) && styles.buttonDisabled]}
           disabled={!accountId || !name.trim() || saving}
@@ -424,7 +431,7 @@ function NewSubaccountModal({
         >
           <Text style={styles.submitButtonText}>{saving ? 'Enregistrement…' : 'Créer'}</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     </Modal>
   );
 }
@@ -479,6 +486,6 @@ const styles = StyleSheet.create({
   linkText: { ...typography.body, color: colors.primary, fontWeight: '600', marginBottom: spacing.md },
   accountHint: { ...typography.caption, marginTop: -4, marginBottom: spacing.md },
   backdrop: { flex: 1, backgroundColor: 'rgba(23,36,54,0.4)' },
-  sheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 6, borderTopRightRadius: radius.xl + 6, padding: spacing.xl },
+  sheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 6, borderTopRightRadius: radius.xl + 6, padding: spacing.xl, maxHeight: '85%' },
   sheetTitle: { ...typography.sectionTitle, marginBottom: spacing.lg },
 });

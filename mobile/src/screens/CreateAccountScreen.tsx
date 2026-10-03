@@ -9,6 +9,8 @@ import { colors, elevation, radius, spacing, typography } from '../ui/theme';
 import { FormField } from '../ui/FormField';
 import { Select } from '../ui/Select';
 import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
+import { AccountColorSwatchGrid } from '../ui/AccountColorPicker';
+import { ACCOUNT_COLOR_OPTIONS } from '../ui/accountPalette';
 
 const ACCOUNT_TYPE_OPTIONS = [
   { value: 'COURANT', label: 'Courant' },
@@ -33,6 +35,7 @@ export function CreateAccountScreen() {
   const [bank, setBank] = useState('');
   const [type, setType] = useState('COURANT');
   const [openingBalance, setOpeningBalance] = useState('');
+  const [colorKey, setColorKey] = useState<string | null>(ACCOUNT_COLOR_OPTIONS[0].key);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdName, setCreatedName] = useState<string | null>(null);
@@ -42,6 +45,7 @@ export function CreateAccountScreen() {
     setBank('');
     setType('COURANT');
     setOpeningBalance('');
+    setColorKey(ACCOUNT_COLOR_OPTIONS[0].key);
     setCreatedName(null);
     setError(null);
   }
@@ -56,6 +60,7 @@ export function CreateAccountScreen() {
         bank: bank.trim() || undefined,
         type,
         openingBalance: openingBalance.trim() || undefined,
+        colorKey: colorKey ?? undefined,
       });
       setCreatedName(name.trim());
     } catch (err) {
@@ -110,6 +115,9 @@ export function CreateAccountScreen() {
         helperText="Le solde de départ crée automatiquement une opération d'ouverture — il n'est jamais modifiable directement ensuite."
       />
 
+      <Text style={styles.colorLabel}>Couleur de la carte</Text>
+      <AccountColorSwatchGrid selected={colorKey} onSelect={setColorKey} />
+
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <TouchableOpacity
@@ -130,6 +138,7 @@ const styles = StyleSheet.create({
   backRow: { flexDirection: 'row', alignItems: 'center' },
   backLabel: { ...typography.body, fontWeight: '600', marginLeft: 2 },
   title: { ...typography.screenTitle, marginBottom: spacing.lg },
+  colorLabel: { ...typography.sectionLabel, color: colors.textSecondary, marginBottom: spacing.sm },
   error: { color: colors.danger, fontSize: 13, marginBottom: spacing.sm, fontWeight: '600' },
   primaryButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginTop: spacing.sm, ...elevation.button },
   primaryButtonText: { color: colors.textOnPrimary, fontWeight: '700', fontSize: 14 },

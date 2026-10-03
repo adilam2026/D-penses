@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { useTopInset } from '../ui/useTopInset';
 import { useBottomInset } from '../ui/useBottomInset';
-import { colors, radius, spacing, typography } from '../ui/theme';
+import { colors, elevation, radius, spacing, typography } from '../ui/theme';
 import { formatDh, formatShortDate } from '../ui/formatMoney';
 import { OPERATION_KIND_LABELS, localAmount } from '../ui/operationKindLabel';
 import { ChoiceSheet } from '../ui/ChoiceSheet';
@@ -13,12 +13,14 @@ import { RenameModal } from '../ui/RenameModal';
 import { HelpButton } from '../ui/HelpButton';
 import { isSanteSubaccount } from '../ui/santeDetection';
 import { testIdSlug } from '../ui/testIdSlug';
+import { paletteForAccount } from '../ui/accountPalette';
 
 /**
- * Détail sous-compte — même écran très simple que Détail compte (§9), avec
- * "Disponible" au lieu de "Solde" et un item de menu supplémentaire "Ajouter
- * de l'argent". Le sous-compte Santé n'utilise jamais cet écran (redirection
- * vers Health, cf. maquette : la ligne "Santé" ouvre directement l'écran dédié).
+ * Détail sous-compte (Lot ciblé §3) — carte de synthèse en relief (couleur du
+ * compte parent, compte parent nommé, disponible très visible) puis
+ * "Historique des transactions" dans sa propre section. "Ajouter de l'argent"
+ * en item de menu supplémentaire. Le sous-compte Santé n'utilise jamais cet
+ * écran (redirection vers Health).
  */
 export function SubaccountDetailScreen() {
   const navigation = useNavigation<any>();
@@ -62,6 +64,8 @@ export function SubaccountDetailScreen() {
     );
   }
 
+  const palette = paletteForAccount(account.colorKey, 0);
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView style={[styles.container, { paddingTop: topInset }]} contentContainerStyle={{ paddingBottom: bottomInset + spacing.xxl }}>
@@ -81,41 +85,42 @@ export function SubaccountDetailScreen() {
           </View>
         </View>
 
-        <Text style={styles.title}>{subaccount.name}</Text>
-        <Text style={styles.subtitle}>Rattaché à {account.name}{subaccount.active ? '' : ' · Désactivé'}</Text>
-
-        <View style={styles.balanceCard}>
-          <Text style={styles.balanceLabel}>Disponible</Text>
-          <Text style={styles.balanceAmount}>{formatDh(subaccount.balance)}</Text>
+        <View style={[styles.balanceCard, { backgroundColor: palette.bg }]}>
+          <Text style={[styles.title, { color: palette.text }]}>{subaccount.name}</Text>
+          <Text style={[styles.subtitle, { color: palette.textSecondary }]}>Rattaché à {account.name}{subaccount.active ? '' : ' · Désactivé'}</Text>
+          <Text style={[styles.balanceLabel, { color: palette.textSecondary }]}>Disponible</Text>
+          <Text style={[styles.balanceAmount, { color: palette.text }]}>{formatDh(subaccount.balance)}</Text>
         </View>
 
-        <Text style={styles.sectionLabel}>HISTORIQUE DES TRANSACTIONS</Text>
-        {(operations ?? []).length === 0 ? (
-          <Text style={styles.emptyText}>Aucune transaction pour l'instant.</Text>
-        ) : (
-          (operations ?? []).map((op) => {
-            const amount = localAmount(op.ledgerEntries, { subaccountId: id });
-            return (
-              <TouchableOpacity
-                key={op.id}
-                style={styles.opRow}
-                onPress={() => navigation.navigate('TransactionDetail', { id: op.id, subaccountId: id })}
-                testID={`transaction-row-${testIdSlug(op.label)}`}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.opLabel}>{op.label}</Text>
-                  <Text style={styles.opMeta}>
-                    {formatShortDate(op.date)} · {OPERATION_KIND_LABELS[op.kind]}
+        <View style={styles.historyCard}>
+          <Text style={styles.sectionLabel}>HISTORIQUE DES TRANSACTIONS</Text>
+          {(operations ?? []).length === 0 ? (
+            <Text style={styles.emptyText}>Aucune transaction pour l'instant.</Text>
+          ) : (
+            (operations ?? []).map((op) => {
+              const amount = localAmount(op.ledgerEntries, { subaccountId: id });
+              return (
+                <TouchableOpacity
+                  key={op.id}
+                  style={styles.opRow}
+                  onPress={() => navigation.navigate('TransactionDetail', { id: op.id, subaccountId: id })}
+                  testID={`transaction-row-${testIdSlug(op.label)}`}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.opLabel}>{op.label}</Text>
+                    <Text style={styles.opMeta}>
+                      {formatShortDate(op.date)} · {OPERATION_KIND_LABELS[op.kind]}
+                    </Text>
+                  </View>
+                  <Text style={[styles.opAmount, amount > 0 ? styles.opAmountPlus : amount < 0 ? styles.opAmountMinus : null]}>
+                    {amount > 0 ? '+' : ''}
+                    {formatDh(amount)}
                   </Text>
-                </View>
-                <Text style={[styles.opAmount, amount > 0 ? styles.opAmountPlus : amount < 0 ? styles.opAmountMinus : null]}>
-                  {amount > 0 ? '+' : ''}
-                  {formatDh(amount)}
-                </Text>
-              </TouchableOpacity>
-            );
-          })
-        )}
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </View>
       </ScrollView>
 
       <ChoiceSheet
@@ -190,23 +195,29 @@ const styles = StyleSheet.create({
   backRow: { flexDirection: 'row', alignItems: 'center' },
   backLabel: { ...typography.body, fontWeight: '600', marginLeft: 2 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  title: { ...typography.screenTitle, paddingHorizontal: spacing.lg },
-  subtitle: { ...typography.bodySecondary, paddingHorizontal: spacing.lg, marginBottom: spacing.lg },
+  title: { ...typography.screenTitle },
+  subtitle: { ...typography.bodySecondary, marginBottom: spacing.lg },
   balanceCard: {
-    backgroundColor: colors.surface,
     borderRadius: radius.xl,
     padding: spacing.xl,
     marginHorizontal: spacing.lg,
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
+    ...elevation.raised,
   },
   balanceLabel: { ...typography.bodySecondary, marginBottom: spacing.xs },
   balanceAmount: { ...typography.amountPrimary },
-  sectionLabel: { ...typography.sectionLabel, color: colors.textSecondary, paddingHorizontal: spacing.lg, marginBottom: spacing.sm, letterSpacing: 0.5 },
-  emptyText: { ...typography.bodySecondary, paddingHorizontal: spacing.lg },
+  historyCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    marginHorizontal: spacing.lg,
+    ...elevation.card,
+  },
+  sectionLabel: { ...typography.sectionLabel, color: colors.textSecondary, marginBottom: spacing.sm, letterSpacing: 0.5 },
+  emptyText: { ...typography.bodySecondary },
   opRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.divider,

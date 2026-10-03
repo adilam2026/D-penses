@@ -5,18 +5,21 @@ import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { useTopInset } from '../ui/useTopInset';
 import { useBottomInset } from '../ui/useBottomInset';
-import { colors, radius, spacing, typography } from '../ui/theme';
+import { colors, elevation, radius, spacing, typography } from '../ui/theme';
 import { formatDh, formatShortDate } from '../ui/formatMoney';
 import { OPERATION_KIND_LABELS, localAmount } from '../ui/operationKindLabel';
 import { ChoiceSheet } from '../ui/ChoiceSheet';
 import { RenameModal } from '../ui/RenameModal';
+import { ColorPickerModal } from '../ui/ColorPickerModal';
 import { HelpButton } from '../ui/HelpButton';
 import { testIdSlug } from '../ui/testIdSlug';
+import { paletteForAccount } from '../ui/accountPalette';
 
 /**
- * Détail compte — écran TRÈS SIMPLE (validation Checkpoint 2 §8) : nom, solde,
- * historique des transactions, rien d'autre. Menu ⋯ : Modifier / Ajouter une
- * transaction / Désactiver (non disponible — pas de champ "actif" côté schéma).
+ * Détail compte (Lot ciblé §3) — carte de synthèse en relief (couleur du
+ * compte, solde très visible) puis "Historique des transactions" dans sa
+ * propre section visuelle. Menu ⋯ : Modifier / Couleur de la carte / Ajouter
+ * une transaction / Désactiver.
  */
 export function AccountDetailScreen() {
   const navigation = useNavigation<any>();
@@ -29,6 +32,7 @@ export function AccountDetailScreen() {
   const [operations, setOperations] = useState<api.FinancialOperationApi[] | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [colorOpen, setColorOpen] = useState(false);
 
   const load = useCallback(async () => {
     const [acc, ops] = await Promise.all([api.getAccount(id), api.listFinancialOperations({ accountId: id })]);
@@ -50,6 +54,8 @@ export function AccountDetailScreen() {
     );
   }
 
+  const palette = paletteForAccount(account.colorKey, 0);
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView style={[styles.container, { paddingTop: topInset }]} contentContainerStyle={{ paddingBottom: bottomInset + spacing.xxl }}>
@@ -69,41 +75,42 @@ export function AccountDetailScreen() {
           </View>
         </View>
 
-        <Text style={styles.title}>{account.name}</Text>
-        <Text style={styles.subtitle}>Compte bancaire{account.active ? '' : ' · Désactivé'}</Text>
-
-        <View style={styles.balanceCard}>
-          <Text style={styles.balanceLabel}>Solde</Text>
-          <Text style={styles.balanceAmount}>{formatDh(account.balance)}</Text>
+        <View style={[styles.balanceCard, { backgroundColor: palette.bg }]}>
+          <Text style={[styles.title, { color: palette.text }]}>{account.name}</Text>
+          <Text style={[styles.subtitle, { color: palette.textSecondary }]}>Compte bancaire{account.active ? '' : ' · Désactivé'}</Text>
+          <Text style={[styles.balanceLabel, { color: palette.textSecondary }]}>Solde</Text>
+          <Text style={[styles.balanceAmount, { color: palette.text }]}>{formatDh(account.balance)}</Text>
         </View>
 
-        <Text style={styles.sectionLabel}>HISTORIQUE DES TRANSACTIONS</Text>
-        {(operations ?? []).length === 0 ? (
-          <Text style={styles.emptyText}>Aucune transaction pour l'instant.</Text>
-        ) : (
-          (operations ?? []).map((op) => {
-            const amount = localAmount(op.ledgerEntries, { accountId: id });
-            return (
-              <TouchableOpacity
-                key={op.id}
-                style={styles.opRow}
-                onPress={() => navigation.navigate('TransactionDetail', { id: op.id, accountId: id })}
-                testID={`transaction-row-${testIdSlug(op.label)}`}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.opLabel}>{op.label}</Text>
-                  <Text style={styles.opMeta}>
-                    {formatShortDate(op.date)} · {OPERATION_KIND_LABELS[op.kind]}
+        <View style={styles.historyCard}>
+          <Text style={styles.sectionLabel}>HISTORIQUE DES TRANSACTIONS</Text>
+          {(operations ?? []).length === 0 ? (
+            <Text style={styles.emptyText}>Aucune transaction pour l'instant.</Text>
+          ) : (
+            (operations ?? []).map((op) => {
+              const amount = localAmount(op.ledgerEntries, { accountId: id });
+              return (
+                <TouchableOpacity
+                  key={op.id}
+                  style={styles.opRow}
+                  onPress={() => navigation.navigate('TransactionDetail', { id: op.id, accountId: id })}
+                  testID={`transaction-row-${testIdSlug(op.label)}`}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.opLabel}>{op.label}</Text>
+                    <Text style={styles.opMeta}>
+                      {formatShortDate(op.date)} · {OPERATION_KIND_LABELS[op.kind]}
+                    </Text>
+                  </View>
+                  <Text style={[styles.opAmount, amount > 0 ? styles.opAmountPlus : amount < 0 ? styles.opAmountMinus : null]}>
+                    {amount > 0 ? '+' : ''}
+                    {formatDh(amount)}
                   </Text>
-                </View>
-                <Text style={[styles.opAmount, amount > 0 ? styles.opAmountPlus : amount < 0 ? styles.opAmountMinus : null]}>
-                  {amount > 0 ? '+' : ''}
-                  {formatDh(amount)}
-                </Text>
-              </TouchableOpacity>
-            );
-          })
-        )}
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </View>
       </ScrollView>
 
       <ChoiceSheet
@@ -113,6 +120,7 @@ export function AccountDetailScreen() {
         testID="account-detail-choice-sheet"
         options={[
           { key: 'edit', label: 'Modifier', icon: 'create-outline', onPress: () => setRenameOpen(true) },
+          { key: 'color', label: 'Couleur de la carte', icon: 'color-palette-outline', onPress: () => setColorOpen(true) },
           {
             key: 'add-transaction',
             label: 'Ajouter une transaction',
@@ -152,6 +160,17 @@ export function AccountDetailScreen() {
           await load();
         }}
       />
+
+      <ColorPickerModal
+        visible={colorOpen}
+        title="Couleur de la carte"
+        initialColorKey={account.colorKey}
+        onClose={() => setColorOpen(false)}
+        onSubmit={async (colorKey) => {
+          await api.updateAccount(account.id, { colorKey });
+          await load();
+        }}
+      />
     </View>
   );
 }
@@ -163,23 +182,32 @@ const styles = StyleSheet.create({
   backRow: { flexDirection: 'row', alignItems: 'center' },
   backLabel: { ...typography.body, fontWeight: '600', marginLeft: 2 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  title: { ...typography.screenTitle, paddingHorizontal: spacing.lg },
-  subtitle: { ...typography.bodySecondary, paddingHorizontal: spacing.lg, marginBottom: spacing.lg },
+  title: { ...typography.screenTitle },
+  subtitle: { ...typography.bodySecondary, marginBottom: spacing.lg },
+  // Carte de synthèse en relief, colorée par compte (Lot ciblé §3) — remplace
+  // l'ancien enchaînement nom/solde à plat sur fond blanc.
   balanceCard: {
-    backgroundColor: colors.surface,
     borderRadius: radius.xl,
     padding: spacing.xl,
     marginHorizontal: spacing.lg,
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
+    ...elevation.raised,
   },
   balanceLabel: { ...typography.bodySecondary, marginBottom: spacing.xs },
   balanceAmount: { ...typography.amountPrimary },
-  sectionLabel: { ...typography.sectionLabel, color: colors.textSecondary, paddingHorizontal: spacing.lg, marginBottom: spacing.sm, letterSpacing: 0.5 },
-  emptyText: { ...typography.bodySecondary, paddingHorizontal: spacing.lg },
+  // "Historique des transactions" dans sa propre section visuelle (Lot ciblé §3).
+  historyCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    marginHorizontal: spacing.lg,
+    ...elevation.card,
+  },
+  sectionLabel: { ...typography.sectionLabel, color: colors.textSecondary, marginBottom: spacing.sm, letterSpacing: 0.5 },
+  emptyText: { ...typography.bodySecondary },
   opRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.divider,

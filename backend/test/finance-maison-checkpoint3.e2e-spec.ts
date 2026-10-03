@@ -68,8 +68,12 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
     return new Date().toISOString().slice(0, 10);
   }
 
+  // Depuis le Lot ciblé §5, une ligne "depenses" = un libellé (plus une catégorie
+  // agrégée) : on retrouve la ligne par categoryId plutôt que par key, ce qui
+  // reste valable tant qu'un seul libellé existe pour cette catégorie dans le
+  // test (cas de tous les tests ci-dessous). revenus/epargne inchangés (key stable).
   function findCell(planning: any, block: 'depenses' | 'revenus' | 'epargne', rowKey: string, monthIndex = 0) {
-    const row = planning[block].find((r: any) => r.key === rowKey);
+    const row = block === 'depenses' ? planning[block].find((r: any) => r.categoryId === rowKey) : planning[block].find((r: any) => r.key === rowKey);
     if (!row) return undefined;
     const month = planning.months[monthIndex];
     return row.cells[month];

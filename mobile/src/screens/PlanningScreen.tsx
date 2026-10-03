@@ -19,6 +19,7 @@ const MONTH_WIDTH = 108;
 const ROW_HEIGHT = 46;
 const SECTION_HEIGHT = 30;
 const HEADER_HEIGHT = 40;
+const CATEGORY_HEADER_HEIGHT = 24;
 const TOAST_DURATION_MS = 1800;
 
 interface BlockDef {
@@ -29,6 +30,34 @@ interface BlockDef {
   emptyText: string;
   /** Teinte de section (§7, lisibilité visuelle uniquement — aucune logique) : distingue REVENUS/DÉPENSES/ÉPARGNE d'un coup d'œil. */
   accentColor: string;
+  /** Titre affiché pour les lignes sans catégorie QUAND le bloc contient aussi des lignes catégorisées (Lot ciblé §5). */
+  uncategorizedLabel: string;
+}
+
+type BlockItem = { kind: 'header'; label: string } | { kind: 'row'; row: api.PlanningRowApi };
+
+/**
+ * Regroupe les lignes d'un bloc par catégorie (Lot ciblé §5) — la catégorie
+ * est un PUR TITRE VISUEL inséré entre les lignes, jamais une ligne portant un
+ * montant. Si AUCUNE ligne du bloc n'a de catégorie, aucun titre n'est inséré
+ * (comportement plat inchangé). Les lignes arrivent déjà groupées par
+ * catégorie (tri backend) : un seul passage suffit.
+ */
+function buildBlockItems(rows: api.PlanningRowApi[], uncategorizedLabel: string): BlockItem[] {
+  if (!rows.some((r) => r.categoryLabel)) return rows.map((row) => ({ kind: 'row', row }));
+  const items: BlockItem[] = [];
+  let currentHeader: string | undefined;
+  let started = false;
+  for (const row of rows) {
+    const header = row.categoryLabel ?? uncategorizedLabel;
+    if (!started || header !== currentHeader) {
+      items.push({ kind: 'header', label: header });
+      currentHeader = header;
+      started = true;
+    }
+    items.push({ kind: 'row', row });
+  }
+  return items;
 }
 
 function accountLabel(accounts: api.AccountApi[], accountId: string | null, subaccountId: string | null): string {
@@ -64,12 +93,9 @@ export function PlanningScreen() {
   const [adjustTarget, setAdjustTarget] = useState<{ cell: api.PlanningCellApi; rowLabel: string } | null>(null);
   const [detailTarget, setDetailTarget] = useState<{ cell: api.PlanningCellApi; rowLabel: string; month: string } | null>(null);
   const [realizedMenuTarget, setRealizedMenuTarget] = useState<{ cell: api.PlanningCellApi; rowLabel: string } | null>(null);
+  const [payPopupTarget, setPayPopupTarget] = useState<{ cell: api.PlanningCellApi; rowLabel: string } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Verrou anti-double-tap (§1) : le tap simple agit immédiatement, sans
-  // confirmation — évite un double realize/unrealize si l'utilisateur retape
-  // avant que la liste ait rafraîchi.
-  const togglingRef = useRef<Set<string>>(new Set());
 
   const load = useCallback(async (h: number) => {
     const [planning, accountList, planList] = await Promise.all([api.getPlanning(h), api.listAccounts(), api.listFinancialPlans()]);
@@ -96,33 +122,20 @@ export function PlanningScreen() {
   }
 
   /**
-   * Tap simple (§1, revert de l'évolution chevron) : sur une occurrence
-   * unique, bascule directement payé <-> à venir, sans étape de confirmation
-   * — feedback par toast plutôt que par modale. Sur une case agrégée
-   * (plusieurs opérations), ouvre toujours le détail — impossible de savoir
-   * laquelle basculer sans ambiguïté.
+   * Tap simple (Lot ciblé §4, retour au mini pop-up) : sur une occurrence
+   * unique, ouvre un petit pop-up de confirmation ([Marquer comme payé] ou
+   * [Annuler le paiement] + [Fermer]) — le paiement n'est effectué qu'après
+   * confirmation explicite. Sur une case agrégée (plusieurs opérations),
+   * ouvre toujours le détail — impossible de savoir laquelle basculer sans
+   * ambiguïté.
    */
-  async function onCellPress(cell: api.PlanningCellApi, rowLabel: string) {
+  function onCellPress(cell: api.PlanningCellApi, rowLabel: string) {
     if (cell.status === 'EMPTY') return;
-    const occ = cell.singleOccurrence;
-    if (!occ) {
+    if (!cell.singleOccurrence) {
       setDetailTarget({ cell, rowLabel, month: '' });
       return;
     }
-    if (togglingRef.current.has(occ.plannedOperationId)) return;
-    togglingRef.current.add(occ.plannedOperationId);
-    try {
-      if (occ.status === 'PENDING') {
-        await api.realizePlannedOperation(occ.plannedOperationId, { actualAmount: String(occ.expectedAmount) });
-        showToast('Transaction marquée comme payée');
-      } else {
-        await api.unrealizePlannedOperation(occ.plannedOperationId);
-        showToast('Transaction remise à venir');
-      }
-      await refresh();
-    } finally {
-      togglingRef.current.delete(occ.plannedOperationId);
-    }
+    setPayPopupTarget({ cell, rowLabel });
   }
 
   /** Appui long (§1) : ouvre le détail/modifier — jamais le toggle direct. */
@@ -149,10 +162,11 @@ export function PlanningScreen() {
   if (!data) return null;
 
   const blocks: BlockDef[] = [
-    { title: 'REVENUS', rows: data.revenus, totalLabel: 'TOTAL REVENUS', totalKey: 'totalRevenus', emptyText: 'Aucun revenu prévu.', accentColor: colors.success },
-    { title: 'DÉPENSES', rows: data.depenses, totalLabel: 'TOTAL DÉPENSES', totalKey: 'totalDepenses', emptyText: 'Aucune dépense prévue.', accentColor: colors.danger },
-    { title: 'ÉPARGNE / VERSEMENTS', rows: data.epargne, totalLabel: 'TOTAL ÉPARGNE', totalKey: 'totalEpargne', emptyText: 'Aucun versement prévu.', accentColor: colors.primary },
+    { title: 'REVENUS', rows: data.revenus, totalLabel: 'TOTAL REVENUS', totalKey: 'totalRevenus', emptyText: 'Aucun revenu prévu.', accentColor: colors.success, uncategorizedLabel: 'AUTRES REVENUS SANS CATÉGORIE' },
+    { title: 'DÉPENSES', rows: data.depenses, totalLabel: 'TOTAL DÉPENSES', totalKey: 'totalDepenses', emptyText: 'Aucune dépense prévue.', accentColor: colors.danger, uncategorizedLabel: 'AUTRES DÉPENSES SANS CATÉGORIE' },
+    { title: 'ÉPARGNE / VERSEMENTS', rows: data.epargne, totalLabel: 'TOTAL ÉPARGNE', totalKey: 'totalEpargne', emptyText: 'Aucun versement prévu.', accentColor: colors.primary, uncategorizedLabel: 'AUTRES VERSEMENTS SANS CATÉGORIE' },
   ];
+  const blockItemsByTitle = new Map(blocks.map((b) => [b.title, buildBlockItems(b.rows, b.uncategorizedLabel)]));
 
   return (
     <View style={styles.container}>
@@ -191,13 +205,23 @@ export function PlanningScreen() {
                     </Text>
                   </View>
                 ) : (
-                  block.rows.map((row) => (
-                    <View key={row.key} style={[styles.labelCell, { height: ROW_HEIGHT }]}>
-                      <Text style={styles.rowLabelText} numberOfLines={2}>
-                        {row.label}
-                      </Text>
-                    </View>
-                  ))
+                  (blockItemsByTitle.get(block.title) ?? []).map((item, idx) =>
+                    item.kind === 'header' ? (
+                      // Titre de regroupement catégorie (Lot ciblé §5) — PUR AFFICHAGE :
+                      // jamais de montant, jamais tappable, jamais de chevron.
+                      <View key={`h-${idx}`} style={[styles.categoryHeaderCell, { height: CATEGORY_HEADER_HEIGHT }]}>
+                        <Text style={styles.categoryHeaderText} numberOfLines={1}>
+                          {item.label}
+                        </Text>
+                      </View>
+                    ) : (
+                      <View key={item.row.key} style={[styles.labelCell, { height: ROW_HEIGHT }]}>
+                        <Text style={styles.rowLabelText} numberOfLines={2}>
+                          {item.row.label}
+                        </Text>
+                      </View>
+                    ),
+                  )
                 )}
                 <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: block.accentColor }]}>
                   <Text style={styles.totalLabelText}>{block.totalLabel}</Text>
@@ -237,19 +261,27 @@ export function PlanningScreen() {
                           ))}
                         </View>,
                       ]
-                    : block.rows.map((row) => (
-                        <View key={row.key} style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                          {data.months.map((m) => (
-                            <PlanningCellView
-                              key={m}
-                              cell={row.cells[m]}
-                              onPress={() => onCellPress(row.cells[m], row.label)}
-                              onLongPress={() => onCellLongPress(row.cells[m], row.label)}
-                              testID={`planning-cell-${testIdSlug(row.label)}-${m}`}
-                            />
-                          ))}
-                        </View>
-                      ))}
+                    : (blockItemsByTitle.get(block.title) ?? []).map((item, idx) =>
+                        item.kind === 'header' ? (
+                          <View key={`h-${idx}`} style={{ flexDirection: 'row', height: CATEGORY_HEADER_HEIGHT }}>
+                            {data.months.map((m) => (
+                              <View key={m} style={[styles.categoryHeaderSpacerCell, { width: MONTH_WIDTH }]} />
+                            ))}
+                          </View>
+                        ) : (
+                          <View key={item.row.key} style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
+                            {data.months.map((m) => (
+                              <PlanningCellView
+                                key={m}
+                                cell={item.row.cells[m]}
+                                onPress={() => onCellPress(item.row.cells[m], item.row.label)}
+                                onLongPress={() => onCellLongPress(item.row.cells[m], item.row.label)}
+                                testID={`planning-cell-${testIdSlug(item.row.label)}-${m}`}
+                              />
+                            ))}
+                          </View>
+                        ),
+                      )}
                   <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
                     {data.months.map((m) => (
                       <View key={m} style={[styles.totalCell, { width: MONTH_WIDTH }]}>
@@ -342,8 +374,75 @@ export function PlanningScreen() {
         ]}
       />
 
+      <PayPopupModal
+        target={payPopupTarget}
+        onClose={() => setPayPopupTarget(null)}
+        onConfirmed={async (message) => {
+          setPayPopupTarget(null);
+          showToast(message);
+          await refresh();
+        }}
+      />
+
       <Toast message={toast} />
     </View>
+  );
+}
+
+/**
+ * Mini pop-up de confirmation (Lot ciblé §4) — sur une occurrence unique :
+ * [Marquer comme payé] si PENDING, [Annuler le paiement] si REALIZED, + un
+ * [Fermer] toujours disponible. Le paiement/l'annulation n'a lieu qu'après ce
+ * clic explicite ; le toast existant confirme ensuite l'action.
+ */
+function PayPopupModal({
+  target,
+  onClose,
+  onConfirmed,
+}: {
+  target: { cell: api.PlanningCellApi; rowLabel: string } | null;
+  onClose: () => void;
+  onConfirmed: (message: string) => Promise<void>;
+}) {
+  const [saving, setSaving] = useState(false);
+  if (!target || !target.cell.singleOccurrence) return null;
+  const occ = target.cell.singleOccurrence;
+  const isPending = occ.status === 'PENDING';
+
+  async function confirm() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      if (isPending) {
+        await api.realizePlannedOperation(occ.plannedOperationId, { actualAmount: String(occ.expectedAmount) });
+        await onConfirmed('Transaction marquée comme payée');
+      } else {
+        await api.unrealizePlannedOperation(occ.plannedOperationId);
+        await onConfirmed('Transaction remise à venir');
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose} testID="planning-pay-popup">
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.backdrop} />
+      </TouchableWithoutFeedback>
+      <View style={styles.confirmBox}>
+        <Text style={styles.confirmTitle}>{target.rowLabel}</Text>
+        <Text style={styles.confirmText}>{isPending ? `Prévu ${formatDh(occ.expectedAmount)}` : `Réglé ${formatDh(occ.realizedAmount ?? occ.expectedAmount)}`}</Text>
+        <View style={styles.confirmActions}>
+          <TouchableOpacity style={styles.confirmCancel} onPress={onClose} testID="planning-popup-close">
+            <Text style={styles.confirmCancelText}>Fermer</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.confirmPay} onPress={confirm} testID="planning-popup-confirm">
+            <Text style={styles.confirmPayText}>{saving ? '…' : isPending ? 'Marquer comme payé' : 'Annuler le paiement'}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -631,6 +730,11 @@ const styles = StyleSheet.create({
   monthHeaderCell: { justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 4 },
   monthHeaderText: { ...typography.caption, fontWeight: '800', color: colors.textSecondary },
   sectionSpacerCell: {},
+  // Titre de regroupement catégorie (Lot ciblé §5) — jamais une ligne financière :
+  // pas de bordure de cellule, pas de fond de statut, juste un libellé discret.
+  categoryHeaderCell: { justifyContent: 'flex-end', paddingBottom: 2 },
+  categoryHeaderText: { fontSize: 10, fontWeight: '700', color: colors.textPlaceholder, letterSpacing: 0.4 },
+  categoryHeaderSpacerCell: {},
   cell: { alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: colors.divider, borderLeftWidth: 1, borderLeftColor: colors.divider },
   cellRealized: { backgroundColor: colors.successLight },
   cellPending: { backgroundColor: colors.warningLight },

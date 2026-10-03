@@ -10,7 +10,7 @@ import { HelpButton } from '../ui/HelpButton';
 import { SegmentBar, segmentColor } from '../ui/SegmentBar';
 import { isSanteSubaccount } from '../ui/santeDetection';
 import { PlannedOperationActionsModal } from '../ui/PlannedOperationActionsModal';
-import { accountPalette } from '../ui/accountPalette';
+import { paletteForAccount } from '../ui/accountPalette';
 import { accountLabelFor } from '../ui/accountLabel';
 import { PLANNED_OPERATION_KIND_VISUALS } from '../ui/plannedOperationVisuals';
 
@@ -162,7 +162,7 @@ export function AccueilScreen() {
 
       {(accounts ?? []).map((account, accountIdx) => {
         const hasSubaccounts = account.subaccounts.length > 0;
-        const palette = accountPalette(accountIdx);
+        const palette = paletteForAccount(account.colorKey, accountIdx);
         const segments = hasSubaccounts
           ? [
               ...account.subaccounts.map((s, idx) => ({ key: s.id, value: s.balance, color: segmentColor(idx) })),
@@ -311,7 +311,7 @@ const styles = StyleSheet.create({
   // couleur (palette accountPalette, rotation par compte) — jamais deux
   // cartes consécutives identiques, texte blanc pour rester lisible, ombre
   // pour la détacher du fond blanc (§7).
-  accountCard: { borderRadius: radius.xl, padding: spacing.lg, marginBottom: spacing.md, ...elevation.raised },
+  accountCard: { borderRadius: radius.xl, padding: spacing.lg, marginBottom: spacing.md, ...elevation.floating },
   accountHeaderRow: { flexDirection: 'row', alignItems: 'center' },
   accountName: { ...typography.sectionTitle, color: colors.textOnPrimary },
   accountBank: { ...typography.caption, marginTop: 2 },

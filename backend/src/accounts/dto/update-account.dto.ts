@@ -27,4 +27,9 @@ export class UpdateAccountDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  /** Couleur de carte choisie par l'utilisateur (Lot ciblé §1) — clé de palette prédéfinie, jamais un hex libre. */
+  @IsOptional()
+  @IsString()
+  colorKey?: string;
 }

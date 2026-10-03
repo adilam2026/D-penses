@@ -208,6 +208,8 @@ model Account {
   ownerMemberId String?     @map("owner_member_id")
   ownerLabel    String?     @map("owner_label")
   active        Boolean     @default(true)
+  // Couleur de carte choisie par l'utilisateur (Lot ciblé §1) — une des ~10 clés de palette prédéfinie, jamais un hex libre. Null = compte créé avant cette fonctionnalité, rotation automatique côté mobile.
+  colorKey      String?     @map("color_key")
   createdAt     DateTime    @default(now()) @map("created_at")
   updatedAt     DateTime    @updatedAt @map("updated_at")
 

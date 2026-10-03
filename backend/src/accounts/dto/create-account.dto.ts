@@ -25,4 +25,9 @@ export class CreateAccountDto {
   /** Solde d'ouverture — crée automatiquement l'OPENING_BALANCE correspondante. */
   @IsOptional()
   openingBalance?: string;
+
+  /** Couleur de carte choisie par l'utilisateur (Lot ciblé §1) — clé de palette prédéfinie, jamais un hex libre. */
+  @IsOptional()
+  @IsString()
+  colorKey?: string;
 }

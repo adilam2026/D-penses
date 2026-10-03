@@ -60,6 +60,11 @@ export const elevation = {
     android: { elevation: 2 },
     default: { shadowColor: colors.primaryDark, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.14, shadowRadius: 4 },
   }),
+  /** Sensation "posée au-dessus de la page" pour les cartes hero colorées (Lot ciblé §2) — sensiblement plus marqué que `raised`, réservé aux cartes compte Accueil, sans effet gadget. */
+  floating: Platform.select({
+    android: { elevation: 12 },
+    default: { shadowColor: colors.primaryDark, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.22, shadowRadius: 20 },
+  }),
 } as const;
 
 /** Espacement cohérent — jamais une valeur magique par écran. */
