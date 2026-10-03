@@ -56,6 +56,8 @@ beforeEach(() => {
 it('"+ Nouvelle catégorie" crée puis sélectionne la catégorie', async () => {
   mockCreateCategory.mockResolvedValue({ id: 'cat-nouvelle', name: 'Loisirs', active: true, sortOrder: 2, isDefaultFallback: false });
   renderWithSafeArea(<AjouterScreen />);
+  await waitFor(() => screen.getByTestId('ajouter-tile-EXPENSE'));
+  fireEvent.press(screen.getByTestId('ajouter-tile-EXPENSE'));
   await waitFor(() => screen.getByTestId('ajouter-new-category'));
   fireEvent.press(screen.getByTestId('ajouter-new-category'));
   await waitFor(() => screen.getByTestId('new-category-name'));

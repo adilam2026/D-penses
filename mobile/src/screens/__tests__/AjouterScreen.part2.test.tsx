@@ -65,8 +65,13 @@ beforeEach(() => {
 
 it('mode Transfert : masque/réinitialise l\'onglet "À venir" (TRANSFER exclu de PlannedOperationKind)', async () => {
   renderWithSafeArea(<AjouterScreen />);
-  await waitFor(() => screen.getByTestId('ajouter-tile-TRANSFER'));
+  await waitFor(() => screen.getByTestId('ajouter-tile-EXPENSE'));
+  fireEvent.press(screen.getByTestId('ajouter-tile-EXPENSE'));
+  await waitFor(() => screen.getByTestId('ajouter-tab-a-venir'));
   expect(screen.getByTestId('ajouter-tab-a-venir')).toBeTruthy();
+
+  fireEvent.press(screen.getByTestId('ajouter-form-back'));
+  await waitFor(() => screen.getByTestId('ajouter-tile-TRANSFER'));
   fireEvent.press(screen.getByTestId('ajouter-tile-TRANSFER'));
   await waitFor(() => expect(screen.queryByTestId('ajouter-tab-a-venir')).toBeNull());
 });

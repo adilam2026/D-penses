@@ -1,6 +1,7 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { colors, elevation, fontFamily, radius, spacing, typography } from '../ui/theme';
 import { formatDh, formatMonthLabel, formatShortDate } from '../ui/formatMoney';
@@ -14,12 +15,6 @@ import { testIdSlug } from '../ui/testIdSlug';
 import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
 
 const HORIZON_OPTIONS = [3, 6, 9, 12] as const;
-const LABEL_WIDTH = 130;
-const MONTH_WIDTH = 108;
-const ROW_HEIGHT = 46;
-const SECTION_HEIGHT = 30;
-const HEADER_HEIGHT = 40;
-const CATEGORY_HEADER_HEIGHT = 24;
 const TOAST_DURATION_MS = 1800;
 
 interface BlockDef {
@@ -99,6 +94,14 @@ export function PlanningScreen() {
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Mono-mois avec navigation horizontale (maquette « Foyer » 04-Planning
+  // validée) — un seul mois affiché, flèches/swipe pour changer de mois ;
+  // l'horizon 3/6/9/12 pilote toujours le nombre de mois chargés/navigables,
+  // jamais plusieurs mois visibles côte à côte à la fois.
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageWidth, setPageWidth] = useState(0);
+  const pagerRef = useRef<ScrollView>(null);
+
   const load = useCallback(async (h: number) => {
     const [planning, accountList, planList] = await Promise.all([api.getPlanning(h), api.listAccounts(), api.listFinancialPlans()]);
     setData(planning);
@@ -112,6 +115,20 @@ export function PlanningScreen() {
       load(months).finally(() => setLoading(false));
     }, [load, months]),
   );
+
+  // Revenir au premier mois uniquement quand l'horizon change (jamais après
+  // un simple refresh de données, pour ne pas sauter la page affichée).
+  React.useEffect(() => {
+    setPageIndex(0);
+    pagerRef.current?.scrollTo({ x: 0, animated: false });
+  }, [months]);
+
+  function goToPage(idx: number) {
+    if (!data) return;
+    const clamped = Math.max(0, Math.min(data.months.length - 1, idx));
+    setPageIndex(clamped);
+    pagerRef.current?.scrollTo({ x: clamped * pageWidth, animated: true });
+  }
 
   async function refresh() {
     await load(months);
@@ -191,129 +208,89 @@ export function PlanningScreen() {
         ))}
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: spacing.xxl }}>
-        <View style={styles.tableRow}>
-          <View style={{ width: LABEL_WIDTH }}>
-            <View style={[styles.labelCell, { height: HEADER_HEIGHT }]} />
+      <View style={styles.monthNav}>
+        <TouchableOpacity
+          onPress={() => goToPage(pageIndex - 1)}
+          disabled={pageIndex === 0}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          testID="planning-month-prev"
+        >
+          <Ionicons name="chevron-back" size={20} color={pageIndex === 0 ? colors.textPlaceholder : colors.textPrimary} />
+        </TouchableOpacity>
+        <Text style={styles.monthNavLabel} testID="planning-month-label">
+          {formatMonthLabel(data.months[pageIndex] ?? data.months[0])}
+        </Text>
+        <TouchableOpacity
+          onPress={() => goToPage(pageIndex + 1)}
+          disabled={pageIndex >= data.months.length - 1}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          testID="planning-month-next"
+        >
+          <Ionicons name="chevron-forward" size={20} color={pageIndex >= data.months.length - 1 ? colors.textPlaceholder : colors.textPrimary} />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        ref={pagerRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onLayout={(e) => setPageWidth(e.nativeEvent.layout.width)}
+        onMomentumScrollEnd={(e) => {
+          if (!pageWidth) return;
+          setPageIndex(Math.round(e.nativeEvent.contentOffset.x / pageWidth));
+        }}
+        style={{ flex: 1 }}
+      >
+        {data.months.map((m) => (
+          <ScrollView key={m} style={{ width: pageWidth || undefined, flex: pageWidth ? undefined : 1 }} contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.md }}>
             {blocks.map((block) => (
-              <React.Fragment key={block.title}>
-                <View style={[styles.sectionLabelCell, { height: SECTION_HEIGHT, borderLeftColor: block.accentColor }]}>
-                  <Text style={[styles.sectionLabelText, { color: block.accentColor }]}>{block.title}</Text>
-                </View>
+              <View key={block.title} style={[styles.blockSection, { borderLeftColor: block.accentColor }]}>
+                <Text style={[styles.sectionLabelText, { color: block.accentColor }]}>{block.title}</Text>
                 {block.rows.length === 0 ? (
-                  <View style={[styles.labelCell, { height: ROW_HEIGHT }]}>
-                    <Text style={styles.emptyRowText} numberOfLines={2}>
-                      {block.emptyText}
-                    </Text>
-                  </View>
+                  <Text style={styles.emptyRowText}>{block.emptyText}</Text>
                 ) : (
                   (blockItemsByTitle.get(block.title) ?? []).map((item, idx) =>
                     item.kind === 'header' ? (
                       // Titre de regroupement catégorie (Lot ciblé §5) — PUR AFFICHAGE :
                       // jamais de montant, jamais tappable, jamais de chevron.
-                      <View key={`h-${idx}`} style={[styles.categoryHeaderCell, { height: CATEGORY_HEADER_HEIGHT }]}>
-                        <Text style={styles.categoryHeaderText} numberOfLines={1}>
-                          {item.label}
-                        </Text>
-                      </View>
+                      <Text key={`h-${idx}`} style={styles.categoryHeaderText} numberOfLines={1}>
+                        {item.label}
+                      </Text>
                     ) : (
-                      <View key={item.row.key} style={[styles.labelCell, { height: ROW_HEIGHT }]}>
-                        <Text style={styles.rowLabelText} numberOfLines={2}>
-                          {item.row.label}
-                        </Text>
-                      </View>
+                      <PlanningRowView
+                        key={item.row.key}
+                        label={item.row.label}
+                        cell={item.row.cells[m]}
+                        onPress={() => onCellPress(item.row.cells[m], item.row.label)}
+                        onLongPress={() => onCellLongPress(item.row.cells[m], item.row.label)}
+                        testID={`planning-cell-${testIdSlug(item.row.label)}-${m}`}
+                      />
                     ),
                   )
                 )}
-                <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: block.accentColor }]}>
+                <View style={styles.blockTotalRow}>
                   <Text style={styles.totalLabelText}>{block.totalLabel}</Text>
+                  <Text style={styles.totalLabelText}>{formatDh(data.synthese[m][block.totalKey])}</Text>
                 </View>
-              </React.Fragment>
+              </View>
             ))}
-            <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, backgroundColor: colors.surfaceActive }]}>
-              <Text style={styles.totalLabelText}>BALANCE MENSUELLE</Text>
-            </View>
-            <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, backgroundColor: colors.surfaceActive }]}>
-              <Text style={styles.totalLabelText}>BALANCE CUMULÉE</Text>
-            </View>
-          </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator>
-            <View>
-              <View style={{ flexDirection: 'row', height: HEADER_HEIGHT }}>
-                {data.months.map((m) => (
-                  <View key={m} style={[styles.monthHeaderCell, { width: MONTH_WIDTH }]}>
-                    <Text style={styles.monthHeaderText}>{formatMonthLabel(m)}</Text>
-                  </View>
-                ))}
+            <View style={styles.balanceCard}>
+              <View style={styles.balanceRow}>
+                <Text style={styles.balanceLabel}>Balance mensuelle</Text>
+                <Text style={[styles.balanceValue, data.synthese[m].balanceMensuelle < 0 && styles.negativeText]}>{formatDh(data.synthese[m].balanceMensuelle)}</Text>
               </View>
-
-              {blocks.map((block) => (
-                <React.Fragment key={block.title}>
-                  <View style={{ flexDirection: 'row', height: SECTION_HEIGHT }}>
-                    {data.months.map((m) => (
-                      <View key={m} style={[styles.sectionSpacerCell, { width: MONTH_WIDTH }]} />
-                    ))}
-                  </View>
-                  {block.rows.length === 0
-                    ? [
-                        <View key="empty" style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                          {data.months.map((m) => (
-                            <View key={m} style={[styles.cell, { width: MONTH_WIDTH }]} />
-                          ))}
-                        </View>,
-                      ]
-                    : (blockItemsByTitle.get(block.title) ?? []).map((item, idx) =>
-                        item.kind === 'header' ? (
-                          <View key={`h-${idx}`} style={{ flexDirection: 'row', height: CATEGORY_HEADER_HEIGHT }}>
-                            {data.months.map((m) => (
-                              <View key={m} style={[styles.categoryHeaderSpacerCell, { width: MONTH_WIDTH }]} />
-                            ))}
-                          </View>
-                        ) : (
-                          <View key={item.row.key} style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                            {data.months.map((m) => (
-                              <PlanningCellView
-                                key={m}
-                                cell={item.row.cells[m]}
-                                onPress={() => onCellPress(item.row.cells[m], item.row.label)}
-                                onLongPress={() => onCellLongPress(item.row.cells[m], item.row.label)}
-                                testID={`planning-cell-${testIdSlug(item.row.label)}-${m}`}
-                              />
-                            ))}
-                          </View>
-                        ),
-                      )}
-                  <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                    {data.months.map((m) => (
-                      <View key={m} style={[styles.totalCell, { width: MONTH_WIDTH }]}>
-                        <Text style={styles.totalCellText}>{formatDh(data.synthese[m][block.totalKey])}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </React.Fragment>
-              ))}
-
-              <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                {data.months.map((m) => (
-                  <View key={m} style={[styles.totalCell, styles.syntheseCell, { width: MONTH_WIDTH }]}>
-                    <Text style={[styles.totalCellText, data.synthese[m].balanceMensuelle < 0 && styles.negativeText]}>{formatDh(data.synthese[m].balanceMensuelle)}</Text>
-                  </View>
-                ))}
-              </View>
-              <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                {data.months.map((m) => (
-                  <View key={m} style={[styles.totalCell, styles.syntheseCell, { width: MONTH_WIDTH }]}>
-                    <Text style={[styles.totalCellText, data.synthese[m].balanceCumulee < 0 && styles.negativeText]}>{formatDh(data.synthese[m].balanceCumulee)}</Text>
-                  </View>
-                ))}
+              <View style={styles.balanceRow}>
+                <Text style={styles.balanceLabel}>Balance cumulée</Text>
+                <Text style={[styles.balanceValue, data.synthese[m].balanceCumulee < 0 && styles.negativeText]}>{formatDh(data.synthese[m].balanceCumulee)}</Text>
               </View>
             </View>
           </ScrollView>
-        </View>
-
-        <PlansSection plans={plans} onOpen={(id) => navigation.navigate('FinancialPlanDetail', { id })} />
+        ))}
       </ScrollView>
+
+      <PlansSection plans={plans} onOpen={(id) => navigation.navigate('FinancialPlanDetail', { id })} />
 
       <AdjustModal
         target={adjustTarget}
@@ -448,12 +425,21 @@ function PayPopupModal({
   );
 }
 
-function PlanningCellView({
+/**
+ * Ligne Planning mono-mois (maquette « Foyer » 04-Planning validée) : libellé
+ * à gauche, montant en chip/pill à droite — remplace l'ancienne cellule de
+ * grille (une seule colonne de mois affichée à la fois désormais), mais
+ * conserve exactement les mêmes interactions (tap/appui long) et le même
+ * rendu MIXTE (réalisé/à venir jamais fondus en un seul total).
+ */
+function PlanningRowView({
+  label,
   cell,
   onPress,
   onLongPress,
   testID,
 }: {
+  label: string;
   cell: api.PlanningCellApi;
   onPress: () => void;
   onLongPress: () => void;
@@ -463,13 +449,10 @@ function PlanningCellView({
   const isPending = cell.status === 'PENDING';
   const isMixed = cell.status === 'MIXED';
   return (
-    <TouchableOpacity
-      style={[styles.cell, { width: MONTH_WIDTH }, isRealized && styles.cellRealized, isPending && styles.cellPending, isMixed && styles.cellMixed]}
-      onPress={onPress}
-      onLongPress={onLongPress}
-      disabled={cell.status === 'EMPTY'}
-      testID={testID}
-    >
+    <TouchableOpacity style={styles.row} onPress={onPress} onLongPress={onLongPress} disabled={cell.status === 'EMPTY'} testID={testID}>
+      <Text style={styles.rowLabelText} numberOfLines={2}>
+        {label}
+      </Text>
       {cell.status === 'EMPTY' ? (
         <Text style={styles.cellEmpty}>—</Text>
       ) : isMixed ? (
@@ -772,45 +755,46 @@ const styles = StyleSheet.create({
   horizonPillActive: { backgroundColor: colors.primary },
   horizonPillText: { fontSize: 11, fontFamily: fontFamily.sansBold, color: colors.textSecondary },
   horizonPillTextActive: { color: colors.textOnPrimary },
-  tableRow: { flexDirection: 'row', paddingLeft: spacing.lg },
-  labelCell: { justifyContent: 'center', paddingRight: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },
-  sectionLabelCell: { justifyContent: 'flex-end', paddingBottom: 4, paddingLeft: spacing.xs, borderLeftWidth: 3 },
-  sectionLabelText: { fontSize: 11, fontFamily: fontFamily.sansExtraBold, letterSpacing: 0.5 },
-  rowLabelText: { fontSize: 13, fontFamily: fontFamily.sansSemiBold, color: colors.textPrimary },
-  emptyRowText: { ...typography.caption, color: colors.textPlaceholder },
-  totalLabelCell: { justifyContent: 'center', borderTopWidth: 2, borderTopColor: colors.borderStrong, backgroundColor: colors.surfaceSecondary, paddingRight: spacing.sm, paddingLeft: spacing.xs, borderLeftWidth: 3 },
-  totalLabelText: { fontSize: 11, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
-  monthHeaderCell: { justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 4 },
-  monthHeaderText: { fontSize: 11, fontFamily: fontFamily.sansExtraBold, color: colors.textSecondary },
-  sectionSpacerCell: {},
+  // Navigation mono-mois (maquette « Foyer » 04-Planning validée) : flèches
+  // + libellé du mois courant, au-dessus du pager horizontal paginé.
+  monthNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.lg, marginBottom: spacing.sm },
+  monthNavLabel: { fontSize: 13, fontFamily: fontFamily.sansExtraBold, color: colors.textPlaceholder, letterSpacing: 0.3, minWidth: 140, textAlign: 'center' },
+  // Bloc REVENUS/DÉPENSES/ÉPARGNE : liseré coloré à gauche + lignes empilées
+  // (remplace l'ancienne colonne de libellés figée + grille de cellules).
+  blockSection: { borderLeftWidth: 3, paddingLeft: spacing.sm, marginTop: spacing.md },
+  sectionLabelText: { fontSize: 11, fontFamily: fontFamily.sansExtraBold, letterSpacing: 0.5, textTransform: 'uppercase' },
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 7 },
+  rowLabelText: { fontSize: 13, fontFamily: fontFamily.sansSemiBold, color: colors.textPrimary, flex: 1, marginRight: spacing.sm },
+  emptyRowText: { ...typography.caption, color: colors.textPlaceholder, paddingVertical: spacing.sm },
+  blockTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    borderTopColor: colors.divider,
+    marginTop: 2,
+    paddingTop: 6,
+  },
+  totalLabelText: { fontSize: 11.5, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
   // Titre de regroupement catégorie (Lot ciblé §5) — jamais une ligne financière :
-  // pas de bordure de cellule, pas de fond de statut, juste un libellé discret.
-  categoryHeaderCell: { justifyContent: 'flex-end', paddingBottom: 2 },
-  categoryHeaderText: { fontSize: 10, fontFamily: fontFamily.sansBold, color: colors.textPlaceholder, letterSpacing: 0.4, textTransform: 'uppercase' },
-  categoryHeaderSpacerCell: {},
-  cell: { alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: colors.divider, borderLeftWidth: 1, borderLeftColor: colors.divider },
-  cellRealized: {},
-  cellPending: {},
-  // MIXTE : même teinte que "prévu" (jamais confondu avec 100% réalisé, vert) mais un
-  // liseré vert à gauche signale la part déjà réalisée dans la case — sobre, sans
-  // ajouter de nouvelle couleur au design system (§7, purement visuel).
-  cellMixed: { backgroundColor: colors.warningLight, borderLeftWidth: 3, borderLeftColor: colors.success },
+  // pas de bordure, pas de fond de statut, juste un libellé discret.
+  categoryHeaderText: { fontSize: 10, fontFamily: fontFamily.sansBold, color: colors.textPlaceholder, letterSpacing: 0.4, textTransform: 'uppercase', paddingTop: 6, paddingBottom: 2 },
   cellEmpty: { color: colors.textPlaceholder },
-  // Montant affiché en chip/pill (maquette Planning validée) plutôt qu'en
-  // fond de cellule plein — la cellule-grille (alignement multi-mois) reste
-  // neutre, seul le badge de statut porte la couleur.
-  cellChip: { borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 4, maxWidth: '92%' },
+  // Montant affiché en chip/pill (maquette Planning validée).
+  cellChip: { borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 4, maxWidth: '60%' },
   cellChipRealized: { backgroundColor: colors.successLight },
   cellChipPending: { backgroundColor: colors.warningLight },
   cellAmount: { fontSize: 12.5, fontFamily: fontFamily.sansBold, color: colors.textPrimary },
   cellAmountRealized: { color: colors.success },
   cellAmountPending: { color: colors.warning },
-  cellMixedWrap: { alignItems: 'center' },
+  cellMixedWrap: { alignItems: 'flex-end' },
   cellAmountMixed: { fontSize: 11, fontFamily: fontFamily.sansExtraBold, color: colors.warning, paddingHorizontal: 2 },
   cellRestantMixed: { fontSize: 9, fontFamily: fontFamily.sansBold, color: colors.danger, paddingHorizontal: 2, marginTop: 1 },
-  totalCell: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceSecondary, borderTopWidth: 2, borderTopColor: colors.borderStrong, borderLeftWidth: 1, borderLeftColor: colors.divider },
-  totalCellText: { fontSize: 13, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
-  syntheseCell: { backgroundColor: colors.surfaceActive },
+  // Carte Balance mensuelle/cumulée (maquette validée) : carte blanche unique
+  // en bas du mois courant, plutôt que deux lignes de grille.
+  balanceCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginTop: spacing.lg, ...elevation.card },
+  balanceRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+  balanceLabel: { fontSize: 12.5, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
+  balanceValue: { fontSize: 14, fontFamily: fontFamily.sansExtraBold, color: colors.success },
   negativeText: { color: colors.danger },
   backdrop: { flex: 1, backgroundColor: colors.backdrop },
   confirmBox: {

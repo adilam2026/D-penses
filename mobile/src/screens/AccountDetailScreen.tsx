@@ -31,14 +31,16 @@ export function AccountDetailScreen() {
 
   const [account, setAccount] = useState<api.AccountApi | null>(null);
   const [operations, setOperations] = useState<api.FinancialOperationApi[] | null>(null);
+  const [goals, setGoals] = useState<api.GoalApi[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
 
   const load = useCallback(async () => {
-    const [acc, ops] = await Promise.all([api.getAccount(id), api.listFinancialOperations({ accountId: id })]);
+    const [acc, ops, goalList] = await Promise.all([api.getAccount(id), api.listFinancialOperations({ accountId: id }), api.listGoals()]);
     setAccount(acc);
     setOperations(ops);
+    setGoals(goalList);
   }, [id]);
 
   useFocusEffect(
@@ -82,6 +84,43 @@ export function AccountDetailScreen() {
           <Text style={styles.balanceLabel}>Solde</Text>
           <Text style={styles.balanceAmount}>{formatDh(account.balance)}</Text>
         </LinearGradient>
+
+        {account.subaccounts.length > 0 && (
+          <>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionLabel}>SOUS-COMPTES</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('CreateSubaccount', { accountId: account.id })} testID="account-detail-add-subaccount">
+                <Text style={styles.addLink}>+ Ajouter</Text>
+              </TouchableOpacity>
+            </View>
+            {account.subaccounts.map((sub) => {
+              const goal = goals.find((g) => g.subaccountId === sub.id) ?? null;
+              return (
+                <TouchableOpacity
+                  key={sub.id}
+                  style={styles.subaccountCard}
+                  onPress={() => navigation.navigate('SubaccountDetail', { id: sub.id })}
+                  testID={`account-detail-subaccount-${sub.id}`}
+                >
+                  <View style={styles.subaccountTopRow}>
+                    <Text style={styles.subaccountName} numberOfLines={1}>{sub.name}</Text>
+                    <Text style={styles.subaccountBalance}>{formatDh(sub.balance)}</Text>
+                  </View>
+                  {goal ? (
+                    <>
+                      <View style={styles.subaccountBarTrack}>
+                        <View style={[styles.subaccountBarFill, { width: `${Math.min(100, Math.round(goal.percent))}%` }]} />
+                      </View>
+                      <Text style={styles.subaccountMeta}>
+                        {Math.round(goal.percent)}% de l'objectif de {formatDh(goal.targetAmount)}
+                      </Text>
+                    </>
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
+          </>
+        )}
 
         <View style={styles.historyCard}>
           <Text style={styles.sectionLabel}>HISTORIQUE DES TRANSACTIONS</Text>
@@ -198,6 +237,25 @@ const styles = StyleSheet.create({
   heroSubtitle: { fontSize: 12, fontFamily: fontFamily.sansMedium, color: 'rgba(255,255,255,0.85)', marginTop: 2, marginBottom: spacing.md },
   balanceLabel: { fontSize: 11, fontFamily: fontFamily.sansBold, color: 'rgba(255,255,255,0.8)', marginBottom: 2 },
   balanceAmount: { fontSize: 32, fontFamily: fontFamily.displayBold, color: colors.textOnPrimary },
+  // Sous-comptes (maquette « Foyer » 02-DétailCompte validée) — entre le hero
+  // et l'historique : nom/solde + barre de progression quand un objectif
+  // existe, exactement comme le compte parent.
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
+  addLink: { fontSize: 12, fontFamily: fontFamily.sansBold, color: colors.primary },
+  subaccountCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    ...elevation.card,
+  },
+  subaccountTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  subaccountName: { fontSize: 13.5, fontFamily: fontFamily.sansBold, color: colors.textPrimary, flex: 1, marginRight: spacing.sm },
+  subaccountBalance: { fontSize: 13.5, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
+  subaccountBarTrack: { height: 7, borderRadius: 4, backgroundColor: colors.surfaceSecondary, marginTop: spacing.sm, overflow: 'hidden' },
+  subaccountBarFill: { height: 7, borderRadius: 4, backgroundColor: colors.secondary },
+  subaccountMeta: { fontSize: 11, fontFamily: fontFamily.sansMedium, color: colors.textSecondary, marginTop: 4 },
   // "Historique des transactions" dans sa propre section visuelle (Lot ciblé §3).
   historyCard: {
     backgroundColor: colors.surface,

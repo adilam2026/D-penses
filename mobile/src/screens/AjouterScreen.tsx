@@ -62,10 +62,17 @@ export function AjouterScreen() {
     | { kind?: QuickMode; sourceAccountId?: string; sourceSubaccountId?: string; destinationAccountId?: string; destinationSubaccountId?: string }
     | undefined;
 
+  const hasPrefill = !!(prefill?.kind || prefill?.sourceAccountId || prefill?.sourceSubaccountId || prefill?.destinationAccountId || prefill?.destinationSubaccountId);
+
   const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [accounts, setAccounts] = useState<api.AccountApi[]>([]);
   const [categories, setCategories] = useState<api.CategoryApi[]>([]);
   const [mode, setMode] = useState<QuickMode>(prefill?.kind ?? 'EXPENSE');
+  // Étape 1 : 4 tuiles seules (maquette « Foyer » 05-Ajouter validée) ; étape
+  // 2 : le formulaire correspondant (06-FormulaireSaisie). Sauté directement
+  // à l'étape 2 quand l'écran est ouvert avec un pré-remplissage (ex. "+
+  // Verser" depuis un sous-compte, "Ajouter une transaction" depuis un compte).
+  const [step, setStep] = useState<'pick' | 'form'>(hasPrefill ? 'form' : 'pick');
   const [tab, setTab] = useState<EntryTab>('realisee');
 
   const [amount, setAmount] = useState('');
@@ -110,6 +117,7 @@ export function AjouterScreen() {
     setSource(null);
     setDestination(null);
     setMedicalClaim(false);
+    setStep('form');
   }
 
   const canSubmit = amount.trim() !== '' && date.trim() !== '' && label.trim() !== '' && (mode === 'TRANSFER' ? !!source && !!destination : mode === 'EXPENSE' ? !!source : mode === 'INCOME' ? !!destination : !!source && !!destination);
@@ -177,39 +185,59 @@ export function AjouterScreen() {
   const includeSubaccounts = mode !== 'TRANSFER';
   const options = accountOptions(accounts, includeSubaccounts);
 
+  if (step === 'pick') {
+    return (
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.title}>Ajouter</Text>
+            <Text style={styles.subtitle}>Que voulez-vous enregistrer ?</Text>
+          </View>
+          <HelpButton
+            title="Ajouter"
+            text="Choisissez le type d'opération, puis Réalisée si elle a déjà eu lieu ou À venir si vous la planifiez pour plus tard."
+          />
+        </View>
+
+        <View style={styles.tiles}>
+          {QUICK_TILES.map((tile) => (
+            <View key={tile.mode} style={styles.tile}>
+              <TouchableOpacity activeOpacity={0.9} onPress={() => selectMode(tile.mode)} testID={`ajouter-tile-${tile.mode}`}>
+                <LinearGradient colors={tile.colors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.tileCard}>
+                  <Ionicons name={tile.icon} size={24} color="#fff" />
+                  <View>
+                    <Text style={styles.tileLabel}>{tile.label}</Text>
+                    <Text style={styles.tileDescription}>{tile.description}</Text>
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      </ScrollView>
+    );
+  }
+
+  const activeTile = QUICK_TILES.find((t) => t.mode === mode)!;
+
   return (
     <ScrollView ref={scrollRef} style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Ajouter</Text>
-          <Text style={styles.subtitle}>Enregistrez une opération réelle ou prévue.</Text>
-        </View>
+      <View style={styles.formHeader}>
+        <TouchableOpacity
+          style={styles.backRow}
+          onPress={() => setStep('pick')}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          testID="ajouter-form-back"
+        >
+          <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
+          <Text style={styles.backLabel}>Ajouter</Text>
+        </TouchableOpacity>
         <HelpButton
           title="Ajouter"
           text="Choisissez le type d'opération, puis Réalisée si elle a déjà eu lieu ou À venir si vous la planifiez pour plus tard."
         />
       </View>
-
-      <View style={styles.tiles}>
-        {QUICK_TILES.map((tile) => (
-          <View key={tile.mode} style={styles.tile}>
-            <TouchableOpacity activeOpacity={0.9} onPress={() => selectMode(tile.mode)} testID={`ajouter-tile-${tile.mode}`}>
-              <LinearGradient
-                colors={tile.colors}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[styles.tileCard, mode === tile.mode && styles.tileCardActive]}
-              >
-                <Ionicons name={tile.icon} size={24} color="#fff" />
-                <View>
-                  <Text style={styles.tileLabel}>{tile.label}</Text>
-                  <Text style={styles.tileDescription}>{tile.description}</Text>
-                </View>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-        ))}
-      </View>
+      <Text style={[styles.title, { marginBottom: spacing.lg }]}>{activeTile.label}</Text>
 
       <View style={styles.card}>
         <View style={styles.tabs}>
@@ -448,9 +476,14 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.lg },
+  // Étape 2 (formulaire) : retour vers les 4 tuiles plutôt qu'un second
+  // titre/sous-titre — les deux étapes restent visuellement distinctes.
+  formHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  backRow: { flexDirection: 'row', alignItems: 'center' },
+  backLabel: { fontSize: 14, fontFamily: fontFamily.sansSemiBold, color: colors.textPrimary, marginLeft: 2 },
   title: { ...typography.screenTitle },
   subtitle: { ...typography.bodySecondary, marginTop: spacing.xs, maxWidth: 260 },
-  tiles: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -spacing.xs, marginBottom: spacing.lg },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -spacing.xs, marginTop: spacing.lg },
   tile: {
     width: '50%',
     paddingHorizontal: spacing.xs,
@@ -463,7 +496,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     ...elevation.floating,
   },
-  tileCardActive: { borderWidth: 2, borderColor: colors.textOnPrimary },
   tileLabel: { fontSize: 14, fontFamily: fontFamily.sansBold, color: colors.textOnPrimary },
   tileDescription: { fontSize: 11, fontFamily: fontFamily.sansMedium, color: 'rgba(255,255,255,0.85)', marginTop: 2 },
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.lg },

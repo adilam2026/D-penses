@@ -188,6 +188,9 @@ export function AccueilScreen() {
 
       <View style={styles.sectionHeaderRow}>
         <Text style={styles.sectionLabel}>MES COMPTES</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('Accounts')} testID="accueil-accounts-show-all">
+          <Text style={styles.sectionLink}>Tout voir</Text>
+        </TouchableOpacity>
       </View>
 
       {(accounts ?? []).map((account, accountIdx) => {

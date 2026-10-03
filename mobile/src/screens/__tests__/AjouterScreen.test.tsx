@@ -58,10 +58,14 @@ beforeEach(() => {
 
 it('Item 14 : le libellé du compte précise s\'il sera débité ou crédité (Dépense/Revenu)', async () => {
   renderWithSafeArea(<AjouterScreen />);
+  await waitFor(() => screen.getByTestId('ajouter-tile-EXPENSE'));
+  fireEvent.press(screen.getByTestId('ajouter-tile-EXPENSE'));
   await waitFor(() => screen.getByTestId('ajouter-source'));
   expect(screen.getByText('Compte débité')).toBeTruthy();
   expect(screen.getByText('Ce compte sera débité du montant de la dépense.')).toBeTruthy();
 
+  fireEvent.press(screen.getByTestId('ajouter-form-back'));
+  await waitFor(() => screen.getByTestId('ajouter-tile-INCOME'));
   fireEvent.press(screen.getByTestId('ajouter-tile-INCOME'));
   await waitFor(() => screen.getByTestId('ajouter-destination'));
   expect(screen.getByText('Compte crédité')).toBeTruthy();
@@ -70,6 +74,8 @@ it('Item 14 : le libellé du compte précise s\'il sera débité ou crédité (D
 
 it('mode Dépense (défaut) : "Remboursable par mutuelle ?" apparaît seulement si Catégorie=Santé', async () => {
   renderWithSafeArea(<AjouterScreen />);
+  await waitFor(() => screen.getByTestId('ajouter-tile-EXPENSE'));
+  fireEvent.press(screen.getByTestId('ajouter-tile-EXPENSE'));
   await waitFor(() => screen.getByTestId('ajouter-category'));
   expect(screen.queryByTestId('ajouter-medical-claim-toggle')).toBeNull();
 
@@ -84,6 +90,8 @@ it('mode Dépense (défaut) : "Remboursable par mutuelle ?" apparaît seulement 
 it('soumission Dépense réalisée -> createFinancialOperation avec sourceAccountId', async () => {
   mockCreateFinancialOperation.mockResolvedValue({});
   renderWithSafeArea(<AjouterScreen />);
+  await waitFor(() => screen.getByTestId('ajouter-tile-EXPENSE'));
+  fireEvent.press(screen.getByTestId('ajouter-tile-EXPENSE'));
   await waitFor(() => screen.getByTestId('ajouter-source'));
 
   fireEvent.changeText(screen.getByTestId('ajouter-amount'), '200');
