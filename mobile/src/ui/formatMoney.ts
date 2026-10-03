@@ -18,3 +18,11 @@ export function formatMonthLabel(monthKey: string): string {
   const label = d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
+
+/** "2026-10" → "Oct. 26" (en-têtes de colonne Planning multi-mois — largeur très contrainte). */
+export function formatMonthShort(monthKey: string): string {
+  const [year, month] = monthKey.split('-').map(Number);
+  const d = new Date(Date.UTC(year, month - 1, 1));
+  const label = d.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
