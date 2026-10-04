@@ -447,6 +447,13 @@ model FinancialOperation {
   financedFrom FinancedFrom? @map("financed_from")
   budgetImpact BudgetImpact  @default(NORMAL) @map("budget_impact")
 
+  // "Afficher dans le Planning" (lot dépense ponctuelle) — @default(true) pour
+  // préserver exactement le comportement existant sur toutes les lignes déjà
+  // en base. Ne concerne QUE l'agrégation Planning (display/totaux) : jamais
+  // le ledger, jamais les soldes, jamais l'historique de compte, qui restent
+  // toujours dérivés de ledger_entry indépendamment de ce champ.
+  includeInPlanning Boolean @default(true) @map("include_in_planning")
+
   reversalOfOperationId String? @map("reversal_of_operation_id")
   reversalReason        String? @map("reversal_reason")
 

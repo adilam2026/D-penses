@@ -39,6 +39,8 @@ export interface PlanningFinancialOperationRow {
   destinationSubaccountId: string | null;
   budgetImpact: 'NORMAL' | 'ALREADY_FUNDED' | 'EXCLUDED';
   reversalOfOperationId: string | null;
+  /** "Afficher dans le Planning" (lot dépense ponctuelle) — false retire cette opération de l'agrégation Planning (jamais du ledger/des soldes/de l'historique de compte). */
+  includeInPlanning: boolean;
 }
 
 export interface PlanningCategoryRow {
@@ -373,6 +375,10 @@ export function buildPlanningTable(params: {
     if (linkedRealOperationIds.has(op.id)) continue;
     if (op.reversalOfOperationId) continue; // l'opération de renversement elle-même
     if (reversedOriginalIds.has(op.id)) continue; // l'opération d'origine, désormais renversée -> net zéro, jamais résiduelle
+    // "Afficher dans le Planning" décoché (lot dépense ponctuelle) — exclue
+    // UNIQUEMENT de cette agrégation (cellules + totaux) ; le ledger, les
+    // soldes et l'historique de compte ne passent jamais par ce chemin.
+    if (!op.includeInPlanning) continue;
 
     const mKey = monthKey(op.date, monthStartDay);
     if (!monthSet.has(mKey)) continue;

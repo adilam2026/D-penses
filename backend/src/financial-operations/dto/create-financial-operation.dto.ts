@@ -48,4 +48,9 @@ export class CreateFinancialOperationDto {
   @IsOptional()
   @IsBoolean()
   createMedicalClaim?: boolean;
+
+  /** "Afficher dans le Planning" (lot dépense ponctuelle) — réservé aux dépenses (EXPENSE), défaut true côté moteur si omis. */
+  @IsOptional()
+  @IsBoolean()
+  includeInPlanning?: boolean;
 }

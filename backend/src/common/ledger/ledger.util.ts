@@ -248,6 +248,13 @@ export interface InsertOperationParams {
   /** "Modifier" une opération réalisée (§4) : pointe vers l'opération ORIGINALE
    * (pas vers son reversal) pour garder une chaîne d'audit explicite en base. */
   correctionOfOperationId?: string | null;
+  /**
+   * "Afficher dans le Planning" (lot dépense ponctuelle) — par défaut true
+   * (comportement historique inchangé). false retire UNIQUEMENT cette
+   * opération de l'agrégation Planning (planning.util.ts) : le ledger, les
+   * soldes et l'historique de compte restent exactement les mêmes.
+   */
+  includeInPlanning?: boolean;
 }
 
 /**
@@ -309,6 +316,7 @@ export async function insertFinancialOperation(tx: TxClient, params: InsertOpera
       reversalOfOperationId: params.reversalOfOperationId ?? undefined,
       reversalReason: params.reversalReason ?? undefined,
       correctionOfOperationId: params.correctionOfOperationId ?? undefined,
+      includeInPlanning: params.includeInPlanning ?? true,
       createdByUserId: params.createdByUserId,
     },
   });

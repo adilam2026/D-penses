@@ -29,6 +29,12 @@ export interface CreateFinancialOperationInput {
   reversalReason?: string;
   /** Ajouter > "Remboursable par mutuelle ?" (§11/§10 maquette) — crée le medical_claim dans la même transaction. */
   createMedicalClaim?: boolean;
+  /**
+   * "Afficher dans le Planning" (lot dépense ponctuelle) — réservé aux
+   * dépenses (EXPENSE) ; toute autre nature d'opération reste toujours
+   * affichée dans le Planning, comme avant ce lot.
+   */
+  includeInPlanning?: boolean;
 }
 
 @Injectable()
@@ -38,6 +44,15 @@ export class FinancialOperationsService {
   async create(userId: string, householdId: string, dto: CreateFinancialOperationInput) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
+
+      // "Afficher dans le Planning" : réservé aux dépenses — toute tentative
+      // sur une autre nature d'opération (revenu, transfert, versement...) est
+      // refusée plutôt que silencieusement ignorée, pour ne jamais en changer
+      // le comportement sans décision explicite.
+      if (dto.includeInPlanning === false && dto.kind !== 'EXPENSE') {
+        throw new BadRequestException("L'option \"Afficher dans le Planning\" ne s'applique qu'aux dépenses");
+      }
+
       const operation = await insertFinancialOperation(tx, {
         householdId,
         createdByUserId: userId,
@@ -52,6 +67,7 @@ export class FinancialOperationsService {
         destinationSubaccountId: dto.destinationSubaccountId,
         reversalOfOperationId: dto.reversalOfOperationId,
         reversalReason: dto.reversalReason,
+        includeInPlanning: dto.includeInPlanning,
       });
 
       if (dto.createMedicalClaim && dto.kind === 'EXPENSE') {

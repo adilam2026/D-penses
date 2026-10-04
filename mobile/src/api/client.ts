@@ -243,6 +243,8 @@ export interface FinancialOperationApi {
   reversalOfOperationId: string | null;
   reversalReason: string | null;
   correctionOfOperationId: string | null;
+  /** "Afficher dans le Planning" (lot dépense ponctuelle) — ne change jamais le ledger/les soldes/l'historique, uniquement la visibilité dans le Planning. */
+  includeInPlanning: boolean;
   createdAt: string;
   ledgerEntries: LedgerEntryApi[];
 }
@@ -278,6 +280,8 @@ export const createFinancialOperation = (data: {
   reversalReason?: string;
   /** Ajouter > "Remboursable par mutuelle ?" (visible si Catégorie=Santé). */
   createMedicalClaim?: boolean;
+  /** "Afficher dans le Planning" (Ajouter > Dépense > Réalisée uniquement) — réservé aux dépenses, défaut true si omis. */
+  includeInPlanning?: boolean;
 }) => apiFetch('/financial-operations', { method: 'POST', body: data });
 
 /** "Annuler" une transaction réalisée (§4) — reversal exact construit côté serveur, jamais côté client. */

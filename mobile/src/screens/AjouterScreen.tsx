@@ -66,6 +66,9 @@ export function AjouterScreen() {
   const [recurring, setRecurring] = useState(false);
   const [frequency, setFrequency] = useState<RecurrenceOption>('MONTHLY');
   const [medicalClaim, setMedicalClaim] = useState(false);
+  // "Afficher dans le Planning" (dépense ponctuelle réalisée uniquement) —
+  // coché par défaut pour préserver le comportement existant.
+  const [includeInPlanning, setIncludeInPlanning] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -95,6 +98,7 @@ export function AjouterScreen() {
     setSource(null);
     setDestination(null);
     setMedicalClaim(false);
+    setIncludeInPlanning(true);
     setStep('form');
   }
 
@@ -120,6 +124,7 @@ export function AjouterScreen() {
           destinationAccountId: dst?.accountId,
           destinationSubaccountId: dst?.subaccountId,
           createMedicalClaim: isSante && medicalClaim,
+          includeInPlanning: mode === 'EXPENSE' ? includeInPlanning : undefined,
         });
       } else if (recurring) {
         // La règle génère IMMÉDIATEMENT ses occurrences sur la fenêtre glissante
@@ -284,6 +289,19 @@ export function AjouterScreen() {
             <View style={[styles.checkbox, medicalClaim && styles.checkboxChecked]}>{medicalClaim ? <Text style={styles.checkmark}>✓</Text> : null}</View>
             <Text style={styles.switchLabel}>Remboursable par mutuelle ?</Text>
           </TouchableOpacity>
+        )}
+
+        {/* Dépense ponctuelle réalisée uniquement (lot "Afficher dans le
+            Planning") — jamais pour une échéance future (déjà nécessairement
+            planifiée) ni une charge récurrente (toujours intégrée). */}
+        {mode === 'EXPENSE' && tab === 'realisee' && (
+          <>
+            <TouchableOpacity style={styles.switchRow} onPress={() => setIncludeInPlanning((v) => !v)} testID="ajouter-include-in-planning-toggle">
+              <View style={[styles.checkbox, includeInPlanning && styles.checkboxChecked]}>{includeInPlanning ? <Text style={styles.checkmark}>✓</Text> : null}</View>
+              <Text style={styles.switchLabel}>Afficher dans le Planning</Text>
+            </TouchableOpacity>
+            <Text style={styles.accountHint}>Décochez pour enregistrer cette dépense uniquement dans vos opérations réelles.</Text>
+          </>
         )}
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
