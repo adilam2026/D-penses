@@ -160,6 +160,16 @@ export class FinancialOperationsService {
     });
   }
 
+  /**
+   * Historique standard (§annulation, correction affichage) — une opération
+   * annulée ne doit JAMAIS y figurer, ni sous sa forme d'origine ni sous sa
+   * contre-écriture technique : les deux restent en base pour l'audit (jamais
+   * supprimées), mais sont exclues ici via la relation métier réelle
+   * (reversalOfOperationId), jamais un filtre fragile sur le libellé. Une
+   * opération CORRIGÉE (correctionOfOperationId) n'est pas concernée par ce
+   * filtre : sa nouvelle version n'est ni un reversal ni reversée, elle reste
+   * visible normalement sous sa forme corrigée.
+   */
   async list(userId: string, householdId: string, filters?: { accountId?: string; subaccountId?: string }) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
@@ -169,11 +179,13 @@ export class FinancialOperationsService {
       } else if (filters?.accountId) {
         where.OR = [{ sourceAccountId: filters.accountId }, { destinationAccountId: filters.accountId }];
       }
-      return tx.financialOperation.findMany({
+      const operations = await tx.financialOperation.findMany({
         where,
         orderBy: { date: 'desc' },
         include: { ledgerEntries: true },
       });
+      const reversedOriginalIds = new Set(operations.map((op) => op.reversalOfOperationId).filter((x): x is string => !!x));
+      return operations.filter((op) => !op.reversalOfOperationId && !reversedOriginalIds.has(op.id));
     });
   }
 

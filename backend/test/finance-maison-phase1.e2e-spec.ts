@@ -242,9 +242,15 @@ describe('Finance Maison — Phase 1 — scénarios métier A-J', () => {
 
     expect((await getAccount(token, bp.id)).balance).toBe(25000); // solde restauré
 
+    // Historique utilisateur (lot correctif annulation) : ni l'originale ni son
+    // renversement ne doivent y figurer — seule OPENING_BALANCE reste visible.
+    // Les deux lignes techniques restent néanmoins en base (jamais supprimées) :
+    // vérifié ci-dessous via leur accès direct par id, toujours 200.
     const ops = await http.get('/financial-operations').set('Authorization', `Bearer ${token}`).expect(200);
-    // OPENING_BALANCE + dépense + renversement = 3 lignes, historique garde les deux.
-    expect(ops.body).toHaveLength(3);
+    expect(ops.body).toHaveLength(1);
+    expect(ops.body[0].kind).toBe('OPENING_BALANCE');
+
+    await http.get(`/financial-operations/${expense.body.id}`).set('Authorization', `Bearer ${token}`).expect(200);
   });
 
   // ---------------------------------------------------------------

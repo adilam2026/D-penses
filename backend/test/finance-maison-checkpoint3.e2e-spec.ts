@@ -481,6 +481,88 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
     await http.post(`/planned-operations/${planned.body.id}/partial-realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '500' }).expect(400);
   });
 
+  async function getAccount(token: string, id: string) {
+    const res = await http.get(`/accounts/${id}`).set('Authorization', `Bearer ${token}`).expect(200);
+    return res.body;
+  }
+
+  // Q. Suite d'anomalie constatée (lot correctif) : le contrôle de disponibilité
+  // et le débit réel d'un paiement partiel doivent porter EXCLUSIVEMENT sur le
+  // montant réellement payé maintenant, jamais sur le montant prévu de
+  // l'échéance — vérifié à chaque étape d'une séquence réaliste 800 -> 100 -> 200 -> 500.
+  it("Q. paiement partiel : séquence 800 prévu / 100 / 200 / 500 — débit exact à chaque étape, aucune double comptabilisation", async () => {
+    const token = await freshHousehold();
+    const adil = await createAccount(token, 'Adil Compte Courant', 1000);
+
+    const planned = await http
+      .post('/planned-operations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ kind: 'EXPENSE', label: 'Dej Adil', expectedDate: todayIso(), expectedAmount: '800', sourceAccountId: adil.id })
+      .expect(201);
+
+    // Paiement partiel 1 : 100 DH -> débit réel 100 (pas 800), reste 700, échéance toujours ouverte.
+    await http.post(`/planned-operations/${planned.body.id}/partial-realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '100' }).expect(201);
+    expect((await getAccount(token, adil.id)).balance).toBe(900);
+    let plannedList = await http.get('/planned-operations').set('Authorization', `Bearer ${token}`).expect(200);
+    let occ = plannedList.body.find((p: any) => p.id === planned.body.id);
+    expect(occ.status).toBe('PENDING');
+    expect(occ.expectedAmount).toBe(700);
+
+    // Paiement partiel 2 : 200 DH -> débit réel supplémentaire 200, reste 500, toujours ouverte.
+    await http.post(`/planned-operations/${planned.body.id}/partial-realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '200' }).expect(201);
+    expect((await getAccount(token, adil.id)).balance).toBe(700);
+    plannedList = await http.get('/planned-operations').set('Authorization', `Bearer ${token}`).expect(200);
+    occ = plannedList.body.find((p: any) => p.id === planned.body.id);
+    expect(occ.status).toBe('PENDING');
+    expect(occ.expectedAmount).toBe(500);
+
+    // Paiement final : 500 DH -> débit réel 500, reste 0, échéance réalisée.
+    await http.post(`/planned-operations/${planned.body.id}/realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '500' }).expect(201);
+    expect((await getAccount(token, adil.id)).balance).toBe(200); // 1000 - 100 - 200 - 500, jamais moins (double comptabilisation)
+    plannedList = await http.get('/planned-operations').set('Authorization', `Bearer ${token}`).expect(200);
+    occ = plannedList.body.find((p: any) => p.id === planned.body.id);
+    expect(occ.status).toBe('REALIZED');
+
+    // Trois opérations réelles distinctes (100 + 200 + 500), jamais une seule
+    // opération de 800 ni un doublon d'un des montants déjà débités.
+    const ops = await http.get(`/financial-operations?accountId=${adil.id}`).set('Authorization', `Bearer ${token}`).expect(200);
+    const dej = ops.body.filter((o: any) => o.label === 'Dej Adil').map((o: any) => o.amount).sort((a: number, b: number) => a - b);
+    expect(dej).toEqual([100, 200, 500]);
+
+    const planning = await getPlanning(token, 3);
+    expect(planning.synthese[planning.months[0]].balanceMensuelle).toBe(-800); // 100+200+500 réalisés, jamais 800+quoi que ce soit en trop
+  });
+
+  // Le contrôle de disponibilité du paiement partiel respecte exactement les
+  // mêmes règles qu'une dépense réelle équivalente : un paiement partiel qui
+  // dépasserait le solde disponible du compte est refusé — sur SON propre
+  // montant (ici 100 DH sur un compte à 50 DH de non-affecté), jamais sur le
+  // montant prévu de l'échéance (800 DH, bien supérieur, hors de cause ici).
+  it("R. paiement partiel refusé si SON montant dépasse le non-affecté disponible (jamais le montant prévu)", async () => {
+    const token = await freshHousehold();
+    const adil = await createAccount(token, 'Adil Compte Courant', 50);
+
+    const planned = await http
+      .post('/planned-operations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ kind: 'EXPENSE', label: 'Dej Adil', expectedDate: todayIso(), expectedAmount: '800', sourceAccountId: adil.id })
+      .expect(201);
+
+    const res = await http.post(`/planned-operations/${planned.body.id}/partial-realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '100' }).expect(400);
+    expect(res.body.message).toMatch(/Non affecté insuffisant/);
+    expect((await getAccount(token, adil.id)).balance).toBe(50); // inchangé par la tentative refusée
+
+    // Le même montant (100) réussit dès que le compte a au moins 100 DH de non-affecté.
+    const adil2 = await createAccount(token, 'Adil Compte 2', 150);
+    const planned2 = await http
+      .post('/planned-operations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ kind: 'EXPENSE', label: 'Dej Adil', expectedDate: todayIso(), expectedAmount: '800', sourceAccountId: adil2.id })
+      .expect(201);
+    await http.post(`/planned-operations/${planned2.body.id}/partial-realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '100' }).expect(201);
+    expect((await getAccount(token, adil2.id)).balance).toBe(50);
+  });
+
   it('P. début du mois paramétrable (§ Paramètres) : jour 28 -> le mois "octobre" couvre 28/09 → 27/10', async () => {
     const token = await freshHousehold();
     const cih = await createAccount(token, 'CIH', 20000);
