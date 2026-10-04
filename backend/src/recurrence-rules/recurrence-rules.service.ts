@@ -31,6 +31,8 @@ export interface UpdateRecurrenceRuleInput {
   destinationAccountId?: string;
   destinationSubaccountId?: string;
   active?: boolean;
+  frequency?: RecurrenceFrequency;
+  anchorDate?: string;
 }
 
 @Injectable()
@@ -75,18 +77,38 @@ export class RecurrenceRulesService {
   }
 
   /**
-   * Modifier une règle récurrente (§19). Ne modifie JAMAIS silencieusement le
-   * passé : THIS_OCCURRENCE laisse le gabarit de la règle intact (l'appelant
-   * doit alors passer par PlannedOperationsService#update sur l'occurrence
-   * pivot elle-même) ; THIS_AND_FOLLOWING met à jour le gabarit ET toutes les
-   * occurrences encore PENDING à partir de fromDate (jamais REALIZED/CANCELLED,
-   * jamais avant fromDate).
+   * Modifier une règle récurrente (§19, lot "modifier une échéance récurrente").
+   * Ne modifie JAMAIS silencieusement le passé : THIS_OCCURRENCE laisse le
+   * gabarit de la règle intact (l'appelant doit alors passer par
+   * PlannedOperationsService#update sur l'occurrence pivot elle-même) ;
+   * THIS_AND_FOLLOWING met à jour le gabarit ET toutes les occurrences encore
+   * PENDING à partir de fromDate (jamais REALIZED/CANCELLED, jamais avant
+   * fromDate).
+   *
+   * Cas "périodicité/jour change" (frequency et/ou anchorDate fournis) : un
+   * simple batch update en place ne suffit pas, les occurrences déjà
+   * générées sous l'ANCIENNE cadence à partir de fromDate ne correspondent
+   * plus aux bonnes dates sous la NOUVELLE — elles sont donc supprimées
+   * (PENDING uniquement, jamais réalisées, donc jamais un historique perdu)
+   * puis régénérées : le pivot est recréé immédiatement à sa nouvelle date
+   * (anchorDate, par défaut fromDate si seule la fréquence change) pour ne
+   * jamais dépendre de la génération paresseuse (qui ignorerait une date déjà
+   * passée), et ensurePlannedOccurrences complète le reste de l'horizon.
+   *
+   * Cas "arrêter la série à partir de cette occurrence" (§8, active=false) :
+   * annule (CANCELLED, jamais supprimé) le pivot et toutes les occurrences
+   * encore PENDING à partir de fromDate, en plus de désactiver la règle —
+   * sinon elles resteraient payables indéfiniment malgré la règle inactive.
    */
   async update(userId: string, householdId: string, id: string, dto: UpdateRecurrenceRuleInput) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
       const rule = await tx.recurrenceRule.findUnique({ where: { id } });
       if (!rule || rule.householdId !== householdId) throw new NotFoundException('Règle de récurrence introuvable');
+
+      const fromDate = new Date(dto.fromDate);
+      const cadenceChanges = dto.frequency !== undefined || dto.anchorDate !== undefined;
+      const newAnchorDate = dto.anchorDate !== undefined ? new Date(dto.anchorDate) : fromDate;
 
       const templatePatch: Prisma.RecurrenceRuleUpdateInput = {};
       if (dto.expectedAmount !== undefined) templatePatch.expectedAmount = new Prisma.Decimal(dto.expectedAmount);
@@ -97,6 +119,10 @@ export class RecurrenceRulesService {
       if (dto.destinationAccountId !== undefined) templatePatch.destinationAccount = { connect: { id: dto.destinationAccountId } };
       if (dto.destinationSubaccountId !== undefined) templatePatch.destinationSubaccount = { connect: { id: dto.destinationSubaccountId } };
       if (dto.active !== undefined) templatePatch.active = dto.active;
+      if (cadenceChanges) {
+        if (dto.frequency !== undefined) templatePatch.frequency = dto.frequency;
+        templatePatch.anchorDate = newAnchorDate;
+      }
 
       if (dto.applyFrom === 'THIS_OCCURRENCE') {
         // Le gabarit de la règle n'est pas touché ; seul `active` peut être
@@ -109,32 +135,63 @@ export class RecurrenceRulesService {
 
       const updated = await tx.recurrenceRule.update({ where: { id }, data: templatePatch });
 
-      // THIS_AND_FOLLOWING : répercute sur les occurrences futures encore PENDING
-      // uniquement (jamais REALIZED/CANCELLED, jamais avant fromDate — §19).
-      const occurrencePatch: Prisma.PlannedOperationUncheckedUpdateManyInput = {};
-      if (dto.expectedAmount !== undefined) occurrencePatch.expectedAmount = new Prisma.Decimal(dto.expectedAmount);
-      if (dto.label !== undefined) occurrencePatch.label = dto.label;
-      if (dto.categoryId !== undefined) occurrencePatch.categoryId = dto.categoryId;
-      if (dto.sourceAccountId !== undefined) occurrencePatch.sourceAccountId = dto.sourceAccountId;
-      if (dto.sourceSubaccountId !== undefined) occurrencePatch.sourceSubaccountId = dto.sourceSubaccountId;
-      if (dto.destinationAccountId !== undefined) occurrencePatch.destinationAccountId = dto.destinationAccountId;
-      if (dto.destinationSubaccountId !== undefined) occurrencePatch.destinationSubaccountId = dto.destinationSubaccountId;
-
-      if (Object.keys(occurrencePatch).length > 0) {
-        await tx.plannedOperation.updateMany({
-          where: {
-            recurrenceRuleId: id,
-            status: 'PENDING',
-            expectedDate: { gte: new Date(dto.fromDate) },
-          },
-          data: occurrencePatch,
+      if (cadenceChanges) {
+        // Supprime les occurrences PENDING déjà générées sous l'ANCIENNE
+        // cadence à partir du pivot (jamais REALIZED/CANCELLED — protégées).
+        await tx.plannedOperation.deleteMany({
+          where: { recurrenceRuleId: id, status: 'PENDING', expectedDate: { gte: fromDate } },
         });
+        // Recrée immédiatement le pivot à sa nouvelle date — ne dépend jamais
+        // de la génération paresseuse (qui ignore toute date déjà passée par
+        // rapport à "aujourd'hui", ex. modification d'une échéance en retard).
+        await tx.plannedOperation.create({
+          data: {
+            householdId,
+            kind: updated.kind,
+            recurrenceRuleId: id,
+            categoryId: updated.categoryId,
+            financialPlanItemId: updated.financialPlanItemId,
+            financialPlanDeadlineId: updated.financialPlanDeadlineId,
+            sourceAccountId: updated.sourceAccountId,
+            sourceSubaccountId: updated.sourceSubaccountId,
+            destinationAccountId: updated.destinationAccountId,
+            destinationSubaccountId: updated.destinationSubaccountId,
+            expectedAmount: updated.expectedAmount,
+            expectedDate: newAnchorDate,
+            label: updated.label ?? 'Récurrence',
+            status: 'PENDING',
+          },
+        });
+        // Complète le reste de l'horizon sous la nouvelle cadence (idempotent).
+        await ensurePlannedOccurrences(tx, householdId);
+      } else {
+        // Pas de changement de cadence : batch update en place des occurrences
+        // déjà générées, mêmes dates, nouveaux champs (comportement existant).
+        const occurrencePatch: Prisma.PlannedOperationUncheckedUpdateManyInput = {};
+        if (dto.expectedAmount !== undefined) occurrencePatch.expectedAmount = new Prisma.Decimal(dto.expectedAmount);
+        if (dto.label !== undefined) occurrencePatch.label = dto.label;
+        if (dto.categoryId !== undefined) occurrencePatch.categoryId = dto.categoryId;
+        if (dto.sourceAccountId !== undefined) occurrencePatch.sourceAccountId = dto.sourceAccountId;
+        if (dto.sourceSubaccountId !== undefined) occurrencePatch.sourceSubaccountId = dto.sourceSubaccountId;
+        if (dto.destinationAccountId !== undefined) occurrencePatch.destinationAccountId = dto.destinationAccountId;
+        if (dto.destinationSubaccountId !== undefined) occurrencePatch.destinationSubaccountId = dto.destinationSubaccountId;
+
+        if (Object.keys(occurrencePatch).length > 0) {
+          await tx.plannedOperation.updateMany({
+            where: { recurrenceRuleId: id, status: 'PENDING', expectedDate: { gte: fromDate } },
+            data: occurrencePatch,
+          });
+        }
       }
 
       if (dto.active === false) {
-        // Une règle désactivée n'a plus vocation à générer — les occurrences
-        // futures déjà générées mais non réalisées restent visibles/payables,
-        // seule la génération de nouvelles dates s'arrête (cf. ensurePlannedOccurrences).
+        // Arrêter la série à partir de cette occurrence (§8) : le pivot et
+        // toutes les occurrences encore PENDING à partir de fromDate ne
+        // doivent plus apparaître comme à venir/payables.
+        await tx.plannedOperation.updateMany({
+          where: { recurrenceRuleId: id, status: 'PENDING', expectedDate: { gte: fromDate } },
+          data: { status: 'CANCELLED' },
+        });
       }
 
       return updated;

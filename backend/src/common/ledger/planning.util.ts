@@ -14,6 +14,8 @@ export interface PlanningPlannedOperationRow {
   expectedAmount: Prisma.Decimal;
   expectedDate: Date;
   categoryId: string | null;
+  /** Lot "modifier une échéance récurrente" — non-null uniquement si cette occurrence provient d'une récurrence, pour que le mobile sache proposer le choix "cette échéance uniquement / et les suivantes". */
+  recurrenceRuleId: string | null;
   financialPlanItemId: string | null;
   financialPlanDeadlineId: string | null;
   sourceAccountId: string | null;
@@ -56,6 +58,10 @@ export interface PlanningCellItem {
   sourceSubaccountId: string | null;
   destinationAccountId: string | null;
   destinationSubaccountId: string | null;
+  /** Uniquement renseignés pour PLANNED_PENDING/PLANNED_REALIZED (jamais REAL_UNPLANNED) — cf. singleOccurrence. */
+  recurrenceRuleId?: string | null;
+  categoryId?: string | null;
+  kind?: 'EXPENSE' | 'INCOME' | 'SAVINGS_CONTRIBUTION';
 }
 
 export interface PlanningCell {
@@ -78,6 +84,10 @@ export interface PlanningCell {
         sourceSubaccountId: string | null;
         destinationAccountId: string | null;
         destinationSubaccountId: string | null;
+        /** Lot "modifier une échéance récurrente" — permet au mobile de proposer "cette échéance uniquement / et les suivantes" uniquement quand pertinent. */
+        recurrenceRuleId: string | null;
+        categoryId: string | null;
+        kind: 'EXPENSE' | 'INCOME' | 'SAVINGS_CONTRIBUTION';
       }
     | null;
   items: PlanningCellItem[];
@@ -218,10 +228,11 @@ function finalizeCellStatus(cell: PlanningCell) {
       destinationAccountId: only.destinationAccountId,
       destinationSubaccountId: only.destinationSubaccountId,
     };
+    const meta = { recurrenceRuleId: only.recurrenceRuleId ?? null, categoryId: only.categoryId ?? null, kind: only.kind! };
     if (only.type === 'PLANNED_PENDING' && only.plannedOperationId) {
-      cell.singleOccurrence = { plannedOperationId: only.plannedOperationId, status: 'PENDING', expectedAmount: only.amount, realizedAmount: null, ...accounts };
+      cell.singleOccurrence = { plannedOperationId: only.plannedOperationId, status: 'PENDING', expectedAmount: only.amount, realizedAmount: null, ...accounts, ...meta };
     } else if (only.type === 'PLANNED_REALIZED' && only.plannedOperationId) {
-      cell.singleOccurrence = { plannedOperationId: only.plannedOperationId, status: 'REALIZED', expectedAmount: only.amount, realizedAmount: only.amount, ...accounts };
+      cell.singleOccurrence = { plannedOperationId: only.plannedOperationId, status: 'REALIZED', expectedAmount: only.amount, realizedAmount: only.amount, ...accounts, ...meta };
     }
   }
 }
@@ -295,6 +306,9 @@ export function buildPlanningTable(params: {
       sourceSubaccountId: planned.sourceSubaccountId,
       destinationAccountId: planned.destinationAccountId,
       destinationSubaccountId: planned.destinationSubaccountId,
+      recurrenceRuleId: planned.recurrenceRuleId,
+      categoryId: planned.categoryId,
+      kind: planned.kind,
     };
 
     if (planned.kind === 'INCOME') {

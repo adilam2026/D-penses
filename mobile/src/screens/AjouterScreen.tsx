@@ -7,16 +7,17 @@ import * as api from '../api/client';
 import { colors, elevation, fontFamily, radius, spacing, typography } from '../ui/theme';
 import { HelpButton } from '../ui/HelpButton';
 import { FormField } from '../ui/FormField';
-import { Select, SelectOption } from '../ui/Select';
+import { Select } from '../ui/Select';
 import { DateField } from '../ui/DateField';
 import { useBottomInset } from '../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
 import { AccountColorSwatchGrid } from '../ui/AccountColorPicker';
 import { ACCOUNT_COLOR_OPTIONS } from '../ui/accountPalette';
+import { accountSelectOptions, decodeAccountOption } from '../ui/accountOptions';
+import { RECURRENCE_FREQUENCY_OPTIONS, RecurrenceOption } from '../ui/recurrenceLabels';
 
 type QuickMode = 'EXPENSE' | 'INCOME' | 'TRANSFER' | 'SAVINGS_CONTRIBUTION';
 type EntryTab = 'realisee' | 'a_venir';
-type RecurrenceOption = 'WEEKLY' | 'MONTHLY' | 'BIMONTHLY' | 'QUARTERLY' | 'SEMIANNUAL' | 'YEARLY';
 
 const QUICK_TILES: { mode: QuickMode; label: string; description: string; icon: keyof typeof Ionicons.glyphMap; colors: [string, string] }[] = [
   { mode: 'EXPENSE', label: 'Dépense', description: 'Loyer, courses, factures…', icon: 'arrow-forward', colors: ['#E85D3B', '#C24322'] },
@@ -25,33 +26,10 @@ const QUICK_TILES: { mode: QuickMode; label: string; description: string; icon: 
   { mode: 'SAVINGS_CONTRIBUTION', label: 'Versement', description: "Vers une enveloppe d'épargne", icon: 'wallet-outline', colors: ['#1FA3A3', '#0F6E6E'] },
 ];
 
-const RECURRENCE_LABELS: Record<RecurrenceOption, string> = {
-  WEEKLY: 'Hebdomadaire',
-  MONTHLY: 'Mensuelle',
-  BIMONTHLY: 'Tous les 2 mois',
-  QUARTERLY: 'Trimestrielle',
-  SEMIANNUAL: 'Semestrielle',
-  YEARLY: 'Annuelle',
-};
-
-function accountOptions(accounts: api.AccountApi[], includeSubaccounts: boolean): SelectOption[] {
-  const options: SelectOption[] = [];
-  for (const a of accounts) {
-    options.push({ value: `acc:${a.id}`, label: a.name });
-    if (includeSubaccounts) {
-      for (const s of a.subaccounts) options.push({ value: `sub:${s.id}`, label: `${a.name} — ${s.name}` });
-    }
-  }
-  return options;
-}
-
-function decodeAccountOption(value: string, accounts: api.AccountApi[]): { accountId: string; subaccountId?: string } {
-  if (value.startsWith('sub:')) {
-    const subId = value.slice(4);
-    const parent = accounts.find((a) => a.subaccounts.some((s) => s.id === subId));
-    return { accountId: parent!.id, subaccountId: subId };
-  }
-  return { accountId: value.slice(4) };
+// accountOptions() historique de cet écran n'a jamais filtré les sous-comptes
+// désactivés (activeOnly=false) — comportement inchangé, cf. mobile/src/ui/accountOptions.ts.
+function accountOptions(accounts: api.AccountApi[], includeSubaccounts: boolean) {
+  return accountSelectOptions(accounts, includeSubaccounts, false);
 }
 
 /** Ajouter (Checkpoint 2 §11/§12) — 4 tuiles rapides, Réalisée/À venir, catégorie, Ponctuelle/Récurrente, mutuelle si Santé. */
@@ -293,7 +271,7 @@ export function AjouterScreen() {
               <Select
                 label="Périodicité"
                 value={frequency}
-                options={(Object.keys(RECURRENCE_LABELS) as RecurrenceOption[]).map((k) => ({ value: k, label: RECURRENCE_LABELS[k] }))}
+                options={RECURRENCE_FREQUENCY_OPTIONS}
                 onChange={(v) => setFrequency(v as RecurrenceOption)}
                 testID="ajouter-frequency"
               />

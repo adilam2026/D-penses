@@ -1,5 +1,6 @@
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react-native';
+import { Alert } from 'react-native';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PlanningScreen } from '../PlanningScreen';
 import { clearCache } from '../../state/cache';
@@ -20,20 +21,30 @@ jest.mock('@react-navigation/native', () => ({
 
 const mockGetPlanning = jest.fn();
 const mockListAccounts = jest.fn();
+const mockListCategories = jest.fn();
 const mockListFinancialPlans = jest.fn();
 const mockRealizePlannedOperation = jest.fn();
 const mockUnrealizePlannedOperation = jest.fn();
 const mockPartialRealizePlannedOperation = jest.fn();
 const mockGetFinancialOperation = jest.fn();
+const mockUpdatePlannedOperation = jest.fn();
+const mockCancelPlannedOperation = jest.fn();
+const mockListRecurrenceRules = jest.fn();
+const mockUpdateRecurrenceRule = jest.fn();
 
 jest.mock('../../api/client', () => ({
   getPlanning: (...args: unknown[]) => mockGetPlanning(...args),
   listAccounts: () => mockListAccounts(),
+  listCategories: () => mockListCategories(),
   listFinancialPlans: () => mockListFinancialPlans(),
   realizePlannedOperation: (...args: unknown[]) => mockRealizePlannedOperation(...args),
   unrealizePlannedOperation: (...args: unknown[]) => mockUnrealizePlannedOperation(...args),
   partialRealizePlannedOperation: (...args: unknown[]) => mockPartialRealizePlannedOperation(...args),
   getFinancialOperation: (...args: unknown[]) => mockGetFinancialOperation(...args),
+  updatePlannedOperation: (...args: unknown[]) => mockUpdatePlannedOperation(...args),
+  cancelPlannedOperation: (...args: unknown[]) => mockCancelPlannedOperation(...args),
+  listRecurrenceRules: (...args: unknown[]) => mockListRecurrenceRules(...args),
+  updateRecurrenceRule: (...args: unknown[]) => mockUpdateRecurrenceRule(...args),
 }));
 
 function renderWithSafeArea(ui: React.ReactElement) {
@@ -65,9 +76,11 @@ beforeEach(() => {
   jest.clearAllMocks();
   clearCache();
   mockListAccounts.mockResolvedValue([
-    { id: 'cih', name: 'CIH', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, balance: 20000, nonAffecte: 15000, subaccounts: [{ id: 'voiture', accountId: 'cih', name: 'CIH-Voiture', balance: 5000 }] },
+    { id: 'cih', name: 'CIH', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, balance: 20000, nonAffecte: 15000, subaccounts: [{ id: 'voiture', accountId: 'cih', name: 'CIH-Voiture', balance: 5000, active: true }] },
   ]);
+  mockListCategories.mockResolvedValue([]);
   mockListFinancialPlans.mockResolvedValue([]);
+  mockListRecurrenceRules.mockResolvedValue([]);
 });
 
 it('affiche le sélecteur d\'horizon (3/6/9/12) avec 6 mois actif par défaut', async () => {
@@ -101,7 +114,7 @@ it('case prévue (PENDING) : tap simple ouvre un mini pop-up ; seul "Marquer com
               pendingAmount: 700,
               realizedAmount: 0,
               status: 'PENDING',
-              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null },
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE' },
               items: [{ type: 'PLANNED_PENDING', plannedOperationId: 'po-1', label: 'Assurance voiture', amount: 700, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
             },
             '2026-10': emptyCell(),
@@ -141,7 +154,7 @@ it('case prévue : "Fermer" ferme le pop-up sans déclencher de paiement', async
               pendingAmount: 700,
               realizedAmount: 0,
               status: 'PENDING',
-              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null },
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE' },
               items: [{ type: 'PLANNED_PENDING', plannedOperationId: 'po-1', label: 'Assurance voiture', amount: 700, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
             },
             '2026-10': emptyCell(),
@@ -176,7 +189,7 @@ it('case déjà payée : tap simple ouvre un mini pop-up avec "Annuler le paieme
               pendingAmount: 0,
               realizedAmount: 820,
               status: 'REALIZED',
-              singleOccurrence: { plannedOperationId: 'po-1', status: 'REALIZED', expectedAmount: 700, realizedAmount: 820, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null },
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'REALIZED', expectedAmount: 700, realizedAmount: 820, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE' },
               items: [{ type: 'PLANNED_REALIZED', plannedOperationId: 'po-1', financialOperationId: 'op-1', label: 'Assurance voiture', amount: 820, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
             },
             '2026-10': emptyCell(),
@@ -214,7 +227,7 @@ it('case prévue : appui long ouvre le modal d\'ajustement pré-rempli avec le m
               pendingAmount: 700,
               realizedAmount: 0,
               status: 'PENDING',
-              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null },
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE' },
               items: [{ type: 'PLANNED_PENDING', plannedOperationId: 'po-1', label: 'Assurance voiture', amount: 700, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
             },
             '2026-10': emptyCell(),
@@ -228,6 +241,12 @@ it('case prévue : appui long ouvre le modal d\'ajustement pré-rempli avec le m
   renderWithSafeArea(<PlanningScreen />);
   await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
   fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
+
+  // Appui long sur une case PENDING ouvre désormais un petit menu
+  // (Payer/Ajuster, Modifier l'échéance, Annuler l'échéance) — "Payer /
+  // Ajuster" mène au même AdjustModal qu'avant (comportement inchangé).
+  await waitFor(() => screen.getByTestId('planning-pending-menu-option-pay'));
+  fireEvent.press(screen.getByTestId('planning-pending-menu-option-pay'));
 
   await waitFor(() => screen.getByTestId('planning-adjust-submit'));
   expect(screen.getByText('Prévu 700 DH')).toBeTruthy();
@@ -256,7 +275,7 @@ it('case prévue : appui long permet un paiement partiel (montant payé < prévu
               pendingAmount: 1000,
               realizedAmount: 0,
               status: 'PENDING',
-              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 1000, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null },
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 1000, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE' },
               items: [{ type: 'PLANNED_PENDING', plannedOperationId: 'po-1', label: 'Assurance voiture', amount: 1000, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
             },
             '2026-10': emptyCell(),
@@ -271,6 +290,8 @@ it('case prévue : appui long permet un paiement partiel (montant payé < prévu
   renderWithSafeArea(<PlanningScreen />);
   await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
   fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
+  await waitFor(() => screen.getByTestId('planning-pending-menu-option-pay'));
+  fireEvent.press(screen.getByTestId('planning-pending-menu-option-pay'));
   await waitFor(() => screen.getByTestId('planning-adjust-partial-submit'));
 
   // Bouton désactivé sans montant saisi.
@@ -300,7 +321,7 @@ it('case réalisée (verte) : appui long propose Voir/Modifier/Annuler le paieme
               pendingAmount: 0,
               realizedAmount: 820,
               status: 'REALIZED',
-              singleOccurrence: { plannedOperationId: 'po-1', status: 'REALIZED', expectedAmount: 700, realizedAmount: 820, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null },
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'REALIZED', expectedAmount: 700, realizedAmount: 820, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE' },
               items: [{ type: 'PLANNED_REALIZED', plannedOperationId: 'po-1', financialOperationId: 'op-1', label: 'Assurance voiture', amount: 820, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
             },
             '2026-10': emptyCell(),
@@ -450,4 +471,172 @@ it('plans financiers : la carte affiche la prochaine échéance et navigue vers 
 
   fireEvent.press(screen.getByTestId('planning-plan-plan-1'));
   expect(mockNavigate).toHaveBeenCalledWith('FinancialPlanDetail', { id: 'plan-1' });
+});
+
+// -----------------------------------------------------------------
+// Lot "Planning — source au paiement + modification des échéances"
+// -----------------------------------------------------------------
+
+function pendingVoitureCell(overrides?: Partial<ReturnType<typeof voitureSingleOccurrence>>) {
+  return {
+    displayAmount: 700,
+    budgetAmount: 700,
+    pendingAmount: 700,
+    realizedAmount: 0,
+    status: 'PENDING' as const,
+    singleOccurrence: { ...voitureSingleOccurrence(), ...overrides },
+    items: [{ type: 'PLANNED_PENDING' as const, plannedOperationId: 'po-1', label: 'Assurance voiture', amount: 700, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
+  };
+}
+
+function voitureSingleOccurrence() {
+  return {
+    plannedOperationId: 'po-1',
+    status: 'PENDING' as const,
+    expectedAmount: 700,
+    realizedAmount: null,
+    sourceAccountId: 'cih',
+    sourceSubaccountId: 'voiture',
+    destinationAccountId: null,
+    destinationSubaccountId: null,
+    recurrenceRuleId: null as string | null,
+    categoryId: null as string | null,
+    kind: 'EXPENSE' as const,
+  };
+}
+
+it("AdjustModal : le sélecteur de source est présélectionné sur la source prévue et l'override est transmis au paiement", async () => {
+  mockListAccounts.mockResolvedValue([
+    { id: 'cih', name: 'CIH', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, balance: 20000, nonAffecte: 15000, subaccounts: [{ id: 'voiture', accountId: 'cih', name: 'CIH-Voiture', balance: 5000, active: true }] },
+    { id: 'bp', name: 'BP Lamiaa', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, balance: 10000, nonAffecte: 10000, subaccounts: [] },
+  ]);
+  mockGetPlanning.mockResolvedValue(
+    basePlanning({ depenses: [{ key: 'cat-voiture', label: 'Voiture', categoryId: 'cat-voiture', cells: { '2026-09': pendingVoitureCell(), '2026-10': emptyCell(), '2026-11': emptyCell() } }] }),
+  );
+
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
+  fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
+  fireEvent.press(await screen.findByTestId('planning-pending-menu-option-pay'));
+
+  await waitFor(() => screen.getByTestId('planning-adjust-source'));
+  // Présélection : la source prévue (CIH — CIH-Voiture) est affichée.
+  expect(screen.getByText('CIH — CIH-Voiture')).toBeTruthy();
+
+  // Choisir une autre source (BP Lamiaa, compte principal direct) avant de payer.
+  await fireEvent.press(screen.getByTestId('planning-adjust-source'));
+  await fireEvent.press(await screen.findByTestId('planning-adjust-source-option-acc:bp'));
+
+  await fireEvent.press(screen.getByTestId('planning-adjust-submit'));
+  await waitFor(() =>
+    expect(mockRealizePlannedOperation).toHaveBeenCalledWith('po-1', expect.objectContaining({ actualAmount: '700', sourceAccountId: 'bp', sourceSubaccountId: undefined })),
+  );
+});
+
+it('"Modifier l\'échéance" sur une échéance ponctuelle ouvre directement le formulaire (jamais le choix de portée)', async () => {
+  mockGetPlanning.mockResolvedValue(
+    basePlanning({ depenses: [{ key: 'cat-voiture', label: 'Voiture', categoryId: 'cat-voiture', cells: { '2026-09': pendingVoitureCell(), '2026-10': emptyCell(), '2026-11': emptyCell() } }] }),
+  );
+  mockUpdatePlannedOperation.mockResolvedValue({});
+
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
+  fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
+  await fireEvent.press(await screen.findByTestId('planning-pending-menu-option-edit'));
+
+  // Ponctuelle : jamais le ChoiceSheet "cette échéance uniquement / et les suivantes".
+  expect(screen.queryByTestId('planning-scope-choice-option-single')).toBeNull();
+  await waitFor(() => screen.getByTestId('planning-edit-submit'));
+
+  await fireEvent.changeText(screen.getByTestId('planning-edit-amount'), '750');
+  await fireEvent.press(screen.getByTestId('planning-edit-submit'));
+
+  await waitFor(() => expect(mockUpdatePlannedOperation).toHaveBeenCalledWith('po-1', expect.objectContaining({ expectedAmount: '750' })));
+});
+
+it('"Modifier l\'échéance" sur une occurrence récurrente propose le choix de portée, et "et les suivantes" appelle updateRecurrenceRule', async () => {
+  mockGetPlanning.mockResolvedValue(
+    basePlanning({
+      depenses: [
+        {
+          key: 'cat-voiture',
+          label: 'Voiture',
+          categoryId: 'cat-voiture',
+          cells: { '2026-09': pendingVoitureCell({ recurrenceRuleId: 'rule-1' }), '2026-10': emptyCell(), '2026-11': emptyCell() },
+        },
+      ],
+    }),
+  );
+  mockListRecurrenceRules.mockResolvedValue([
+    { id: 'rule-1', frequency: 'MONTHLY', anchorDate: '2026-09-15', label: 'Voiture', active: true, kind: 'EXPENSE', expectedAmount: 700, categoryId: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null },
+  ]);
+  mockUpdateRecurrenceRule.mockResolvedValue({});
+
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
+  fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
+  await fireEvent.press(await screen.findByTestId('planning-pending-menu-option-edit'));
+
+  await fireEvent.press(await screen.findByTestId('planning-scope-choice-option-series'));
+  await waitFor(() => screen.getByTestId('planning-edit-submit'));
+  expect(screen.getByText('Modifier cette échéance et les suivantes')).toBeTruthy();
+
+  await fireEvent.changeText(screen.getByTestId('planning-edit-amount'), '800');
+  await fireEvent.press(screen.getByTestId('planning-edit-submit'));
+
+  await waitFor(() =>
+    expect(mockUpdateRecurrenceRule).toHaveBeenCalledWith(
+      'rule-1',
+      expect.objectContaining({ applyFrom: 'THIS_AND_FOLLOWING', fromDate: '2026-09-15', expectedAmount: '800' }),
+    ),
+  );
+});
+
+it('"Annuler l\'échéance" sur une échéance ponctuelle demande confirmation puis appelle cancelPlannedOperation', async () => {
+  mockGetPlanning.mockResolvedValue(
+    basePlanning({ depenses: [{ key: 'cat-voiture', label: 'Voiture', categoryId: 'cat-voiture', cells: { '2026-09': pendingVoitureCell(), '2026-10': emptyCell(), '2026-11': emptyCell() } }] }),
+  );
+  mockCancelPlannedOperation.mockResolvedValue({});
+  const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _msg, buttons) => {
+    buttons?.find((b) => b.style === 'destructive')?.onPress?.();
+  });
+
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
+  fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
+  await fireEvent.press(await screen.findByTestId('planning-pending-menu-option-cancel'));
+
+  await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+  await waitFor(() => expect(mockCancelPlannedOperation).toHaveBeenCalledWith('po-1'));
+  alertSpy.mockRestore();
+});
+
+it('"Annuler l\'échéance" sur une récurrence propose le choix de portée ; "et les suivantes" arrête la série (active:false)', async () => {
+  mockGetPlanning.mockResolvedValue(
+    basePlanning({
+      depenses: [
+        {
+          key: 'cat-voiture',
+          label: 'Voiture',
+          categoryId: 'cat-voiture',
+          cells: { '2026-09': pendingVoitureCell({ recurrenceRuleId: 'rule-1' }), '2026-10': emptyCell(), '2026-11': emptyCell() },
+        },
+      ],
+    }),
+  );
+  mockUpdateRecurrenceRule.mockResolvedValue({});
+  const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _msg, buttons) => {
+    buttons?.find((b) => b.style === 'destructive')?.onPress?.();
+  });
+
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
+  fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
+  await fireEvent.press(await screen.findByTestId('planning-pending-menu-option-cancel'));
+  await fireEvent.press(await screen.findByTestId('planning-scope-choice-option-series'));
+
+  await waitFor(() =>
+    expect(mockUpdateRecurrenceRule).toHaveBeenCalledWith('rule-1', expect.objectContaining({ applyFrom: 'THIS_AND_FOLLOWING', fromDate: '2026-09-15', active: false })),
+  );
+  alertSpy.mockRestore();
 });

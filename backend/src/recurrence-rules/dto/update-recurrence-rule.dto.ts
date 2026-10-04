@@ -1,6 +1,9 @@
-import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsDateString, IsIn, IsOptional, IsString } from 'class-validator';
+import { RecurrenceFrequency } from '@prisma/client';
 
 export type RecurrenceRuleApplyFrom = 'THIS_OCCURRENCE' | 'THIS_AND_FOLLOWING';
+
+const RECURRENCE_FREQUENCIES: RecurrenceFrequency[] = ['WEEKLY', 'MONTHLY', 'BIMONTHLY', 'QUARTERLY', 'SEMIANNUAL', 'YEARLY', 'ONCE'];
 
 /**
  * Modifier une règle récurrente (§19) : jamais silencieux sur l'historique.
@@ -48,4 +51,20 @@ export class UpdateRecurrenceRuleDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  /**
+   * Périodicité/jour de référence — THIS_AND_FOLLOWING uniquement (§ modifier
+   * la périodicité). Fournir l'un ou l'autre réaligne la série à partir de
+   * fromDate : les occurrences déjà générées sous l'ANCIENNE cadence à partir
+   * de fromDate sont régénérées sous la nouvelle (jamais l'historique avant
+   * fromDate, jamais REALIZED/CANCELLED). anchorDate, si fourni, est la
+   * NOUVELLE date de l'occurrence pivot elle-même (ex. jour d'échéance 15 -> 20).
+   */
+  @IsOptional()
+  @IsIn(RECURRENCE_FREQUENCIES)
+  frequency?: RecurrenceFrequency;
+
+  @IsOptional()
+  @IsDateString()
+  anchorDate?: string;
 }

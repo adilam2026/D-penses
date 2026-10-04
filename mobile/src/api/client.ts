@@ -324,13 +324,32 @@ export const createPlannedOperation = (data: {
   destinationSubaccountId?: string;
 }) => apiFetch('/planned-operations', { method: 'POST', body: data });
 
-export const realizePlannedOperation = (id: string, data: { actualAmount: string; actualDate?: string; label?: string }) =>
+/**
+ * sourceAccountId/sourceSubaccountId/destinationAccountId/destinationSubaccountId
+ * (lot "choisir la source au moment du paiement") : source RÉELLE de CE
+ * paiement, jamais écrite sur l'échéance elle-même (qui garde sa source
+ * prévue). Omettre ces champs réutilise la source prévue, comportement
+ * historique inchangé. Fournir *AccountId sans *SubaccountId signifie
+ * explicitement "compte principal direct" — toujours envoyer la paire
+ * complète issue du même Select, jamais un champ isolé.
+ */
+export interface RealizePlannedOperationData {
+  actualAmount: string;
+  actualDate?: string;
+  label?: string;
+  sourceAccountId?: string;
+  sourceSubaccountId?: string;
+  destinationAccountId?: string;
+  destinationSubaccountId?: string;
+}
+
+export const realizePlannedOperation = (id: string, data: RealizePlannedOperationData) =>
   apiFetch(`/planned-operations/${id}/realize`, { method: 'POST', body: data });
 
 export const cancelPlannedOperation = (id: string) => apiFetch(`/planned-operations/${id}/cancel`, { method: 'POST' });
 
 /** Paiement partiel (Planning, appui long, §correction) — enregistre le montant réellement payé maintenant sans clore l'échéance : le reste à payer continue d'exister (expectedAmount réduit, status reste PENDING). */
-export const partialRealizePlannedOperation = (id: string, data: { actualAmount: string; actualDate?: string; label?: string }) =>
+export const partialRealizePlannedOperation = (id: string, data: RealizePlannedOperationData) =>
   apiFetch(`/planned-operations/${id}/partial-realize`, { method: 'POST', body: data });
 
 /** Modifier UNE occurrence (appui long, ex. prévu 700 -> réel ajusté avant paiement) — ne touche jamais la règle. */
@@ -411,7 +430,17 @@ export const createRecurrenceRule = (data: {
   destinationSubaccountId?: string;
 }): Promise<RecurrenceRuleApi> => apiFetch('/recurrence-rules', { method: 'POST', body: data });
 
-/** Modifier une règle (§19) : applyFrom pilote "cette occurrence seulement" (jamais le gabarit) vs "cette occurrence et les suivantes". */
+/**
+ * Modifier une règle (§19, lot "modifier une échéance récurrente") :
+ * applyFrom pilote "cette occurrence seulement" (jamais le gabarit — passer
+ * alors par updatePlannedOperation sur l'occurrence pivot) vs "cette
+ * occurrence et les suivantes" (gabarit + occurrences PENDING à partir de
+ * fromDate). frequency/anchorDate (optionnels, THIS_AND_FOLLOWING
+ * uniquement) réalignent la périodicité/le jour de référence à partir du
+ * pivot — jamais l'historique avant fromDate. active:false sur
+ * THIS_AND_FOLLOWING arrête la série à partir du pivot (annule aussi les
+ * occurrences déjà générées à partir de fromDate).
+ */
 export const updateRecurrenceRule = (
   id: string,
   data: {
@@ -425,6 +454,8 @@ export const updateRecurrenceRule = (
     destinationAccountId?: string;
     destinationSubaccountId?: string;
     active?: boolean;
+    frequency?: RecurrenceFrequency;
+    anchorDate?: string;
   },
 ): Promise<RecurrenceRuleApi> => apiFetch(`/recurrence-rules/${id}`, { method: 'PATCH', body: data });
 
@@ -453,6 +484,10 @@ export interface PlanningSingleOccurrenceApi {
   sourceSubaccountId: string | null;
   destinationAccountId: string | null;
   destinationSubaccountId: string | null;
+  /** Lot "modifier une échéance récurrente" — non-null uniquement si cette occurrence provient d'une récurrence (affiche alors le choix "cette échéance uniquement / et les suivantes"). */
+  recurrenceRuleId: string | null;
+  categoryId: string | null;
+  kind: PlannedOperationKind;
 }
 
 export interface PlanningCellApi {
