@@ -37,7 +37,7 @@ async function createOpeningBalance(
     })),
   });
 
-  await assertInvariants(tx, [params.accountId], params.subaccountId ? [params.subaccountId] : []);
+  await assertInvariants(tx, legs);
   return operation;
 }
 

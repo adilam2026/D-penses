@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react-native';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AccueilScreen } from '../AccueilScreen';
 import { clearCache } from '../../state/cache';
@@ -75,6 +75,24 @@ it("n'affiche aucune métrique globale inventée, mais les comptes avec leurs so
   expect(screen.getByText('Non affecté')).toBeTruthy();
   // Pas de "Disponible libre" (hero métrique retirée par l'audit maquette).
   expect(screen.queryByText(/Disponible libre/)).toBeNull();
+});
+
+it('pastille compte (lot correctif §E) : affiche le sigle de la banque quand il existe, sinon retombe sur les initiales du nom', async () => {
+  mockListAccounts.mockResolvedValue([
+    { id: 'adil', name: 'Adil Compte Courant', bank: 'SG', type: 'COURANT', ownerMemberId: null, ownerLabel: null, balance: 1000, nonAffecte: 1000, subaccounts: [] },
+    { id: 'lamiaa', name: 'Lamiaa Compte Courant', bank: 'BCP', type: 'COURANT', ownerMemberId: null, ownerLabel: null, balance: 2000, nonAffecte: 2000, subaccounts: [] },
+    { id: 'scolarite', name: 'Scolarité', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, balance: 3000, nonAffecte: 3000, subaccounts: [] },
+  ]);
+
+  renderWithSafeArea(<AccueilScreen />);
+  await waitFor(() => screen.getByTestId('accueil-account-adil'));
+
+  // Avec banque renseignée : le sigle réel du compte dans LA PASTILLE (scope sur
+  // la ligne du compte, car le même sigle apparaît aussi dans le texte meta).
+  expect(within(screen.getByTestId('accueil-account-adil')).getAllByText('SG').length).toBeGreaterThan(0);
+  expect(within(screen.getByTestId('accueil-account-lamiaa')).getAllByText('BCP').length).toBeGreaterThan(0);
+  // Sans banque : comportement historique (initiales du nom), inchangé.
+  expect(within(screen.getByTestId('accueil-account-scolarite')).getByText('SC')).toBeTruthy();
 });
 
 it('état vide : aucun compte -> écran de bienvenue première utilisation (§2), jamais un dashboard vide', async () => {

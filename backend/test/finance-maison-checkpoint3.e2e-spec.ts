@@ -549,7 +549,10 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
       .expect(201);
 
     const res = await http.post(`/planned-operations/${planned.body.id}/partial-realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '100' }).expect(400);
-    expect(res.body.message).toMatch(/Non affecté insuffisant/);
+    // Message clair (lot correctif §A) : montre le montant RÉELLEMENT disponible
+    // (50, calculé) plutôt qu'un rejet technique générique.
+    expect(res.body.message).toMatch(/Montant disponible insuffisant/);
+    expect(res.body.message).toMatch(/50 DH/);
     expect((await getAccount(token, adil.id)).balance).toBe(50); // inchangé par la tentative refusée
 
     // Le même montant (100) réussit dès que le compte a au moins 100 DH de non-affecté.
@@ -561,6 +564,93 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
       .expect(201);
     await http.post(`/planned-operations/${planned2.body.id}/partial-realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '100' }).expect(201);
     expect((await getAccount(token, adil2.id)).balance).toBe(50);
+  });
+
+  // S. Exemple de référence (lot correctif §règle A validée) : compte 5000,
+  // enveloppes Courses=1000 + Autres=3950 (donc non affecté=50) — une dépense
+  // DIRECTE (depuis le compte principal, sans sous-compte) est plafonnée
+  // exactement au non affecté : refusée au-delà, autorisée jusqu'à la limite.
+  it('S. dépense directe plafonnée exactement au non affecté disponible (5000/4950/50)', async () => {
+    const token = await freshHousehold();
+    const adil = await createAccount(token, 'Adil Compte Courant', 5000);
+    await createSubaccount(token, adil.id, 'Courses', 1000);
+    await createSubaccount(token, adil.id, 'Autres', 3950);
+    expect((await getAccount(token, adil.id)).nonAffecte).toBe(50);
+
+    const refused = await http
+      .post('/financial-operations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ kind: 'EXPENSE', label: 'Dépense directe', date: todayIso(), amount: '100', sourceAccountId: adil.id })
+      .expect(400);
+    expect(refused.body.message).toMatch(/Montant disponible insuffisant/);
+    expect(refused.body.message).toMatch(/50 DH/);
+    expect((await getAccount(token, adil.id)).balance).toBe(5000); // inchangé par la tentative refusée
+
+    await http
+      .post('/financial-operations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ kind: 'EXPENSE', label: 'Dépense directe', date: todayIso(), amount: '50', sourceAccountId: adil.id })
+      .expect(201);
+    const after = await getAccount(token, adil.id);
+    expect(after.balance).toBe(4950);
+    expect(after.nonAffecte).toBe(0);
+  });
+
+  // T. Une dépense DEPUIS un sous-compte (enveloppe) n'est jamais plafonnée par
+  // le non affecté — elle débite le sous-compte ET le compte réel du même
+  // montant, en laissant le non affecté totalement inchangé (ex. Courses 1000
+  // / dépense 100 depuis Courses, alors que le non affecté n'est que de 50).
+  it('T. dépense depuis un sous-compte (enveloppe) jamais plafonnée par le non affecté, non affecté inchangé', async () => {
+    const token = await freshHousehold();
+    const adil = await createAccount(token, 'Adil Compte Courant', 5000);
+    const courses = await createSubaccount(token, adil.id, 'Courses', 1000);
+    await createSubaccount(token, adil.id, 'Autres', 3950);
+    expect((await getAccount(token, adil.id)).nonAffecte).toBe(50);
+
+    await http
+      .post('/financial-operations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ kind: 'EXPENSE', label: 'Courses', date: todayIso(), amount: '100', sourceAccountId: adil.id, sourceSubaccountId: courses.id })
+      .expect(201);
+
+    const after = await getAccount(token, adil.id);
+    expect(after.balance).toBe(4900); // compte réel diminué de 100
+    expect(after.subaccounts.find((s: any) => s.id === courses.id).balance).toBe(900); // Courses 1000 -> 900
+    expect(after.nonAffecte).toBe(50); // non affecté inchangé
+  });
+
+  // U. Même règle pour un paiement PARTIEL d'échéance : si l'échéance est
+  // financée depuis un sous-compte, le paiement partiel débite ce sous-compte
+  // (jamais plafonné par le non affecté) et le reste à payer est calculé
+  // correctement sur le montant prévu total, pas sur le non affecté.
+  it("U. paiement partiel depuis un sous-compte jamais plafonné par le non affecté, reste correctement calculé", async () => {
+    const token = await freshHousehold();
+    const adil = await createAccount(token, 'Adil Compte Courant', 5000);
+    const courses = await createSubaccount(token, adil.id, 'Courses', 1000);
+    await createSubaccount(token, adil.id, 'Autres', 3950);
+    expect((await getAccount(token, adil.id)).nonAffecte).toBe(50);
+
+    const planned = await http
+      .post('/planned-operations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ kind: 'EXPENSE', label: 'Courses du mois', expectedDate: todayIso(), expectedAmount: '300', sourceAccountId: adil.id, sourceSubaccountId: courses.id })
+      .expect(201);
+
+    await http
+      .post(`/planned-operations/${planned.body.id}/partial-realize`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ actualAmount: '100' })
+      .expect(201);
+
+    const after = await getAccount(token, adil.id);
+    expect(after.balance).toBe(4900);
+    expect(after.subaccounts.find((s: any) => s.id === courses.id).balance).toBe(900);
+    expect(after.nonAffecte).toBe(50); // jamais touché par un paiement financé via une enveloppe
+
+    const plannedList = await http.get('/planned-operations').set('Authorization', `Bearer ${token}`).expect(200);
+    const updated = plannedList.body.find((p: any) => p.id === planned.body.id);
+    expect(updated.status).toBe('PENDING');
+    expect(updated.expectedAmount).toBe(200); // reste correctement calculé (300 - 100)
   });
 
   it('P. début du mois paramétrable (§ Paramètres) : jour 28 -> le mois "octobre" couvre 28/09 → 27/10', async () => {

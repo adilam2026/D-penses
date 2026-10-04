@@ -178,15 +178,48 @@ export async function computeNonAffecte(tx: TxClient, accountId: string): Promis
   return balance.sub(allocated);
 }
 
-/** Doit être appelé APRÈS insertion des écritures (dans la même transaction), après lockAccounts(). */
-export async function assertInvariants(tx: TxClient, affectedAccountIds: string[], affectedSubaccountIds: string[]): Promise<void> {
-  for (const accountId of new Set(affectedAccountIds)) {
+/** Affiche un montant sans décimales inutiles (50 plutôt que 50.00, mais 49.5 conservé). */
+function formatMontant(d: Prisma.Decimal): string {
+  const n = d.toNumber();
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
+
+/**
+ * Doit être appelé APRÈS insertion des écritures (dans la même transaction), après
+ * lockAccounts(). Reçoit les legs déjà construits (plutôt que de simples listes
+ * d'ids) uniquement pour pouvoir produire, en cas de refus, un message indiquant
+ * le montant RÉELLEMENT disponible — jamais pour changer la règle elle-même :
+ * l'invariant vérifié (non-affecté >= 0, solde sous-compte >= 0) est inchangé.
+ */
+export async function assertInvariants(tx: TxClient, legs: LedgerLeg[]): Promise<void> {
+  const affectedAccountIds = Array.from(new Set(legs.map((leg) => leg.accountId)));
+  for (const accountId of affectedAccountIds) {
     const nonAffecte = await computeNonAffecte(tx, accountId);
     if (nonAffecte.isNegative()) {
-      throw new BadRequestException('Non affecté insuffisant : cette opération dépasse le solde disponible du compte');
+      // Part de ce prélèvement qui a réellement consommé le non-affecté de CE
+      // compte (ΔnonAffecté = Δbalance - Δalloué par leg — vrai aussi bien pour
+      // une dépense directe que pour une allocation vers un sous-compte) :
+      // permet de reconstituer le disponible AVANT l'opération refusée
+      // (nonAffecté après + montant prélevé), pour un message parlant plutôt
+      // qu'un simple rejet technique. Pure reconstruction d'affichage — ne
+      // change rien à l'invariant vérifié ci-dessus.
+      const delta = legs
+        .filter((leg) => leg.accountId === accountId)
+        .reduce((sum, leg) => {
+          const balanceContribution = leg.affectsAccountBalance ? leg.amount : new Prisma.Decimal(0);
+          const allocatedContribution = leg.subaccountId ? leg.amount : new Prisma.Decimal(0);
+          return sum.add(balanceContribution).sub(allocatedContribution);
+        }, new Prisma.Decimal(0));
+      const requested = delta.isNegative() ? delta.neg() : new Prisma.Decimal(0);
+      const availableBefore = nonAffecte.add(requested);
+      const available = availableBefore.isNegative() ? new Prisma.Decimal(0) : availableBefore;
+      throw new BadRequestException(
+        `Montant disponible insuffisant. ${formatMontant(available)} DH sont disponibles sur ce compte, le reste du solde étant affecté à vos enveloppes. Pour utiliser l'argent d'une enveloppe, sélectionnez cette enveloppe comme source de l'opération.`,
+      );
     }
   }
-  for (const subaccountId of new Set(affectedSubaccountIds)) {
+  const affectedSubaccountIds = Array.from(new Set(legs.map((leg) => leg.subaccountId).filter((x): x is string => !!x)));
+  for (const subaccountId of affectedSubaccountIds) {
     const balance = await computeSubaccountBalance(tx, subaccountId);
     if (balance.isNegative()) {
       throw new BadRequestException('Solde insuffisant sur ce sous-compte');
@@ -290,8 +323,7 @@ export async function insertFinancialOperation(tx: TxClient, params: InsertOpera
     })),
   });
 
-  const affectedSubaccountIds = [params.sourceSubaccountId, params.destinationSubaccountId].filter((x): x is string => !!x);
-  await assertInvariants(tx, affectedAccountIds, affectedSubaccountIds);
+  await assertInvariants(tx, legs);
 
   return operation;
 }

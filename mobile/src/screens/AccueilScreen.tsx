@@ -34,6 +34,18 @@ function accountInitials(name: string): string {
 }
 
 /**
+ * Pastille compte (Accueil, lot correctif §E) — affiche le sigle de la banque
+ * (ex. "SG", "BCP", "CIH") quand `account.bank` est renseigné, jamais une
+ * banque en dur : seule la valeur réelle du compte est utilisée. À défaut de
+ * banque, retombe sur les initiales du nom du compte (comportement historique
+ * inchangé).
+ */
+function accountBadgeLabel(account: api.AccountApi): string {
+  const bank = account.bank?.trim();
+  return bank ? bank.toUpperCase() : accountInitials(account.name);
+}
+
+/**
  * Accueil Finance Maison — reconstruit à partir de la maquette validée
  * « Foyer » (01-Accueil) : salutation + carte héro « Patrimoine du foyer »,
  * puis la liste des comptes. Les sous-comptes restent affichés et tactiles
@@ -205,7 +217,9 @@ export function AccueilScreen() {
               testID={`accueil-account-${account.id}`}
             >
               <View style={[styles.accountBadge, { backgroundColor: palette.bg }]}>
-                <Text style={styles.accountBadgeText}>{accountInitials(account.name)}</Text>
+                <Text style={styles.accountBadgeText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+                  {accountBadgeLabel(account)}
+                </Text>
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.accountName}>{account.name}</Text>
@@ -367,8 +381,11 @@ const styles = StyleSheet.create({
 
   accountCard: { backgroundColor: colors.surface, borderRadius: radius.lg, marginBottom: spacing.sm, ...elevation.card },
   accountRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, gap: spacing.md },
-  accountBadge: { width: 44, height: 44, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
-  accountBadgeText: { color: colors.textOnPrimary, fontFamily: fontFamily.sansBold, fontSize: 13 },
+  accountBadge: { width: 44, height: 44, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2 },
+  // fontSize réduit (13 -> 12) pour que des sigles de 3 lettres ("BCP", "CIH")
+  // tiennent sans débordement ; adjustsFontSizeToFit (ci-dessus) couvre le cas
+  // d'un nom de banque saisi plus long.
+  accountBadgeText: { color: colors.textOnPrimary, fontFamily: fontFamily.sansBold, fontSize: 12 },
   accountName: { fontSize: 14, fontFamily: fontFamily.sansBold, color: colors.textPrimary },
   accountMeta: { ...typography.caption, marginTop: 2 },
   accountBalance: { fontSize: 15, fontFamily: fontFamily.sansBold, color: colors.textPrimary },
