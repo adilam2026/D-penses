@@ -35,6 +35,14 @@ describe('Finance Maison — Checkpoint 2 — nouveaux endpoints', () => {
     return res.body.accessToken as string; // le token ré-émis porte le householdId (cf. HouseholdRequiredGuard)
   }
 
+  // Ancre dynamique (jamais une date codée en dur qui finit par être dans le
+  // passé) — la génération de la fenêtre glissante part toujours d'aujourd'hui
+  // (cf. ensurePlannedOccurrences), donc une règle ancrée aujourd'hui génère
+  // systématiquement une occurrence immédiate, quelle que soit la date du jour.
+  function todayIso(): string {
+    return new Date().toISOString().slice(0, 10);
+  }
+
   async function createAccount(token: string, name: string, openingBalance?: number) {
     const res = await http
       .post('/accounts')
@@ -154,7 +162,7 @@ describe('Finance Maison — Checkpoint 2 — nouveaux endpoints', () => {
     const rule = await http
       .post('/recurrence-rules')
       .set('Authorization', `Bearer ${token}`)
-      .send({ frequency: 'MONTHLY', anchorDate: '2026-10-01', label: 'Loyer', kind: 'EXPENSE', expectedAmount: '3000', sourceAccountId: cih.id })
+      .send({ frequency: 'MONTHLY', anchorDate: todayIso(), label: 'Loyer', kind: 'EXPENSE', expectedAmount: '3000', sourceAccountId: cih.id })
       .expect(201);
     expect(rule.body.frequency).toBe('MONTHLY');
 
@@ -162,7 +170,7 @@ describe('Finance Maison — Checkpoint 2 — nouveaux endpoints', () => {
     // aucune création manuelle de planned_operation n'est nécessaire ni possible
     // pour la même date (contrainte anti-doublon recurrenceRuleId+expectedDate).
     const plannedList = await http.get('/planned-operations').set('Authorization', `Bearer ${token}`).expect(200);
-    const generated = plannedList.body.find((p: any) => p.recurrenceRuleId === rule.body.id && p.expectedDate.startsWith('2026-10-01'));
+    const generated = plannedList.body.find((p: any) => p.recurrenceRuleId === rule.body.id && p.expectedDate.startsWith(todayIso()));
     expect(generated).toBeTruthy();
     expect(generated.expectedAmount).toBe(3000);
 
