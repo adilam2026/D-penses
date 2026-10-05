@@ -38,18 +38,28 @@ export class PlanningService {
       const rangeStart = monthBounds(monthsList[0], monthStartDay).start;
       const rangeEnd = monthBounds(monthsList[monthsList.length - 1], monthStartDay).end;
 
-      const [plannedOperations, financialOperations, categories, accounts, subaccounts] = await Promise.all([
-        tx.plannedOperation.findMany({
-          where: { householdId, expectedDate: { gte: rangeStart, lte: rangeEnd } },
-          include: { realizedOperation: true },
-        }),
-        tx.financialOperation.findMany({
-          where: { householdId, date: { gte: rangeStart, lte: rangeEnd }, kind: { in: ['EXPENSE', 'INCOME', 'SAVINGS_CONTRIBUTION'] } },
-        }),
+      const [plannedOperations, categories, accounts, subaccounts] = await Promise.all([
+        tx.plannedOperation.findMany({ where: { householdId, expectedDate: { gte: rangeStart, lte: rangeEnd } } }),
         tx.category.findMany({ where: { householdId } }),
         tx.account.findMany({ where: { householdId } }),
         tx.subaccount.findMany({ where: { householdId } }),
       ]);
+
+      // Lot "paiements partiels successifs" : un paiement partiel peut avoir
+      // sa PROPRE date hors de la fenêtre affichée (ex. échéance due le 30,
+      // payée en partie le 2 du mois suivant) — il doit malgré tout compter
+      // dans "déjà payé"/"reste" de l'échéance, affichée dans SA propre case
+      // (celle du mois de l'échéance, cf. planning.util.ts). On récupère donc
+      // en plus, sans condition de date, toute opération déjà liée à l'une
+      // des échéances affichées.
+      const plannedOperationIds = plannedOperations.map((p) => p.id);
+      const financialOperations = await tx.financialOperation.findMany({
+        where: {
+          householdId,
+          kind: { in: ['EXPENSE', 'INCOME', 'SAVINGS_CONTRIBUTION'] },
+          OR: [{ date: { gte: rangeStart, lte: rangeEnd } }, { plannedOperationId: { in: plannedOperationIds } }],
+        },
+      });
 
       return buildPlanningTable({
         months: monthsList,

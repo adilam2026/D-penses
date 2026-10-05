@@ -147,11 +147,16 @@ describe('Finance Maison — Recette v1 (avant APK)', () => {
     expect(cell.status).toBe('MIXED');
     expect(cell.realizedAmount).toBe(150);
     expect(cell.pendingAmount).toBe(250);
+    // Correctif "paiements partiels successifs" : échéance toujours
+    // interactive, expectedAmount (prévu) jamais muté, reste dérivé.
+    expect(cell.singleOccurrence).not.toBeNull();
+    expect(cell.singleOccurrence.expectedAmount).toBe(400);
+    expect(cell.singleOccurrence.realizedAmount).toBe(150);
 
     const plannedList = await http.get('/planned-operations').set('Authorization', `Bearer ${token}`).expect(200);
     const stillPending = plannedList.body.find((p: any) => p.id === created.body.id);
     expect(stillPending.status).toBe('PENDING');
-    expect(stillPending.expectedAmount).toBe(250);
+    expect(stillPending.expectedAmount).toBe(400);
 
     // 7. Paiement TOTAL du reste (250), toujours depuis Courses -> échéance REALIZED.
     await http.post(`/planned-operations/${created.body.id}/realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '250' }).expect(201);

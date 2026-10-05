@@ -436,7 +436,7 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
     expect(scolarite.deadlines[0].recommendedMonthly).toBe(6000);
   });
 
-  it('N. paiement partiel (§correction) : 400 payés sur 1000 prévus -> case MIXTE 400/1000, reste 600 ; puis le reste payé -> entièrement réalisée', async () => {
+  it('N. paiement partiel (§correction "paiements partiels successifs") : 400 payés sur 1000 prévus -> case MIXTE 400/1000, reste 600, échéance TOUJOURS interactive (singleOccurrence non null) ; puis le reste payé -> entièrement réalisée', async () => {
     const token = await freshHousehold();
     const cih = await createAccount(token, 'CIH', 20000);
     const voiture = await createCategory(token, 'Voiture');
@@ -455,7 +455,17 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
     expect(cell.displayAmount).toBe(1000);
     expect(cell.realizedAmount).toBe(400);
     expect(cell.pendingAmount).toBe(600);
-    expect(cell.singleOccurrence).toBeNull(); // case agrégée (2 items) -> jamais de tap simple ambigu
+    // Correctif "paiements partiels successifs" : une échéance partiellement
+    // payée reste une occurrence UNIQUE, toujours interactive (jamais bloquée
+    // après un 1er paiement partiel) — expectedAmount reste le PRÉVU d'origine
+    // (jamais muté), realizedAmount porte le "déjà payé" cumulé.
+    expect(cell.singleOccurrence).not.toBeNull();
+    expect(cell.singleOccurrence.status).toBe('PENDING');
+    expect(cell.singleOccurrence.expectedAmount).toBe(1000);
+    expect(cell.singleOccurrence.realizedAmount).toBe(400);
+    // L'échéance prévue elle-même n'est JAMAIS mutée par le paiement partiel.
+    const plannedList = await http.get('/planned-operations').set('Authorization', `Bearer ${token}`).expect(200);
+    expect(plannedList.body.find((p: any) => p.id === planned.body.id).expectedAmount).toBe(1000);
 
     // Le reste (600) est payé -> l'échéance devient entièrement réalisée.
     await http.post(`/planned-operations/${planned.body.id}/realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '600' }).expect(201);
@@ -465,6 +475,8 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
     expect(cell.status).toBe('REALIZED');
     expect(cell.displayAmount).toBe(1000);
     expect(cell.pendingAmount).toBe(0);
+    expect(cell.singleOccurrence.status).toBe('REALIZED');
+    expect(cell.singleOccurrence.realizedAmount).toBe(1000); // 400 + 600, jamais 400 seul ni 1000+400
   });
 
   it('O. paiement partiel refusé si le montant couvre déjà la totalité (doit utiliser "Marquer réalisée")', async () => {
@@ -501,12 +513,19 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
       .expect(201);
 
     // Paiement partiel 1 : 100 DH -> débit réel 100 (pas 800), reste 700, échéance toujours ouverte.
+    // expectedAmount (le PRÉVU d'origine) n'est JAMAIS muté par le paiement
+    // partiel (correctif "paiements partiels successifs") — le "reste" se lit
+    // désormais via le Planning (singleOccurrence.expectedAmount - .realizedAmount).
     await http.post(`/planned-operations/${planned.body.id}/partial-realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '100' }).expect(201);
     expect((await getAccount(token, adil.id)).balance).toBe(900);
     let plannedList = await http.get('/planned-operations').set('Authorization', `Bearer ${token}`).expect(200);
     let occ = plannedList.body.find((p: any) => p.id === planned.body.id);
     expect(occ.status).toBe('PENDING');
-    expect(occ.expectedAmount).toBe(700);
+    expect(occ.expectedAmount).toBe(800);
+    let planningNow = await getPlanning(token, 3);
+    let cellNow = planningNow.depenses.find((r: any) => r.label === 'Dej Adil').cells[planningNow.months[0]];
+    expect(cellNow.singleOccurrence.expectedAmount).toBe(800);
+    expect(cellNow.singleOccurrence.realizedAmount).toBe(100);
 
     // Paiement partiel 2 : 200 DH -> débit réel supplémentaire 200, reste 500, toujours ouverte.
     await http.post(`/planned-operations/${planned.body.id}/partial-realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '200' }).expect(201);
@@ -514,7 +533,11 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
     plannedList = await http.get('/planned-operations').set('Authorization', `Bearer ${token}`).expect(200);
     occ = plannedList.body.find((p: any) => p.id === planned.body.id);
     expect(occ.status).toBe('PENDING');
-    expect(occ.expectedAmount).toBe(500);
+    expect(occ.expectedAmount).toBe(800);
+    planningNow = await getPlanning(token, 3);
+    cellNow = planningNow.depenses.find((r: any) => r.label === 'Dej Adil').cells[planningNow.months[0]];
+    expect(cellNow.singleOccurrence.expectedAmount).toBe(800);
+    expect(cellNow.singleOccurrence.realizedAmount).toBe(300); // 100 + 200 cumulé, jamais seulement le dernier paiement
 
     // Paiement final : 500 DH -> débit réel 500, reste 0, échéance réalisée.
     await http.post(`/planned-operations/${planned.body.id}/realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '500' }).expect(201);
@@ -650,7 +673,13 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
     const plannedList = await http.get('/planned-operations').set('Authorization', `Bearer ${token}`).expect(200);
     const updated = plannedList.body.find((p: any) => p.id === planned.body.id);
     expect(updated.status).toBe('PENDING');
-    expect(updated.expectedAmount).toBe(200); // reste correctement calculé (300 - 100)
+    expect(updated.expectedAmount).toBe(300); // le PRÉVU d'origine n'est jamais muté
+
+    // Le reste (200 = 300 - 100) se lit désormais via le Planning.
+    const planning = await getPlanning(token, 3);
+    const cell = planning.depenses.find((r: any) => r.label === 'Courses du mois').cells[planning.months[0]];
+    expect(cell.singleOccurrence.expectedAmount).toBe(300);
+    expect(cell.singleOccurrence.realizedAmount).toBe(100);
   });
 
   it('P. début du mois paramétrable (§ Paramètres) : jour 28 -> le mois "octobre" couvre 28/09 → 27/10', async () => {

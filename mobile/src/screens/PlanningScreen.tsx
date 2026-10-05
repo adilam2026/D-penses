@@ -77,6 +77,31 @@ function relevantAccount(item: { sourceAccountId: string | null; sourceSubaccoun
 }
 
 /**
+ * Reconstruit une occurrence "Payer / Ajuster" directement depuis un item À
+ * VENIR d'une case AMBIGUË (CategoryDetailModal, plusieurs échéances dans la
+ * même case — singleOccurrence n'y est jamais renseigné). `item.amount`
+ * porte déjà le RESTE à payer (jamais le prévu complet), et
+ * `item.expectedAmount` le prévu d'origine — cf. planning.util.ts.
+ */
+function occurrenceFromItem(item: api.PlanningCellItemApi): api.PlanningSingleOccurrenceApi | null {
+  if (item.type !== 'PLANNED_PENDING' || !item.plannedOperationId || item.expectedAmount === undefined) return null;
+  const paid = item.expectedAmount - item.amount;
+  return {
+    plannedOperationId: item.plannedOperationId,
+    status: 'PENDING',
+    expectedAmount: item.expectedAmount,
+    realizedAmount: paid > 0 ? paid : null,
+    sourceAccountId: item.sourceAccountId,
+    sourceSubaccountId: item.sourceSubaccountId,
+    destinationAccountId: item.destinationAccountId,
+    destinationSubaccountId: item.destinationSubaccountId,
+    recurrenceRuleId: item.recurrenceRuleId ?? null,
+    categoryId: item.categoryId ?? null,
+    kind: item.kind!,
+  };
+}
+
+/**
  * Planning multi-mois (Checkpoint 3, correctif fenêtre compacte) — 4 blocs
  * (Revenus/Dépenses/Épargne/Synthèse), horizon 3-12 mois, colonne de
  * libellés figée + 3 colonnes de mois visibles simultanément, balayables
@@ -93,7 +118,11 @@ export function PlanningScreen() {
   const [plans, setPlans] = useState<api.FinancialPlanApi[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [adjustTarget, setAdjustTarget] = useState<{ cell: api.PlanningCellApi; rowLabel: string } | null>(null);
+  // Lot "paiements partiels successifs" : AdjustModal est découplé de la case
+  // (une échéance partiellement payée peut être atteinte depuis une case dont
+  // singleOccurrence est renseigné, OU reconstruite depuis un item précis
+  // d'une case ambiguë via occurrenceFromItem — cf. CategoryDetailModal).
+  const [adjustTarget, setAdjustTarget] = useState<{ occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string } | null>(null);
   const [detailTarget, setDetailTarget] = useState<{ cell: api.PlanningCellApi; rowLabel: string; month: string } | null>(null);
   const [realizedMenuTarget, setRealizedMenuTarget] = useState<{ cell: api.PlanningCellApi; rowLabel: string } | null>(null);
   const [payPopupTarget, setPayPopupTarget] = useState<{ cell: api.PlanningCellApi; rowLabel: string } | null>(null);
@@ -127,6 +156,7 @@ export function PlanningScreen() {
     setAccounts(accountList);
     setCategories(categoryList);
     setPlans(planList);
+    return planning;
   }, []);
 
   useFocusEffect(
@@ -152,7 +182,26 @@ export function PlanningScreen() {
   }
 
   async function refresh() {
-    await load(months);
+    return load(months);
+  }
+
+  /**
+   * Retrouve, dans une table Planning fraîchement chargée, l'occurrence
+   * singleOccurrence d'une échéance précise — utilisé après un unrealize()
+   * pour rouvrir AdjustModal avec le "déjà payé" RÉEL (d'éventuels paiements
+   * partiels antérieurs à l'opération annulée restent comptés), jamais une
+   * valeur figée capturée avant le refresh.
+   */
+  function findOccurrenceById(planning: api.PlanningTableApi, plannedOperationId: string): api.PlanningSingleOccurrenceApi | null {
+    for (const block of [planning.depenses, planning.revenus, planning.epargne]) {
+      for (const row of block) {
+        for (const m of planning.months) {
+          const occ = row.cells[m]?.singleOccurrence;
+          if (occ?.plannedOperationId === plannedOperationId) return occ;
+        }
+      }
+    }
+    return null;
   }
 
   function showToast(message: string) {
@@ -361,6 +410,20 @@ export function PlanningScreen() {
                 </View>
               </React.Fragment>
             ))}
+            {/* Lot "synthèse enrichie" (Part 2 A/D) : 2 lignes compactes
+                supplémentaires ("où en suis-je"), jamais 5 nouvelles grandes
+                lignes — adapte uniquement ce bloc de totaux existant, le
+                Planning lui-même n'est pas reconstruit. */}
+            <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: colors.danger }]}>
+              <Text style={styles.totalLabelText} numberOfLines={2}>
+                DÉPENSES payé/prévu
+              </Text>
+            </View>
+            <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: colors.secondary }]}>
+              <Text style={styles.totalLabelText} numberOfLines={2}>
+                ÉPARGNE versé/prévu
+              </Text>
+            </View>
             <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, backgroundColor: colors.surfaceActive }]}>
               <Text style={styles.totalLabelText}>BALANCE MENSUELLE</Text>
             </View>
@@ -452,6 +515,40 @@ export function PlanningScreen() {
                   </React.Fragment>
                 ))}
 
+                {/* DÉPENSES payé/prévu + reste — axe "où en suis-je", distinct
+                    de TOTAL DÉPENSES ci-dessus (cf. backend planning.util.ts). */}
+                <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
+                  {data.months.map((m) => {
+                    const s = data.synthese[m];
+                    return (
+                      <View key={m} style={[styles.totalCell, { width: columnWidth }]} testID={`planning-synthese-depenses-${m}`}>
+                        <Text style={styles.syntheseDetailAmount} numberOfLines={1} adjustsFontSizeToFit>
+                          {Math.round(s.depensesPayees).toLocaleString('fr-FR')}/{Math.round(s.depensesPrevues).toLocaleString('fr-FR')} DH
+                        </Text>
+                        <Text style={styles.syntheseDetailReste} numberOfLines={1} adjustsFontSizeToFit>
+                          reste {Math.round(s.depensesReste).toLocaleString('fr-FR')} DH
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+                {/* ÉPARGNE/VERSEMENTS versé/prévu + reste — jamais mélangé aux dépenses ci-dessus. */}
+                <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
+                  {data.months.map((m) => {
+                    const s = data.synthese[m];
+                    return (
+                      <View key={m} style={[styles.totalCell, { width: columnWidth }]} testID={`planning-synthese-epargne-${m}`}>
+                        <Text style={styles.syntheseDetailAmount} numberOfLines={1} adjustsFontSizeToFit>
+                          {Math.round(s.epargneVersee).toLocaleString('fr-FR')}/{Math.round(s.epargnePrevue).toLocaleString('fr-FR')} DH
+                        </Text>
+                        <Text style={styles.syntheseDetailReste} numberOfLines={1} adjustsFontSizeToFit>
+                          reste {Math.round(s.epargneReste).toLocaleString('fr-FR')} DH
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+
                 <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
                   {data.months.map((m) => (
                     <View key={m} style={[styles.totalCell, styles.syntheseCell, { width: columnWidth }]}>
@@ -496,6 +593,10 @@ export function PlanningScreen() {
           await refresh();
         }}
         onViewOperation={(operationId) => navigation.navigate('TransactionDetail', { id: operationId })}
+        onPayAdjust={(occurrence, rowLabel) => {
+          setDetailTarget(null);
+          setAdjustTarget({ occurrence, rowLabel });
+        }}
       />
 
       <ChoiceSheet
@@ -519,10 +620,15 @@ export function PlanningScreen() {
             icon: 'create-outline',
             onPress: async () => {
               const occ = realizedMenuTarget?.cell.singleOccurrence;
-              if (!occ) return;
+              const rowLabel = realizedMenuTarget?.rowLabel;
+              if (!occ || !rowLabel) return;
               await api.unrealizePlannedOperation(occ.plannedOperationId);
-              await refresh();
-              setAdjustTarget({ cell: realizedMenuTarget!.cell, rowLabel: realizedMenuTarget!.rowLabel });
+              // Rouvre avec l'état FRAIS (jamais la case périmée d'avant le
+              // unrealize) : d'éventuels paiements partiels antérieurs à ce
+              // paiement restent comptés dans "déjà payé".
+              const planning = await refresh();
+              const freshOcc = findOccurrenceById(planning, occ.plannedOperationId);
+              if (freshOcc) setAdjustTarget({ occurrence: freshOcc, rowLabel });
             },
           },
           {
@@ -552,7 +658,10 @@ export function PlanningScreen() {
             key: 'pay',
             label: 'Payer / Ajuster',
             icon: 'card-outline',
-            onPress: () => setAdjustTarget({ cell: pendingMenuTarget!.cell, rowLabel: pendingMenuTarget!.rowLabel }),
+            onPress: () => {
+              const occ = pendingMenuTarget!.cell.singleOccurrence;
+              if (occ) setAdjustTarget({ occurrence: occ, rowLabel: pendingMenuTarget!.rowLabel });
+            },
           },
           {
             key: 'edit',
@@ -644,13 +753,19 @@ function PayPopupModal({
   if (!target || !target.cell.singleOccurrence) return null;
   const occ = target.cell.singleOccurrence;
   const isPending = occ.status === 'PENDING';
+  const dejaPayeAvant = occ.realizedAmount ?? 0;
+  // Lot "paiements partiels successifs" : le tap simple règle le RESTE à
+  // payer, jamais le prévu complet — sinon une échéance déjà partiellement
+  // payée serait réglée en double (ex. 800 prévu, 300 déjà payé -> ce popup
+  // ne doit solder QUE les 500 restants, jamais les 800 à nouveau).
+  const remaining = occ.expectedAmount - dejaPayeAvant;
 
   async function confirm() {
     if (saving) return;
     setSaving(true);
     try {
       if (isPending) {
-        await api.realizePlannedOperation(occ.plannedOperationId, { actualAmount: String(occ.expectedAmount) });
+        await api.realizePlannedOperation(occ.plannedOperationId, { actualAmount: String(remaining) });
         await onConfirmed('Transaction marquée comme payée');
       } else {
         await api.unrealizePlannedOperation(occ.plannedOperationId);
@@ -668,7 +783,13 @@ function PayPopupModal({
       </TouchableWithoutFeedback>
       <View style={styles.confirmBox}>
         <Text style={styles.confirmTitle}>{target.rowLabel}</Text>
-        <Text style={styles.confirmText}>{isPending ? `Prévu ${formatDh(occ.expectedAmount)}` : `Réglé ${formatDh(occ.realizedAmount ?? occ.expectedAmount)}`}</Text>
+        <Text style={styles.confirmText}>
+          {isPending
+            ? dejaPayeAvant > 0
+              ? `Déjà payé ${formatDh(dejaPayeAvant)} — reste à payer ${formatDh(remaining)}`
+              : `Prévu ${formatDh(occ.expectedAmount)}`
+            : `Réglé ${formatDh(occ.realizedAmount ?? occ.expectedAmount)}`}
+        </Text>
         <View style={styles.confirmActions}>
           <TouchableOpacity style={styles.confirmCancel} onPress={onClose} testID="planning-popup-close">
             <Text style={styles.confirmCancelText}>Fermer</Text>
@@ -739,14 +860,14 @@ function AdjustModal({
   onClose,
   onDone,
 }: {
-  target: { cell: api.PlanningCellApi; rowLabel: string } | null;
+  target: { occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string } | null;
   accounts: api.AccountApi[];
   onClose: () => void;
   onDone: () => Promise<void>;
 }) {
   const bottomInset = useBottomInset(spacing.lg);
   const { scrollRef, handleFocus } = useKeyboardAwareScroll();
-  const occ = target?.cell.singleOccurrence ?? null;
+  const occ = target?.occurrence ?? null;
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState('');
   const [partialAmount, setPartialAmount] = useState('');
@@ -757,23 +878,30 @@ function AdjustModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Lot "paiements partiels successifs" : le "reste à payer" (jamais le
+  // prévu complet) pilote le pré-remplissage ET la validation — une échéance
+  // partiellement payée ne doit jamais pouvoir être réglée en double.
+  const dejaPaye = occ?.realizedAmount ?? 0;
+  const remaining = occ ? occ.expectedAmount - dejaPaye : 0;
+
   React.useEffect(() => {
     if (occ) {
-      setAmount(String(occ.expectedAmount));
+      setAmount(String(remaining));
       setDate(new Date().toISOString().slice(0, 10));
       setPartialAmount('');
       setError(null);
       const { accountId, subaccountId } = relevantAccount(occ);
       setAccountOption(encodeAccountOption(accountId, subaccountId));
     }
-  }, [occ?.plannedOperationId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [occ?.plannedOperationId, occ?.realizedAmount]);
 
   if (!target || !occ) return null;
   const { preposition } = relevantAccount(occ);
   const sourceSelectOptions = accountSelectOptions(accounts, true);
   const accountFieldLabel = preposition === 'depuis' ? 'Compte / enveloppe à débiter' : 'Compte / enveloppe à créditer';
   const partialValue = Number(partialAmount);
-  const canSubmitPartial = partialAmount.trim() !== '' && partialValue > 0 && partialValue < occ.expectedAmount;
+  const canSubmitPartial = partialAmount.trim() !== '' && partialValue > 0 && partialValue < remaining;
 
   /**
    * Traduit le Select en override pour realize/partialRealize — jamais une
@@ -830,6 +958,16 @@ function AdjustModal({
       <ScrollView ref={scrollRef} style={styles.adjustSheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
         <Text style={styles.confirmTitle}>{target.rowLabel}</Text>
         <Text style={styles.adjustPrevu}>Prévu {formatDh(occ.expectedAmount)}</Text>
+        {dejaPaye > 0 && (
+          <>
+            <Text style={styles.adjustPrevu} testID="planning-adjust-deja-paye">
+              Déjà payé {formatDh(dejaPaye)}
+            </Text>
+            <Text style={styles.adjustPrevu} testID="planning-adjust-reste">
+              Reste à payer {formatDh(remaining)}
+            </Text>
+          </>
+        )}
         <FormField label="Montant réel" value={amount} onChangeText={setAmount} onFocus={handleFocus} keyboardType="decimal-pad" testID="planning-adjust-amount" />
         <DateField label="Date" value={date} onChange={setDate} />
         <Select
@@ -1023,11 +1161,18 @@ function CategoryDetailModal({
   onClose,
   onRealized,
   onViewOperation,
+  onPayAdjust,
 }: {
   target: { cell: api.PlanningCellApi; rowLabel: string; month: string } | null;
   onClose: () => void;
   onRealized: () => Promise<void>;
   onViewOperation: (operationId: string) => void;
+  /** Lot "paiements partiels successifs" — "Payer / Ajuster" sur une ligne À
+   * VENIR rouvre le MÊME flux complet (solde, nouveau paiement partiel, choix
+   * de source) qu'un appui long sur une case à occurrence unique, jamais un
+   * "Marquer réalisé" instantané qui risquerait de régler deux fois un
+   * montant déjà partiellement payé. */
+  onPayAdjust: (occurrence: api.PlanningSingleOccurrenceApi, rowLabel: string) => void;
 }) {
   const bottomInset = useBottomInset(spacing.lg);
   const [actingId, setActingId] = useState<string | null>(null);
@@ -1035,17 +1180,6 @@ function CategoryDetailModal({
   const { cell, rowLabel } = target;
   const realizedItems = cell.items.filter((i) => i.type !== 'PLANNED_PENDING');
   const pendingItems = cell.items.filter((i) => i.type === 'PLANNED_PENDING');
-
-  async function markRealized(plannedOperationId: string, expectedAmount: number) {
-    if (actingId) return;
-    setActingId(plannedOperationId);
-    try {
-      await api.realizePlannedOperation(plannedOperationId, { actualAmount: String(expectedAmount) });
-      await onRealized();
-    } finally {
-      setActingId(null);
-    }
-  }
 
   // §11 : revenir sur un paiement déjà confirmé, atteignable même quand la
   // case regroupe plusieurs opérations (pas seulement le cas singleOccurrence
@@ -1107,25 +1241,32 @@ function CategoryDetailModal({
             {pendingItems.length > 0 && (
               <>
                 <Text style={[styles.detailSectionLabel, { marginTop: realizedItems.length > 0 ? spacing.md : 0 }]}>À VENIR</Text>
-                {pendingItems.map((item, i) => (
-                  <View key={`p-${item.plannedOperationId}-${i}`} style={styles.detailRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.detailLabel}>{item.label}</Text>
-                      <Text style={styles.detailMeta}>{formatShortDate(item.date)}</Text>
+                {pendingItems.map((item, i) => {
+                  const occurrence = occurrenceFromItem(item);
+                  const dejaPaye = occurrence?.realizedAmount ?? 0;
+                  return (
+                    <View key={`p-${item.plannedOperationId}-${i}`} style={styles.detailRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.detailLabel}>{item.label}</Text>
+                        <Text style={styles.detailMeta}>
+                          {formatShortDate(item.date)}
+                          {dejaPaye > 0 ? ` · déjà payé ${formatDh(dejaPaye)}` : ''}
+                        </Text>
+                      </View>
+                      {/* item.amount porte déjà le RESTE à payer (jamais le prévu complet). */}
+                      <Text style={[styles.detailAmount, styles.detailAmountPending]}>{formatDh(item.amount)}</Text>
+                      {occurrence && (
+                        <TouchableOpacity
+                          style={styles.markRealizedButton}
+                          onPress={() => onPayAdjust(occurrence, item.label)}
+                          testID={`planning-detail-pay-adjust-${item.plannedOperationId}`}
+                        >
+                          <Text style={styles.markRealizedButtonText}>Payer / Ajuster</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
-                    <Text style={[styles.detailAmount, styles.detailAmountPending]}>{formatDh(item.amount)}</Text>
-                    {item.plannedOperationId && (
-                      <TouchableOpacity
-                        style={styles.markRealizedButton}
-                        onPress={() => markRealized(item.plannedOperationId!, item.amount)}
-                        disabled={actingId === item.plannedOperationId}
-                        testID={`planning-detail-mark-realized-${item.plannedOperationId}`}
-                      >
-                        <Text style={styles.markRealizedButtonText}>{actingId === item.plannedOperationId ? '…' : 'Marquer réalisé'}</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                ))}
+                  );
+                })}
               </>
             )}
           </>
@@ -1233,6 +1374,9 @@ const styles = StyleSheet.create({
   totalCell: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceSecondary, borderTopWidth: 2, borderTopColor: colors.borderStrong, borderLeftWidth: 1, borderLeftColor: colors.divider, paddingHorizontal: 2 },
   totalCellText: { fontSize: 11.5, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
   syntheseCell: { backgroundColor: colors.surfaceActive },
+  // Lot "synthèse enrichie" — 2 lignes compactes (payé/prévu + reste), même gabarit que la case MIXTE (cellAmountMixed/cellRestantMixed) pour rester dense.
+  syntheseDetailAmount: { fontSize: 9.5, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary, paddingHorizontal: 2 },
+  syntheseDetailReste: { fontSize: 8.5, fontFamily: fontFamily.sansBold, color: colors.textSecondary, paddingHorizontal: 2, marginTop: 1 },
   negativeText: { color: colors.danger },
   backdrop: { flex: 1, backgroundColor: colors.backdrop },
   confirmBox: {

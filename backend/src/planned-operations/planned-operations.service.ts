@@ -124,6 +124,7 @@ export class PlannedOperationsService {
         date: dto.actualDate ? new Date(dto.actualDate) : planned.expectedDate,
         amount: new Prisma.Decimal(dto.actualAmount),
         categoryId: planned.categoryId,
+        plannedOperationId: id,
         ...resolvePaymentShape(planned, dto),
       });
 
@@ -137,14 +138,28 @@ export class PlannedOperationsService {
   }
 
   /**
-   * Paiement partiel (Planning, appui long, §correction) — enregistre le
-   * montant réellement payé maintenant comme une vraie opération réelle,
-   * SANS clore l'échéance : son expectedAmount est réduit du montant payé,
-   * elle reste PENDING pour le reste à payer. La case Planning affiche alors
-   * naturellement "payé/total" + "reste X" (même mécanique que les cases
-   * MIXTES déjà existantes — réalisé + à venir dans la même case), sans
-   * logique d'affichage dédiée. Si le reste est payé plus tard via `realize`,
-   * l'échéance devient entièrement réalisée.
+   * Montant déjà payé (somme nette de TOUTES les opérations réelles déjà
+   * liées à cette échéance — paiements partiels + éventuel paiement final,
+   * un renversement nette correctement via effectiveAmount) — jamais déduit
+   * de expected_amount, qui reste la valeur PRÉVUE d'origine, constante.
+   */
+  private async computeAlreadyPaid(tx: Prisma.TransactionClient, plannedId: string): Promise<Prisma.Decimal> {
+    const realizations = await tx.financialOperation.findMany({ where: { plannedOperationId: plannedId } });
+    return realizations.reduce((sum, op) => sum.add(op.reversalOfOperationId ? op.amount.neg() : op.amount), new Prisma.Decimal(0));
+  }
+
+  /**
+   * Paiement partiel (Planning, appui long, §correction "paiements partiels
+   * successifs") — enregistre le montant réellement payé maintenant comme
+   * une vraie opération réelle LIÉE à l'échéance (planned_operation_id),
+   * SANS jamais clore l'échéance ni muter son expected_amount (qui reste le
+   * "prévu" d'origine, constant). Le "déjà payé"/"reste" sont dérivés en
+   * sommant toutes les opérations liées (cf. computeAlreadyPaid) — jamais
+   * stockés. Le reste continue d'apparaître comme à venir (même échéance,
+   * toujours PENDING), et peut recevoir d'AUTRES paiements partiels, chacun
+   * avec sa propre source — jamais de blocage après un premier paiement
+   * partiel. Si le reste est payé plus tard via `realize`, l'échéance
+   * devient entièrement réalisée.
    */
   async partialRealize(userId: string, householdId: string, id: string, dto: RealizePlannedOperationInput) {
     return this.rlsContext.run(userId, householdId, async () => {
@@ -155,11 +170,14 @@ export class PlannedOperationsService {
 
       const partialAmount = new Prisma.Decimal(dto.actualAmount);
       if (partialAmount.lte(0)) throw new BadRequestException('Le montant payé doit être positif');
-      if (partialAmount.gte(planned.expectedAmount)) {
-        throw new BadRequestException('Pour un montant couvrant la totalité, utilisez "Marquer réalisée" plutôt que le paiement partiel');
+
+      const alreadyPaid = await this.computeAlreadyPaid(tx, id);
+      const remaining = planned.expectedAmount.sub(alreadyPaid);
+      if (partialAmount.gte(remaining)) {
+        throw new BadRequestException('Pour régler le reste en totalité, utilisez le paiement total plutôt que le paiement partiel');
       }
 
-      const operation = await insertFinancialOperation(tx, {
+      return insertFinancialOperation(tx, {
         householdId,
         createdByUserId: userId,
         kind: planned.kind as unknown as OperationKind,
@@ -167,15 +185,9 @@ export class PlannedOperationsService {
         date: dto.actualDate ? new Date(dto.actualDate) : new Date(),
         amount: partialAmount,
         categoryId: planned.categoryId,
+        plannedOperationId: id,
         ...resolvePaymentShape(planned, dto),
       });
-
-      await tx.plannedOperation.update({
-        where: { id },
-        data: { expectedAmount: planned.expectedAmount.sub(partialAmount) },
-      });
-
-      return operation;
     });
   }
 
@@ -294,6 +306,11 @@ export class PlannedOperationsService {
         destinationSubaccountId: original.destinationSubaccountId,
         reversalOfOperationId: original.id,
         reversalReason: 'Annulation depuis le Planning',
+        // Lot "paiements partiels successifs" : garde le renversement lié à
+        // la même échéance que l'opération d'origine, pour qu'il nette
+        // correctement dans la somme "déjà payé" (cf. computeAlreadyPaid) —
+        // si des paiements partiels antérieurs existent, ils restent comptés.
+        plannedOperationId: original.plannedOperationId,
       });
 
       return tx.plannedOperation.update({

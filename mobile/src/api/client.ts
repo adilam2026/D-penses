@@ -477,12 +477,29 @@ export interface PlanningCellItemApi {
   sourceSubaccountId: string | null;
   destinationAccountId: string | null;
   destinationSubaccountId: string | null;
+  recurrenceRuleId?: string | null;
+  categoryId?: string | null;
+  kind?: PlannedOperationKind;
+  /**
+   * Lot "paiements partiels successifs" — uniquement sur un item
+   * PLANNED_PENDING : le montant PRÉVU d'origine (constant), alors que
+   * `amount` porte le RESTE à payer. "Déjà payé" = expectedAmount - amount.
+   * Permet de reconstruire une action "Payer / Ajuster" depuis une case
+   * ambiguë (CategoryDetailModal), où singleOccurrence n'est pas renseigné.
+   */
+  expectedAmount?: number;
 }
 
 export interface PlanningSingleOccurrenceApi {
   plannedOperationId: string;
   status: 'PENDING' | 'REALIZED';
   expectedAmount: number;
+  /**
+   * "Déjà payé" cumulé (paiements partiels + éventuel paiement final),
+   * jamais la seule dernière opération. `null` tant qu'aucun paiement n'a
+   * encore été enregistré. Positif et < expectedAmount pour une échéance
+   * PENDING partiellement payée — le reste à payer = expectedAmount - ceci.
+   */
   realizedAmount: number | null;
   sourceAccountId: string | null;
   sourceSubaccountId: string | null;
@@ -519,6 +536,13 @@ export interface PlanningMonthSyntheseApi {
   totalEpargne: number;
   balanceMensuelle: number;
   balanceCumulee: number;
+  /** Lot "synthèse enrichie" — axe "où en suis-je / puis-je couvrir le reste ?", distinct de totalDepenses/balance ci-dessus (cf. backend planning.util.ts). */
+  depensesPrevues: number;
+  depensesPayees: number;
+  depensesReste: number;
+  epargnePrevue: number;
+  epargneVersee: number;
+  epargneReste: number;
 }
 
 export interface PlanningTableApi {

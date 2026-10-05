@@ -454,6 +454,15 @@ model FinancialOperation {
   // toujours dérivés de ledger_entry indépendamment de ce champ.
   includeInPlanning Boolean @default(true) @map("include_in_planning")
 
+  // Lot "paiements partiels successifs" : lien VERS l'échéance d'origine,
+  // posé sur CHAQUE opération réelle créée par realize()/partialRealize()
+  // (donc potentiellement plusieurs lignes pour UNE échéance — contrairement
+  // à planned_operation.realizedOperationId, qui reste unique et ne pointe
+  // que vers l'opération de clôture FINALE). Permet au Planning de retrouver
+  // TOUS les paiements (partiels + final) d'une même échéance pour calculer
+  // "déjà payé"/"reste" sans jamais muter expected_amount.
+  plannedOperationId String? @map("planned_operation_id")
+
   reversalOfOperationId String? @map("reversal_of_operation_id")
   reversalReason        String? @map("reversal_reason")
 
@@ -488,9 +497,12 @@ model FinancialOperation {
   medicalClaimsSourced  MedicalClaim[]
   medicalReimbursements MedicalReimbursement[]
 
+  plannedOperation PlannedOperation? @relation("PlannedOperationRealizations", fields: [plannedOperationId], references: [id])
+
   @@index([householdId])
   @@index([reversalOfOperationId])
   @@index([correctionOfOperationId])
+  @@index([plannedOperationId])
   @@map("financial_operation")
 }
 
@@ -559,6 +571,12 @@ model PlannedOperation {
   destinationSubaccount Subaccount? @relation("PlannedDestinationSubaccount", fields: [destinationSubaccountId], references: [id])
 
   realizedOperation FinancialOperation? @relation(fields: [realizedOperationId], references: [id])
+
+  // Lot "paiements partiels successifs" : TOUTES les opérations réelles liées
+  // à cette échéance (chaque paiement partiel + le paiement final), via
+  // financial_operation.planned_operation_id — jamais limité à la seule
+  // opération de clôture (realizedOperationId/realizedOperation ci-dessus).
+  realizations FinancialOperation[] @relation("PlannedOperationRealizations")
 
   @@unique([recurrenceRuleId, expectedDate])
   @@index([householdId])

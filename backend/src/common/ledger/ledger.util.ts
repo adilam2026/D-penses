@@ -255,6 +255,15 @@ export interface InsertOperationParams {
    * soldes et l'historique de compte restent exactement les mêmes.
    */
   includeInPlanning?: boolean;
+  /**
+   * Lot "paiements partiels successifs" : pose le lien vers l'échéance
+   * d'origine sur CETTE opération réelle (un paiement partiel, le paiement
+   * final, ou le renversement d'un paiement) — jamais vers planned.
+   * realizedOperationId, qui reste réservé à la SEULE opération de clôture
+   * finale. Permet à planning.util.ts de retrouver TOUS les paiements d'une
+   * même échéance pour calculer "déjà payé"/"reste" sans muter expectedAmount.
+   */
+  plannedOperationId?: string | null;
 }
 
 /**
@@ -317,6 +326,7 @@ export async function insertFinancialOperation(tx: TxClient, params: InsertOpera
       reversalReason: params.reversalReason ?? undefined,
       correctionOfOperationId: params.correctionOfOperationId ?? undefined,
       includeInPlanning: params.includeInPlanning ?? true,
+      plannedOperationId: params.plannedOperationId ?? undefined,
       createdByUserId: params.createdByUserId,
     },
   });

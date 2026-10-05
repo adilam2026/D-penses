@@ -57,6 +57,22 @@ function emptyCell(): PlanningTableApi['depenses'][number]['cells'][string] {
   return { displayAmount: 0, budgetAmount: 0, pendingAmount: 0, realizedAmount: 0, status: 'EMPTY', singleOccurrence: null, items: [] };
 }
 
+function emptySynthese(): PlanningTableApi['synthese'][string] {
+  return {
+    totalRevenus: 0,
+    totalDepenses: 0,
+    totalEpargne: 0,
+    balanceMensuelle: 0,
+    balanceCumulee: 0,
+    depensesPrevues: 0,
+    depensesPayees: 0,
+    depensesReste: 0,
+    epargnePrevue: 0,
+    epargneVersee: 0,
+    epargneReste: 0,
+  };
+}
+
 function basePlanning(overrides?: Partial<PlanningTableApi>): PlanningTableApi {
   return {
     months: ['2026-09', '2026-10', '2026-11'],
@@ -64,9 +80,9 @@ function basePlanning(overrides?: Partial<PlanningTableApi>): PlanningTableApi {
     depenses: [],
     epargne: [],
     synthese: {
-      '2026-09': { totalRevenus: 0, totalDepenses: 0, totalEpargne: 0, balanceMensuelle: 0, balanceCumulee: 0 },
-      '2026-10': { totalRevenus: 0, totalDepenses: 0, totalEpargne: 0, balanceMensuelle: 0, balanceCumulee: 0 },
-      '2026-11': { totalRevenus: 0, totalDepenses: 0, totalEpargne: 0, balanceMensuelle: 0, balanceCumulee: 0 },
+      '2026-09': emptySynthese(),
+      '2026-10': emptySynthese(),
+      '2026-11': emptySynthese(),
     },
     ...overrides,
   };
@@ -306,6 +322,82 @@ it('case prévue : appui long permet un paiement partiel (montant payé < prévu
   expect(mockRealizePlannedOperation).not.toHaveBeenCalled();
 });
 
+// Correctif "paiements partiels successifs" : une échéance déjà
+// partiellement payée (case MIXTE, plusieurs items, singleOccurrence
+// renseigné avec realizedAmount > 0) doit rester TOUJOURS interactive —
+// avant le correctif, un 2e item dans la case mettait singleOccurrence à
+// null et l'appui long tombait sur CategoryDetailModal au lieu du menu
+// Payer/Ajuster habituel.
+it("case partiellement payée (MIXTE) : l'appui long propose TOUJOURS le menu Payer/Ajuster, jamais bloqué après un 1er paiement partiel", async () => {
+  mockGetPlanning.mockResolvedValue(
+    basePlanning({
+      depenses: [
+        {
+          key: 'cat-transport',
+          label: 'Transport',
+          categoryId: 'cat-transport',
+          cells: {
+            '2026-09': {
+              displayAmount: 800,
+              budgetAmount: 800,
+              pendingAmount: 500,
+              realizedAmount: 300,
+              status: 'MIXED',
+              singleOccurrence: {
+                plannedOperationId: 'po-carburant',
+                status: 'PENDING',
+                expectedAmount: 800,
+                realizedAmount: 300,
+                sourceAccountId: 'cih',
+                sourceSubaccountId: null,
+                destinationAccountId: null,
+                destinationSubaccountId: null,
+                recurrenceRuleId: null,
+                categoryId: 'cat-transport',
+                kind: 'EXPENSE',
+              },
+              items: [
+                { type: 'PLANNED_REALIZED', plannedOperationId: 'po-carburant', financialOperationId: 'op-1', label: 'Carburant Adil', amount: 300, date: '2026-09-02', sourceAccountId: 'cih', sourceSubaccountId: null, destinationAccountId: null, destinationSubaccountId: null },
+                { type: 'PLANNED_PENDING', plannedOperationId: 'po-carburant', label: 'Carburant Adil', amount: 500, expectedAmount: 800, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: null, destinationAccountId: null, destinationSubaccountId: null },
+              ],
+            },
+            '2026-10': emptyCell(),
+            '2026-11': emptyCell(),
+          },
+        },
+      ],
+    }),
+  );
+  mockPartialRealizePlannedOperation.mockResolvedValue({});
+
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
+  expect(screen.getByText('300/800 DH')).toBeTruthy();
+  expect(screen.getByText('reste 500 DH')).toBeTruthy();
+
+  // L'appui long ouvre bien le menu à 3 options (jamais le détail ambigu).
+  fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
+  await waitFor(() => screen.getByTestId('planning-pending-menu-option-pay'));
+  expect(screen.queryByText('RÉALISÉ')).toBeNull(); // CategoryDetailModal ne s'est jamais ouvert
+
+  fireEvent.press(screen.getByTestId('planning-pending-menu-option-pay'));
+  await waitFor(() => screen.getByTestId('planning-adjust-submit'));
+
+  // Affiche clairement Prévu/Déjà payé/Reste.
+  expect(screen.getByText('Prévu 800 DH')).toBeTruthy();
+  expect(screen.getByTestId('planning-adjust-deja-paye')).toBeTruthy();
+  expect(screen.getByText('Déjà payé 300 DH')).toBeTruthy();
+  expect(screen.getByText('Reste à payer 500 DH')).toBeTruthy();
+  // Le montant réel est pré-rempli avec le RESTE (500), jamais le prévu complet (800).
+  expect(screen.getByTestId('planning-adjust-amount').props.value).toBe('500');
+
+  // Un 2e paiement partiel (200 sur les 500 restants) reste possible.
+  fireEvent.changeText(screen.getByTestId('planning-adjust-partial-amount'), '200');
+  await waitFor(() => expect(screen.getByTestId('planning-adjust-partial-submit').props.accessibilityState?.disabled).toBe(false));
+  fireEvent.press(screen.getByTestId('planning-adjust-partial-submit'));
+  await waitFor(() => expect(mockPartialRealizePlannedOperation).toHaveBeenCalledWith('po-carburant', expect.objectContaining({ actualAmount: '200' })));
+});
+
 it('case réalisée (verte) : appui long propose Voir/Modifier/Annuler le paiement', async () => {
   mockGetPlanning.mockResolvedValue(
     basePlanning({
@@ -411,7 +503,21 @@ it("Item 6 : case MIXTE (200 réalisé + 70 à venir) affiche un split compact, 
               singleOccurrence: null,
               items: [
                 { type: 'PLANNED_REALIZED', plannedOperationId: 'po-1', financialOperationId: 'op-1', label: 'Poste A', amount: 200, date: '2026-09-05', sourceAccountId: 'cih', sourceSubaccountId: null, destinationAccountId: null, destinationSubaccountId: null },
-                { type: 'PLANNED_PENDING', plannedOperationId: 'po-2', label: 'Poste B', amount: 70, date: '2026-09-20', sourceAccountId: 'cih', sourceSubaccountId: null, destinationAccountId: null, destinationSubaccountId: null },
+                {
+                  type: 'PLANNED_PENDING',
+                  plannedOperationId: 'po-2',
+                  label: 'Poste B',
+                  amount: 70,
+                  expectedAmount: 70,
+                  date: '2026-09-20',
+                  sourceAccountId: 'cih',
+                  sourceSubaccountId: null,
+                  destinationAccountId: null,
+                  destinationSubaccountId: null,
+                  recurrenceRuleId: null,
+                  categoryId: 'cat-divers',
+                  kind: 'EXPENSE',
+                },
               ],
             },
             '2026-10': emptyCell(),
@@ -434,20 +540,22 @@ it("Item 6 : case MIXTE (200 réalisé + 70 à venir) affiche un split compact, 
   expect(screen.getByText('À VENIR')).toBeTruthy();
   expect(screen.getByText('Poste A')).toBeTruthy();
   expect(screen.getByText('Poste B')).toBeTruthy();
-  expect(screen.getByTestId('planning-detail-mark-realized-po-2')).toBeTruthy();
+  expect(screen.getByTestId('planning-detail-pay-adjust-po-2')).toBeTruthy();
 
   // Item 11 : revenir sur le paiement déjà confirmé (Poste A), même dans une case
-  // à plusieurs éléments — pas seulement via l'appui long singleOccurrence. Comme
-  // pour "Marquer réalisé", toute action referme la modale (comportement existant) :
-  // on la rouvre pour vérifier la seconde action indépendamment.
+  // à plusieurs éléments — pas seulement via l'appui long singleOccurrence.
   fireEvent.press(screen.getByTestId('planning-detail-unrealize-po-1'));
   await waitFor(() => expect(mockUnrealizePlannedOperation).toHaveBeenCalledWith('po-1'));
   await waitFor(() => expect(screen.queryByTestId('planning-detail-unrealize-po-1')).toBeNull());
 
+  // Lot "paiements partiels successifs" : "Payer / Ajuster" (ex-"Marquer
+  // réalisé") rouvre le flux AdjustModal complet, jamais un realize() instantané.
   fireEvent.press(screen.getAllByTestId(/^planning-cell-/)[0]);
-  await waitFor(() => screen.getByTestId('planning-detail-mark-realized-po-2'));
-  fireEvent.press(screen.getByTestId('planning-detail-mark-realized-po-2'));
-  await waitFor(() => expect(mockRealizePlannedOperation).toHaveBeenCalledWith('po-2', { actualAmount: '70' }));
+  await waitFor(() => screen.getByTestId('planning-detail-pay-adjust-po-2'));
+  fireEvent.press(screen.getByTestId('planning-detail-pay-adjust-po-2'));
+  await waitFor(() => screen.getByTestId('planning-adjust-submit'));
+  await fireEvent.press(screen.getByTestId('planning-adjust-submit'));
+  await waitFor(() => expect(mockRealizePlannedOperation).toHaveBeenCalledWith('po-2', expect.objectContaining({ actualAmount: '70' })));
 });
 
 it('plans financiers : la carte affiche la prochaine échéance et navigue vers le détail du plan', async () => {
@@ -639,4 +747,49 @@ it('"Annuler l\'échéance" sur une récurrence propose le choix de portée ; "e
     expect(mockUpdateRecurrenceRule).toHaveBeenCalledWith('rule-1', expect.objectContaining({ applyFrom: 'THIS_AND_FOLLOWING', fromDate: '2026-09-15', active: false })),
   );
   alertSpy.mockRestore();
+});
+
+// Lot "synthèse enrichie" (Part 2 A/D) : bloc compact payé/prévu + reste pour
+// les dépenses ET l'épargne, séparé l'un de l'autre et de Balance mensuelle/
+// cumulée (conservées inchangées) — adapte le bloc de totaux existant, sans
+// reconstruire le Planning.
+it('synthèse enrichie : affiche payé/prévu + reste pour les dépenses et l\'épargne, séparément de la balance', async () => {
+  mockGetPlanning.mockResolvedValue(
+    basePlanning({
+      synthese: {
+        '2026-09': {
+          totalRevenus: 2000,
+          totalDepenses: 7300,
+          totalEpargne: 1000,
+          balanceMensuelle: -6300,
+          balanceCumulee: -6300,
+          depensesPrevues: 7550,
+          depensesPayees: 1450,
+          depensesReste: 6100,
+          epargnePrevue: 1000,
+          epargneVersee: 1000,
+          epargneReste: 0,
+        },
+        '2026-10': emptySynthese(),
+        '2026-11': emptySynthese(),
+      },
+    }),
+  );
+
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByText('DÉPENSES payé/prévu'));
+  expect(screen.getByText('ÉPARGNE versé/prévu')).toBeTruthy();
+
+  const depensesCell = screen.getByTestId('planning-synthese-depenses-2026-09');
+  expect(within(depensesCell).getByText('1 450/7 550 DH')).toBeTruthy();
+  expect(within(depensesCell).getByText('reste 6 100 DH')).toBeTruthy();
+
+  const epargneCell = screen.getByTestId('planning-synthese-epargne-2026-09');
+  expect(within(epargneCell).getByText('1 000/1 000 DH')).toBeTruthy();
+  // L'épargne a son propre "reste" (0), jamais mélangé à celui des dépenses (6 100).
+  expect(within(epargneCell).getByText('reste 0 DH')).toBeTruthy();
+
+  // Balance mensuelle/cumulée toujours présentes, affichage inchangé.
+  expect(screen.getByText('BALANCE MENSUELLE')).toBeTruthy();
+  expect(screen.getByText('BALANCE CUMULÉE')).toBeTruthy();
 });

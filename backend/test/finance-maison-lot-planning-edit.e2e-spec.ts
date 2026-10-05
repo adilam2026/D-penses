@@ -395,13 +395,19 @@ describe('Finance Maison — Planning : source au paiement + modification des é
     expect(afterAccount.nonAffecte).toBe(0); // jamais touché par un paiement financé via une enveloppe
 
     // 14. La source choisie au paiement ne modifie JAMAIS la définition prévue
-    // de l'échéance : le reste à payer (700) reste rattaché au compte Épargne
-    // direct, pas à "Enfants".
+    // de l'échéance : expectedAmount (le PRÉVU) reste 800 d'origine, toujours
+    // rattaché au compte Épargne direct, pas à "Enfants" — le reste à payer
+    // (700) se lit désormais via le Planning.
     const plannedAfter = (await listPlanned(token)).find((p) => p.id === planned.body.id);
     expect(plannedAfter.status).toBe('PENDING');
-    expect(plannedAfter.expectedAmount).toBe(700);
+    expect(plannedAfter.expectedAmount).toBe(800);
     expect(plannedAfter.sourceAccountId).toBe(epargne.id);
     expect(plannedAfter.sourceSubaccountId).toBeNull();
+
+    const planningAfterPartial = await getPlanning(token, 3);
+    const cellAfterPartial = planningAfterPartial.depenses.find((r: any) => r.label === 'Échéance').cells[planningAfterPartial.months[0]];
+    expect(cellAfterPartial.singleOccurrence.expectedAmount).toBe(800);
+    expect(cellAfterPartial.singleOccurrence.realizedAmount).toBe(100);
 
     // Payer le reste (700) intégralement, cette fois depuis le compte
     // principal direct — refusé car non affecté toujours à 0.
