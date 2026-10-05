@@ -155,6 +155,24 @@ export interface PlanningMonthSynthese {
   epargnePrevue: number;
   epargneVersee: number;
   epargneReste: number;
+  /**
+   * Lot "couverture des dépenses restantes" — UNIQUEMENT fiable pour le MOIS
+   * COURANT (premier mois de la table, cf. buildPlanningTable) : `null` pour
+   * tout autre mois, faute de projection de solde par mois/source fiable
+   * dans le modèle actuel (cf. rapport de livraison — non inventée).
+   *
+   * Calculée PAR SOURCE prévue des échéances encore à payer (jamais un
+   * simple total patrimoine) : pour chaque source, disponible = non-affecté
+   * du compte (source directe) ou solde de l'enveloppe (source sous-compte),
+   * jamais sommés entre sources différentes. depensesCouvertes = Σ par
+   * source de min(disponible_source, reste_source) — un surplus sur une
+   * source ne compense JAMAIS le déficit d'une autre. Une échéance sans
+   * source valide est toujours comptée NON couverte (jamais de source
+   * supposée).
+   */
+  depensesCouvertes: number | null;
+  /** = depensesReste - depensesCouvertes (mois courant uniquement, sinon null) — "à provisionner", jamais présenté comme une marge globale compensant les sources entre elles. */
+  depensesAProvisionner: number | null;
 }
 
 export interface PlanningTable {
@@ -317,6 +335,24 @@ function applySingleOccurrenceRegistry(registry: SingleOccurrenceRegistry) {
  * classiques — elles sont affichées uniquement via leur propre ligne de plan
  * (cf. financial-plans.util.ts), jamais doublées ici.
  */
+/** Clé "aucune source exploitable" (lot couverture §4) — toujours comptée disponible=0, jamais une source supposée. */
+const NO_SOURCE_KEY = '__NO_SOURCE__';
+
+function sourceKeyOf(sourceAccountId: string | null, sourceSubaccountId: string | null): string {
+  if (!sourceAccountId) return NO_SOURCE_KEY;
+  return `${sourceAccountId}::${sourceSubaccountId ?? 'direct'}`;
+}
+
+/** Disponible RÉEL de cette source — jamais une source différente, jamais un total patrimoine (lot "couverture des dépenses restantes"). */
+function disponibleForSource(sourceKey: string, accountNonAffecte: Map<string, number>, subaccountBalances: Map<string, number>): number {
+  if (sourceKey === NO_SOURCE_KEY) return 0;
+  const sepIndex = sourceKey.indexOf('::');
+  const accountId = sourceKey.slice(0, sepIndex);
+  const sub = sourceKey.slice(sepIndex + 2);
+  if (sub !== 'direct') return Math.max(0, subaccountBalances.get(sub) ?? 0);
+  return Math.max(0, accountNonAffecte.get(accountId) ?? 0);
+}
+
 export function buildPlanningTable(params: {
   months: PlanningMonthKey[];
   plannedOperations: PlanningPlannedOperationRow[];
@@ -324,11 +360,25 @@ export function buildPlanningTable(params: {
   categories: PlanningCategoryRow[];
   accountNames: Map<string, string>;
   subaccountNames: Map<string, string>;
+  /**
+   * Lot "couverture des dépenses restantes" — soldes RÉELS actuels (non-
+   * affecté par compte, solde par enveloppe/sous-compte), utilisés
+   * UNIQUEMENT pour calculer la couverture du mois COURANT (premier mois de
+   * `months`). Jamais une projection : cf. le commentaire de
+   * PlanningMonthSynthese.depensesCouvertes pour la limite assumée sur les
+   * mois futurs.
+   */
+  accountNonAffecte: Map<string, number>;
+  subaccountBalances: Map<string, number>;
   /** Jour de début du mois financier (§ Paramètres > début du mois) — 1 par défaut (mois calendaire, inchangé). */
   monthStartDay?: number;
 }): PlanningTable {
-  const { months, plannedOperations, financialOperations, categories, accountNames, subaccountNames, monthStartDay = 1 } = params;
+  const { months, plannedOperations, financialOperations, categories, accountNames, subaccountNames, accountNonAffecte, subaccountBalances, monthStartDay = 1 } = params;
   const monthSet = new Set(months);
+  // Le mois courant est TOUJOURS months[0] (monthRange() part de `now`, cf.
+  // planning.service.ts) — jamais recalculé ici à partir de la date système,
+  // pour rester cohérent avec exactement la fenêtre demandée par l'appelant.
+  const currentMonth = months[0];
 
   // Opération(s) de clôture des échéances liées à un PLAN FINANCIER
   // (financial-plans.service.ts#markDeadlinePaid) — ce chemin ne pose jamais
@@ -393,16 +443,22 @@ export function buildPlanningTable(params: {
   const epargneVerseeByMonth = new Map<PlanningMonthKey, number>(months.map((m) => [m, 0]));
   const addToMonth = (map: Map<PlanningMonthKey, number>, m: PlanningMonthKey, delta: number) => map.set(m, (map.get(m) ?? 0) + delta);
 
+  // Lot "couverture des dépenses restantes" — reste à payer du mois COURANT
+  // uniquement, groupé par SOURCE PRÉVUE de l'échéance (jamais par échéance
+  // individuelle ni sommé entre sources différentes).
+  const resteParSourceMoisCourant = new Map<string, number>();
+
   /**
    * Pousse dans `cell` tous les items d'UNE échéance (paiements déjà
    * enregistrés + éventuel reste à payer) et enregistre son occurrence
    * candidate pour le registre singleOccurrence — partagé entre les 3
    * natures (EXPENSE/INCOME/SAVINGS_CONTRIBUTION), qui ne diffèrent que par
    * la ligne dans laquelle la case se trouve. Retourne le montant déjà payé
-   * (somme nette affichée, §correction) pour que l'appelant alimente, le cas
-   * échéant, les accumulateurs Part 2 A/D.
+   * (somme nette affichée, §correction) ET le reste encore à payer (0 si
+   * REALIZED/CANCELLED) pour que l'appelant alimente les accumulateurs
+   * Part 2 A/D et, pour le mois courant, la couverture par source.
    */
-  function pushPlannedOccurrence(cell: PlanningCell, planned: PlanningPlannedOperationRow, realizations: PlanningFinancialOperationRow[]): number {
+  function pushPlannedOccurrence(cell: PlanningCell, planned: PlanningPlannedOperationRow, realizations: PlanningFinancialOperationRow[]): { paidDisplay: number; remaining: number } {
     const plannedAccounts = {
       sourceAccountId: planned.sourceAccountId,
       sourceSubaccountId: planned.sourceSubaccountId,
@@ -443,8 +499,8 @@ export function buildPlanningTable(params: {
       );
     }
 
+    const remaining = planned.status === 'PENDING' ? expected - paidDisplay : 0;
     if (planned.status === 'PENDING') {
-      const remaining = expected - paidDisplay;
       if (remaining > 0) {
         pushItem(
           cell,
@@ -473,7 +529,7 @@ export function buildPlanningTable(params: {
     }
     // CANCELLED : seuls les items RÉALISÉS ci-dessus (s'il y en a) sont affichés — jamais de singleOccurrence (rien à ajuster sur une échéance annulée).
 
-    return paidDisplay;
+    return { paidDisplay, remaining };
   }
 
   for (const planned of plannedOperations) {
@@ -517,12 +573,20 @@ export function buildPlanningTable(params: {
       row = ensureRow(depenseRows, labelRowKey(categoryId, planned.label), planned.label, categoryId, categoryLabel);
     }
 
-    const paidDisplay = pushPlannedOccurrence(row.cells[mKey], planned, realizations);
+    const { paidDisplay, remaining } = pushPlannedOccurrence(row.cells[mKey], planned, realizations);
 
     if (planned.kind === 'EXPENSE') {
       const prevuContribution = planned.status === 'CANCELLED' ? paidDisplay : toNumber(planned.expectedAmount);
       addToMonth(depensesPrevuesByMonth, mKey, prevuContribution);
       addToMonth(depensesPayeesByMonth, mKey, paidDisplay);
+
+      // Couverture (lot "couverture des dépenses restantes") : UNIQUEMENT le
+      // reste du mois COURANT, groupé par la source PRÉVUE de l'échéance —
+      // jamais une échéance individuelle, jamais une source supposée.
+      if (mKey === currentMonth && remaining > 0) {
+        const sourceKey = sourceKeyOf(planned.sourceAccountId, planned.sourceSubaccountId);
+        resteParSourceMoisCourant.set(sourceKey, (resteParSourceMoisCourant.get(sourceKey) ?? 0) + remaining);
+      }
     } else if (planned.kind === 'SAVINGS_CONTRIBUTION') {
       const prevuContribution = planned.status === 'CANCELLED' ? paidDisplay : toNumber(planned.expectedAmount);
       addToMonth(epargnePrevueByMonth, mKey, prevuContribution);
@@ -594,6 +658,14 @@ export function buildPlanningTable(params: {
   }
   applySingleOccurrenceRegistry(singleOccurrenceRegistry);
 
+  // Couverture (mois courant uniquement) : jamais un pool unique — un
+  // surplus sur une source ne compense JAMAIS le déficit d'une autre.
+  let depensesCouvertesMoisCourant = 0;
+  for (const [sourceKey, reste] of resteParSourceMoisCourant) {
+    const disponible = disponibleForSource(sourceKey, accountNonAffecte, subaccountBalances);
+    depensesCouvertesMoisCourant += Math.min(disponible, reste);
+  }
+
   const synthese: Record<PlanningMonthKey, PlanningMonthSynthese> = {};
   let cumulative = 0;
   for (const m of months) {
@@ -608,8 +680,12 @@ export function buildPlanningTable(params: {
     cumulative += balanceMensuelle;
     const depensesPrevues = depensesPrevuesByMonth.get(m) ?? 0;
     const depensesPayees = depensesPayeesByMonth.get(m) ?? 0;
+    const depensesReste = depensesPrevues - depensesPayees;
     const epargnePrevue = epargnePrevueByMonth.get(m) ?? 0;
     const epargneVersee = epargneVerseeByMonth.get(m) ?? 0;
+    const isCurrentMonth = m === currentMonth;
+    // Jamais > depensesReste par construction (min(disponible, reste) <= reste pour chaque source) ; Math.max défensif uniquement.
+    const depensesCouvertes = isCurrentMonth ? Math.min(depensesCouvertesMoisCourant, depensesReste) : null;
     synthese[m] = {
       totalRevenus,
       totalDepenses,
@@ -618,10 +694,12 @@ export function buildPlanningTable(params: {
       balanceCumulee: cumulative,
       depensesPrevues,
       depensesPayees,
-      depensesReste: depensesPrevues - depensesPayees,
+      depensesReste,
       epargnePrevue,
       epargneVersee,
       epargneReste: epargnePrevue - epargneVersee,
+      depensesCouvertes,
+      depensesAProvisionner: isCurrentMonth ? Math.max(0, depensesReste - (depensesCouvertes ?? 0)) : null,
     };
   }
 

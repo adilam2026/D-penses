@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { ensurePlannedOccurrences } from '../common/ledger/recurrence.util';
+import { computeNonAffecte, computeSubaccountBalance } from '../common/ledger/ledger.util';
 import { buildPlanningTable, monthBounds, monthRange, PlanningMonthKey } from '../common/ledger/planning.util';
 
 export const PLANNING_MIN_MONTHS = 3;
@@ -61,6 +62,16 @@ export class PlanningService {
         },
       });
 
+      // Lot "couverture des dépenses restantes" — soldes RÉELS actuels (non-
+      // affecté par compte, solde par enveloppe), utilisés UNIQUEMENT pour le
+      // mois courant (cf. buildPlanningTable). Jamais une projection : pour
+      // les mois futurs, aucune valeur fiable n'existe dans le modèle actuel
+      // (pas de solde-par-mois stocké/projeté) — cf. rapport de livraison.
+      const [accountNonAffecteEntries, subaccountBalanceEntries] = await Promise.all([
+        Promise.all(accounts.map(async (a): Promise<[string, number]> => [a.id, (await computeNonAffecte(tx, a.id)).toNumber()])),
+        Promise.all(subaccounts.map(async (s): Promise<[string, number]> => [s.id, (await computeSubaccountBalance(tx, s.id)).toNumber()])),
+      ]);
+
       return buildPlanningTable({
         months: monthsList,
         plannedOperations,
@@ -68,6 +79,8 @@ export class PlanningService {
         categories,
         accountNames: new Map(accounts.map((a) => [a.id, a.name])),
         subaccountNames: new Map(subaccounts.map((s) => [s.id, s.name])),
+        accountNonAffecte: new Map(accountNonAffecteEntries),
+        subaccountBalances: new Map(subaccountBalanceEntries),
         monthStartDay,
       });
     });

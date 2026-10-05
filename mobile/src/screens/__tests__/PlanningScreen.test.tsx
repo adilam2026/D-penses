@@ -67,6 +67,8 @@ function emptySynthese(): PlanningTableApi['synthese'][string] {
     depensesPrevues: 0,
     depensesPayees: 0,
     depensesReste: 0,
+    depensesCouvertes: null,
+    depensesAProvisionner: null,
     epargnePrevue: 0,
     epargneVersee: 0,
     epargneReste: 0,
@@ -766,6 +768,8 @@ it('synthèse enrichie : affiche payé/prévu + reste pour les dépenses et l\'�
           depensesPrevues: 7550,
           depensesPayees: 1450,
           depensesReste: 6100,
+          depensesCouvertes: 5500,
+          depensesAProvisionner: 600,
           epargnePrevue: 1000,
           epargneVersee: 1000,
           epargneReste: 0,
@@ -783,13 +787,39 @@ it('synthèse enrichie : affiche payé/prévu + reste pour les dépenses et l\'�
   const depensesCell = screen.getByTestId('planning-synthese-depenses-2026-09');
   expect(within(depensesCell).getByText('1 450/7 550 DH')).toBeTruthy();
   expect(within(depensesCell).getByText('reste 6 100 DH')).toBeTruthy();
+  // Couverture (mois courant) : jamais présentée comme une marge globale — "À provisionner", pas "Couvert 5 500 / Marge".
+  expect(within(depensesCell).getByText('À provisionner 600 DH')).toBeTruthy();
 
   const epargneCell = screen.getByTestId('planning-synthese-epargne-2026-09');
   expect(within(epargneCell).getByText('1 000/1 000 DH')).toBeTruthy();
   // L'épargne a son propre "reste" (0), jamais mélangé à celui des dépenses (6 100).
   expect(within(epargneCell).getByText('reste 0 DH')).toBeTruthy();
+  // Pas de ligne de couverture pour l'épargne — jamais mélangée aux dépenses.
+  expect(within(epargneCell).queryByText(/provisionner|couvert/i)).toBeNull();
+
+  // Mois futurs (2026-10) : pas de 3e ligne de couverture, faute de projection fiable (§8).
+  const depensesCellFuture = screen.getByTestId('planning-synthese-depenses-2026-10');
+  expect(within(depensesCellFuture).queryByText(/provisionner|couvert/i)).toBeNull();
 
   // Balance mensuelle/cumulée toujours présentes, affichage inchangé.
   expect(screen.getByText('BALANCE MENSUELLE')).toBeTruthy();
   expect(screen.getByText('BALANCE CUMULÉE')).toBeTruthy();
+});
+
+it('synthèse enrichie : "✓ Tout est couvert" quand depensesAProvisionner vaut 0 (mois courant)', async () => {
+  mockGetPlanning.mockResolvedValue(
+    basePlanning({
+      synthese: {
+        '2026-09': { ...emptySynthese(), depensesPrevues: 1200, depensesPayees: 0, depensesReste: 1200, depensesCouvertes: 1200, depensesAProvisionner: 0 },
+        '2026-10': emptySynthese(),
+        '2026-11': emptySynthese(),
+      },
+    }),
+  );
+
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByText('DÉPENSES payé/prévu'));
+  const depensesCell = screen.getByTestId('planning-synthese-depenses-2026-09');
+  expect(within(depensesCell).getByText('✓ Tout est couvert')).toBeTruthy();
+  expect(within(depensesCell).queryByText(/provisionner/i)).toBeNull();
 });

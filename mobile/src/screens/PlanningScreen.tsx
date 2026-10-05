@@ -26,6 +26,12 @@ const VISIBLE_COLUMNS = 3;
 const FALLBACK_COLUMN_WIDTH = 90;
 const LABEL_WIDTH = 108;
 const ROW_HEIGHT = 46;
+// Lot "couverture des dépenses restantes" — la ligne "DÉPENSES payé/prévu"
+// gagne une 3e ligne compacte ("À provisionner"/"✓ Tout est couvert"),
+// UNIQUEMENT visible dans la colonne du mois courant (les mois futurs
+// gardent 2 lignes, faute de couverture fiable) : légèrement plus haute que
+// ROW_HEIGHT pour l'accueillir sans écraser le texte existant.
+const SYNTHESE_DEPENSES_ROW_HEIGHT = 60;
 const SECTION_HEIGHT = 30;
 const HEADER_HEIGHT = 40;
 const CATEGORY_HEADER_HEIGHT = 24;
@@ -414,7 +420,7 @@ export function PlanningScreen() {
                 supplémentaires ("où en suis-je"), jamais 5 nouvelles grandes
                 lignes — adapte uniquement ce bloc de totaux existant, le
                 Planning lui-même n'est pas reconstruit. */}
-            <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: colors.danger }]}>
+            <View style={[styles.totalLabelCell, { height: SYNTHESE_DEPENSES_ROW_HEIGHT, borderLeftColor: colors.danger }]}>
               <Text style={styles.totalLabelText} numberOfLines={2}>
                 DÉPENSES payé/prévu
               </Text>
@@ -516,8 +522,11 @@ export function PlanningScreen() {
                 ))}
 
                 {/* DÉPENSES payé/prévu + reste — axe "où en suis-je", distinct
-                    de TOTAL DÉPENSES ci-dessus (cf. backend planning.util.ts). */}
-                <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
+                    de TOTAL DÉPENSES ci-dessus (cf. backend planning.util.ts).
+                    3e ligne (couverture) UNIQUEMENT pour le mois courant
+                    (depensesAProvisionner non-null) — jamais pour les mois
+                    futurs, faute de projection de solde fiable (§8). */}
+                <View style={{ flexDirection: 'row', height: SYNTHESE_DEPENSES_ROW_HEIGHT }}>
                   {data.months.map((m) => {
                     const s = data.synthese[m];
                     return (
@@ -528,6 +537,16 @@ export function PlanningScreen() {
                         <Text style={styles.syntheseDetailReste} numberOfLines={1} adjustsFontSizeToFit>
                           reste {Math.round(s.depensesReste).toLocaleString('fr-FR')} DH
                         </Text>
+                        {s.depensesAProvisionner !== null &&
+                          (s.depensesAProvisionner > 0 ? (
+                            <Text style={styles.syntheseCouvertureWarn} numberOfLines={1} adjustsFontSizeToFit>
+                              À provisionner {Math.round(s.depensesAProvisionner).toLocaleString('fr-FR')} DH
+                            </Text>
+                          ) : (
+                            <Text style={styles.syntheseCouvertureOk} numberOfLines={1} adjustsFontSizeToFit>
+                              ✓ Tout est couvert
+                            </Text>
+                          ))}
                       </View>
                     );
                   })}
@@ -1377,6 +1396,9 @@ const styles = StyleSheet.create({
   // Lot "synthèse enrichie" — 2 lignes compactes (payé/prévu + reste), même gabarit que la case MIXTE (cellAmountMixed/cellRestantMixed) pour rester dense.
   syntheseDetailAmount: { fontSize: 9.5, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary, paddingHorizontal: 2 },
   syntheseDetailReste: { fontSize: 8.5, fontFamily: fontFamily.sansBold, color: colors.textSecondary, paddingHorizontal: 2, marginTop: 1 },
+  // Lot "couverture des dépenses restantes" — 3e ligne du mois courant uniquement.
+  syntheseCouvertureWarn: { fontSize: 8, fontFamily: fontFamily.sansExtraBold, color: colors.danger, paddingHorizontal: 2, marginTop: 1 },
+  syntheseCouvertureOk: { fontSize: 8, fontFamily: fontFamily.sansExtraBold, color: colors.success, paddingHorizontal: 2, marginTop: 1 },
   negativeText: { color: colors.danger },
   backdrop: { flex: 1, backgroundColor: colors.backdrop },
   confirmBox: {

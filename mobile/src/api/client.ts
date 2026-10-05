@@ -543,6 +543,16 @@ export interface PlanningMonthSyntheseApi {
   epargnePrevue: number;
   epargneVersee: number;
   epargneReste: number;
+  /**
+   * Lot "couverture des dépenses restantes" — UNIQUEMENT non-null pour le
+   * mois COURANT (premier mois de `months`) : `null` pour tout mois futur,
+   * faute de projection de solde par mois/source fiable. Calculée PAR
+   * SOURCE prévue des échéances restantes (jamais un total patrimoine) —
+   * cf. backend planning.util.ts.
+   */
+  depensesCouvertes: number | null;
+  /** = depensesReste - depensesCouvertes (mois courant), sinon null. */
+  depensesAProvisionner: number | null;
 }
 
 export interface PlanningTableApi {
