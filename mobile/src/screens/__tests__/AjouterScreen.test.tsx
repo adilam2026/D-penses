@@ -19,6 +19,7 @@ const mockCreateFinancialOperation = jest.fn();
 const mockCreateCategory = jest.fn();
 const mockCreatePlannedOperation = jest.fn();
 const mockCreateRecurrenceRule = jest.fn();
+const mockGetMyHousehold = jest.fn();
 
 jest.mock('../../api/client', () => ({
   ApiError: class FakeApiError extends Error {
@@ -36,6 +37,7 @@ jest.mock('../../api/client', () => ({
   createRecurrenceRule: (...args: unknown[]) => mockCreateRecurrenceRule(...args),
   createAccount: jest.fn(),
   createSubaccount: jest.fn(),
+  getMyHousehold: () => mockGetMyHousehold(),
 }));
 
 function renderWithSafeArea(ui: React.ReactElement) {
@@ -54,6 +56,16 @@ beforeEach(() => {
     { id: 'cat-courses', name: 'Courses', active: true, sortOrder: 0, isDefaultFallback: false },
     { id: 'cat-sante', name: 'Santé', active: true, sortOrder: 1, isDefaultFallback: false },
   ]);
+  mockGetMyHousehold.mockResolvedValue({
+    id: 'h1',
+    name: 'Foyer',
+    currency: 'MAD',
+    monthStartDay: 1,
+    memberships: [
+      { id: 'm-adil', role: 'admin', user: { id: 'u-adil', firstName: 'Adil', lastName: 'A', email: 'adil@test.local', color: null } },
+      { id: 'm-lamiaa', role: 'member', user: { id: 'u-lamiaa', firstName: 'Lamiaa', lastName: 'L', email: 'lamiaa@test.local', color: null } },
+    ],
+  });
 });
 
 it('Item 14 : le libellé du compte précise s\'il sera débité ou crédité (Dépense/Revenu)', async () => {

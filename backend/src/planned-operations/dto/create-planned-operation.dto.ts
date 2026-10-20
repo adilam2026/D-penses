@@ -1,4 +1,4 @@
-import { IsDateString, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
 import { PlannedOperationKind } from '@prisma/client';
 
 export class CreatePlannedOperationDto {
@@ -46,4 +46,13 @@ export class CreatePlannedOperationDto {
   @IsOptional()
   @IsString()
   destinationSubaccountId?: string;
+
+  /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit des champs source/destination ci-dessus. */
+  @IsOptional()
+  @IsString()
+  responsibleMemberId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  includeInTodo?: boolean;
 }

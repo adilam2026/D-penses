@@ -18,6 +18,7 @@ jest.mock('@react-navigation/native', () => ({
 const mockListAccounts = jest.fn();
 const mockListCategories = jest.fn();
 const mockCreateCategory = jest.fn();
+const mockGetMyHousehold = jest.fn();
 
 jest.mock('../../api/client', () => ({
   ApiError: class FakeApiError extends Error {
@@ -35,6 +36,7 @@ jest.mock('../../api/client', () => ({
   createRecurrenceRule: jest.fn(),
   createAccount: jest.fn(),
   createSubaccount: jest.fn(),
+  getMyHousehold: () => mockGetMyHousehold(),
 }));
 
 function renderWithSafeArea(ui: React.ReactElement) {
@@ -51,6 +53,7 @@ beforeEach(() => {
   mockListCategories.mockResolvedValue([
     { id: 'cat-courses', name: 'Courses', active: true, sortOrder: 0, isDefaultFallback: false },
   ]);
+  mockGetMyHousehold.mockResolvedValue({ id: 'h1', name: 'Foyer', currency: 'MAD', monthStartDay: 1, memberships: [] });
 });
 
 it('"+ Nouvelle catégorie" crée puis sélectionne la catégorie', async () => {

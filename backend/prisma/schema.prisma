@@ -88,6 +88,11 @@ model HouseholdMembership {
 
   ownedAccounts Account[]
 
+  // Lot "À faire" — même identifiant que Account.ownerMemberId (jamais User.id
+  // directement), pour rester cohérent avec le concept "membre du foyer" déjà établi.
+  responsibleForPlannedOperations PlannedOperation[] @relation("PlannedResponsibleMember")
+  responsibleForRecurrenceRules   RecurrenceRule[]   @relation("RecurrenceResponsibleMember")
+
   @@unique([householdId, userId])
   @@map("household_membership")
 }
@@ -327,6 +332,16 @@ model RecurrenceRule {
   destinationAccountId    String? @map("destination_account_id")
   destinationSubaccountId String? @map("destination_subaccount_id")
 
+  // Lot "À faire" — GABARIT du responsable/de l'inclusion dans la checklist,
+  // copié sur chaque occurrence générée (même mécanique que source/montant
+  // ci-dessus) puis vit indépendamment par occurrence. RESPONSABLE ≠ SOURCE
+  // (cf. responsibleMember ci-dessous) : jamais déduit du compte/sous-compte
+  // source, jamais un effet sur les écritures ledger. @default(false) pour
+  // includeInTodo : une migration additive ne doit jamais faire apparaître
+  // rétroactivement d'anciennes règles dans "À faire".
+  responsibleMemberId String?  @map("responsible_member_id")
+  includeInTodo        Boolean @default(false) @map("include_in_todo")
+
   household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
   category  Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
@@ -337,6 +352,8 @@ model RecurrenceRule {
   sourceSubaccount      Subaccount? @relation("RecurrenceSourceSubaccount", fields: [sourceSubaccountId], references: [id])
   destinationAccount    Account?    @relation("RecurrenceDestinationAccount", fields: [destinationAccountId], references: [id])
   destinationSubaccount Subaccount? @relation("RecurrenceDestinationSubaccount", fields: [destinationSubaccountId], references: [id])
+
+  responsibleMember HouseholdMembership? @relation("RecurrenceResponsibleMember", fields: [responsibleMemberId], references: [id], onDelete: SetNull)
 
   plannedOperations PlannedOperation[]
 
@@ -555,12 +572,22 @@ model PlannedOperation {
   status              PlannedOperationStatus @default(PENDING)
   realizedOperationId String?                @unique @map("realized_operation_id")
 
+  // Lot "À faire" (vue opérationnelle du Planning — jamais un second moteur
+  // financier) : RESPONSABLE ≠ SOURCE, jamais déduit du compte/sous-compte
+  // source ni du propriétaire du compte, jamais écrit sur le ledger.
+  // includeInTodo @default(false) — migration additive : aucune échéance
+  // existante n'apparaît rétroactivement dans "À faire", et aucun
+  // responsable n'est jamais attribué arbitrairement.
+  responsibleMemberId String?  @map("responsible_member_id")
+  includeInTodo        Boolean @default(false) @map("include_in_todo")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   household      Household       @relation(fields: [householdId], references: [id], onDelete: Cascade)
   recurrenceRule RecurrenceRule? @relation(fields: [recurrenceRuleId], references: [id])
   category       Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  responsibleMember HouseholdMembership? @relation("PlannedResponsibleMember", fields: [responsibleMemberId], references: [id], onDelete: SetNull)
 
   financialPlanItem     FinancialPlanItem?     @relation(fields: [financialPlanItemId], references: [id])
   financialPlanDeadline FinancialPlanDeadline? @relation(fields: [financialPlanDeadlineId], references: [id])

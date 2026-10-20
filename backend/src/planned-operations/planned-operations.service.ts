@@ -14,6 +14,9 @@ export interface UpdatePlannedOperationInput {
   sourceSubaccountId?: string;
   destinationAccountId?: string;
   destinationSubaccountId?: string;
+  /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit du compte/sous-compte ci-dessus, aucun effet ledger. */
+  responsibleMemberId?: string;
+  includeInTodo?: boolean;
 }
 
 export interface RealizePlannedOperationInput {
@@ -61,6 +64,15 @@ export interface CreatePlannedOperationInput {
   sourceSubaccountId?: string;
   destinationAccountId?: string;
   destinationSubaccountId?: string;
+  /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit du compte/sous-compte ci-dessus, aucun effet ledger. */
+  responsibleMemberId?: string;
+  /** Si omis : OUI pour un versement (SAVINGS_CONTRIBUTION), NON pour une dépense (EXPENSE) — jamais pour un revenu (INCOME, toujours exclu de "À faire"). */
+  includeInTodo?: boolean;
+}
+
+/** Règle par défaut "Ajouter à mes actions" (§7) quand non fournie explicitement — jamais appliquée rétroactivement, uniquement à la création. */
+function defaultIncludeInTodo(kind: CreatePlannedOperationInput['kind']): boolean {
+  return kind === 'SAVINGS_CONTRIBUTION';
 }
 
 @Injectable()
@@ -87,6 +99,8 @@ export class PlannedOperationsService {
             sourceSubaccountId: dto.sourceSubaccountId,
             destinationAccountId: dto.destinationAccountId,
             destinationSubaccountId: dto.destinationSubaccountId,
+            responsibleMemberId: dto.responsibleMemberId,
+            includeInTodo: dto.includeInTodo ?? defaultIncludeInTodo(dto.kind),
           },
         });
       } catch (err) {
@@ -248,6 +262,8 @@ export class PlannedOperationsService {
             expectedDate: newExpectedDate!,
             label: dto.label ?? planned.label,
             status: 'PENDING',
+            responsibleMemberId: dto.responsibleMemberId !== undefined ? dto.responsibleMemberId : planned.responsibleMemberId,
+            includeInTodo: dto.includeInTodo !== undefined ? dto.includeInTodo : planned.includeInTodo,
           },
         });
       }
@@ -267,6 +283,9 @@ export class PlannedOperationsService {
           sourceSubaccountId: dto.sourceAccountId !== undefined ? (dto.sourceSubaccountId ?? null) : undefined,
           destinationAccountId: dto.destinationAccountId,
           destinationSubaccountId: dto.destinationAccountId !== undefined ? (dto.destinationSubaccountId ?? null) : undefined,
+          // Lot "À faire" — RESPONSABLE ≠ SOURCE : jamais déduit des champs ci-dessus.
+          responsibleMemberId: dto.responsibleMemberId,
+          includeInTodo: dto.includeInTodo,
         },
       });
     });

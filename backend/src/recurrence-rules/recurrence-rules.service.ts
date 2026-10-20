@@ -18,6 +18,10 @@ export interface CreateRecurrenceRuleInput {
   sourceSubaccountId?: string;
   destinationAccountId?: string;
   destinationSubaccountId?: string;
+  /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit des champs source/destination ci-dessus. */
+  responsibleMemberId?: string;
+  /** Si omis : OUI pour un versement (SAVINGS_CONTRIBUTION), NON pour une dépense (EXPENSE). */
+  includeInTodo?: boolean;
 }
 
 export interface UpdateRecurrenceRuleInput {
@@ -33,6 +37,13 @@ export interface UpdateRecurrenceRuleInput {
   active?: boolean;
   frequency?: RecurrenceFrequency;
   anchorDate?: string;
+  responsibleMemberId?: string;
+  includeInTodo?: boolean;
+}
+
+/** Règle par défaut "Ajouter à mes actions" (§7) quand non fournie explicitement — jamais appliquée rétroactivement, uniquement à la création. */
+function defaultIncludeInTodo(kind: PlannedOperationKind): boolean {
+  return kind === 'SAVINGS_CONTRIBUTION';
 }
 
 @Injectable()
@@ -58,6 +69,8 @@ export class RecurrenceRulesService {
           sourceSubaccountId: dto.sourceSubaccountId,
           destinationAccountId: dto.destinationAccountId,
           destinationSubaccountId: dto.destinationSubaccountId,
+          responsibleMemberId: dto.responsibleMemberId,
+          includeInTodo: dto.includeInTodo ?? defaultIncludeInTodo(dto.kind),
         },
       });
 
@@ -119,6 +132,8 @@ export class RecurrenceRulesService {
       if (dto.destinationAccountId !== undefined) templatePatch.destinationAccount = { connect: { id: dto.destinationAccountId } };
       if (dto.destinationSubaccountId !== undefined) templatePatch.destinationSubaccount = { connect: { id: dto.destinationSubaccountId } };
       if (dto.active !== undefined) templatePatch.active = dto.active;
+      if (dto.responsibleMemberId !== undefined) templatePatch.responsibleMember = { connect: { id: dto.responsibleMemberId } };
+      if (dto.includeInTodo !== undefined) templatePatch.includeInTodo = dto.includeInTodo;
       if (cadenceChanges) {
         if (dto.frequency !== undefined) templatePatch.frequency = dto.frequency;
         templatePatch.anchorDate = newAnchorDate;
@@ -160,6 +175,8 @@ export class RecurrenceRulesService {
             expectedDate: newAnchorDate,
             label: updated.label ?? 'Récurrence',
             status: 'PENDING',
+            responsibleMemberId: updated.responsibleMemberId,
+            includeInTodo: updated.includeInTodo,
           },
         });
         // Complète le reste de l'horizon sous la nouvelle cadence (idempotent).
@@ -175,6 +192,8 @@ export class RecurrenceRulesService {
         if (dto.sourceSubaccountId !== undefined) occurrencePatch.sourceSubaccountId = dto.sourceSubaccountId;
         if (dto.destinationAccountId !== undefined) occurrencePatch.destinationAccountId = dto.destinationAccountId;
         if (dto.destinationSubaccountId !== undefined) occurrencePatch.destinationSubaccountId = dto.destinationSubaccountId;
+        if (dto.responsibleMemberId !== undefined) occurrencePatch.responsibleMemberId = dto.responsibleMemberId;
+        if (dto.includeInTodo !== undefined) occurrencePatch.includeInTodo = dto.includeInTodo;
 
         if (Object.keys(occurrencePatch).length > 0) {
           await tx.plannedOperation.updateMany({

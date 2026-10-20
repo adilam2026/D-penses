@@ -24,6 +24,10 @@ export interface PlanningPlannedOperationRow {
   destinationSubaccountId: string | null;
   /** Uniquement conservé pour exclure, ci-dessous, l'opération de clôture des plans financiers (financial-plan.util.ts gère leur propre affichage) — jamais utilisé pour calculer "déjà payé"/"reste" (cf. PlanningFinancialOperationRow.plannedOperationId, qui couvre TOUS les paiements, partiels compris). */
   realizedOperationId: string | null;
+  /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit de sourceAccountId/sourceSubaccountId ci-dessus, aucun effet sur le ledger. */
+  responsibleMemberId: string | null;
+  /** Lot "À faire" — contrôle UNIQUEMENT la présence dans la checklist "À faire" (TodoService), jamais l'affichage Planning ni les calculs financiers ci-dessus. */
+  includeInTodo: boolean;
 }
 
 export interface PlanningFinancialOperationRow {
@@ -66,6 +70,8 @@ export interface PlanningCellItem {
   recurrenceRuleId?: string | null;
   categoryId?: string | null;
   kind?: 'EXPENSE' | 'INCOME' | 'SAVINGS_CONTRIBUTION';
+  /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit des champs source/destination ci-dessus. */
+  responsibleMemberId?: string | null;
   /**
    * Lot "paiements partiels successifs" — uniquement sur un item
    * PLANNED_PENDING : le montant PRÉVU d'origine de l'échéance (constant),
@@ -98,6 +104,8 @@ export type PlanningSingleOccurrence = {
   recurrenceRuleId: string | null;
   categoryId: string | null;
   kind: 'EXPENSE' | 'INCOME' | 'SAVINGS_CONTRIBUTION';
+  /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit des champs source/destination ci-dessus. */
+  responsibleMemberId: string | null;
 };
 
 export interface PlanningCell {
@@ -175,12 +183,43 @@ export interface PlanningMonthSynthese {
   depensesAProvisionner: number | null;
 }
 
+/**
+ * Lot "À faire" — UN enregistrement par échéance PENDING/REALIZED réellement
+ * traitée (jamais CANCELLED-sans-paiement), indépendant du regroupement par
+ * case/catégorie ci-dessus. Essentiel : une case Planning peut regrouper
+ * PLUSIEURS échéances (cell.singleOccurrence devient alors null, ambiguïté
+ * d'affichage) — "À faire" ne doit JAMAIS perdre une action pour cette
+ * raison, donc il ne lit jamais cell.singleOccurrence, il lit CETTE liste
+ * plate, construite UNE fois, dans la même passe que le calcul prévu/payé/
+ * reste (pushPlannedOccurrence) — jamais un second calcul.
+ */
+export interface PlanningOccurrenceRecord {
+  plannedOperationId: string;
+  kind: 'EXPENSE' | 'INCOME' | 'SAVINGS_CONTRIBUTION';
+  status: 'PENDING' | 'REALIZED';
+  label: string;
+  expectedAmount: number;
+  /** "Déjà payé" cumulé — même convention que PlanningSingleOccurrence.realizedAmount (null tant que rien n'est payé). */
+  realizedAmount: number | null;
+  expectedDate: string;
+  month: PlanningMonthKey;
+  sourceAccountId: string | null;
+  sourceSubaccountId: string | null;
+  destinationAccountId: string | null;
+  destinationSubaccountId: string | null;
+  recurrenceRuleId: string | null;
+  categoryId: string | null;
+  responsibleMemberId: string | null;
+  includeInTodo: boolean;
+}
+
 export interface PlanningTable {
   months: PlanningMonthKey[];
   revenus: PlanningRow[];
   depenses: PlanningRow[];
   epargne: PlanningRow[];
   synthese: Record<PlanningMonthKey, PlanningMonthSynthese>;
+  occurrences: PlanningOccurrenceRecord[];
 }
 
 /**
@@ -448,6 +487,10 @@ export function buildPlanningTable(params: {
   // individuelle ni sommé entre sources différentes).
   const resteParSourceMoisCourant = new Map<string, number>();
 
+  // Lot "À faire" — une entrée par échéance PENDING/REALIZED traitée,
+  // indépendante du regroupement par case (cf. PlanningOccurrenceRecord).
+  const occurrenceRecords: PlanningOccurrenceRecord[] = [];
+
   /**
    * Pousse dans `cell` tous les items d'UNE échéance (paiements déjà
    * enregistrés + éventuel reste à payer) et enregistre son occurrence
@@ -465,7 +508,7 @@ export function buildPlanningTable(params: {
       destinationAccountId: planned.destinationAccountId,
       destinationSubaccountId: planned.destinationSubaccountId,
     };
-    const meta = { recurrenceRuleId: planned.recurrenceRuleId, categoryId: planned.categoryId, kind: planned.kind };
+    const meta = { recurrenceRuleId: planned.recurrenceRuleId, categoryId: planned.categoryId, kind: planned.kind, responsibleMemberId: planned.responsibleMemberId };
     const expected = toNumber(planned.expectedAmount);
     const isCancelled = planned.status === 'CANCELLED';
 
@@ -574,6 +617,31 @@ export function buildPlanningTable(params: {
     }
 
     const { paidDisplay, remaining } = pushPlannedOccurrence(row.cells[mKey], planned, realizations);
+
+    // Lot "À faire" — CANCELLED exclu (rien à exécuter ni à montrer comme
+    // "effectué" dans cette vue) ; jamais issu de cell.singleOccurrence, qui
+    // devient null dès que plusieurs échéances partagent la même case.
+    if (planned.status === 'PENDING' || planned.status === 'REALIZED') {
+      occurrenceRecords.push({
+        plannedOperationId: planned.id,
+        kind: planned.kind,
+        status: planned.status,
+        label: planned.label,
+        expectedAmount: toNumber(planned.expectedAmount),
+        // Même convention que PlanningSingleOccurrence.realizedAmount ci-dessus (markCellOccurrence) : null tant que rien n'est payé, sinon le cumulé.
+        realizedAmount: planned.status === 'REALIZED' ? paidDisplay : paidDisplay > 0 ? paidDisplay : null,
+        expectedDate: planned.expectedDate.toISOString(),
+        month: mKey,
+        sourceAccountId: planned.sourceAccountId,
+        sourceSubaccountId: planned.sourceSubaccountId,
+        destinationAccountId: planned.destinationAccountId,
+        destinationSubaccountId: planned.destinationSubaccountId,
+        recurrenceRuleId: planned.recurrenceRuleId,
+        categoryId: planned.categoryId,
+        responsibleMemberId: planned.responsibleMemberId,
+        includeInTodo: planned.includeInTodo,
+      });
+    }
 
     if (planned.kind === 'EXPENSE') {
       const prevuContribution = planned.status === 'CANCELLED' ? paidDisplay : toNumber(planned.expectedAmount);
@@ -721,6 +789,7 @@ export function buildPlanningTable(params: {
     depenses: sortRows(depenseRows),
     epargne: sortRows(epargneRows),
     synthese,
+    occurrences: occurrenceRecords,
   };
 }
 

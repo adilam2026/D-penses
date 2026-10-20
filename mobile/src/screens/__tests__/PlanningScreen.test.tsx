@@ -31,6 +31,7 @@ const mockUpdatePlannedOperation = jest.fn();
 const mockCancelPlannedOperation = jest.fn();
 const mockListRecurrenceRules = jest.fn();
 const mockUpdateRecurrenceRule = jest.fn();
+const mockGetMyHousehold = jest.fn();
 
 jest.mock('../../api/client', () => ({
   getPlanning: (...args: unknown[]) => mockGetPlanning(...args),
@@ -45,6 +46,7 @@ jest.mock('../../api/client', () => ({
   cancelPlannedOperation: (...args: unknown[]) => mockCancelPlannedOperation(...args),
   listRecurrenceRules: (...args: unknown[]) => mockListRecurrenceRules(...args),
   updateRecurrenceRule: (...args: unknown[]) => mockUpdateRecurrenceRule(...args),
+  getMyHousehold: () => mockGetMyHousehold(),
 }));
 
 function renderWithSafeArea(ui: React.ReactElement) {
@@ -99,6 +101,16 @@ beforeEach(() => {
   mockListCategories.mockResolvedValue([]);
   mockListFinancialPlans.mockResolvedValue([]);
   mockListRecurrenceRules.mockResolvedValue([]);
+  mockGetMyHousehold.mockResolvedValue({
+    id: 'h1',
+    name: 'Foyer',
+    currency: 'MAD',
+    monthStartDay: 1,
+    memberships: [
+      { id: 'm-adil', role: 'admin', user: { id: 'u-adil', firstName: 'Adil', lastName: 'A', email: 'adil@test.local', color: null } },
+      { id: 'm-lamiaa', role: 'member', user: { id: 'u-lamiaa', firstName: 'Lamiaa', lastName: 'L', email: 'lamiaa@test.local', color: null } },
+    ],
+  });
 });
 
 it('affiche le sélecteur d\'horizon (3/6/9/12) avec 6 mois actif par défaut', async () => {
@@ -132,7 +144,7 @@ it('case prévue (PENDING) : tap simple ouvre un mini pop-up ; seul "Marquer com
               pendingAmount: 700,
               realizedAmount: 0,
               status: 'PENDING',
-              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE' },
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE', responsibleMemberId: null },
               items: [{ type: 'PLANNED_PENDING', plannedOperationId: 'po-1', label: 'Assurance voiture', amount: 700, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
             },
             '2026-10': emptyCell(),
@@ -172,7 +184,7 @@ it('case prévue : "Fermer" ferme le pop-up sans déclencher de paiement', async
               pendingAmount: 700,
               realizedAmount: 0,
               status: 'PENDING',
-              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE' },
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE', responsibleMemberId: null },
               items: [{ type: 'PLANNED_PENDING', plannedOperationId: 'po-1', label: 'Assurance voiture', amount: 700, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
             },
             '2026-10': emptyCell(),
@@ -207,7 +219,7 @@ it('case déjà payée : tap simple ouvre un mini pop-up avec "Annuler le paieme
               pendingAmount: 0,
               realizedAmount: 820,
               status: 'REALIZED',
-              singleOccurrence: { plannedOperationId: 'po-1', status: 'REALIZED', expectedAmount: 700, realizedAmount: 820, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE' },
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'REALIZED', expectedAmount: 700, realizedAmount: 820, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE', responsibleMemberId: null },
               items: [{ type: 'PLANNED_REALIZED', plannedOperationId: 'po-1', financialOperationId: 'op-1', label: 'Assurance voiture', amount: 820, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
             },
             '2026-10': emptyCell(),
@@ -245,7 +257,7 @@ it('case prévue : appui long ouvre le modal d\'ajustement pré-rempli avec le m
               pendingAmount: 700,
               realizedAmount: 0,
               status: 'PENDING',
-              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE' },
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE', responsibleMemberId: null },
               items: [{ type: 'PLANNED_PENDING', plannedOperationId: 'po-1', label: 'Assurance voiture', amount: 700, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
             },
             '2026-10': emptyCell(),
@@ -293,7 +305,7 @@ it('case prévue : appui long permet un paiement partiel (montant payé < prévu
               pendingAmount: 1000,
               realizedAmount: 0,
               status: 'PENDING',
-              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 1000, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE' },
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 1000, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE', responsibleMemberId: null },
               items: [{ type: 'PLANNED_PENDING', plannedOperationId: 'po-1', label: 'Assurance voiture', amount: 1000, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
             },
             '2026-10': emptyCell(),
@@ -357,6 +369,7 @@ it("case partiellement payée (MIXTE) : l'appui long propose TOUJOURS le menu Pa
                 recurrenceRuleId: null,
                 categoryId: 'cat-transport',
                 kind: 'EXPENSE',
+                responsibleMemberId: null,
               },
               items: [
                 { type: 'PLANNED_REALIZED', plannedOperationId: 'po-carburant', financialOperationId: 'op-1', label: 'Carburant Adil', amount: 300, date: '2026-09-02', sourceAccountId: 'cih', sourceSubaccountId: null, destinationAccountId: null, destinationSubaccountId: null },
@@ -415,7 +428,7 @@ it('case réalisée (verte) : appui long propose Voir/Modifier/Annuler le paieme
               pendingAmount: 0,
               realizedAmount: 820,
               status: 'REALIZED',
-              singleOccurrence: { plannedOperationId: 'po-1', status: 'REALIZED', expectedAmount: 700, realizedAmount: 820, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE' },
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'REALIZED', expectedAmount: 700, realizedAmount: 820, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE', responsibleMemberId: null },
               items: [{ type: 'PLANNED_REALIZED', plannedOperationId: 'po-1', financialOperationId: 'op-1', label: 'Assurance voiture', amount: 820, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
             },
             '2026-10': emptyCell(),
@@ -612,6 +625,7 @@ function voitureSingleOccurrence() {
     recurrenceRuleId: null as string | null,
     categoryId: null as string | null,
     kind: 'EXPENSE' as const,
+    responsibleMemberId: null as string | null,
   };
 }
 

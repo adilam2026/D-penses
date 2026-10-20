@@ -99,6 +99,11 @@ export async function ensurePlannedOccurrences(tx: TxClient, householdId: string
         expectedAmount: rule.expectedAmount,
         expectedDate,
         label: rule.label ?? 'Récurrence',
+        // Lot "À faire" — même mécanique que source/montant ci-dessus : le
+        // gabarit porte responsable/inclusion, chaque occurrence générée les
+        // copie puis vit indépendamment (modifiable occurrence par occurrence).
+        responsibleMemberId: rule.responsibleMemberId ?? undefined,
+        includeInTodo: rule.includeInTodo,
       })),
       skipDuplicates: true,
     });

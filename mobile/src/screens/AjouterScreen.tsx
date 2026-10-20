@@ -45,6 +45,7 @@ export function AjouterScreen() {
   const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const [accounts, setAccounts] = useState<api.AccountApi[]>([]);
   const [categories, setCategories] = useState<api.CategoryApi[]>([]);
+  const [members, setMembers] = useState<api.HouseholdMembershipApi[]>([]);
   const [mode, setMode] = useState<QuickMode>(prefill?.kind ?? 'EXPENSE');
   // Étape 1 : 4 tuiles seules (maquette « Foyer » 05-Ajouter validée) ; étape
   // 2 : le formulaire correspondant (06-FormulaireSaisie). Sauté directement
@@ -69,6 +70,12 @@ export function AjouterScreen() {
   // "Afficher dans le Planning" (dépense ponctuelle réalisée uniquement) —
   // coché par défaut pour préserver le comportement existant.
   const [includeInPlanning, setIncludeInPlanning] = useState(true);
+  // Lot "À faire" — RESPONSABLE ≠ SOURCE : jamais déduit du compte/sous-compte
+  // choisi ci-dessus. "Ajouter à mes actions" par défaut OUI pour un versement,
+  // NON pour une dépense (choix utilisateur) — jamais affiché pour un revenu/
+  // transfert, ni pour une opération déjà réalisée.
+  const [includeInTodo, setIncludeInTodo] = useState(false);
+  const [responsibleMemberId, setResponsibleMemberId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,9 +85,10 @@ export function AjouterScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      Promise.all([api.listAccounts(), api.listCategories()]).then(([a, c]) => {
+      Promise.all([api.listAccounts(), api.listCategories(), api.getMyHousehold()]).then(([a, c, h]) => {
         setAccounts(a);
         setCategories(c);
+        setMembers(h.memberships);
       });
     }, []),
   );
@@ -99,8 +107,15 @@ export function AjouterScreen() {
     setDestination(null);
     setMedicalClaim(false);
     setIncludeInPlanning(true);
+    setIncludeInTodo(next === 'SAVINGS_CONTRIBUTION');
+    setResponsibleMemberId(null);
     setStep('form');
   }
+
+  // Lot "À faire" — éligible uniquement pour une échéance future/récurrente
+  // (jamais une opération déjà réalisée, jamais un revenu ni un transfert :
+  // TRANSFER est de toute façon déjà exclu de l'onglet "À venir" ci-dessus).
+  const todoEligible = (mode === 'EXPENSE' || mode === 'SAVINGS_CONTRIBUTION') && tab === 'a_venir';
 
   const canSubmit = amount.trim() !== '' && date.trim() !== '' && label.trim() !== '' && (mode === 'TRANSFER' ? !!source && !!destination : mode === 'EXPENSE' ? !!source : mode === 'INCOME' ? !!destination : !!source && !!destination);
 
@@ -141,6 +156,8 @@ export function AjouterScreen() {
           sourceSubaccountId: src?.subaccountId,
           destinationAccountId: dst?.accountId,
           destinationSubaccountId: dst?.subaccountId,
+          includeInTodo: todoEligible ? includeInTodo : undefined,
+          responsibleMemberId: todoEligible ? (responsibleMemberId ?? undefined) : undefined,
         });
       } else {
         await api.createPlannedOperation({
@@ -153,6 +170,8 @@ export function AjouterScreen() {
           sourceSubaccountId: src?.subaccountId,
           destinationAccountId: dst?.accountId,
           destinationSubaccountId: dst?.subaccountId,
+          includeInTodo: todoEligible ? includeInTodo : undefined,
+          responsibleMemberId: todoEligible ? (responsibleMemberId ?? undefined) : undefined,
         });
       }
       setAmount('');
@@ -280,6 +299,29 @@ export function AjouterScreen() {
                 onChange={(v) => setFrequency(v as RecurrenceOption)}
                 testID="ajouter-frequency"
               />
+            )}
+
+            {/* Lot "À faire" — jamais pour un revenu/transfert, jamais sur une
+                opération déjà réalisée (cf. todoEligible). Versement : OUI par
+                défaut ; dépense : choix utilisateur, pour ne pas polluer la
+                checklist avec les petites dépenses de simple prévision. */}
+            {todoEligible && (
+              <>
+                <TouchableOpacity style={styles.switchRow} onPress={() => setIncludeInTodo((v) => !v)} testID="ajouter-include-in-todo-toggle">
+                  <View style={[styles.checkbox, includeInTodo && styles.checkboxChecked]}>{includeInTodo ? <Text style={styles.checkmark}>✓</Text> : null}</View>
+                  <Text style={styles.switchLabel}>Ajouter à mes actions</Text>
+                </TouchableOpacity>
+                {includeInTodo && (
+                  <Select
+                    label="Responsable"
+                    placeholder="Non défini"
+                    value={responsibleMemberId}
+                    options={members.map((m) => ({ value: m.id, label: m.user.firstName }))}
+                    onChange={setResponsibleMemberId}
+                    testID="ajouter-responsible-member"
+                  />
+                )}
+              </>
             )}
           </View>
         )}

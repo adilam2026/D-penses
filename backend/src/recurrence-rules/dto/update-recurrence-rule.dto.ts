@@ -67,4 +67,13 @@ export class UpdateRecurrenceRuleDto {
   @IsOptional()
   @IsDateString()
   anchorDate?: string;
+
+  /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit des champs source/destination ci-dessus. */
+  @IsOptional()
+  @IsString()
+  responsibleMemberId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  includeInTodo?: boolean;
 }

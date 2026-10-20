@@ -129,7 +129,21 @@ export const getMe = () => apiFetch('/me');
 // ---------- Foyer ----------
 export const createHousehold = (name: string) => apiFetch('/households', { method: 'POST', body: { name } });
 
-export const getMyHousehold = () => apiFetch('/households/me');
+export interface HouseholdMembershipApi {
+  id: string;
+  role: 'admin' | 'member' | 'read_only';
+  user: { id: string; firstName: string; lastName: string; email: string; color: string | null };
+}
+
+export interface HouseholdApi {
+  id: string;
+  name: string;
+  currency: string;
+  monthStartDay: number;
+  memberships: HouseholdMembershipApi[];
+}
+
+export const getMyHousehold = (): Promise<HouseholdApi> => apiFetch('/households/me');
 
 /** Début du mois financier (§ Paramètres) — 1 à 28, réservé aux admins du foyer. */
 export const updateHouseholdSettings = (data: { monthStartDay: number }) => apiFetch('/households/settings', { method: 'PATCH', body: data });
@@ -311,6 +325,9 @@ export interface PlannedOperationApi {
   destinationSubaccountId: string | null;
   status: PlannedOperationStatus;
   realizedOperationId: string | null;
+  /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit des champs source/destination ci-dessus. */
+  responsibleMemberId: string | null;
+  includeInTodo: boolean;
 }
 
 export const listPlannedOperations = (): Promise<PlannedOperationApi[]> => apiFetch('/planned-operations');
@@ -326,6 +343,8 @@ export const createPlannedOperation = (data: {
   sourceSubaccountId?: string;
   destinationAccountId?: string;
   destinationSubaccountId?: string;
+  responsibleMemberId?: string;
+  includeInTodo?: boolean;
 }) => apiFetch('/planned-operations', { method: 'POST', body: data });
 
 /**
@@ -359,7 +378,18 @@ export const partialRealizePlannedOperation = (id: string, data: RealizePlannedO
 /** Modifier UNE occurrence (appui long, ex. prévu 700 -> réel ajusté avant paiement) — ne touche jamais la règle. */
 export const updatePlannedOperation = (
   id: string,
-  data: { expectedAmount?: string; expectedDate?: string; label?: string; categoryId?: string; sourceAccountId?: string; sourceSubaccountId?: string; destinationAccountId?: string; destinationSubaccountId?: string },
+  data: {
+    expectedAmount?: string;
+    expectedDate?: string;
+    label?: string;
+    categoryId?: string;
+    sourceAccountId?: string;
+    sourceSubaccountId?: string;
+    destinationAccountId?: string;
+    destinationSubaccountId?: string;
+    responsibleMemberId?: string;
+    includeInTodo?: boolean;
+  },
 ): Promise<PlannedOperationApi> => apiFetch(`/planned-operations/${id}`, { method: 'PATCH', body: data });
 
 /** "Annuler le paiement" (case verte, appui long) — renversement validé, jamais de suppression de la transaction d'origine. */
@@ -417,6 +447,9 @@ export interface RecurrenceRuleApi {
   sourceSubaccountId: string | null;
   destinationAccountId: string | null;
   destinationSubaccountId: string | null;
+  /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit des champs source/destination ci-dessus. */
+  responsibleMemberId: string | null;
+  includeInTodo: boolean;
 }
 
 export const listRecurrenceRules = (): Promise<RecurrenceRuleApi[]> => apiFetch('/recurrence-rules');
@@ -432,6 +465,8 @@ export const createRecurrenceRule = (data: {
   sourceSubaccountId?: string;
   destinationAccountId?: string;
   destinationSubaccountId?: string;
+  responsibleMemberId?: string;
+  includeInTodo?: boolean;
 }): Promise<RecurrenceRuleApi> => apiFetch('/recurrence-rules', { method: 'POST', body: data });
 
 /**
@@ -460,6 +495,8 @@ export const updateRecurrenceRule = (
     active?: boolean;
     frequency?: RecurrenceFrequency;
     anchorDate?: string;
+    responsibleMemberId?: string;
+    includeInTodo?: boolean;
   },
 ): Promise<RecurrenceRuleApi> => apiFetch(`/recurrence-rules/${id}`, { method: 'PATCH', body: data });
 
@@ -480,6 +517,8 @@ export interface PlanningCellItemApi {
   recurrenceRuleId?: string | null;
   categoryId?: string | null;
   kind?: PlannedOperationKind;
+  /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit des champs source/destination ci-dessus. */
+  responsibleMemberId?: string | null;
   /**
    * Lot "paiements partiels successifs" — uniquement sur un item
    * PLANNED_PENDING : le montant PRÉVU d'origine (constant), alors que
@@ -509,6 +548,8 @@ export interface PlanningSingleOccurrenceApi {
   recurrenceRuleId: string | null;
   categoryId: string | null;
   kind: PlannedOperationKind;
+  /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit des champs source/destination ci-dessus. */
+  responsibleMemberId: string | null;
 }
 
 export interface PlanningCellApi {
@@ -655,3 +696,41 @@ export const createGoal = (data: { accountId?: string; subaccountId?: string; ta
   apiFetch('/goals', { method: 'POST', body: data });
 
 export const deleteGoal = (id: string) => apiFetch(`/goals/${id}`, { method: 'DELETE' });
+
+// ---------- "À faire" (vue opérationnelle du Planning — jamais un second moteur financier) ----------
+export interface TodoActionApi {
+  plannedOperationId: string;
+  kind: 'EXPENSE' | 'SAVINGS_CONTRIBUTION';
+  label: string;
+  expectedAmount: number;
+  /** "Déjà payé" cumulé — null tant que rien n'est payé. */
+  realizedAmount: number | null;
+  /** = expectedAmount - (realizedAmount ?? 0) — précalculé côté serveur, jamais recalculé côté mobile. */
+  remaining: number;
+  expectedDate: string;
+  sourceAccountId: string | null;
+  sourceSubaccountId: string | null;
+  destinationAccountId: string | null;
+  destinationSubaccountId: string | null;
+  recurrenceRuleId: string | null;
+  categoryId: string | null;
+  /** RESPONSABLE ≠ SOURCE — null = "Responsable à définir" (reste visible dans "Tous", jamais masqué). */
+  responsibleMemberId: string | null;
+  status: 'PENDING' | 'REALIZED';
+  /** PENDING dont expectedDate est déjà passée. */
+  late: boolean;
+}
+
+export interface TodoListApi {
+  month: string;
+  pending: TodoActionApi[];
+  done: TodoActionApi[];
+  /** = pending.length — "N actions restantes", jamais une somme de paiements. */
+  pendingCount: number;
+  /** Somme des RESTES des actions encore à faire (jamais des montants prévus initiaux). */
+  totalRemaining: number;
+}
+
+/** monthsOffset omis = mois courant (aussi l'appel utilisé pour le badge de la barre de navigation, toujours tous responsables confondus). */
+export const getTodo = (monthsOffset?: number): Promise<TodoListApi> =>
+  apiFetch(`/todo${monthsOffset !== undefined ? `?monthsOffset=${monthsOffset}` : ''}`);

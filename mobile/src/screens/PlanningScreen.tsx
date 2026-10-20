@@ -104,6 +104,7 @@ function occurrenceFromItem(item: api.PlanningCellItemApi): api.PlanningSingleOc
     recurrenceRuleId: item.recurrenceRuleId ?? null,
     categoryId: item.categoryId ?? null,
     kind: item.kind!,
+    responsibleMemberId: item.responsibleMemberId ?? null,
   };
 }
 
@@ -121,6 +122,7 @@ export function PlanningScreen() {
   const [data, setData] = useState<api.PlanningTableApi | null>(null);
   const [accounts, setAccounts] = useState<api.AccountApi[]>([]);
   const [categories, setCategories] = useState<api.CategoryApi[]>([]);
+  const [members, setMembers] = useState<api.HouseholdMembershipApi[]>([]);
   const [plans, setPlans] = useState<api.FinancialPlanApi[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -152,16 +154,18 @@ export function PlanningScreen() {
   const columnWidth = areaWidth > 0 ? areaWidth / VISIBLE_COLUMNS : FALLBACK_COLUMN_WIDTH;
 
   const load = useCallback(async (h: number) => {
-    const [planning, accountList, categoryList, planList] = await Promise.all([
+    const [planning, accountList, categoryList, planList, household] = await Promise.all([
       api.getPlanning(h),
       api.listAccounts(),
       api.listCategories(),
       api.listFinancialPlans(),
+      api.getMyHousehold(),
     ]);
     setData(planning);
     setAccounts(accountList);
     setCategories(categoryList);
     setPlans(planList);
+    setMembers(household.memberships);
     return planning;
   }, []);
 
@@ -730,6 +734,7 @@ export function PlanningScreen() {
         target={editTarget}
         accounts={accounts}
         categories={categories}
+        members={members}
         onClose={() => setEditTarget(null)}
         onDone={async (message) => {
           setEditTarget(null);
@@ -873,7 +878,12 @@ function PlanningCellView({
   );
 }
 
-function AdjustModal({
+/**
+ * Exportée pour réutilisation par TodoScreen ("À faire" — §10 : paiement
+ * total/partiel d'une échéance, STRICTEMENT le même moteur/la même UI que
+ * Planning, jamais un second composant dupliqué).
+ */
+export function AdjustModal({
   target,
   accounts,
   onClose,
@@ -1042,12 +1052,14 @@ function EditOccurrenceModal({
   target,
   accounts,
   categories,
+  members,
   onClose,
   onDone,
 }: {
   target: { cell: api.PlanningCellApi; rowLabel: string; scope: 'single' | 'series' } | null;
   accounts: api.AccountApi[];
   categories: api.CategoryApi[];
+  members: api.HouseholdMembershipApi[];
   onClose: () => void;
   onDone: (message: string) => Promise<void>;
 }) {
@@ -1061,6 +1073,8 @@ function EditOccurrenceModal({
   const [date, setDate] = useState('');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [accountOption, setAccountOption] = useState<string | null>(null);
+  // Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit de accountOption ci-dessus.
+  const [responsibleMemberId, setResponsibleMemberId] = useState<string | null>(null);
   // Périodicité (scope='series' uniquement) — préremplie depuis la règle
   // existante dès l'ouverture, pour ne jamais la changer silencieusement si
   // l'utilisateur ne modifie que le montant/libellé/source.
@@ -1077,6 +1091,7 @@ function EditOccurrenceModal({
     setCategoryId(occ.categoryId);
     const { accountId, subaccountId } = relevantAccount(occ);
     setAccountOption(encodeAccountOption(accountId, subaccountId));
+    setResponsibleMemberId(occ.responsibleMemberId);
     setError(null);
     setFrequency(null);
     setOriginalFrequency(null);
@@ -1115,6 +1130,7 @@ function EditOccurrenceModal({
           expectedAmount: amount,
           expectedDate: date,
           categoryId: categoryId ?? undefined,
+          responsibleMemberId: responsibleMemberId ?? undefined,
           ...sideFields,
         });
         await onDone('Échéance modifiée');
@@ -1127,6 +1143,7 @@ function EditOccurrenceModal({
           label: label.trim(),
           expectedAmount: amount,
           categoryId: categoryId ?? undefined,
+          responsibleMemberId: responsibleMemberId ?? undefined,
           ...sideFields,
           frequency: frequencyChanged ? (frequency as api.RecurrenceFrequency) : undefined,
           anchorDate: frequencyChanged || dateChanged ? date : undefined,
@@ -1152,6 +1169,14 @@ function EditOccurrenceModal({
         <DateField label={target.scope === 'series' ? 'Date prévue (nouveau jour de référence)' : 'Date prévue'} value={date} onChange={setDate} />
         <Select label="Catégorie" value={categoryId} options={categories.map((c) => ({ value: c.id, label: c.name }))} onChange={setCategoryId} testID="planning-edit-category" />
         <Select label="Compte / enveloppe prévu(e)" value={accountOption} options={accountOptionsList} onChange={setAccountOption} testID="planning-edit-source" />
+        <Select
+          label="Responsable"
+          placeholder="Non défini"
+          value={responsibleMemberId}
+          options={members.map((m) => ({ value: m.id, label: m.user.firstName }))}
+          onChange={setResponsibleMemberId}
+          testID="planning-edit-responsible-member"
+        />
         {target.scope === 'series' && (
           <Select
             label="Périodicité"

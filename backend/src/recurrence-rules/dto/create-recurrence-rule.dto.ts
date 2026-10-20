@@ -1,4 +1,4 @@
-import { IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
 import { PlannedOperationKind, RecurrenceFrequency } from '@prisma/client';
 
 export class CreateRecurrenceRuleDto {
@@ -45,4 +45,13 @@ export class CreateRecurrenceRuleDto {
   @IsOptional()
   @IsString()
   destinationSubaccountId?: string;
+
+  /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit des champs source/destination ci-dessus. */
+  @IsOptional()
+  @IsString()
+  responsibleMemberId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  includeInTodo?: boolean;
 }

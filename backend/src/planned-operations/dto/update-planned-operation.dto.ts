@@ -1,4 +1,4 @@
-import { IsDateString, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsDateString, IsOptional, IsString } from 'class-validator';
 
 /**
  * Modifier UNE occurrence (§ modification d'une occurrence) — ex. Internet
@@ -38,4 +38,13 @@ export class UpdatePlannedOperationDto {
   @IsOptional()
   @IsString()
   destinationSubaccountId?: string;
+
+  /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit des champs source/destination ci-dessus. */
+  @IsOptional()
+  @IsString()
+  responsibleMemberId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  includeInTodo?: boolean;
 }
