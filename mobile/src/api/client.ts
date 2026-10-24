@@ -190,12 +190,17 @@ export interface SubaccountApi {
   balance: number;
 }
 
+/** Propriétaire structuré (lot "responsable automatique") — INDIVIDUAL exige ownerMemberId, SHARED/UNDEFINED l'exigent null (invariant garanti par le backend). */
+export type AccountOwnerType = 'INDIVIDUAL' | 'SHARED' | 'UNDEFINED';
+
 export interface AccountApi {
   id: string;
   name: string;
   bank: string | null;
   type: string;
+  ownerType: AccountOwnerType;
   ownerMemberId: string | null;
+  /** Simple libellé d'affichage libre — jamais lu pour déterminer ownerType ni le responsable proposé. */
   ownerLabel: string | null;
   active: boolean;
   /** Couleur de carte choisie par l'utilisateur (Lot ciblé §1) — clé de palette prédéfinie, null si compte créé avant cette fonctionnalité. */
@@ -210,8 +215,16 @@ export const listAccounts = (includeInactive = false): Promise<AccountApi[]> =>
   apiFetch(`/accounts${includeInactive ? '?includeInactive=true' : ''}`);
 export const getAccount = (id: string): Promise<AccountApi> => apiFetch(`/accounts/${id}`);
 
-export const createAccount = (data: { name: string; bank?: string; type?: string; ownerMemberId?: string; ownerLabel?: string; openingBalance?: string; colorKey?: string }) =>
-  apiFetch('/accounts', { method: 'POST', body: data });
+export const createAccount = (data: {
+  name: string;
+  bank?: string;
+  type?: string;
+  ownerType?: AccountOwnerType;
+  ownerMemberId?: string | null;
+  ownerLabel?: string | null;
+  openingBalance?: string;
+  colorKey?: string;
+}) => apiFetch('/accounts', { method: 'POST', body: data });
 
 export const createSubaccount = (data: { accountId: string; name: string; initialAllocation?: string }) =>
   apiFetch('/accounts/subaccounts', { method: 'POST', body: data });
@@ -223,7 +236,16 @@ export const renameSubaccount = (id: string, name: string): Promise<SubaccountAp
 /** Comptes (Organisation → Comptes, §7-§8) — édition complète + désactivation/réactivation logique, jamais de suppression physique. */
 export const updateAccount = (
   id: string,
-  data: { name?: string; bank?: string; type?: string; ownerMemberId?: string; ownerLabel?: string; active?: boolean; colorKey?: string },
+  data: {
+    name?: string;
+    bank?: string;
+    type?: string;
+    ownerType?: AccountOwnerType;
+    ownerMemberId?: string | null;
+    ownerLabel?: string | null;
+    active?: boolean;
+    colorKey?: string;
+  },
 ): Promise<AccountApi> => apiFetch(`/accounts/${id}`, { method: 'PATCH', body: data });
 
 /** Épargne & sous-comptes (§9-§10) — renommage + désactivation/réactivation logique, jamais de suppression physique. */

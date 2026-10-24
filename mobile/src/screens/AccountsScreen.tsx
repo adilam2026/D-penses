@@ -8,6 +8,7 @@ import { useBottomInset } from '../ui/useBottomInset';
 import { colors, radius, spacing, typography } from '../ui/theme';
 import { formatDh } from '../ui/formatMoney';
 import { HelpButton } from '../ui/HelpButton';
+import { ownerDisplayLabel } from '../ui/accountOwner';
 
 const TYPE_LABELS: Record<string, string> = { COURANT: 'Courant', EPARGNE: 'Épargne', ESPECES: 'Espèces', AUTRE: 'Autre' };
 
@@ -20,10 +21,13 @@ export function AccountsScreen() {
   const topInset = useTopInset();
   const bottomInset = useBottomInset();
   const [accounts, setAccounts] = useState<api.AccountApi[] | null>(null);
+  const [members, setMembers] = useState<api.HouseholdMembershipApi[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    setAccounts(await api.listAccounts(true));
+    const [accountList, household] = await Promise.all([api.listAccounts(true), api.getMyHousehold()]);
+    setAccounts(accountList);
+    setMembers(household.memberships);
   }, []);
 
   useFocusEffect(
@@ -74,7 +78,7 @@ export function AccountsScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.cardName}>{account.name}</Text>
               <Text style={styles.cardMeta}>
-                {[account.bank, TYPE_LABELS[account.type] ?? account.type, account.ownerLabel].filter(Boolean).join(' · ')}
+                {[account.bank, TYPE_LABELS[account.type] ?? account.type, ownerDisplayLabel(account.ownerType, account.ownerMemberId, members)].filter(Boolean).join(' · ')}
               </Text>
               {!account.active ? <Text style={styles.inactiveBadge}>Désactivé</Text> : null}
             </View>

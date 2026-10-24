@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigation } from '@react-navigation/native';
+import React, { useCallback, useState } from 'react';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
@@ -11,6 +11,7 @@ import { Select } from '../ui/Select';
 import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
 import { AccountColorSwatchGrid } from '../ui/AccountColorPicker';
 import { ACCOUNT_COLOR_OPTIONS } from '../ui/accountPalette';
+import { decodeOwnerOption, OWNER_UNDEFINED_VALUE, ownerSelectOptions } from '../ui/accountOwner';
 
 const ACCOUNT_TYPE_OPTIONS = [
   { value: 'COURANT', label: 'Courant' },
@@ -34,16 +35,25 @@ export function CreateAccountScreen() {
   const [name, setName] = useState('');
   const [bank, setBank] = useState('');
   const [type, setType] = useState('COURANT');
+  const [ownerOption, setOwnerOption] = useState(OWNER_UNDEFINED_VALUE);
+  const [members, setMembers] = useState<api.HouseholdMembershipApi[]>([]);
   const [openingBalance, setOpeningBalance] = useState('');
   const [colorKey, setColorKey] = useState<string | null>(ACCOUNT_COLOR_OPTIONS[0].key);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdName, setCreatedName] = useState<string | null>(null);
 
+  useFocusEffect(
+    useCallback(() => {
+      api.getMyHousehold().then((h) => setMembers(h.memberships));
+    }, []),
+  );
+
   function resetForm() {
     setName('');
     setBank('');
     setType('COURANT');
+    setOwnerOption(OWNER_UNDEFINED_VALUE);
     setOpeningBalance('');
     setColorKey(ACCOUNT_COLOR_OPTIONS[0].key);
     setCreatedName(null);
@@ -55,10 +65,13 @@ export function CreateAccountScreen() {
     setSaving(true);
     setError(null);
     try {
+      const { ownerType, ownerMemberId } = decodeOwnerOption(ownerOption);
       await api.createAccount({
         name: name.trim(),
         bank: bank.trim() || undefined,
         type,
+        ownerType,
+        ownerMemberId,
         openingBalance: openingBalance.trim() || undefined,
         colorKey: colorKey ?? undefined,
       });
@@ -104,6 +117,7 @@ export function CreateAccountScreen() {
       <FormField label="Nom du compte" placeholder="ex. CIH Courant" value={name} onChangeText={setName} onFocus={handleFocus} testID="create-account-name" />
       <FormField label="Banque (optionnel)" placeholder="ex. CIH Bank" value={bank} onChangeText={setBank} onFocus={handleFocus} testID="create-account-bank" />
       <Select label="Type" value={type} options={ACCOUNT_TYPE_OPTIONS} onChange={setType} testID="create-account-type" />
+      <Select label="Propriétaire" value={ownerOption} options={ownerSelectOptions(members)} onChange={setOwnerOption} testID="create-account-owner" />
       <FormField
         label="Solde actuel (optionnel)"
         placeholder="0"

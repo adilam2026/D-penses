@@ -155,6 +155,16 @@ enum AccountType {
   AUTRE
 }
 
+// Propriétaire structuré d'un compte (lot "responsable automatique") —
+// distingue explicitement les 3 états, jamais déduit d'une chaîne libre
+// (ownerLabel) ni du nom du compte. INDIVIDUAL exige ownerMemberId ;
+// SHARED/UNDEFINED l'exigent null (invariant imposé par accounts.service.ts).
+enum AccountOwnerType {
+  INDIVIDUAL
+  SHARED
+  UNDEFINED
+}
+
 // Nature économique de l'opération — jamais confondue avec la mécanique
 // comptable (ledger_entries) ni avec le traitement budgétaire (budget_impact).
 enum OperationKind {
@@ -214,9 +224,16 @@ model Account {
   name          String
   bank          String?
   type          AccountType @default(COURANT)
-  ownerMemberId String?     @map("owner_member_id")
-  ownerLabel    String?     @map("owner_label")
-  active        Boolean     @default(true)
+  // Propriétaire structuré (lot "responsable automatique") — ownerType est la
+  // SEULE source de vérité pour distinguer INDIVIDUAL/SHARED/UNDEFINED ;
+  // ownerMemberId reste le membre réel UNIQUEMENT pour INDIVIDUAL (invariant
+  // garanti par accounts.service.ts, jamais seulement par le client).
+  // ownerLabel reste un simple libellé d'affichage libre, jamais lu pour
+  // déterminer la logique métier (ni ownerType, ni le responsable proposé).
+  ownerType     AccountOwnerType @default(UNDEFINED) @map("owner_type")
+  ownerMemberId String?          @map("owner_member_id")
+  ownerLabel    String?          @map("owner_label")
+  active        Boolean          @default(true)
   // Couleur de carte choisie par l'utilisateur (Lot ciblé §1) — une des ~10 clés de palette prédéfinie, jamais un hex libre. Null = compte créé avant cette fonctionnalité, rotation automatique côté mobile.
   colorKey      String?     @map("color_key")
   createdAt     DateTime    @default(now()) @map("created_at")

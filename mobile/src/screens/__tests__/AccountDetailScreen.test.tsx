@@ -19,12 +19,14 @@ const mockListFinancialOperations = jest.fn();
 const mockListGoals = jest.fn();
 const mockRenameAccount = jest.fn();
 const mockUpdateAccount = jest.fn();
+const mockGetMyHousehold = jest.fn();
 jest.mock('../../api/client', () => ({
   getAccount: (...args: unknown[]) => mockGetAccount(...args),
   listFinancialOperations: (...args: unknown[]) => mockListFinancialOperations(...args),
   listGoals: () => mockListGoals(),
   renameAccount: (...args: unknown[]) => mockRenameAccount(...args),
   updateAccount: (...args: unknown[]) => mockUpdateAccount(...args),
+  getMyHousehold: () => mockGetMyHousehold(),
 }));
 
 const TEST_INSET_METRICS = {
@@ -39,7 +41,8 @@ function renderWithSafeArea(ui: React.ReactElement) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockListGoals.mockResolvedValue([]);
-  mockGetAccount.mockResolvedValue({ id: 'cih', name: 'CIH', bank: 'CIH Bank', type: 'COURANT', ownerMemberId: null, ownerLabel: null, active: true, balance: 20000, nonAffecte: 8000, subaccounts: [] });
+  mockGetAccount.mockResolvedValue({ id: 'cih', name: 'CIH', bank: 'CIH Bank', type: 'COURANT', ownerType: 'UNDEFINED', ownerMemberId: null, ownerLabel: null, active: true, balance: 20000, nonAffecte: 8000, subaccounts: [] });
+  mockGetMyHousehold.mockResolvedValue({ id: 'h1', name: 'Foyer', currency: 'MAD', monthStartDay: 1, memberships: [] });
   mockListFinancialOperations.mockResolvedValue([
     { id: 'op1', kind: 'EXPENSE', label: 'Réparation', date: '2026-09-10', amount: 700, categoryId: null, sourceAccountId: 'cih', sourceSubaccountId: null, destinationAccountId: null, destinationSubaccountId: null, budgetImpact: 'NORMAL', reversalOfOperationId: null, reversalReason: null, createdAt: '2026-09-10', ledgerEntries: [{ id: 'le1', accountId: 'cih', subaccountId: null, amount: -700, affectsAccountBalance: true }] },
   ]);

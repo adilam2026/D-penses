@@ -1,9 +1,24 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { AccountOwnerType, Prisma } from '@prisma/client';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { assertInvariants, buildLedgerLegs, computeAccountBalance, computeSubaccountBalance, lockAccounts } from '../common/ledger/ledger.util';
 
 type TxClient = Prisma.TransactionClient;
+
+/**
+ * Invariant structurel (lot "responsable automatique") — validé ICI, pas
+ * seulement côté client : INDIVIDUAL exige un ownerMemberId ; SHARED/
+ * UNDEFINED l'exigent absent. Jamais déduit d'ownerLabel ni du nom du
+ * compte — uniquement ownerType/ownerMemberId eux-mêmes.
+ */
+function assertOwnerCombination(ownerType: AccountOwnerType, ownerMemberId: string | null) {
+  if (ownerType === 'INDIVIDUAL' && !ownerMemberId) {
+    throw new BadRequestException('ownerMemberId est requis quand ownerType=INDIVIDUAL');
+  }
+  if (ownerType !== 'INDIVIDUAL' && ownerMemberId) {
+    throw new BadRequestException(`ownerMemberId doit être absent quand ownerType=${ownerType}`);
+  }
+}
 
 /** Crée l'opération OPENING_BALANCE + ses écritures ledger — appelé dans une transaction déjà ouverte. */
 async function createOpeningBalance(
@@ -48,17 +63,30 @@ export class AccountsService {
   async create(
     userId: string,
     householdId: string,
-    dto: { name: string; bank?: string; type?: string; ownerMemberId?: string; ownerLabel?: string; openingBalance?: string; colorKey?: string },
+    dto: {
+      name: string;
+      bank?: string;
+      type?: string;
+      ownerType?: AccountOwnerType;
+      ownerMemberId?: string | null;
+      ownerLabel?: string | null;
+      openingBalance?: string;
+      colorKey?: string;
+    },
   ) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
+      const ownerType = dto.ownerType ?? 'UNDEFINED';
+      const ownerMemberId = dto.ownerMemberId ?? null;
+      assertOwnerCombination(ownerType, ownerMemberId);
       const account = await tx.account.create({
         data: {
           householdId,
           name: dto.name,
           bank: dto.bank,
           type: (dto.type as never) ?? undefined,
-          ownerMemberId: dto.ownerMemberId,
+          ownerType,
+          ownerMemberId,
           ownerLabel: dto.ownerLabel,
           colorKey: dto.colorKey,
         },
@@ -136,18 +164,39 @@ export class AccountsService {
     userId: string,
     householdId: string,
     id: string,
-    dto: { name?: string; bank?: string; type?: string; ownerMemberId?: string; ownerLabel?: string; active?: boolean; colorKey?: string },
+    dto: {
+      name?: string;
+      bank?: string;
+      type?: string;
+      ownerType?: AccountOwnerType;
+      ownerMemberId?: string | null;
+      ownerLabel?: string | null;
+      active?: boolean;
+      colorKey?: string;
+    },
   ) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
       const account = await tx.account.findUnique({ where: { id } });
       if (!account || account.householdId !== householdId) throw new NotFoundException('Compte introuvable');
+
+      // Validation sur la combinaison RÉSOLUE (merge avec la valeur actuelle
+      // quand un seul des deux champs est envoyé) — jamais seulement sur ce
+      // que le client a tapé isolément : un update partiel incohérent avec
+      // l'état déjà en base est refusé, jamais silencieusement corrigé.
+      const resolvedOwnerType = dto.ownerType ?? account.ownerType;
+      const resolvedOwnerMemberId = dto.ownerMemberId !== undefined ? dto.ownerMemberId : account.ownerMemberId;
+      if (dto.ownerType !== undefined || dto.ownerMemberId !== undefined) {
+        assertOwnerCombination(resolvedOwnerType, resolvedOwnerMemberId);
+      }
+
       await tx.account.update({
         where: { id },
         data: {
           name: dto.name,
           bank: dto.bank,
           type: dto.type as never,
+          ownerType: dto.ownerType,
           ownerMemberId: dto.ownerMemberId,
           ownerLabel: dto.ownerLabel,
           active: dto.active,

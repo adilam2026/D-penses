@@ -1,5 +1,5 @@
 import { IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
-import { AccountType } from '@prisma/client';
+import { AccountOwnerType, AccountType } from '@prisma/client';
 
 export class CreateAccountDto {
   @IsString()
@@ -14,13 +14,20 @@ export class CreateAccountDto {
   @IsEnum(AccountType)
   type?: AccountType;
 
+  /** Propriétaire structuré (lot "responsable automatique") — défaut UNDEFINED si omis. Combinaison validée côté service, jamais seulement côté client. */
   @IsOptional()
-  @IsString()
-  ownerMemberId?: string;
+  @IsEnum(AccountOwnerType)
+  ownerType?: AccountOwnerType;
 
+  /** Requis quand ownerType=INDIVIDUAL, doit être absent/null sinon (validé par le service). */
   @IsOptional()
   @IsString()
-  ownerLabel?: string;
+  ownerMemberId?: string | null;
+
+  /** Simple libellé d'affichage libre — jamais lu pour déterminer ownerType ni le responsable proposé. */
+  @IsOptional()
+  @IsString()
+  ownerLabel?: string | null;
 
   /** Solde d'ouverture — crée automatiquement l'OPENING_BALANCE correspondante. */
   @IsOptional()

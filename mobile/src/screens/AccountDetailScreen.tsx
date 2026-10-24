@@ -12,9 +12,11 @@ import { OPERATION_KIND_LABELS, localAmount } from '../ui/operationKindLabel';
 import { ChoiceSheet } from '../ui/ChoiceSheet';
 import { RenameModal } from '../ui/RenameModal';
 import { ColorPickerModal } from '../ui/ColorPickerModal';
+import { OwnerPickerModal } from '../ui/OwnerPickerModal';
 import { HelpButton } from '../ui/HelpButton';
 import { testIdSlug } from '../ui/testIdSlug';
 import { gradientForAccount } from '../ui/accountPalette';
+import { ownerDisplayLabel } from '../ui/accountOwner';
 
 /**
  * Détail compte (Lot ciblé §3) — carte de synthèse en relief (couleur du
@@ -32,15 +34,18 @@ export function AccountDetailScreen() {
   const [account, setAccount] = useState<api.AccountApi | null>(null);
   const [operations, setOperations] = useState<api.FinancialOperationApi[] | null>(null);
   const [goals, setGoals] = useState<api.GoalApi[]>([]);
+  const [members, setMembers] = useState<api.HouseholdMembershipApi[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
+  const [ownerOpen, setOwnerOpen] = useState(false);
 
   const load = useCallback(async () => {
-    const [acc, ops, goalList] = await Promise.all([api.getAccount(id), api.listFinancialOperations({ accountId: id }), api.listGoals()]);
+    const [acc, ops, goalList, household] = await Promise.all([api.getAccount(id), api.listFinancialOperations({ accountId: id }), api.listGoals(), api.getMyHousehold()]);
     setAccount(acc);
     setOperations(ops);
     setGoals(goalList);
+    setMembers(household.memberships);
   }, [id]);
 
   useFocusEffect(
@@ -80,7 +85,13 @@ export function AccountDetailScreen() {
 
         <LinearGradient colors={[gradientFrom, gradientTo]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.balanceCard}>
           <Text style={styles.heroName}>{account.name}</Text>
-          <Text style={styles.heroSubtitle}>Compte bancaire{account.active ? '' : ' · Désactivé'}</Text>
+          <Text style={styles.heroSubtitle}>
+            Compte bancaire{account.active ? '' : ' · Désactivé'}
+            {(() => {
+              const owner = ownerDisplayLabel(account.ownerType, account.ownerMemberId, members);
+              return owner ? ` · ${owner}` : '';
+            })()}
+          </Text>
           <Text style={styles.balanceLabel}>Solde</Text>
           <Text style={styles.balanceAmount}>{formatDh(account.balance)}</Text>
         </LinearGradient>
@@ -160,6 +171,7 @@ export function AccountDetailScreen() {
         testID="account-detail-choice-sheet"
         options={[
           { key: 'edit', label: 'Modifier', icon: 'create-outline', onPress: () => setRenameOpen(true) },
+          { key: 'owner', label: 'Propriétaire', icon: 'person-outline', onPress: () => setOwnerOpen(true) },
           { key: 'color', label: 'Couleur de la carte', icon: 'color-palette-outline', onPress: () => setColorOpen(true) },
           {
             key: 'add-transaction',
@@ -208,6 +220,18 @@ export function AccountDetailScreen() {
         onClose={() => setColorOpen(false)}
         onSubmit={async (colorKey) => {
           await api.updateAccount(account.id, { colorKey });
+          await load();
+        }}
+      />
+
+      <OwnerPickerModal
+        visible={ownerOpen}
+        initialOwnerType={account.ownerType}
+        initialOwnerMemberId={account.ownerMemberId}
+        members={members}
+        onClose={() => setOwnerOpen(false)}
+        onSubmit={async ({ ownerType, ownerMemberId }) => {
+          await api.updateAccount(account.id, { ownerType, ownerMemberId });
           await load();
         }}
       />

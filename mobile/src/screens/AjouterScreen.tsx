@@ -14,6 +14,7 @@ import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
 import { AccountColorSwatchGrid } from '../ui/AccountColorPicker';
 import { ACCOUNT_COLOR_OPTIONS } from '../ui/accountPalette';
 import { accountSelectOptions, decodeAccountOption } from '../ui/accountOptions';
+import { proposedResponsibleFromAccount } from '../ui/accountOwner';
 import { RECURRENCE_FREQUENCY_OPTIONS, RecurrenceOption } from '../ui/recurrenceLabels';
 
 type QuickMode = 'EXPENSE' | 'INCOME' | 'TRANSFER' | 'SAVINGS_CONTRIBUTION';
@@ -76,6 +77,11 @@ export function AjouterScreen() {
   // transfert, ni pour une opération déjà réalisée.
   const [includeInTodo, setIncludeInTodo] = useState(false);
   const [responsibleMemberId, setResponsibleMemberId] = useState<string | null>(null);
+  // §3/§4 : le responsable PROPOSÉ (depuis le propriétaire du compte source)
+  // ne doit jamais écraser un choix manuel — distingue "jamais encore
+  // touché" (auto-propose à chaque changement de source) de "modifié
+  // explicitement" (figé jusqu'au prochain changement de mode).
+  const [responsibleTouched, setResponsibleTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -109,8 +115,21 @@ export function AjouterScreen() {
     setIncludeInPlanning(true);
     setIncludeInTodo(next === 'SAVINGS_CONTRIBUTION');
     setResponsibleMemberId(null);
+    setResponsibleTouched(false);
     setStep('form');
   }
+
+  // §2/§4/§7 : propose automatiquement le responsable depuis le propriétaire
+  // STRUCTURÉ du COMPTE RÉEL à débiter (jamais une enveloppe qui n'a pas de
+  // propriétaire propre, jamais déduit du nom du compte) — à CHAQUE
+  // changement de source, tant que l'utilisateur n'a jamais modifié
+  // manuellement le responsable (§3 : proposé ≠ imposé).
+  useEffect(() => {
+    if (responsibleTouched) return;
+    const src = source ? decodeAccountOption(source, accounts) : undefined;
+    setResponsibleMemberId(proposedResponsibleFromAccount(accounts, src?.accountId ?? null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, accounts, responsibleTouched]);
 
   // Lot "À faire" — éligible uniquement pour une échéance future/récurrente
   // (jamais une opération déjà réalisée, jamais un revenu ni un transfert :
@@ -317,7 +336,10 @@ export function AjouterScreen() {
                     placeholder="Non défini"
                     value={responsibleMemberId}
                     options={members.map((m) => ({ value: m.id, label: m.user.firstName }))}
-                    onChange={setResponsibleMemberId}
+                    onChange={(v) => {
+                      setResponsibleTouched(true);
+                      setResponsibleMemberId(v);
+                    }}
                     testID="ajouter-responsible-member"
                   />
                 )}
