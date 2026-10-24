@@ -50,7 +50,7 @@ export class TodoService {
       });
 
       // "À faire" n'affiche jamais la couverture — maps vides, aucune requête
-      // de solde supplémentaire nécessaire (depensesCouvertes n'est jamais lu ici).
+      // de solde supplémentaire nécessaire (synthese.couverte/aProvisionner ne sont jamais lus ici).
       const table = buildPlanningTable({
         months: [targetMonth],
         plannedOperations,

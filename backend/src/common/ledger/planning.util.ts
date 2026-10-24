@@ -137,50 +137,56 @@ export interface PlanningRow {
   cells: Record<PlanningMonthKey, PlanningCell>;
 }
 
+/**
+ * Lot "Planning allégé" (correction recette) — remplace l'ancienne synthèse
+ * (depensesPrevues/Payees/Reste, epargnePrevue/Versee/Reste,
+ * depensesCouvertes/AProvisionner, balanceMensuelle/Cumulee), devenue
+ * incohérente avec TOTAL DÉPENSES/VERSEMENTS affichés dans le même tableau :
+ * l'ancienne "prévu" (depensesPrevues/epargnePrevue) sommait
+ * expectedAmount/effectiveAmount SANS filtrer budgetImpact, alors que
+ * totalDepenses/totalEpargne (budgetAmount) excluent ALREADY_FUNDED/EXCLUDED
+ * (anti double-compte enveloppe) — divergence pouvant atteindre plusieurs
+ * dizaines de milliers de DH dès qu'une partie des dépenses du mois est
+ * financée depuis une enveloppe déjà alimentée.
+ *
+ * Nouvelle règle, UNE SEULE SOURCE DE VÉRITÉ : "REVENUS"/"DÉPENSES"/
+ * "VERSEMENTS" de la synthèse SONT totalRevenus/totalDepenses/totalEpargne
+ * (le même agrégat que TOTAL REVENUS/DÉPENSES/VERSEMENTS du tableau, aucun
+ * second calcul) ; resultatPrevu/projectionCumulee en dérivent par simple
+ * soustraction/cumul (ex-balanceMensuelle/balanceCumulee, renommés — "RÉSULTAT
+ * PRÉVU", plus jamais "balance"). "Reste à exécuter" (mois COURANT
+ * uniquement) est une information OPÉRATIONNELLE distincte, dérivée elle
+ * aussi d'une seule quantité déjà fiable par échéance : `remaining` (=
+ * expectedAmount - déjà payé), exactement celle utilisée par "À faire" —
+ * jamais prévu+payé additionnés.
+ */
 export interface PlanningMonthSynthese {
   totalRevenus: number;
   totalDepenses: number;
   totalEpargne: number;
-  balanceMensuelle: number;
-  balanceCumulee: number;
+  /** = totalRevenus - totalDepenses - totalEpargne (ex-balanceMensuelle). */
+  resultatPrevu: number;
+  /** Cumul de resultatPrevu depuis le premier mois de l'horizon jusqu'à ce mois inclus (ex-balanceCumulee). */
+  projectionCumulee: number;
   /**
-   * Lot "synthèse enrichie" — répond à "où en suis-je / puis-je couvrir le
-   * reste ?", un axe DIFFÉRENT de totalDepenses/balance ci-dessus (qui
-   * répondent à "projection budgétaire", cf. budgetContribution : excluent
-   * ALREADY_FUNDED pour éviter le double-compte enveloppe). Ici, en
-   * revanche, on utilise la valeur AFFICHÉE (effectiveAmount, jamais
-   * filtrée par budgetImpact) : "déjà payé" doit refléter CE QUI A
-   * RÉELLEMENT QUITTÉ LE COMPTE, quelle que soit la source utilisée — sinon
-   * un paiement financé par une enveloppe semblerait ne jamais avoir été
-   * payé. depensesPrevues - depensesPayees = depensesReste TOUJOURS (jamais
-   * prévu+payé additionnés — §anti-double-compte, ex. 800 payé 300 ->
-   * prévu 800, payé 300, reste 500, jamais 1100).
+   * "Reste à exécuter" (mois COURANT uniquement — premier mois de la table —
+   * `null` pour tout autre mois) : somme des RESTES (jamais des prévus) des
+   * dépenses/versements encore PENDING ce mois, exactement les mêmes
+   * quantités `remaining` que "À faire" lit via PlanningOccurrenceRecord.
    */
-  depensesPrevues: number;
-  depensesPayees: number;
-  depensesReste: number;
-  /** Même principe que ci-dessus, mais pour les versements/épargne — jamais mélangé avec les dépenses (un versement vers une enveloppe n'est jamais une dépense). */
-  epargnePrevue: number;
-  epargneVersee: number;
-  epargneReste: number;
+  resteDepenses: number | null;
+  resteVersements: number | null;
   /**
-   * Lot "couverture des dépenses restantes" — UNIQUEMENT fiable pour le MOIS
-   * COURANT (premier mois de la table, cf. buildPlanningTable) : `null` pour
-   * tout autre mois, faute de projection de solde par mois/source fiable
-   * dans le modèle actuel (cf. rapport de livraison — non inventée).
-   *
-   * Calculée PAR SOURCE prévue des échéances encore à payer (jamais un
-   * simple total patrimoine) : pour chaque source, disponible = non-affecté
-   * du compte (source directe) ou solde de l'enveloppe (source sous-compte),
-   * jamais sommés entre sources différentes. depensesCouvertes = Σ par
-   * source de min(disponible_source, reste_source) — un surplus sur une
-   * source ne compense JAMAIS le déficit d'une autre. Une échéance sans
-   * source valide est toujours comptée NON couverte (jamais de source
-   * supposée).
+   * Couverture (mois courant uniquement, sinon null) — reprend la règle déjà
+   * validée (lot "couverture des dépenses restantes"), désormais étendue aux
+   * versements restants (toute échéance restante, dépense ou versement,
+   * compare son reste au disponible de SA source : non-affecté du compte ou
+   * solde de l'enveloppe, jamais sommés entre sources différentes, jamais un
+   * surplus compensant le déficit d'une autre source).
    */
-  depensesCouvertes: number | null;
-  /** = depensesReste - depensesCouvertes (mois courant uniquement, sinon null) — "à provisionner", jamais présenté comme une marge globale compensant les sources entre elles. */
-  depensesAProvisionner: number | null;
+  couverte: boolean | null;
+  /** = max(0, (resteDepenses+resteVersements) - couvert) — mois courant uniquement, sinon null. Jamais le détail technique du calcul n'est exposé au-delà de ce montant. */
+  aProvisionner: number | null;
 }
 
 /**
@@ -404,8 +410,8 @@ export function buildPlanningTable(params: {
    * affecté par compte, solde par enveloppe/sous-compte), utilisés
    * UNIQUEMENT pour calculer la couverture du mois COURANT (premier mois de
    * `months`). Jamais une projection : cf. le commentaire de
-   * PlanningMonthSynthese.depensesCouvertes pour la limite assumée sur les
-   * mois futurs.
+   * PlanningMonthSynthese.couverte/aProvisionner pour la limite assumée sur
+   * les mois futurs.
    */
   accountNonAffecte: Map<string, number>;
   subaccountBalances: Map<string, number>;
@@ -471,21 +477,15 @@ export function buildPlanningTable(params: {
 
   const singleOccurrenceRegistry: SingleOccurrenceRegistry = new Map();
 
-  // Lot "synthèse enrichie" (Part 2 A/D) — accumulateurs mensuels DISTINCTS de
-  // budgetAmount/totalDepenses (qui filtrent ALREADY_FUNDED pour l'anti
-  // double-compte "projection budgétaire") : ici on veut la valeur AFFICHÉE
-  // (ce qui a réellement quitté le compte, quelle que soit la source), pour
-  // que Prévu - Payé = Reste tienne TOUJOURS, échéance par échéance.
-  const depensesPrevuesByMonth = new Map<PlanningMonthKey, number>(months.map((m) => [m, 0]));
-  const depensesPayeesByMonth = new Map<PlanningMonthKey, number>(months.map((m) => [m, 0]));
-  const epargnePrevueByMonth = new Map<PlanningMonthKey, number>(months.map((m) => [m, 0]));
-  const epargneVerseeByMonth = new Map<PlanningMonthKey, number>(months.map((m) => [m, 0]));
-  const addToMonth = (map: Map<PlanningMonthKey, number>, m: PlanningMonthKey, delta: number) => map.set(m, (map.get(m) ?? 0) + delta);
-
-  // Lot "couverture des dépenses restantes" — reste à payer du mois COURANT
-  // uniquement, groupé par SOURCE PRÉVUE de l'échéance (jamais par échéance
-  // individuelle ni sommé entre sources différentes).
-  const resteParSourceMoisCourant = new Map<string, number>();
+  // Lot "Planning allégé" — "reste à exécuter" du mois COURANT uniquement,
+  // groupé par SOURCE PRÉVUE de l'échéance (jamais par échéance individuelle
+  // ni sommé entre sources différentes) : une carte par nature (dépense vs
+  // versement) pour l'affichage séparé "Dépenses X / Versements Y", et leur
+  // fusion ci-dessous pour la couverture combinée (§11 : une échéance
+  // restante, dépense ou versement, compare son reste au disponible de SA
+  // propre source).
+  const resteDepensesParSourceMoisCourant = new Map<string, number>();
+  const resteVersementsParSourceMoisCourant = new Map<string, number>();
 
   // Lot "À faire" — une entrée par échéance PENDING/REALIZED traitée,
   // indépendante du regroupement par case (cf. PlanningOccurrenceRecord).
@@ -643,22 +643,15 @@ export function buildPlanningTable(params: {
       });
     }
 
-    if (planned.kind === 'EXPENSE') {
-      const prevuContribution = planned.status === 'CANCELLED' ? paidDisplay : toNumber(planned.expectedAmount);
-      addToMonth(depensesPrevuesByMonth, mKey, prevuContribution);
-      addToMonth(depensesPayeesByMonth, mKey, paidDisplay);
-
-      // Couverture (lot "couverture des dépenses restantes") : UNIQUEMENT le
-      // reste du mois COURANT, groupé par la source PRÉVUE de l'échéance —
-      // jamais une échéance individuelle, jamais une source supposée.
-      if (mKey === currentMonth && remaining > 0) {
-        const sourceKey = sourceKeyOf(planned.sourceAccountId, planned.sourceSubaccountId);
-        resteParSourceMoisCourant.set(sourceKey, (resteParSourceMoisCourant.get(sourceKey) ?? 0) + remaining);
-      }
-    } else if (planned.kind === 'SAVINGS_CONTRIBUTION') {
-      const prevuContribution = planned.status === 'CANCELLED' ? paidDisplay : toNumber(planned.expectedAmount);
-      addToMonth(epargnePrevueByMonth, mKey, prevuContribution);
-      addToMonth(epargneVerseeByMonth, mKey, paidDisplay);
+    // "Reste à exécuter" (mois COURANT uniquement) — UNIQUEMENT `remaining`
+    // (expectedAmount - déjà payé, 0 pour REALIZED/CANCELLED par construction
+    // de pushPlannedOccurrence ci-dessus), groupé par la source PRÉVUE de
+    // l'échéance — jamais une échéance individuelle, jamais une source
+    // supposée, jamais le prévu additionné au payé.
+    if (mKey === currentMonth && remaining > 0) {
+      const sourceKey = sourceKeyOf(planned.sourceAccountId, planned.sourceSubaccountId);
+      const map = planned.kind === 'EXPENSE' ? resteDepensesParSourceMoisCourant : planned.kind === 'SAVINGS_CONTRIBUTION' ? resteVersementsParSourceMoisCourant : null;
+      if (map) map.set(sourceKey, (map.get(sourceKey) ?? 0) + remaining);
     }
   }
 
@@ -703,16 +696,12 @@ export function buildPlanningTable(params: {
       const savingsCategory = savingsCategoryId ? categoryById.get(savingsCategoryId) : undefined;
       const row = ensureRow(epargneRows, key, label, savingsCategoryId, savingsCategory?.name);
       cell = row.cells[mKey];
-      addToMonth(epargnePrevueByMonth, mKey, amount);
-      addToMonth(epargneVerseeByMonth, mKey, amount);
     } else if (op.kind === 'EXPENSE') {
       const categoryId = op.categoryId ?? fallback?.id;
       if (!categoryId) continue;
       const categoryLabel = categoryId === fallback?.id ? CHARGES_PONCTUELLES_LABEL : categoryById.get(categoryId)?.name;
       const row = ensureRow(depenseRows, labelRowKey(categoryId, op.label), op.label, categoryId, categoryLabel);
       cell = row.cells[mKey];
-      addToMonth(depensesPrevuesByMonth, mKey, amount);
-      addToMonth(depensesPayeesByMonth, mKey, amount);
     } else {
       continue;
     }
@@ -726,13 +715,27 @@ export function buildPlanningTable(params: {
   }
   applySingleOccurrenceRegistry(singleOccurrenceRegistry);
 
-  // Couverture (mois courant uniquement) : jamais un pool unique — un
-  // surplus sur une source ne compense JAMAIS le déficit d'une autre.
-  let depensesCouvertesMoisCourant = 0;
-  for (const [sourceKey, reste] of resteParSourceMoisCourant) {
+  // Couverture combinée (mois courant uniquement, §11) : dépenses ET
+  // versements restants sont fusionnés PAR SOURCE avant comparaison au
+  // disponible — jamais un pool unique entre sources différentes, jamais un
+  // surplus sur une source compensant le déficit d'une autre.
+  const sumMapValues = (map: Map<string, number>) => {
+    let total = 0;
+    for (const v of map.values()) total += v;
+    return total;
+  };
+  const resteDepensesMoisCourant = sumMapValues(resteDepensesParSourceMoisCourant);
+  const resteVersementsMoisCourant = sumMapValues(resteVersementsParSourceMoisCourant);
+  const resteCombineParSource = new Map<string, number>();
+  for (const [k, v] of resteDepensesParSourceMoisCourant) resteCombineParSource.set(k, (resteCombineParSource.get(k) ?? 0) + v);
+  for (const [k, v] of resteVersementsParSourceMoisCourant) resteCombineParSource.set(k, (resteCombineParSource.get(k) ?? 0) + v);
+  let couvertMoisCourant = 0;
+  for (const [sourceKey, reste] of resteCombineParSource) {
     const disponible = disponibleForSource(sourceKey, accountNonAffecte, subaccountBalances);
-    depensesCouvertesMoisCourant += Math.min(disponible, reste);
+    couvertMoisCourant += Math.min(disponible, reste);
   }
+  // Jamais > reste total par construction (min(disponible, reste) <= reste pour chaque source) ; Math.max défensif uniquement.
+  const aProvisionnerMoisCourant = Math.max(0, resteDepensesMoisCourant + resteVersementsMoisCourant - couvertMoisCourant);
 
   const synthese: Record<PlanningMonthKey, PlanningMonthSynthese> = {};
   let cumulative = 0;
@@ -742,32 +745,23 @@ export function buildPlanningTable(params: {
     const totalEpargne = sumRowsBudget(epargneRows, m);
     // Règle comptable (correction ciblée) : un versement/épargne n'est JAMAIS
     // une dépense (il n'entre donc jamais dans totalDepenses), mais il réduit
-    // bien la trésorerie disponible du mois — la BALANCE MENSUELLE doit donc
-    // le soustraire : Balance mensuelle = Revenus - Dépenses - Versements/Épargne.
-    const balanceMensuelle = totalRevenus - totalDepenses - totalEpargne;
-    cumulative += balanceMensuelle;
-    const depensesPrevues = depensesPrevuesByMonth.get(m) ?? 0;
-    const depensesPayees = depensesPayeesByMonth.get(m) ?? 0;
-    const depensesReste = depensesPrevues - depensesPayees;
-    const epargnePrevue = epargnePrevueByMonth.get(m) ?? 0;
-    const epargneVersee = epargneVerseeByMonth.get(m) ?? 0;
+    // bien la trésorerie disponible du mois — le RÉSULTAT PRÉVU doit donc le
+    // soustraire : Résultat prévu = Revenus - Dépenses - Versements/Épargne.
+    // Dérivé des MÊMES totaux affichés juste au-dessus (TOTAL REVENUS/
+    // DÉPENSES/VERSEMENTS) — aucun second calcul, aucune divergence possible.
+    const resultatPrevu = totalRevenus - totalDepenses - totalEpargne;
+    cumulative += resultatPrevu;
     const isCurrentMonth = m === currentMonth;
-    // Jamais > depensesReste par construction (min(disponible, reste) <= reste pour chaque source) ; Math.max défensif uniquement.
-    const depensesCouvertes = isCurrentMonth ? Math.min(depensesCouvertesMoisCourant, depensesReste) : null;
     synthese[m] = {
       totalRevenus,
       totalDepenses,
       totalEpargne,
-      balanceMensuelle,
-      balanceCumulee: cumulative,
-      depensesPrevues,
-      depensesPayees,
-      depensesReste,
-      epargnePrevue,
-      epargneVersee,
-      epargneReste: epargnePrevue - epargneVersee,
-      depensesCouvertes,
-      depensesAProvisionner: isCurrentMonth ? Math.max(0, depensesReste - (depensesCouvertes ?? 0)) : null,
+      resultatPrevu,
+      projectionCumulee: cumulative,
+      resteDepenses: isCurrentMonth ? resteDepensesMoisCourant : null,
+      resteVersements: isCurrentMonth ? resteVersementsMoisCourant : null,
+      couverte: isCurrentMonth ? aProvisionnerMoisCourant <= 0 : null,
+      aProvisionner: isCurrentMonth ? aProvisionnerMoisCourant : null,
     };
   }
 

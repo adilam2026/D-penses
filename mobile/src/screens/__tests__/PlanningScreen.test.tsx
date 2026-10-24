@@ -64,16 +64,12 @@ function emptySynthese(): PlanningTableApi['synthese'][string] {
     totalRevenus: 0,
     totalDepenses: 0,
     totalEpargne: 0,
-    balanceMensuelle: 0,
-    balanceCumulee: 0,
-    depensesPrevues: 0,
-    depensesPayees: 0,
-    depensesReste: 0,
-    depensesCouvertes: null,
-    depensesAProvisionner: null,
-    epargnePrevue: 0,
-    epargneVersee: 0,
-    epargneReste: 0,
+    resultatPrevu: 0,
+    projectionCumulee: 0,
+    resteDepenses: null,
+    resteVersements: null,
+    couverte: null,
+    aProvisionner: null,
   };
 }
 
@@ -765,11 +761,12 @@ it('"Annuler l\'échéance" sur une récurrence propose le choix de portée ; "e
   alertSpy.mockRestore();
 });
 
-// Lot "synthèse enrichie" (Part 2 A/D) : bloc compact payé/prévu + reste pour
-// les dépenses ET l'épargne, séparé l'un de l'autre et de Balance mensuelle/
-// cumulée (conservées inchangées) — adapte le bloc de totaux existant, sans
-// reconstruire le Planning.
-it('synthèse enrichie : affiche payé/prévu + reste pour les dépenses et l\'épargne, séparément de la balance', async () => {
+// Lot "Planning allégé" (correction recette) : synthèse simplifiée
+// REVENUS/DÉPENSES/VERSEMENTS/RÉSULTAT PRÉVU (mêmes totaux que les lignes
+// TOTAL ci-dessus, aucun second calcul) + "RESTE À EXÉCUTER" (mois courant
+// uniquement) — remplace l'ancienne synthèse payé/prévu, devenue incohérente
+// avec les totaux affichés (cf. backend planning.util.ts).
+it('synthèse simplifiée : REVENUS/DÉPENSES/VERSEMENTS/RÉSULTAT PRÉVU reprennent les mêmes totaux, "reste à exécuter" réservé au mois courant', async () => {
   mockGetPlanning.mockResolvedValue(
     basePlanning({
       synthese: {
@@ -777,16 +774,12 @@ it('synthèse enrichie : affiche payé/prévu + reste pour les dépenses et l\'�
           totalRevenus: 2000,
           totalDepenses: 7300,
           totalEpargne: 1000,
-          balanceMensuelle: -6300,
-          balanceCumulee: -6300,
-          depensesPrevues: 7550,
-          depensesPayees: 1450,
-          depensesReste: 6100,
-          depensesCouvertes: 5500,
-          depensesAProvisionner: 600,
-          epargnePrevue: 1000,
-          epargneVersee: 1000,
-          epargneReste: 0,
+          resultatPrevu: -6300,
+          projectionCumulee: -6300,
+          resteDepenses: 6100,
+          resteVersements: 0,
+          couverte: false,
+          aProvisionner: 600,
         },
         '2026-10': emptySynthese(),
         '2026-11': emptySynthese(),
@@ -795,36 +788,43 @@ it('synthèse enrichie : affiche payé/prévu + reste pour les dépenses et l\'�
   );
 
   renderWithSafeArea(<PlanningScreen />);
-  await waitFor(() => screen.getByText('DÉPENSES payé/prévu'));
-  expect(screen.getByText('ÉPARGNE versé/prévu')).toBeTruthy();
+  await waitFor(() => screen.getByText('RÉSULTAT PRÉVU'));
+  // "REVENUS"/"DÉPENSES" apparaissent aussi comme titres de section du tableau —
+  // la nouvelle ligne de synthèse en est une occurrence DE PLUS, jamais une seule.
+  expect(screen.getAllByText('REVENUS').length).toBeGreaterThanOrEqual(2);
+  expect(screen.getAllByText('DÉPENSES').length).toBeGreaterThanOrEqual(2);
+  expect(screen.getByText('VERSEMENTS')).toBeTruthy();
+  expect(screen.getByText('RESTE À EXÉCUTER')).toBeTruthy();
+  // L'ancienne terminologie "balance" a disparu (§14).
+  expect(screen.queryByText(/balance/i)).toBeNull();
 
-  const depensesCell = screen.getByTestId('planning-synthese-depenses-2026-09');
-  expect(within(depensesCell).getByText('1 450/7 550 DH')).toBeTruthy();
-  expect(within(depensesCell).getByText('reste 6 100 DH')).toBeTruthy();
-  // Couverture (mois courant) : jamais présentée comme une marge globale — "À provisionner", pas "Couvert 5 500 / Marge".
-  expect(within(depensesCell).getByText('À provisionner 600 DH')).toBeTruthy();
+  // REVENUS/DÉPENSES/VERSEMENTS/RÉSULTAT PRÉVU = EXACTEMENT les totaux ci-dessus, aucune divergence.
+  expect(within(screen.getByTestId('planning-synthese-revenus-2026-09')).getByText('2 000 DH')).toBeTruthy();
+  expect(within(screen.getByTestId('planning-synthese-depenses-2026-09')).getByText('7 300 DH')).toBeTruthy();
+  expect(within(screen.getByTestId('planning-synthese-versements-2026-09')).getByText('1 000 DH')).toBeTruthy();
+  expect(within(screen.getByTestId('planning-synthese-resultat-prevu-2026-09')).getByText('-6 300 DH')).toBeTruthy();
 
-  const epargneCell = screen.getByTestId('planning-synthese-epargne-2026-09');
-  expect(within(epargneCell).getByText('1 000/1 000 DH')).toBeTruthy();
-  // L'épargne a son propre "reste" (0), jamais mélangé à celui des dépenses (6 100).
-  expect(within(epargneCell).getByText('reste 0 DH')).toBeTruthy();
-  // Pas de ligne de couverture pour l'épargne — jamais mélangée aux dépenses.
-  expect(within(epargneCell).queryByText(/provisionner|couvert/i)).toBeNull();
+  // "Reste à exécuter" (mois courant) : jamais le prévu, uniquement le reste réel.
+  const resteCell = screen.getByTestId('planning-reste-a-executer-2026-09');
+  expect(within(resteCell).getByText('Dépenses 6 100 DH')).toBeTruthy();
+  expect(within(resteCell).getByText('Versements 0 DH')).toBeTruthy();
+  // Couverture : jamais présentée comme une marge globale — "À provisionner", pas "Couvert 5 500 / Marge".
+  expect(within(resteCell).getByText('À provisionner 600 DH')).toBeTruthy();
 
-  // Mois futurs (2026-10) : pas de 3e ligne de couverture, faute de projection fiable (§8).
-  const depensesCellFuture = screen.getByTestId('planning-synthese-depenses-2026-10');
-  expect(within(depensesCellFuture).queryByText(/provisionner|couvert/i)).toBeNull();
+  // Mois futur (2026-10) : pas de "reste à exécuter" du tout, faute de projection fiable (§12).
+  const resteCellFuture = screen.getByTestId('planning-reste-a-executer-2026-10');
+  expect(within(resteCellFuture).queryByText(/provisionner|couvert|Dépenses|Versements/i)).toBeNull();
 
-  // Balance mensuelle/cumulée toujours présentes, affichage inchangé.
-  expect(screen.getByText('BALANCE MENSUELLE')).toBeTruthy();
-  expect(screen.getByText('BALANCE CUMULÉE')).toBeTruthy();
+  // Projection (§13) : ligne unique sous le tableau, dernier mois VISIBLE de la fenêtre (2026-11 par défaut).
+  const projectionLine = screen.getByTestId('planning-projection-cumulee');
+  expect(within(projectionLine).getByText(/Projection à fin Novembre 2026/)).toBeTruthy();
 });
 
-it('synthèse enrichie : "✓ Tout est couvert" quand depensesAProvisionner vaut 0 (mois courant)', async () => {
+it('"reste à exécuter" : "✓ Couvert" quand aProvisionner vaut 0 (mois courant)', async () => {
   mockGetPlanning.mockResolvedValue(
     basePlanning({
       synthese: {
-        '2026-09': { ...emptySynthese(), depensesPrevues: 1200, depensesPayees: 0, depensesReste: 1200, depensesCouvertes: 1200, depensesAProvisionner: 0 },
+        '2026-09': { ...emptySynthese(), resteDepenses: 1200, resteVersements: 0, couverte: true, aProvisionner: 0 },
         '2026-10': emptySynthese(),
         '2026-11': emptySynthese(),
       },
@@ -832,8 +832,8 @@ it('synthèse enrichie : "✓ Tout est couvert" quand depensesAProvisionner vaut
   );
 
   renderWithSafeArea(<PlanningScreen />);
-  await waitFor(() => screen.getByText('DÉPENSES payé/prévu'));
-  const depensesCell = screen.getByTestId('planning-synthese-depenses-2026-09');
-  expect(within(depensesCell).getByText('✓ Tout est couvert')).toBeTruthy();
-  expect(within(depensesCell).queryByText(/provisionner/i)).toBeNull();
+  await waitFor(() => screen.getByText('RESTE À EXÉCUTER'));
+  const resteCell = screen.getByTestId('planning-reste-a-executer-2026-09');
+  expect(within(resteCell).getByText('✓ Couvert')).toBeTruthy();
+  expect(within(resteCell).queryByText(/provisionner/i)).toBeNull();
 });

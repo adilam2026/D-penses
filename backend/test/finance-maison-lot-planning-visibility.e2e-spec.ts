@@ -188,8 +188,12 @@ describe('Finance Maison — "Afficher dans le Planning" (dépense ponctuelle)',
     const cih = await createAccount(token, 'CIH', 20000);
     const maison = await createCategory(token, 'Maison');
 
+    // Reste dans le MOIS COURANT (months[0], lu plus bas sans index explicite) —
+    // +10 jours bruts peut franchir la fin du mois selon la date du run ; on
+    // borne donc au dernier jour du mois courant.
     const future = new Date();
-    future.setUTCDate(future.getUTCDate() + 10);
+    const lastDayOfMonth = new Date(Date.UTC(future.getUTCFullYear(), future.getUTCMonth() + 1, 0)).getUTCDate();
+    future.setUTCDate(Math.min(future.getUTCDate() + 10, lastDayOfMonth));
     const futureDate = future.toISOString().slice(0, 10);
 
     await http

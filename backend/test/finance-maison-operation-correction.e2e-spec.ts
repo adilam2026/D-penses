@@ -303,14 +303,14 @@ describe('Finance Maison — correction/annulation de transaction (cancel/correc
     expect(depenseRow).toBeDefined();
     const month = planning.body.months[0];
     expect(depenseRow.cells[month].displayAmount).toBe(2500);
-    const balanceBefore = planning.body.synthese[month].balanceMensuelle;
+    const balanceBefore = planning.body.synthese[month].resultatPrevu;
 
     await http.post(`/financial-operations/${expense.body.id}/cancel`).set('Authorization', `Bearer ${token}`).send({}).expect(201);
 
     planning = await http.get('/planning?months=3').set('Authorization', `Bearer ${token}`).expect(200);
     depenseRow = planning.body.depenses.find((r: any) => r.label === 'Aspirateur');
     expect(depenseRow).toBeUndefined(); // la ligne entière disparaît, plus aucune opération active à afficher
-    expect(planning.body.synthese[month].balanceMensuelle).toBe(balanceBefore + 2500); // l'annulation ne doit plus peser dans le total
+    expect(planning.body.synthese[month].resultatPrevu).toBe(balanceBefore + 2500); // l'annulation ne doit plus peser dans le total
   });
 
   it('les opérations NON annulées continuent à apparaître normalement, y compris à côté d\'une opération annulée', async () => {

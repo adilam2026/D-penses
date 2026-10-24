@@ -242,7 +242,8 @@ describe('Finance Maison — "À faire" (vue opérationnelle du Planning)', () =
     const action = await createPlanned(token, { kind: 'EXPENSE', label: 'Carburant', expectedDate: todayIso(), expectedAmount: '500', categoryId: divers.id, sourceAccountId: compte.id, includeInTodo: true });
 
     const planningBefore = await getPlanning(token, 3);
-    const depensesPrevuesBefore = planningBefore.synthese[planningBefore.months[0]].depensesPrevues;
+    const totalDepensesBefore = planningBefore.synthese[planningBefore.months[0]].totalDepenses;
+    expect(planningBefore.synthese[planningBefore.months[0]].resteDepenses).toBe(500);
 
     // Réalisation via l'endpoint Planning (identique à celui utilisé par À faire).
     await http.post(`/planned-operations/${action.id}/realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '500' }).expect(201);
@@ -252,9 +253,9 @@ describe('Finance Maison — "À faire" (vue opérationnelle du Planning)', () =
     expect(todo.done.map((a: any) => a.plannedOperationId)).toContain(action.id);
 
     const planningAfter = await getPlanning(token, 3);
-    // depensesPrevues (prévu+payé pour une dépense ad-hoc vs planifiée) reste la même logique Planning, non affectée par includeInTodo.
-    expect(planningAfter.synthese[planningAfter.months[0]].depensesPrevues).toBe(depensesPrevuesBefore);
-    expect(planningAfter.synthese[planningAfter.months[0]].depensesPayees).toBe(500);
+    // totalDepenses (calcul financier du Planning) reste identique, non affecté par includeInTodo.
+    expect(planningAfter.synthese[planningAfter.months[0]].totalDepenses).toBe(totalDepensesBefore);
+    expect(planningAfter.synthese[planningAfter.months[0]].resteDepenses).toBe(0);
   });
 
   // -----------------------------------------------------------------
@@ -508,6 +509,7 @@ describe('Finance Maison — "À faire" (vue opérationnelle du Planning)', () =
     const cell = planning.depenses.find((r: any) => r.label === 'Petite dépense').cells[planning.months[0]];
     expect(cell.status).toBe('PENDING');
     expect(cell.displayAmount).toBe(20);
-    expect(planning.synthese[planning.months[0]].depensesPrevues).toBe(20);
+    expect(planning.synthese[planning.months[0]].totalDepenses).toBe(20);
+    expect(planning.synthese[planning.months[0]].resteDepenses).toBe(20);
   });
 });

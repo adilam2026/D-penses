@@ -571,29 +571,38 @@ export interface PlanningRowApi {
   cells: Record<string, PlanningCellApi>;
 }
 
+/**
+ * Lot "Planning allégé" (correction recette) — remplace l'ancienne synthèse
+ * (depensesPrevues/Payees/Reste, epargnePrevue/Versee/Reste,
+ * depensesCouvertes/AProvisionner, balanceMensuelle/Cumulee), devenue
+ * incohérente avec TOTAL DÉPENSES/VERSEMENTS affichés dans le même tableau —
+ * cf. backend planning.util.ts pour la cause exacte. REVENUS/DÉPENSES/
+ * VERSEMENTS de la nouvelle synthèse SONT totalRevenus/totalDepenses/
+ * totalEpargne (même agrégat que TOTAL REVENUS/DÉPENSES/VERSEMENTS du
+ * tableau, aucun second calcul).
+ */
 export interface PlanningMonthSyntheseApi {
   totalRevenus: number;
   totalDepenses: number;
   totalEpargne: number;
-  balanceMensuelle: number;
-  balanceCumulee: number;
-  /** Lot "synthèse enrichie" — axe "où en suis-je / puis-je couvrir le reste ?", distinct de totalDepenses/balance ci-dessus (cf. backend planning.util.ts). */
-  depensesPrevues: number;
-  depensesPayees: number;
-  depensesReste: number;
-  epargnePrevue: number;
-  epargneVersee: number;
-  epargneReste: number;
+  /** = totalRevenus - totalDepenses - totalEpargne (ex-balanceMensuelle, jamais "balance"). */
+  resultatPrevu: number;
+  /** Cumul de resultatPrevu depuis le premier mois de l'horizon jusqu'à ce mois inclus (ex-balanceCumulee). */
+  projectionCumulee: number;
   /**
-   * Lot "couverture des dépenses restantes" — UNIQUEMENT non-null pour le
-   * mois COURANT (premier mois de `months`) : `null` pour tout mois futur,
-   * faute de projection de solde par mois/source fiable. Calculée PAR
-   * SOURCE prévue des échéances restantes (jamais un total patrimoine) —
-   * cf. backend planning.util.ts.
+   * "Reste à exécuter" (mois COURANT uniquement — premier mois de `months` —
+   * `null` pour tout autre mois) : somme des RESTES (jamais des prévus) des
+   * dépenses/versements encore à payer ce mois.
    */
-  depensesCouvertes: number | null;
-  /** = depensesReste - depensesCouvertes (mois courant), sinon null. */
-  depensesAProvisionner: number | null;
+  resteDepenses: number | null;
+  resteVersements: number | null;
+  /**
+   * Couverture combinée dépenses+versements restants, PAR SOURCE (compte ou
+   * enveloppe) — mois courant uniquement, sinon null. true = "✓ Couvert".
+   */
+  couverte: boolean | null;
+  /** Montant à provisionner si couverte === false (mois courant uniquement, sinon null). */
+  aProvisionner: number | null;
 }
 
 export interface PlanningTableApi {

@@ -4,7 +4,7 @@ import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, Touchabl
 import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { colors, elevation, fontFamily, radius, spacing, typography } from '../ui/theme';
-import { formatDh, formatMonthShort, formatShortDate } from '../ui/formatMoney';
+import { formatDh, formatMonthLabel, formatMonthShort, formatShortDate } from '../ui/formatMoney';
 import { HelpButton } from '../ui/HelpButton';
 import { FormField } from '../ui/FormField';
 import { Select } from '../ui/Select';
@@ -350,6 +350,10 @@ export function PlanningScreen() {
   ];
   const blockItemsByTitle = new Map(blocks.map((b) => [b.title, buildBlockItems(b.rows, b.uncategorizedLabel)]));
   const maxWindowStart = Math.max(0, data.months.length - VISIBLE_COLUMNS);
+  // Dernier mois VISIBLE de la fenêtre 3 mois courante (§13) — recalculé à
+  // chaque navigation (windowStart change), jamais figé sur le dernier mois
+  // de tout l'horizon chargé.
+  const lastVisibleMonth = data.months[Math.min(windowStart + VISIBLE_COLUMNS - 1, data.months.length - 1)];
 
   return (
     <View style={styles.container}>
@@ -420,25 +424,28 @@ export function PlanningScreen() {
                 </View>
               </React.Fragment>
             ))}
-            {/* Lot "synthèse enrichie" (Part 2 A/D) : 2 lignes compactes
-                supplémentaires ("où en suis-je"), jamais 5 nouvelles grandes
-                lignes — adapte uniquement ce bloc de totaux existant, le
-                Planning lui-même n'est pas reconstruit. */}
-            <View style={[styles.totalLabelCell, { height: SYNTHESE_DEPENSES_ROW_HEIGHT, borderLeftColor: colors.danger }]}>
-              <Text style={styles.totalLabelText} numberOfLines={2}>
-                DÉPENSES payé/prévu
-              </Text>
+            {/* Synthèse (lot "Planning allégé" §9) : REVENUS/DÉPENSES/
+                VERSEMENTS reprennent EXACTEMENT les mêmes totaux que les
+                lignes TOTAL ci-dessus (aucun second calcul) + RÉSULTAT PRÉVU
+                — remplace l'ancienne synthèse payé/prévu + BALANCE, devenue
+                incohérente avec les totaux (cf. backend planning.util.ts). */}
+            <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: colors.success }]}>
+              <Text style={styles.totalLabelText}>REVENUS</Text>
+            </View>
+            <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: colors.danger }]}>
+              <Text style={styles.totalLabelText}>DÉPENSES</Text>
             </View>
             <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: colors.secondary }]}>
+              <Text style={styles.totalLabelText}>VERSEMENTS</Text>
+            </View>
+            <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, backgroundColor: colors.surfaceActive }]}>
+              <Text style={styles.totalLabelText}>RÉSULTAT PRÉVU</Text>
+            </View>
+            {/* "Reste à exécuter" — MOIS COURANT UNIQUEMENT (§10/§12), vide pour tout mois futur. */}
+            <View style={[styles.totalLabelCell, { height: SYNTHESE_DEPENSES_ROW_HEIGHT }]}>
               <Text style={styles.totalLabelText} numberOfLines={2}>
-                ÉPARGNE versé/prévu
+                RESTE À EXÉCUTER
               </Text>
-            </View>
-            <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, backgroundColor: colors.surfaceActive }]}>
-              <Text style={styles.totalLabelText}>BALANCE MENSUELLE</Text>
-            </View>
-            <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, backgroundColor: colors.surfaceActive }]}>
-              <Text style={styles.totalLabelText}>BALANCE CUMULÉE</Text>
             </View>
           </View>
 
@@ -525,74 +532,92 @@ export function PlanningScreen() {
                   </React.Fragment>
                 ))}
 
-                {/* DÉPENSES payé/prévu + reste — axe "où en suis-je", distinct
-                    de TOTAL DÉPENSES ci-dessus (cf. backend planning.util.ts).
-                    3e ligne (couverture) UNIQUEMENT pour le mois courant
-                    (depensesAProvisionner non-null) — jamais pour les mois
-                    futurs, faute de projection de solde fiable (§8). */}
+                {/* Synthèse (§9) : REVENUS/DÉPENSES/VERSEMENTS = EXACTEMENT
+                    les mêmes totaux que TOTAL REVENUS/DÉPENSES/VERSEMENTS
+                    ci-dessus (aucun second calcul, aucune divergence
+                    possible) + RÉSULTAT PRÉVU qui en dérive. */}
+                <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
+                  {data.months.map((m) => (
+                    <View key={m} style={[styles.totalCell, { width: columnWidth }]} testID={`planning-synthese-revenus-${m}`}>
+                      <Text style={styles.totalCellText} numberOfLines={1} adjustsFontSizeToFit>
+                        {formatDh(data.synthese[m].totalRevenus)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+                <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
+                  {data.months.map((m) => (
+                    <View key={m} style={[styles.totalCell, { width: columnWidth }]} testID={`planning-synthese-depenses-${m}`}>
+                      <Text style={styles.totalCellText} numberOfLines={1} adjustsFontSizeToFit>
+                        {formatDh(data.synthese[m].totalDepenses)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+                <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
+                  {data.months.map((m) => (
+                    <View key={m} style={[styles.totalCell, { width: columnWidth }]} testID={`planning-synthese-versements-${m}`}>
+                      <Text style={styles.totalCellText} numberOfLines={1} adjustsFontSizeToFit>
+                        {formatDh(data.synthese[m].totalEpargne)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+                <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
+                  {data.months.map((m) => (
+                    <View key={m} style={[styles.totalCell, styles.syntheseCell, { width: columnWidth }]} testID={`planning-synthese-resultat-prevu-${m}`}>
+                      <Text style={[styles.totalCellText, data.synthese[m].resultatPrevu < 0 && styles.negativeText]} numberOfLines={1} adjustsFontSizeToFit>
+                        {formatDh(data.synthese[m].resultatPrevu)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+
+                {/* "Reste à exécuter" (§10/§11) — MOIS COURANT uniquement
+                    (resteDepenses non-null) : vide pour tout mois futur,
+                    jamais une valeur inventée faute de projection fiable. */}
                 <View style={{ flexDirection: 'row', height: SYNTHESE_DEPENSES_ROW_HEIGHT }}>
                   {data.months.map((m) => {
                     const s = data.synthese[m];
                     return (
-                      <View key={m} style={[styles.totalCell, { width: columnWidth }]} testID={`planning-synthese-depenses-${m}`}>
-                        <Text style={styles.syntheseDetailAmount} numberOfLines={1} adjustsFontSizeToFit>
-                          {Math.round(s.depensesPayees).toLocaleString('fr-FR')}/{Math.round(s.depensesPrevues).toLocaleString('fr-FR')} DH
-                        </Text>
-                        <Text style={styles.syntheseDetailReste} numberOfLines={1} adjustsFontSizeToFit>
-                          reste {Math.round(s.depensesReste).toLocaleString('fr-FR')} DH
-                        </Text>
-                        {s.depensesAProvisionner !== null &&
-                          (s.depensesAProvisionner > 0 ? (
-                            <Text style={styles.syntheseCouvertureWarn} numberOfLines={1} adjustsFontSizeToFit>
-                              À provisionner {Math.round(s.depensesAProvisionner).toLocaleString('fr-FR')} DH
+                      <View key={m} style={[styles.totalCell, { width: columnWidth }]} testID={`planning-reste-a-executer-${m}`}>
+                        {s.resteDepenses !== null && (
+                          <>
+                            <Text style={styles.syntheseDetailAmount} numberOfLines={1} adjustsFontSizeToFit>
+                              Dépenses {Math.round(s.resteDepenses).toLocaleString('fr-FR')} DH
                             </Text>
-                          ) : (
-                            <Text style={styles.syntheseCouvertureOk} numberOfLines={1} adjustsFontSizeToFit>
-                              ✓ Tout est couvert
+                            <Text style={styles.syntheseDetailAmount} numberOfLines={1} adjustsFontSizeToFit>
+                              Versements {Math.round(s.resteVersements ?? 0).toLocaleString('fr-FR')} DH
                             </Text>
-                          ))}
+                            {s.couverte ? (
+                              <Text style={styles.syntheseCouvertureOk} numberOfLines={1} adjustsFontSizeToFit>
+                                ✓ Couvert
+                              </Text>
+                            ) : (
+                              <Text style={styles.syntheseCouvertureWarn} numberOfLines={1} adjustsFontSizeToFit>
+                                À provisionner {Math.round(s.aProvisionner ?? 0).toLocaleString('fr-FR')} DH
+                              </Text>
+                            )}
+                          </>
+                        )}
                       </View>
                     );
                   })}
-                </View>
-                {/* ÉPARGNE/VERSEMENTS versé/prévu + reste — jamais mélangé aux dépenses ci-dessus. */}
-                <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                  {data.months.map((m) => {
-                    const s = data.synthese[m];
-                    return (
-                      <View key={m} style={[styles.totalCell, { width: columnWidth }]} testID={`planning-synthese-epargne-${m}`}>
-                        <Text style={styles.syntheseDetailAmount} numberOfLines={1} adjustsFontSizeToFit>
-                          {Math.round(s.epargneVersee).toLocaleString('fr-FR')}/{Math.round(s.epargnePrevue).toLocaleString('fr-FR')} DH
-                        </Text>
-                        <Text style={styles.syntheseDetailReste} numberOfLines={1} adjustsFontSizeToFit>
-                          reste {Math.round(s.epargneReste).toLocaleString('fr-FR')} DH
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
-
-                <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                  {data.months.map((m) => (
-                    <View key={m} style={[styles.totalCell, styles.syntheseCell, { width: columnWidth }]}>
-                      <Text style={[styles.totalCellText, data.synthese[m].balanceMensuelle < 0 && styles.negativeText]} numberOfLines={1} adjustsFontSizeToFit>
-                        {formatDh(data.synthese[m].balanceMensuelle)}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-                <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                  {data.months.map((m) => (
-                    <View key={m} style={[styles.totalCell, styles.syntheseCell, { width: columnWidth }]}>
-                      <Text style={[styles.totalCellText, data.synthese[m].balanceCumulee < 0 && styles.negativeText]} numberOfLines={1} adjustsFontSizeToFit>
-                        {formatDh(data.synthese[m].balanceCumulee)}
-                      </Text>
-                    </View>
-                  ))}
                 </View>
               </View>
             </ScrollView>
           </View>
+        </View>
+
+        {/* Projection (§13) — ligne UNIQUE sous le tableau (plus de grosse
+            BALANCE CUMULÉE par colonne) : cumul des résultats prévus jusqu'au
+            DERNIER MOIS VISIBLE de la fenêtre 3 mois, recalculée à chaque
+            navigation (windowStart). */}
+        <View style={styles.projectionLine} testID="planning-projection-cumulee">
+          <Text style={styles.projectionLabel}>Projection à fin {formatMonthLabel(lastVisibleMonth)} :</Text>
+          <Text style={[styles.projectionAmount, data.synthese[lastVisibleMonth].projectionCumulee < 0 && styles.negativeText]}>
+            {formatDh(data.synthese[lastVisibleMonth].projectionCumulee)}
+          </Text>
         </View>
 
         <PlansSection plans={plans} onOpen={(id) => navigation.navigate('FinancialPlanDetail', { id })} />
@@ -854,10 +879,11 @@ function PlanningCellView({
       {cell.status === 'EMPTY' ? (
         <Text style={styles.cellEmpty}>—</Text>
       ) : isMixed ? (
-        // Case MIXTE : réalisé ET à venir dans la même case — jamais fondus en un seul
-        // total ambigu (§9 : ex. 570 réalisé / 592 total ne doit jamais lire "réalisé").
-        // Ligne 1 = réalisé/total (texte exact conservé pour compat tests), ligne 2 =
-        // le restant explicite, pour qu'un coup d'œil ne suggère jamais "tout payé".
+        // Case MIXTE (partiellement réalisée) : réalisé ET à venir dans la
+        // même case — jamais fondus en un seul total ambigu (§9 : ex. 570
+        // réalisé / 592 total ne doit jamais lire "réalisé"). Allégé (lot
+        // "Planning allégé") : plus de capsule jaune pleine, un simple accent
+        // ocre discret (bordure) + texte ocre, jamais un fond saturé.
         <View style={styles.cellMixedWrap} testID={`${testID}-mixed`}>
           <Text style={styles.cellAmountMixed} numberOfLines={1} adjustsFontSizeToFit>
             {Math.round(cell.realizedAmount).toLocaleString('fr-FR')}/{Math.round(cell.displayAmount).toLocaleString('fr-FR')} DH
@@ -866,11 +892,18 @@ function PlanningCellView({
             reste {Math.round(cell.pendingAmount).toLocaleString('fr-FR')} DH
           </Text>
         </View>
+      ) : isPending ? (
+        // À VENIR : affichage NEUTRE (lot "Planning allégé" §3) — jamais de
+        // grosse capsule jaune derrière le montant, un simple texte discret
+        // ocre/gris, sans fond.
+        <Text style={styles.cellAmountPending} numberOfLines={1} adjustsFontSizeToFit>
+          {formatDh(cell.displayAmount)}
+        </Text>
       ) : (
-        <View style={[styles.cellChip, isRealized && styles.cellChipRealized, isPending && styles.cellChipPending]}>
-          <Text style={[styles.cellAmount, isRealized && styles.cellAmountRealized, isPending && styles.cellAmountPending]} numberOfLines={1} adjustsFontSizeToFit>
-            {formatDh(cell.displayAmount)}
-            {isRealized ? ' ✓' : ''}
+        // RÉALISÉ : vert (seul statut gardant une capsule colorée, jamais allégée).
+        <View style={styles.cellChip}>
+          <Text style={styles.cellAmountRealized} numberOfLines={1} adjustsFontSizeToFit>
+            {formatDh(cell.displayAmount)} ✓
           </Text>
         </View>
       )}
@@ -1366,7 +1399,7 @@ const styles = StyleSheet.create({
   horizonPillText: { fontSize: 11, fontFamily: fontFamily.sansBold, color: colors.textSecondary },
   horizonPillTextActive: { color: colors.textOnPrimary },
   tableRow: { flexDirection: 'row', paddingLeft: spacing.lg },
-  labelCell: { justifyContent: 'center', paddingRight: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  labelCell: { justifyContent: 'center', paddingRight: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider },
   // Flèches ‹ › intégrées à l'en-tête des mois (correctif finition) — ‹ dans
   // la cellule d'en-tête de la colonne de libellés figée, › en superposition
   // compacte au-dessus du défilement, jamais une rangée séparée qui ajoute
@@ -1387,7 +1420,7 @@ const styles = StyleSheet.create({
   sectionLabelText: { fontSize: 11, fontFamily: fontFamily.sansExtraBold, letterSpacing: 0.5 },
   rowLabelText: { fontSize: 13, fontFamily: fontFamily.sansSemiBold, color: colors.textPrimary },
   emptyRowText: { ...typography.caption, color: colors.textPlaceholder },
-  totalLabelCell: { justifyContent: 'center', borderTopWidth: 2, borderTopColor: colors.borderStrong, backgroundColor: colors.surfaceSecondary, paddingRight: spacing.sm, paddingLeft: spacing.xs, borderLeftWidth: 3 },
+  totalLabelCell: { justifyContent: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, backgroundColor: colors.surfaceSecondary, paddingRight: spacing.sm, paddingLeft: spacing.xs, borderLeftWidth: 3 },
   totalLabelText: { fontSize: 11, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
   monthHeaderCell: { justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 4 },
   monthHeaderText: { fontSize: 11, fontFamily: fontFamily.sansExtraBold, color: colors.textSecondary },
@@ -1397,34 +1430,37 @@ const styles = StyleSheet.create({
   categoryHeaderCell: { justifyContent: 'flex-end', paddingBottom: 2 },
   categoryHeaderText: { fontSize: 10, fontFamily: fontFamily.sansBold, color: colors.textPlaceholder, letterSpacing: 0.4, textTransform: 'uppercase' },
   categoryHeaderSpacerCell: {},
-  cell: { alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: colors.divider, borderLeftWidth: 1, borderLeftColor: colors.divider },
+  // Séparateurs ALLÉGÉS (lot "Planning allégé" §3) — hairline plutôt qu'1px plein,
+  // pour un tableau beaucoup moins chargé visuellement (mêmes données, même structure).
+  cell: { alignItems: 'center', justifyContent: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider, borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.divider },
   cellRealized: {},
   cellPending: {},
-  // MIXTE : même teinte que "prévu" (jamais confondu avec 100% réalisé, vert) mais un
-  // liseré vert à gauche signale la part déjà réalisée dans la case — sobre, sans
-  // ajouter de nouvelle couleur au design system (§7, purement visuel).
-  cellMixed: { backgroundColor: colors.warningLight, borderLeftWidth: 3, borderLeftColor: colors.success },
+  // MIXTE (partiellement réalisée) : accent ocre discret (liseré gauche),
+  // JAMAIS un fond saturé — §3 : "orange/ocre discret", jamais une grosse
+  // capsule pleine comme l'ancien design.
+  cellMixed: { borderLeftWidth: 3, borderLeftColor: colors.warning },
   cellEmpty: { color: colors.textPlaceholder },
-  // Montant affiché en chip/pill (maquette Planning validée).
-  cellChip: { borderRadius: radius.pill, paddingHorizontal: 6, paddingVertical: 3, maxWidth: '92%' },
-  cellChipRealized: { backgroundColor: colors.successLight },
-  cellChipPending: { backgroundColor: colors.warningLight },
-  cellAmount: { fontSize: 11, fontFamily: fontFamily.sansBold, color: colors.textPrimary },
-  cellAmountRealized: { color: colors.success },
-  cellAmountPending: { color: colors.warning },
+  // Montant affiché en chip/pill — RÉSERVÉ au statut RÉALISÉ (vert) depuis le
+  // lot "Planning allégé" : À VENIR n'a plus de capsule du tout (cf. cellAmountPending).
+  cellChip: { borderRadius: radius.pill, paddingHorizontal: 6, paddingVertical: 3, maxWidth: '92%', backgroundColor: colors.successLight },
+  cellAmountRealized: { fontSize: 11, fontFamily: fontFamily.sansBold, color: colors.success },
+  // À VENIR : texte neutre ocre/gris, SANS fond — remplace l'ancienne capsule jaune pleine.
+  cellAmountPending: { fontSize: 11, fontFamily: fontFamily.sansMedium, color: colors.textSecondary },
   cellMixedWrap: { alignItems: 'center' },
   cellAmountMixed: { fontSize: 9.5, fontFamily: fontFamily.sansExtraBold, color: colors.warning, paddingHorizontal: 2 },
-  cellRestantMixed: { fontSize: 8.5, fontFamily: fontFamily.sansBold, color: colors.danger, paddingHorizontal: 2, marginTop: 1 },
-  totalCell: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceSecondary, borderTopWidth: 2, borderTopColor: colors.borderStrong, borderLeftWidth: 1, borderLeftColor: colors.divider, paddingHorizontal: 2 },
+  cellRestantMixed: { fontSize: 8.5, fontFamily: fontFamily.sansBold, color: colors.textSecondary, paddingHorizontal: 2, marginTop: 1 },
+  totalCell: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceSecondary, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.divider, paddingHorizontal: 2 },
   totalCellText: { fontSize: 11.5, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
   syntheseCell: { backgroundColor: colors.surfaceActive },
-  // Lot "synthèse enrichie" — 2 lignes compactes (payé/prévu + reste), même gabarit que la case MIXTE (cellAmountMixed/cellRestantMixed) pour rester dense.
+  // "RESTE À EXÉCUTER" (mois courant uniquement, lot "Planning allégé" §10) — 2 lignes compactes.
   syntheseDetailAmount: { fontSize: 9.5, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary, paddingHorizontal: 2 },
   syntheseDetailReste: { fontSize: 8.5, fontFamily: fontFamily.sansBold, color: colors.textSecondary, paddingHorizontal: 2, marginTop: 1 },
-  // Lot "couverture des dépenses restantes" — 3e ligne du mois courant uniquement.
   syntheseCouvertureWarn: { fontSize: 8, fontFamily: fontFamily.sansExtraBold, color: colors.danger, paddingHorizontal: 2, marginTop: 1 },
   syntheseCouvertureOk: { fontSize: 8, fontFamily: fontFamily.sansExtraBold, color: colors.success, paddingHorizontal: 2, marginTop: 1 },
   negativeText: { color: colors.danger },
+  projectionLine: { flexDirection: 'row', justifyContent: 'center', alignItems: 'baseline', paddingVertical: spacing.sm },
+  projectionLabel: { ...typography.bodySecondary },
+  projectionAmount: { ...typography.body, fontFamily: fontFamily.sansExtraBold, marginLeft: spacing.xs },
   backdrop: { flex: 1, backgroundColor: colors.backdrop },
   confirmBox: {
     position: 'absolute',

@@ -14,10 +14,17 @@ import { MailerService } from '../src/auth/mailer.service';
  *    -> 100 -> solde, avec sources différentes à deux paiements distincts,
  *    vérifiée à CHAQUE étape (ledger, soldes, source, Planning, pas de
  *    double comptage).
- *  - Partie 2 : nouveaux indicateurs de synthèse (depensesPrevues/Payees/
- *    Reste, epargnePrevue/Versee/Reste) — axe DISTINCT de totalDepenses/
- *    balance (qui restent inchangés, cf. §anti-double-compte budget), sur
- *    les 13 scénarios listés par la spec.
+ *  - Partie 2 : "reste à exécuter" (mois courant — resteDepenses/
+ *    resteVersements), dérivé de la MÊME quantité `remaining` par échéance
+ *    que "À faire", jamais d'un second couple prévu/payé distinct de
+ *    totalDepenses/totalEpargne (cf. correction "Planning allégé" : l'ancien
+ *    depensesPrevues/epargnePrevue, basés sur effectiveAmount SANS filtrer
+ *    budgetImpact, pouvaient diverger de totalDepenses/totalEpargne — qui
+ *    EXCLUENT ALREADY_FUNDED/EXCLUDED — de plusieurs dizaines de milliers de
+ *    DH dès qu'une partie des dépenses est financée depuis une enveloppe
+ *    déjà alimentée ; c'était la cause exacte de l'incohérence constatée en
+ *    recette). totalDepenses ≥ resteDepenses est désormais une invariante
+ *    GARANTIE par construction (cf. dernier test de ce fichier).
  */
 describe('Finance Maison — paiements partiels successifs + synthèse enrichie', () => {
   let app: INestApplication;
@@ -187,9 +194,8 @@ describe('Finance Maison — paiements partiels successifs + synthèse enrichie'
 
     // Pas de double comptage dans la balance du mois (800 réalisés au total, rien de plus).
     expect(planning.synthese[planning.months[0]].totalDepenses).toBe(800);
-    expect(planning.synthese[planning.months[0]].depensesPrevues).toBe(800);
-    expect(planning.synthese[planning.months[0]].depensesPayees).toBe(800);
-    expect(planning.synthese[planning.months[0]].depensesReste).toBe(0);
+    // Échéance désormais REALIZED -> plus rien à exécuter.
+    expect(planning.synthese[planning.months[0]].resteDepenses).toBe(0);
   });
 
   // ===================================================================
@@ -278,36 +284,33 @@ describe('Finance Maison — paiements partiels successifs + synthèse enrichie'
     const planning = await getPlanning(token, 3);
     const synth = planning.synthese[planning.months[0]];
 
-    // --- A. Dépenses prévues / payées / reste (axe "où en suis-je", jamais
-    // mélangé avec le budget totalDepenses ci-dessous). ---
-    // Prévu = 5000(a, non payé) + 300(b) + 1200(c) + 800(d) + 250(g, ad-hoc : prévu=payé) = 7550.
-    expect(synth.depensesPrevues).toBe(7550);
-    // Payé = 0(a) + 300(b) + 400(c) + 500(d) + 250(g) = 1450.
-    expect(synth.depensesPayees).toBe(1450);
-    // Reste = Prévu - Payé, JAMAIS Prévu + Payé.
-    expect(synth.depensesReste).toBe(6100);
-    expect(synth.depensesPrevues - synth.depensesPayees).toBe(synth.depensesReste);
+    // --- "RESTE À EXÉCUTER" (dépenses, mois courant) : somme des RESTES des
+    // échéances encore PENDING, jamais un second prévu/payé distinct de
+    // totalDepenses. g (REAL_UNPLANNED, déjà exécutée) n'a aucun "reste" —
+    // seules a/c/d (encore PENDING) contribuent : 5000(a, rien payé) +
+    // 800(c, 1200-400) + 300(d, 800-500) = 6100.
+    expect(synth.resteDepenses).toBe(6100);
 
-    // --- D. Épargne/versements — strictement séparée, jamais dans les dépenses. ---
-    expect(synth.epargnePrevue).toBe(1000);
-    expect(synth.epargneVersee).toBe(1000);
-    expect(synth.epargneReste).toBe(0);
+    // --- Épargne/versements — strictement séparée, jamais dans les dépenses.
+    // Aucune SAVINGS_CONTRIBUTION PLANIFIÉE (PENDING) ce mois (f est une
+    // opération réelle déjà exécutée, sans "reste") -> resteVersements = 0.
+    expect(synth.resteVersements).toBe(0);
 
-    // --- E. totalDepenses/balanceMensuelle (axe "budget", INCHANGÉ) : exclut
-    // la part ALREADY_FUNDED (g, payée depuis l'enveloppe) pour ne jamais
+    // --- totalDepenses/resultatPrevu (axe "budget", INCHANGÉ) : exclut la
+    // part ALREADY_FUNDED (g, payée depuis l'enveloppe) pour ne jamais
     // recompter l'argent déjà compté au moment du versement (f). ---
     // a(5000, PENDING plein tarif) + b(300) + c(1200: 400 payé + 800 reste) +
     // d(800: 500 payé + 300 reste) + g(0, ALREADY_FUNDED) = 7300.
     expect(synth.totalDepenses).toBe(7300);
     expect(synth.totalEpargne).toBe(1000);
     expect(synth.totalRevenus).toBe(2000);
-    expect(synth.balanceMensuelle).toBe(2000 - 7300 - 1000);
+    expect(synth.resultatPrevu).toBe(2000 - 7300 - 1000);
 
-    // g (dépense réelle depuis une enveloppe) compte bien dans "déjà payé"
-    // (axe cash-flow, i.e. l'argent a réellement quitté le compte) MÊME s'il
-    // ne compte pas dans totalDepenses (axe budget, anti-double-compte) —
-    // c'est précisément la distinction entre les deux axes.
-    expect(synth.depensesPayees).toBeGreaterThan(synth.totalDepenses - (5000 + 300 + 800 + 300)); // sanity : 250 de g est bien dans payées
+    // Invariante garantie par construction (correction recette) : le reste à
+    // exécuter n'est jamais supérieur au total budgété affiché juste
+    // au-dessus — plus aucune incohérence "payé/prévu" possible.
+    expect(synth.resteDepenses).toBeLessThanOrEqual(synth.totalDepenses);
+    expect(synth.resteVersements).toBeLessThanOrEqual(synth.totalEpargne);
 
     // includeInPlanning=false (i, 150 DH) n'apparaît dans AUCUN indicateur ci-dessus.
     const diversCell = findCell(planning, 'depenses', divers.id);
@@ -317,7 +320,7 @@ describe('Finance Maison — paiements partiels successifs + synthèse enrichie'
     expect(planning.depenses.find((r: any) => r.label.includes('Virement'))).toBeUndefined();
   });
 
-  it('synthèse enrichie : passage d\'un mois au suivant — chaque indicateur reste propre à SON mois, balanceCumulee s\'accumule normalement', async () => {
+  it('synthèse enrichie : passage d\'un mois au suivant — chaque indicateur reste propre à SON mois, projectionCumulee s\'accumule normalement, reste à exécuter réservé au mois courant', async () => {
     const token = await freshHousehold();
     const c1 = await createAccount(token, 'Compte Famille', 50000);
     const logement = await createCategory(token, 'Logement');
@@ -349,22 +352,23 @@ describe('Finance Maison — paiements partiels successifs + synthèse enrichie'
     const synth2 = planning.synthese[monthKey2];
 
     // Chaque mois ne voit QUE sa propre échéance — jamais de fuite entre mois.
-    expect(synth1.depensesPrevues).toBe(1000);
-    expect(synth1.depensesPayees).toBe(500);
-    expect(synth1.depensesReste).toBe(500);
+    // monthKey1 = mois COURANT -> reste à exécuter renseigné (500, le reste
+    // RÉEL après le paiement partiel, jamais le prévu 1000 ni 1000+500).
+    expect(synth1.resteDepenses).toBe(500);
+    // monthKey2 = mois FUTUR -> "RESTE À EXÉCUTER" n'existe que pour le mois
+    // courant (§12) : null, jamais une valeur inventée pour un mois futur.
+    expect(synth2.resteDepenses).toBeNull();
+    expect(synth2.couverte).toBeNull();
+    expect(synth2.aProvisionner).toBeNull();
 
-    expect(synth2.depensesPrevues).toBe(2000);
-    expect(synth2.depensesPayees).toBe(2000);
-    expect(synth2.depensesReste).toBe(0);
-
-    // Balance mensuelle/cumulée (axe "budget", formule INCHANGÉE) : une
-    // échéance encore PENDING compte à sa valeur NOMINALE complète (1000),
-    // que 500 en aient déjà été payés ou non — c'est depensesPayees/Reste
-    // ci-dessus (axe "cash-flow", nouveau) qui distingue le "déjà payé" du
-    // "encore prévu", jamais balanceMensuelle/Cumulee.
-    expect(synth1.balanceMensuelle).toBe(-1000);
-    expect(synth2.balanceMensuelle).toBe(-2000);
-    expect(synth1.balanceCumulee).toBe(-1000);
-    expect(synth2.balanceCumulee).toBe(-1000 + -2000);
+    // RÉSULTAT PRÉVU/projection cumulée (axe "budget", formule INCHANGÉE) :
+    // une échéance encore PENDING compte à sa valeur NOMINALE complète
+    // (1000), que 500 en aient déjà été payés ou non — c'est resteDepenses
+    // ci-dessus (mois courant uniquement) qui porte le "reste réel à payer",
+    // jamais resultatPrevu/projectionCumulee.
+    expect(synth1.resultatPrevu).toBe(-1000);
+    expect(synth2.resultatPrevu).toBe(-2000);
+    expect(synth1.projectionCumulee).toBe(-1000);
+    expect(synth2.projectionCumulee).toBe(-1000 + -2000);
   });
 });

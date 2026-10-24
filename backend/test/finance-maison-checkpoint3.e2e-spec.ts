@@ -307,7 +307,7 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
     // Règle comptable (correction ciblée) : un versement/épargne n'est JAMAIS une
     // dépense (totalDepenses l'exclut toujours), mais il réduit bien la
     // trésorerie disponible du mois -> soustrait de la balance mensuelle.
-    expect(synthese.balanceMensuelle).toBe(12000 - 2000 - 1000);
+    expect(synthese.resultatPrevu).toBe(12000 - 2000 - 1000);
   });
 
   it('J. balance cumulée = somme progressive des balances mensuelles', async () => {
@@ -332,8 +332,8 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
       .expect(201);
 
     const after = await getPlanning(token, 3);
-    expect(after.synthese[m0].balanceCumulee).toBe(1000);
-    expect(after.synthese[m1].balanceCumulee).toBe(1000 + 2000);
+    expect(after.synthese[m0].projectionCumulee).toBe(1000);
+    expect(after.synthese[m1].projectionCumulee).toBe(1000 + 2000);
   });
 
   it('K. Plan Scolarité — les postes/échéances sont groupés correctement et jamais dupliqués dans les catégories', async () => {
@@ -553,7 +553,7 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
     expect(dej).toEqual([100, 200, 500]);
 
     const planning = await getPlanning(token, 3);
-    expect(planning.synthese[planning.months[0]].balanceMensuelle).toBe(-800); // 100+200+500 réalisés, jamais 800+quoi que ce soit en trop
+    expect(planning.synthese[planning.months[0]].resultatPrevu).toBe(-800); // 100+200+500 réalisés, jamais 800+quoi que ce soit en trop
   });
 
   // Le contrôle de disponibilité du paiement partiel respecte exactement les

@@ -86,6 +86,16 @@ describe('Finance Maison — Recette v1 (avant APK)', () => {
     d.setUTCDate(d.getUTCDate() + days);
     return d.toISOString().slice(0, 10);
   }
+  /** Comme isoPlusDays, mais borné au dernier jour du mois COURANT — pour les
+   * assertions "même mois" (ex. findCell sans index explicite -> months[0]),
+   * jamais affecté par la date du run (+N jours bruts pourrait franchir la
+   * fin du mois selon le jour où le test s'exécute). */
+  function isoPlusDaysSameMonth(days: number): string {
+    const d = new Date();
+    const lastDayOfMonth = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+    d.setUTCDate(Math.min(d.getUTCDate() + days, lastDayOfMonth));
+    return d.toISOString().slice(0, 10);
+  }
 
   // ===================================================================
   // A — Échéance PONCTUELLE : cycle complet, Planning vérifié à chaque étape
@@ -120,7 +130,7 @@ describe('Finance Maison — Recette v1 (avant APK)', () => {
     expect(cell.displayAmount).toBe(400);
 
     // 4. Modifier la DATE prévue (même mois) — Planning reste cohérent, même ligne/id.
-    const movedDate = isoPlusDays(10);
+    const movedDate = isoPlusDaysSameMonth(10);
     const afterDate = await http.patch(`/planned-operations/${created.body.id}`).set('Authorization', `Bearer ${token}`).send({ expectedDate: movedDate }).expect(200);
     expect(afterDate.body.id).toBe(created.body.id); // ponctuelle : jamais recréée
     expect(afterDate.body.expectedDate.slice(0, 10)).toBe(movedDate);
