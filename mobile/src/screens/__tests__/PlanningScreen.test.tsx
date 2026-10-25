@@ -672,6 +672,34 @@ it('"Modifier l\'échéance" sur une échéance ponctuelle ouvre directement le 
   await fireEvent.press(screen.getByTestId('planning-edit-submit'));
 
   await waitFor(() => expect(mockUpdatePlannedOperation).toHaveBeenCalledWith('po-1', expect.objectContaining({ expectedAmount: '750' })));
+  // Lot "refonte Planning/À faire" §1 — montant modifié SANS toucher le champ
+  // Responsable : jamais renvoyé (ni responsibleMemberId ni responsibleSource),
+  // sinon une échéance AUTO serait silencieusement repassée MANUAL à chaque
+  // simple modification de montant/date.
+  const call = mockUpdatePlannedOperation.mock.calls[0][1];
+  expect(call).not.toHaveProperty('responsibleMemberId');
+  expect(call).not.toHaveProperty('responsibleSource');
+});
+
+it('"Modifier l\'échéance" — modifier EXPLICITEMENT le Responsable envoie responsibleMemberId + responsibleSource=MANUAL', async () => {
+  mockGetPlanning.mockResolvedValue(
+    basePlanning({ depenses: [{ key: 'cat-voiture', label: 'Voiture', categoryId: 'cat-voiture', cells: { '2026-09': pendingVoitureCell(), '2026-10': emptyCell(), '2026-11': emptyCell() } }] }),
+  );
+  mockUpdatePlannedOperation.mockResolvedValue({});
+
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
+  fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
+  await fireEvent.press(await screen.findByTestId('planning-pending-menu-option-edit'));
+  await waitFor(() => screen.getByTestId('planning-edit-submit'));
+
+  await fireEvent.press(screen.getByTestId('planning-edit-responsible-member'));
+  await fireEvent.press(await screen.findByTestId('planning-edit-responsible-member-option-m-adil'));
+  await fireEvent.press(screen.getByTestId('planning-edit-submit'));
+
+  await waitFor(() =>
+    expect(mockUpdatePlannedOperation).toHaveBeenCalledWith('po-1', expect.objectContaining({ responsibleMemberId: 'm-adil', responsibleSource: 'MANUAL' })),
+  );
 });
 
 it('"Modifier l\'échéance" sur une occurrence récurrente propose le choix de portée, et "et les suivantes" appelle updateRecurrenceRule', async () => {

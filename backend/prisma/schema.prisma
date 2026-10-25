@@ -208,6 +208,20 @@ enum PlannedOperationStatus {
   CANCELLED
 }
 
+// Origine de l'affectation du responsable (lot "refonte Planning/À faire" —
+// correction prioritaire §1) — JAMAIS déduite des noms/libellés : AUTO =
+// hérité automatiquement du propriétaire STRUCTURÉ du compte réel source (et
+// donc réécrit si ce propriétaire change) ; MANUAL = choisi explicitement
+// par l'utilisateur (donc protégé, jamais écrasé par un changement de
+// propriétaire ultérieur). Défaut MANUAL pour toute ligne existante avant ce
+// lot (jamais de cascade rétroactive sur des données déjà en base) — seules
+// les lignes créées/modifiées après ce lot, avec le flag explicitement posé
+// par le mobile, deviennent AUTO.
+enum ResponsibleSource {
+  AUTO
+  MANUAL
+}
+
 enum RecurrenceFrequency {
   WEEKLY
   MONTHLY
@@ -358,6 +372,9 @@ model RecurrenceRule {
   // rétroactivement d'anciennes règles dans "À faire".
   responsibleMemberId String?  @map("responsible_member_id")
   includeInTodo        Boolean @default(false) @map("include_in_todo")
+  // Lot "refonte Planning/À faire" §1 — AUTO/MANUAL, cf. enum ResponsibleSource.
+  // Copié sur chaque occurrence générée (gabarit), comme includeInTodo ci-dessus.
+  responsibleSource ResponsibleSource @default(MANUAL) @map("responsible_source")
 
   household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
   category  Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
@@ -597,6 +614,8 @@ model PlannedOperation {
   // responsable n'est jamais attribué arbitrairement.
   responsibleMemberId String?  @map("responsible_member_id")
   includeInTodo        Boolean @default(false) @map("include_in_todo")
+  // Lot "refonte Planning/À faire" §1 — AUTO/MANUAL, cf. enum ResponsibleSource.
+  responsibleSource ResponsibleSource @default(MANUAL) @map("responsible_source")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

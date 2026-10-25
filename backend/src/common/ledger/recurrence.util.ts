@@ -103,6 +103,7 @@ export async function ensurePlannedOccurrences(tx: TxClient, householdId: string
         // gabarit porte responsable/inclusion, chaque occurrence générée les
         // copie puis vit indépendamment (modifiable occurrence par occurrence).
         responsibleMemberId: rule.responsibleMemberId ?? undefined,
+        responsibleSource: rule.responsibleSource,
         includeInTodo: rule.includeInTodo,
       })),
       skipDuplicates: true,

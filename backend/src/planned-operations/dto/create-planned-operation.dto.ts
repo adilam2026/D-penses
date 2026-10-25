@@ -1,5 +1,5 @@
 import { IsBoolean, IsDateString, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
-import { PlannedOperationKind } from '@prisma/client';
+import { PlannedOperationKind, ResponsibleSource } from '@prisma/client';
 
 export class CreatePlannedOperationDto {
   @IsEnum(PlannedOperationKind)
@@ -51,6 +51,11 @@ export class CreatePlannedOperationDto {
   @IsOptional()
   @IsString()
   responsibleMemberId?: string;
+
+  /** Lot "refonte Planning/À faire" §1 — AUTO (hérité du propriétaire du compte, le mobile pose ce flag quand l'utilisateur n'a jamais touché le champ Responsable) / MANUAL (choix explicite, protégé des cascades futures). Omis -> MANUAL (défaut sûr, cf. service). */
+  @IsOptional()
+  @IsEnum(ResponsibleSource)
+  responsibleSource?: ResponsibleSource;
 
   @IsOptional()
   @IsBoolean()

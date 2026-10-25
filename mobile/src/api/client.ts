@@ -333,6 +333,15 @@ export const correctFinancialOperation = (
 // ---------- Opérations planifiées (Planning) ----------
 export type PlannedOperationKind = 'EXPENSE' | 'INCOME' | 'SAVINGS_CONTRIBUTION';
 export type PlannedOperationStatus = 'PENDING' | 'REALIZED' | 'CANCELLED';
+/**
+ * Lot "refonte Planning/À faire" §1 (correction prioritaire) — origine de
+ * l'affectation du responsable, JAMAIS déduite des noms/libellés : AUTO =
+ * hérité du propriétaire structuré du compte réel source (cascadé à chaque
+ * changement de propriétaire) ; MANUAL = choisi explicitement (protégé,
+ * jamais écrasé). Omis à la création/modification -> MANUAL côté backend
+ * (défaut sûr) : seul AUTO rend une échéance éligible à la cascade.
+ */
+export type ResponsibleSource = 'AUTO' | 'MANUAL';
 
 export interface PlannedOperationApi {
   id: string;
@@ -349,6 +358,7 @@ export interface PlannedOperationApi {
   realizedOperationId: string | null;
   /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit des champs source/destination ci-dessus. */
   responsibleMemberId: string | null;
+  responsibleSource: ResponsibleSource;
   includeInTodo: boolean;
 }
 
@@ -366,6 +376,7 @@ export const createPlannedOperation = (data: {
   destinationAccountId?: string;
   destinationSubaccountId?: string;
   responsibleMemberId?: string;
+  responsibleSource?: ResponsibleSource;
   includeInTodo?: boolean;
 }) => apiFetch('/planned-operations', { method: 'POST', body: data });
 
@@ -410,6 +421,7 @@ export const updatePlannedOperation = (
     destinationAccountId?: string;
     destinationSubaccountId?: string;
     responsibleMemberId?: string;
+    responsibleSource?: ResponsibleSource;
     includeInTodo?: boolean;
   },
 ): Promise<PlannedOperationApi> => apiFetch(`/planned-operations/${id}`, { method: 'PATCH', body: data });
@@ -471,6 +483,7 @@ export interface RecurrenceRuleApi {
   destinationSubaccountId: string | null;
   /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit des champs source/destination ci-dessus. */
   responsibleMemberId: string | null;
+  responsibleSource: ResponsibleSource;
   includeInTodo: boolean;
 }
 
@@ -488,6 +501,7 @@ export const createRecurrenceRule = (data: {
   destinationAccountId?: string;
   destinationSubaccountId?: string;
   responsibleMemberId?: string;
+  responsibleSource?: ResponsibleSource;
   includeInTodo?: boolean;
 }): Promise<RecurrenceRuleApi> => apiFetch('/recurrence-rules', { method: 'POST', body: data });
 
@@ -518,6 +532,7 @@ export const updateRecurrenceRule = (
     frequency?: RecurrenceFrequency;
     anchorDate?: string;
     responsibleMemberId?: string;
+    responsibleSource?: ResponsibleSource;
     includeInTodo?: boolean;
   },
 ): Promise<RecurrenceRuleApi> => apiFetch(`/recurrence-rules/${id}`, { method: 'PATCH', body: data });

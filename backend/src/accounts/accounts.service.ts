@@ -203,6 +203,30 @@ export class AccountsService {
           colorKey: dto.colorKey,
         },
       });
+
+      // Lot "refonte Planning/À faire" §1 (correction prioritaire) — quand le
+      // propriétaire RÉSOLU change réellement, les échéances FUTURES/non
+      // exécutées dont le responsable a été hérité AUTOMATIQUEMENT (jamais
+      // celles choisies manuellement — responsibleSource=MANUAL, protégées)
+      // suivent le nouveau propriétaire. sourceAccountId pointe toujours vers
+      // CE compte réel même quand la source finale est une de ses enveloppes
+      // (sourceSubaccountId ne fait que la qualifier) — remonte donc déjà
+      // naturellement au compte parent, jamais déduit du nom/libellé.
+      const ownerChanged =
+        (dto.ownerType !== undefined && dto.ownerType !== account.ownerType) ||
+        (dto.ownerMemberId !== undefined && dto.ownerMemberId !== account.ownerMemberId);
+      if (ownerChanged) {
+        const newResponsibleMemberId = resolvedOwnerType === 'INDIVIDUAL' ? resolvedOwnerMemberId : null;
+        await tx.plannedOperation.updateMany({
+          where: { householdId, sourceAccountId: id, status: 'PENDING', responsibleSource: 'AUTO' },
+          data: { responsibleMemberId: newResponsibleMemberId },
+        });
+        await tx.recurrenceRule.updateMany({
+          where: { householdId, sourceAccountId: id, active: true, responsibleSource: 'AUTO' },
+          data: { responsibleMemberId: newResponsibleMemberId },
+        });
+      }
+
       return this.toAccountDto(tx, id);
     });
   }

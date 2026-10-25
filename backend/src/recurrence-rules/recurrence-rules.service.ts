@@ -1,9 +1,18 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, PlannedOperationKind, RecurrenceFrequency } from '@prisma/client';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma, PlannedOperationKind, RecurrenceFrequency, ResponsibleSource } from '@prisma/client';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { ensurePlannedOccurrences } from '../common/ledger/recurrence.util';
+import { formatMontant } from '../common/ledger/ledger.util';
 import { resolveFallbackCategoryId } from '../categories/categories.service';
 import { RecurrenceRuleApplyFrom } from './dto/update-recurrence-rule.dto';
+
+type TxClient = Prisma.TransactionClient;
+
+/** Même convention que PlannedOperationsService#computeAlreadyPaid (jamais un second calcul) — somme nette de toutes les opérations réelles déjà liées à CETTE occurrence. */
+async function computeAlreadyPaid(tx: TxClient, plannedId: string): Promise<Prisma.Decimal> {
+  const realizations = await tx.financialOperation.findMany({ where: { plannedOperationId: plannedId } });
+  return realizations.reduce((sum, op) => sum.add(op.reversalOfOperationId ? op.amount.neg() : op.amount), new Prisma.Decimal(0));
+}
 
 export interface CreateRecurrenceRuleInput {
   frequency: RecurrenceFrequency;
@@ -20,6 +29,8 @@ export interface CreateRecurrenceRuleInput {
   destinationSubaccountId?: string;
   /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit des champs source/destination ci-dessus. */
   responsibleMemberId?: string;
+  /** Lot "refonte Planning/À faire" §1 — cf. PlannedOperationsService. */
+  responsibleSource?: ResponsibleSource;
   /** Si omis : OUI pour un versement (SAVINGS_CONTRIBUTION), NON pour une dépense (EXPENSE). */
   includeInTodo?: boolean;
 }
@@ -38,6 +49,7 @@ export interface UpdateRecurrenceRuleInput {
   frequency?: RecurrenceFrequency;
   anchorDate?: string;
   responsibleMemberId?: string;
+  responsibleSource?: ResponsibleSource;
   includeInTodo?: boolean;
 }
 
@@ -70,6 +82,8 @@ export class RecurrenceRulesService {
           destinationAccountId: dto.destinationAccountId,
           destinationSubaccountId: dto.destinationSubaccountId,
           responsibleMemberId: dto.responsibleMemberId,
+          // Lot "refonte Planning/À faire" §1 — défaut MANUAL, cf. PlannedOperationsService#create.
+          responsibleSource: dto.responsibleSource ?? 'MANUAL',
           includeInTodo: dto.includeInTodo ?? defaultIncludeInTodo(dto.kind),
         },
       });
@@ -123,6 +137,30 @@ export class RecurrenceRulesService {
       const cadenceChanges = dto.frequency !== undefined || dto.anchorDate !== undefined;
       const newAnchorDate = dto.anchorDate !== undefined ? new Date(dto.anchorDate) : fromDate;
 
+      // §7 "Ne jamais créer une incohérence comptable silencieuse", étendu à
+      // "cette échéance et les suivantes" : REJETTE le lot ENTIER si une
+      // SEULE occurrence PENDING affectée a déjà reçu plus que le nouveau
+      // montant — jamais un lot partiellement appliqué qui laisserait
+      // certaines occurrences incohérentes silencieusement.
+      if (dto.applyFrom === 'THIS_AND_FOLLOWING' && dto.expectedAmount !== undefined) {
+        const newAmount = new Prisma.Decimal(dto.expectedAmount);
+        const affected = await tx.plannedOperation.findMany({
+          where: { recurrenceRuleId: id, status: 'PENDING', expectedDate: { gte: fromDate } },
+        });
+        for (const occ of affected) {
+          const alreadyPaid = await computeAlreadyPaid(tx, occ.id);
+          if (newAmount.lt(alreadyPaid)) {
+            throw new BadRequestException(
+              `${formatMontant(alreadyPaid)} DH ont déjà été payés sur l'échéance « ${occ.label} » du ${occ.expectedDate.toISOString().slice(0, 10)}. Annulez ou corrigez d'abord les paiements existants pour réduire l'échéance sous ce montant.`,
+            );
+          }
+        }
+      }
+
+      // Lot "refonte Planning/À faire" §1 — défaut MANUAL, cf. PlannedOperationsService#update.
+      const responsibleSourcePatch: ResponsibleSource | undefined =
+        dto.responsibleMemberId !== undefined ? dto.responsibleSource ?? 'MANUAL' : undefined;
+
       const templatePatch: Prisma.RecurrenceRuleUpdateInput = {};
       if (dto.expectedAmount !== undefined) templatePatch.expectedAmount = new Prisma.Decimal(dto.expectedAmount);
       if (dto.label !== undefined) templatePatch.label = dto.label;
@@ -133,6 +171,7 @@ export class RecurrenceRulesService {
       if (dto.destinationSubaccountId !== undefined) templatePatch.destinationSubaccount = { connect: { id: dto.destinationSubaccountId } };
       if (dto.active !== undefined) templatePatch.active = dto.active;
       if (dto.responsibleMemberId !== undefined) templatePatch.responsibleMember = { connect: { id: dto.responsibleMemberId } };
+      if (responsibleSourcePatch !== undefined) templatePatch.responsibleSource = responsibleSourcePatch;
       if (dto.includeInTodo !== undefined) templatePatch.includeInTodo = dto.includeInTodo;
       if (cadenceChanges) {
         if (dto.frequency !== undefined) templatePatch.frequency = dto.frequency;
@@ -176,6 +215,7 @@ export class RecurrenceRulesService {
             label: updated.label ?? 'Récurrence',
             status: 'PENDING',
             responsibleMemberId: updated.responsibleMemberId,
+            responsibleSource: updated.responsibleSource,
             includeInTodo: updated.includeInTodo,
           },
         });
@@ -193,6 +233,7 @@ export class RecurrenceRulesService {
         if (dto.destinationAccountId !== undefined) occurrencePatch.destinationAccountId = dto.destinationAccountId;
         if (dto.destinationSubaccountId !== undefined) occurrencePatch.destinationSubaccountId = dto.destinationSubaccountId;
         if (dto.responsibleMemberId !== undefined) occurrencePatch.responsibleMemberId = dto.responsibleMemberId;
+        if (responsibleSourcePatch !== undefined) occurrencePatch.responsibleSource = responsibleSourcePatch;
         if (dto.includeInTodo !== undefined) occurrencePatch.includeInTodo = dto.includeInTodo;
 
         if (Object.keys(occurrencePatch).length > 0) {

@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { OperationKind, Prisma } from '@prisma/client';
+import { OperationKind, Prisma, ResponsibleSource } from '@prisma/client';
 import { RlsContextService } from '../common/prisma/rls-context.service';
-import { insertFinancialOperation } from '../common/ledger/ledger.util';
+import { insertFinancialOperation, formatMontant } from '../common/ledger/ledger.util';
 import { ensurePlannedOccurrences } from '../common/ledger/recurrence.util';
 import { resolveFallbackCategoryId } from '../categories/categories.service';
 
@@ -16,7 +16,14 @@ export interface UpdatePlannedOperationInput {
   destinationSubaccountId?: string;
   /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit du compte/sous-compte ci-dessus, aucun effet ledger. */
   responsibleMemberId?: string;
+  /** Lot "refonte Planning/À faire" §1 — ignoré si responsibleMemberId est omis (cf. service#update : ne touche alors jamais la source existante). */
+  responsibleSource?: ResponsibleSource;
   includeInTodo?: boolean;
+}
+
+/** Message EXACT requis (§7) — jamais une incohérence comptable silencieuse : un montant prévu ne peut jamais descendre sous ce qui a déjà été payé. */
+function alreadyPaidGuardMessage(alreadyPaid: Prisma.Decimal): string {
+  return `${formatMontant(alreadyPaid)} DH ont déjà été payés. Annulez ou corrigez d'abord les paiements existants pour réduire l'échéance sous ce montant.`;
 }
 
 export interface RealizePlannedOperationInput {
@@ -66,6 +73,8 @@ export interface CreatePlannedOperationInput {
   destinationSubaccountId?: string;
   /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit du compte/sous-compte ci-dessus, aucun effet ledger. */
   responsibleMemberId?: string;
+  /** Lot "refonte Planning/À faire" §1 — cf. UpdatePlannedOperationInput. */
+  responsibleSource?: ResponsibleSource;
   /** Si omis : OUI pour un versement (SAVINGS_CONTRIBUTION), NON pour une dépense (EXPENSE) — jamais pour un revenu (INCOME, toujours exclu de "À faire"). */
   includeInTodo?: boolean;
 }
@@ -100,6 +109,11 @@ export class PlannedOperationsService {
             destinationAccountId: dto.destinationAccountId,
             destinationSubaccountId: dto.destinationSubaccountId,
             responsibleMemberId: dto.responsibleMemberId,
+            // Lot "refonte Planning/À faire" §1 — défaut MANUAL (jamais AUTO
+            // implicite) : seul le mobile, en posant explicitement ce flag
+            // quand l'utilisateur n'a jamais touché le champ Responsable,
+            // rend une échéance éligible à la cascade automatique future.
+            responsibleSource: dto.responsibleSource ?? 'MANUAL',
             includeInTodo: dto.includeInTodo ?? defaultIncludeInTodo(dto.kind),
           },
         });
@@ -241,6 +255,22 @@ export class PlannedOperationsService {
       if (!planned || planned.householdId !== householdId) throw new NotFoundException('Échéance prévue introuvable');
       if (planned.status !== 'PENDING') throw new BadRequestException('Cette échéance a déjà été réalisée ou annulée');
 
+      // §7 "Ne jamais créer une incohérence comptable silencieuse" — un montant
+      // prévu ne peut jamais descendre sous ce qui a déjà été payé (paiements
+      // partiels compris) : 300 déjà payés sur 1000 -> 1200/800 autorisés,
+      // 200 refusé avec le message exact requis.
+      if (dto.expectedAmount !== undefined) {
+        const newAmount = new Prisma.Decimal(dto.expectedAmount);
+        const alreadyPaid = await this.computeAlreadyPaid(tx, id);
+        if (newAmount.lt(alreadyPaid)) throw new BadRequestException(alreadyPaidGuardMessage(alreadyPaid));
+      }
+
+      // Lot "refonte Planning/À faire" §1 — un changement de responsable est
+      // MANUAL par défaut (protégé des cascades futures) sauf si le mobile
+      // pose explicitement AUTO ; aucun champ envoyé -> aucune source écrasée.
+      const responsibleSourcePatch: ResponsibleSource | undefined =
+        dto.responsibleMemberId !== undefined ? dto.responsibleSource ?? 'MANUAL' : undefined;
+
       const newExpectedDate = dto.expectedDate !== undefined ? new Date(dto.expectedDate) : undefined;
       const changesDate = !!newExpectedDate && newExpectedDate.getTime() !== planned.expectedDate.getTime();
 
@@ -263,6 +293,7 @@ export class PlannedOperationsService {
             label: dto.label ?? planned.label,
             status: 'PENDING',
             responsibleMemberId: dto.responsibleMemberId !== undefined ? dto.responsibleMemberId : planned.responsibleMemberId,
+            responsibleSource: responsibleSourcePatch ?? planned.responsibleSource,
             includeInTodo: dto.includeInTodo !== undefined ? dto.includeInTodo : planned.includeInTodo,
           },
         });
@@ -285,6 +316,7 @@ export class PlannedOperationsService {
           destinationSubaccountId: dto.destinationAccountId !== undefined ? (dto.destinationSubaccountId ?? null) : undefined,
           // Lot "À faire" — RESPONSABLE ≠ SOURCE : jamais déduit des champs ci-dessus.
           responsibleMemberId: dto.responsibleMemberId,
+          responsibleSource: responsibleSourcePatch,
           includeInTodo: dto.includeInTodo,
         },
       });

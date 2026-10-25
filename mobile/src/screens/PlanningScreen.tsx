@@ -1108,6 +1108,13 @@ function EditOccurrenceModal({
   const [accountOption, setAccountOption] = useState<string | null>(null);
   // Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit de accountOption ci-dessus.
   const [responsibleMemberId, setResponsibleMemberId] = useState<string | null>(null);
+  // Lot "refonte Planning/À faire" §1 — distingue la préremplissage (valeur
+  // ACTUELLE de l'occurrence, jamais envoyée comme un nouveau choix) d'une
+  // modification EXPLICITE par l'utilisateur ici : seule cette dernière est
+  // envoyée au backend (-> MANUAL, protégée d'une cascade future) ; ne
+  // jamais renvoyer la valeur préremplie, qui écraserait silencieusement une
+  // origine AUTO existante à chaque simple modification de montant/date.
+  const [responsibleTouched, setResponsibleTouched] = useState(false);
   // Périodicité (scope='series' uniquement) — préremplie depuis la règle
   // existante dès l'ouverture, pour ne jamais la changer silencieusement si
   // l'utilisateur ne modifie que le montant/libellé/source.
@@ -1125,6 +1132,7 @@ function EditOccurrenceModal({
     const { accountId, subaccountId } = relevantAccount(occ);
     setAccountOption(encodeAccountOption(accountId, subaccountId));
     setResponsibleMemberId(occ.responsibleMemberId);
+    setResponsibleTouched(false);
     setError(null);
     setFrequency(null);
     setOriginalFrequency(null);
@@ -1156,6 +1164,10 @@ function EditOccurrenceModal({
           ? { sourceAccountId: decoded.accountId, sourceSubaccountId: decoded.subaccountId }
           : { destinationAccountId: decoded.accountId, destinationSubaccountId: decoded.subaccountId }
         : {};
+      // Jamais renvoyer la valeur simplement préremplie (cf. commentaire de
+      // responsibleTouched ci-dessus) — omis -> le backend garde le
+      // responsable ET son origine (AUTO/MANUAL) existants inchangés.
+      const responsibleFields = responsibleTouched ? { responsibleMemberId: responsibleMemberId ?? undefined, responsibleSource: 'MANUAL' as const } : {};
 
       if (target.scope === 'single') {
         await api.updatePlannedOperation(occ.plannedOperationId, {
@@ -1163,7 +1175,7 @@ function EditOccurrenceModal({
           expectedAmount: amount,
           expectedDate: date,
           categoryId: categoryId ?? undefined,
-          responsibleMemberId: responsibleMemberId ?? undefined,
+          ...responsibleFields,
           ...sideFields,
         });
         await onDone('Échéance modifiée');
@@ -1176,7 +1188,7 @@ function EditOccurrenceModal({
           label: label.trim(),
           expectedAmount: amount,
           categoryId: categoryId ?? undefined,
-          responsibleMemberId: responsibleMemberId ?? undefined,
+          ...responsibleFields,
           ...sideFields,
           frequency: frequencyChanged ? (frequency as api.RecurrenceFrequency) : undefined,
           anchorDate: frequencyChanged || dateChanged ? date : undefined,
@@ -1207,7 +1219,10 @@ function EditOccurrenceModal({
           placeholder="Non défini"
           value={responsibleMemberId}
           options={members.map((m) => ({ value: m.id, label: m.user.firstName }))}
-          onChange={setResponsibleMemberId}
+          onChange={(v) => {
+            setResponsibleMemberId(v);
+            setResponsibleTouched(true);
+          }}
           testID="planning-edit-responsible-member"
         />
         {target.scope === 'series' && (

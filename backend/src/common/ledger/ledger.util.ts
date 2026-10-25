@@ -179,7 +179,7 @@ export async function computeNonAffecte(tx: TxClient, accountId: string): Promis
 }
 
 /** Affiche un montant sans décimales inutiles (50 plutôt que 50.00, mais 49.5 conservé). */
-function formatMontant(d: Prisma.Decimal): string {
+export function formatMontant(d: Prisma.Decimal): string {
   const n = d.toNumber();
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }

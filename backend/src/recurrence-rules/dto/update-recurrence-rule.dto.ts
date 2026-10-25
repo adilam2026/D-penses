@@ -1,5 +1,5 @@
-import { IsBoolean, IsDateString, IsIn, IsOptional, IsString } from 'class-validator';
-import { RecurrenceFrequency } from '@prisma/client';
+import { IsBoolean, IsDateString, IsEnum, IsIn, IsOptional, IsString } from 'class-validator';
+import { RecurrenceFrequency, ResponsibleSource } from '@prisma/client';
 
 export type RecurrenceRuleApplyFrom = 'THIS_OCCURRENCE' | 'THIS_AND_FOLLOWING';
 
@@ -72,6 +72,11 @@ export class UpdateRecurrenceRuleDto {
   @IsOptional()
   @IsString()
   responsibleMemberId?: string;
+
+  /** Lot "refonte Planning/À faire" §1 — cf. CreatePlannedOperationDto. Ignoré si responsibleMemberId est omis. */
+  @IsOptional()
+  @IsEnum(ResponsibleSource)
+  responsibleSource?: ResponsibleSource;
 
   @IsOptional()
   @IsBoolean()

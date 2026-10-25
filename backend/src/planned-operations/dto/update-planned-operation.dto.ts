@@ -1,4 +1,5 @@
-import { IsBoolean, IsDateString, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
+import { ResponsibleSource } from '@prisma/client';
 
 /**
  * Modifier UNE occurrence (§ modification d'une occurrence) — ex. Internet
@@ -43,6 +44,11 @@ export class UpdatePlannedOperationDto {
   @IsOptional()
   @IsString()
   responsibleMemberId?: string;
+
+  /** Lot "refonte Planning/À faire" §1 — cf. CreatePlannedOperationDto. Ignoré si responsibleMemberId est omis (le service ne touche alors jamais la source existante). */
+  @IsOptional()
+  @IsEnum(ResponsibleSource)
+  responsibleSource?: ResponsibleSource;
 
   @IsOptional()
   @IsBoolean()

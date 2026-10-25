@@ -177,6 +177,11 @@ export function AjouterScreen() {
           destinationSubaccountId: dst?.subaccountId,
           includeInTodo: todoEligible ? includeInTodo : undefined,
           responsibleMemberId: todoEligible ? (responsibleMemberId ?? undefined) : undefined,
+          // Lot "refonte Planning/À faire" §1 — AUTO si l'utilisateur n'a
+          // jamais touché le champ Responsable (valeur proposée depuis le
+          // propriétaire du compte source, cf. useEffect ci-dessus), MANUAL
+          // dès qu'il l'a modifié lui-même — jamais déduit ensuite des noms.
+          responsibleSource: todoEligible ? (responsibleTouched ? 'MANUAL' : 'AUTO') : undefined,
         });
       } else {
         await api.createPlannedOperation({
@@ -191,6 +196,7 @@ export function AjouterScreen() {
           destinationSubaccountId: dst?.subaccountId,
           includeInTodo: todoEligible ? includeInTodo : undefined,
           responsibleMemberId: todoEligible ? (responsibleMemberId ?? undefined) : undefined,
+          responsibleSource: todoEligible ? (responsibleTouched ? 'MANUAL' : 'AUTO') : undefined,
         });
       }
       setAmount('');
