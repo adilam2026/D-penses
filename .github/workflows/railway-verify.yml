@@ -67,6 +67,31 @@ jobs:
           grep -q '"refreshToken"' login.json
           echo "Login démo OK — accessToken/refreshToken présents (valeurs non journalisées)"
 
+      - name: /planning et /todo répondent sans erreur (migrations responsible_source appliquées)
+        # /planning et /todo lisent planned_operation.responsible_source et
+        # responsible_member_id (migrations 20261025000000_responsible_source
+        # et 20261025010000_backfill_responsible_source_from_owner) : une
+        # colonne manquante ou un backfill cassé y apparaîtrait comme une
+        # erreur HTTP/schéma. Lecture seule, foyer de démo existant, aucune
+        # donnée créée/modifiée.
+        run: |
+          set -o pipefail
+          TOKEN=$(node -e "console.log(JSON.parse(require('fs').readFileSync('login.json','utf8')).accessToken)")
+
+          code=$(curl -sS -o planning.json -w "%{http_code}" "${{ github.event.inputs.api_url }}/planning?months=6" \
+            -H "Authorization: Bearer $TOKEN")
+          echo "GET /planning HTTP $code"
+          test "$code" = "200"
+          node -e "const d=JSON.parse(require('fs').readFileSync('planning.json','utf8')); console.log('planning OK, clefs top-niveau :', Object.keys(d));"
+
+          code=$(curl -sS -o todo.json -w "%{http_code}" "${{ github.event.inputs.api_url }}/todo" \
+            -H "Authorization: Bearer $TOKEN")
+          echo "GET /todo HTTP $code"
+          test "$code" = "200"
+          node -e "const d=JSON.parse(require('fs').readFileSync('todo.json','utf8')); console.log('todo OK, clefs top-niveau :', Object.keys(d));"
+
+          ! grep -io "does not exist\|internal server error\|column.*responsible" planning.json todo.json
+
       - name: Aucune référence à localhost dans les réponses publiques
         run: |
-          ! grep -io "localhost" signup.json verify.json body.json login.json
+          ! grep -io "localhost" signup.json verify.json body.json login.json planning.json todo.json
