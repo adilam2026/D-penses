@@ -1,0 +1,65 @@
+name: Railway — Vérification /planning et /todo (lecture seule, staging)
+
+# Diagnostic ponctuel (recette post-migration responsible_source) : prouve
+# que le backend staging répond sans erreur 500/schéma sur /planning et
+# /todo après application des migrations "20261025000000_responsible_source"
+# et "20261025010000_backfill_responsible_source_from_owner" — ces deux
+# endpoints lisent planned_operation.responsible_source / responsible_member_id,
+# donc une colonne manquante ou un backfill cassé y apparaîtrait comme une
+# erreur HTTP. Lecture seule : login démo (compte déjà existant, aucune
+# donnée créée/modifiée) puis deux GET. Ne touche jamais PROD : l'URL est
+# fournie en entrée, jamais fixée sur un service PROD par ce fichier.
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: "URL HTTPS publique du backend staging (sans slash final)"
+        required: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Login compte de démonstration
+        run: |
+          set -o pipefail
+          code=$(curl -sS -o /tmp/login.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/auth/login" \
+            -H "Content-Type: application/json" \
+            -d '{"email":"demo@finance-maison.local","password":"DemoFinanceMaison2026!"}')
+          echo "HTTP $code"
+          test "$code" = "200" || test "$code" = "201"
+          grep -q '"accessToken"' /tmp/login.json
+          echo "Login OK (token non journalisé)"
+
+      - name: Extraire le token et appeler /planning + /todo
+        run: |
+          set -o pipefail
+          TOKEN=$(node -e "console.log(JSON.parse(require('fs').readFileSync('/tmp/login.json','utf8')).accessToken)")
+
+          echo "--- GET /planning?months=6 ---"
+          code=$(curl -sS -o /tmp/planning.json -w "%{http_code}" "${{ github.event.inputs.api_url }}/planning?months=6" \
+            -H "Authorization: Bearer $TOKEN")
+          echo "HTTP $code"
+          test "$code" = "200"
+          node -e "const d=JSON.parse(require('fs').readFileSync('/tmp/planning.json','utf8')); console.log('planning OK, clefs:', Object.keys(d));"
+
+          echo "--- GET /todo ---"
+          code=$(curl -sS -o /tmp/todo.json -w "%{http_code}" "${{ github.event.inputs.api_url }}/todo" \
+            -H "Authorization: Bearer $TOKEN")
+          echo "HTTP $code"
+          test "$code" = "200"
+          node -e "const d=JSON.parse(require('fs').readFileSync('/tmp/todo.json','utf8')); console.log('todo OK, clefs:', Object.keys(d));"
+
+      - name: Aucune trace de responsible_source cassé (colonne/relation absente) dans les réponses
+        run: |
+          ! grep -io "does not exist\|prisma.*error\|internal server error\|column.*responsible" /tmp/planning.json /tmp/todo.json || (echo "::error::réponse suspecte" && exit 1)
+          echo "Aucune erreur de schéma détectée dans /planning ni /todo"
+
+      - name: Extrait des réponses (pour revue manuelle — aucun secret, données du foyer démo uniquement)
+        if: always()
+        run: |
+          echo "=== /planning (tronqué) ==="
+          head -c 4000 /tmp/planning.json 2>/dev/null || true
+          echo
+          echo "=== /todo (tronqué) ==="
+          head -c 4000 /tmp/todo.json 2>/dev/null || true
