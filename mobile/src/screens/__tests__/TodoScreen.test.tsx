@@ -13,7 +13,9 @@ import { formatDh } from '../../ui/formatMoney';
  * une soumission de bout en bout), pas à un plafond général de montages.
  */
 
+const mockNavigate = jest.fn();
 jest.mock('@react-navigation/native', () => ({
+  useNavigation: () => ({ navigate: mockNavigate }),
   useFocusEffect: (cb: () => void) => {
     const React = require('react');
     // Réagit aux changements de dépendances du callback (ex. monthsOffset) —
@@ -25,9 +27,15 @@ jest.mock('@react-navigation/native', () => ({
 
 const mockGetTodo = jest.fn();
 const mockListAccounts = jest.fn();
+const mockListCategories = jest.fn();
 const mockGetMyHousehold = jest.fn();
 const mockRealizePlannedOperation = jest.fn();
 const mockPartialRealizePlannedOperation = jest.fn();
+const mockUnrealizePlannedOperation = jest.fn();
+const mockUpdatePlannedOperation = jest.fn();
+const mockCancelPlannedOperation = jest.fn();
+const mockListRecurrenceRules = jest.fn();
+const mockUpdateRecurrenceRule = jest.fn();
 
 jest.mock('../../api/client', () => ({
   ApiError: class FakeApiError extends Error {
@@ -39,9 +47,15 @@ jest.mock('../../api/client', () => ({
   },
   getTodo: (...args: unknown[]) => mockGetTodo(...args),
   listAccounts: () => mockListAccounts(),
+  listCategories: () => mockListCategories(),
   getMyHousehold: () => mockGetMyHousehold(),
   realizePlannedOperation: (...args: unknown[]) => mockRealizePlannedOperation(...args),
   partialRealizePlannedOperation: (...args: unknown[]) => mockPartialRealizePlannedOperation(...args),
+  unrealizePlannedOperation: (...args: unknown[]) => mockUnrealizePlannedOperation(...args),
+  updatePlannedOperation: (...args: unknown[]) => mockUpdatePlannedOperation(...args),
+  cancelPlannedOperation: (...args: unknown[]) => mockCancelPlannedOperation(...args),
+  listRecurrenceRules: (...args: unknown[]) => mockListRecurrenceRules(...args),
+  updateRecurrenceRule: (...args: unknown[]) => mockUpdateRecurrenceRule(...args),
 }));
 
 function renderWithSafeArea(ui: React.ReactElement) {
@@ -111,6 +125,8 @@ const actionVersementSansResponsable = {
 beforeEach(() => {
   jest.clearAllMocks();
   mockListAccounts.mockResolvedValue(ACCOUNTS);
+  mockListCategories.mockResolvedValue([]);
+  mockListRecurrenceRules.mockResolvedValue([]);
   mockGetMyHousehold.mockResolvedValue({ id: 'h1', name: 'Foyer', currency: 'MAD', monthStartDay: 1, memberships: MEMBERS });
   mockGetTodo.mockResolvedValue({
     month: '2026-10',
@@ -123,22 +139,24 @@ beforeEach(() => {
   mockPartialRealizePlannedOperation.mockResolvedValue({});
 });
 
-it('affiche une dépense (source → Dépense) et un versement (source → destination), nature, responsable et retard discret', async () => {
+it('affiche une dépense (source → Dépense) et un versement (source → destination), nature, responsable et indicateur d\'état (§10)', async () => {
   renderWithSafeArea(<TodoScreen />);
 
   await waitFor(() => screen.getByText('Carburant'));
   expect(screen.getByText('DÉPENSE')).toBeTruthy();
-  expect(screen.getByText('BP Adil → Dépense')).toBeTruthy();
-  expect(screen.getByTestId('todo-row-po-carburant-late')).toBeTruthy();
-  expect(screen.getByTestId('todo-row-po-carburant-late').props.children).toContain('En retard');
+  // "date · source → destination" sur une seule ligne compacte (§10).
+  expect(screen.getByText(/05 oct\. · BP Adil → Dépense/)).toBeTruthy();
+  expect(screen.getByTestId('todo-row-po-carburant-badge')).toBeTruthy();
+  expect(within(screen.getByTestId('todo-row-po-carburant-badge')).getByText('En retard')).toBeTruthy();
   // Partiellement payée (300/800) -> "Reste sur 800 DH" visible dans la ligne.
   expect(screen.getByTestId('todo-row-po-carburant-reste')).toBeTruthy();
 
   expect(screen.getByText('Épargne voyage')).toBeTruthy();
   expect(screen.getByText('VERSEMENT')).toBeTruthy();
-  expect(screen.getByText('BP Adil → CIH — Voyage')).toBeTruthy();
+  expect(screen.getByText(/20 oct\. · BP Adil → CIH — Voyage/)).toBeTruthy();
   // RESPONSABLE ≠ SOURCE : aucun responsable défini -> jamais masqué, état discret.
   expect(screen.getByText(/Responsable à définir/)).toBeTruthy();
+  expect(within(screen.getByTestId('todo-row-po-epargne-badge')).getByText('À faire')).toBeTruthy();
 });
 
 it('filtres Tous/Adil/Lamiaa : filtre aussi la synthèse (actions restantes + montant)', async () => {
@@ -160,33 +178,42 @@ it('filtres Tous/Adil/Lamiaa : filtre aussi la synthèse (actions restantes + mo
   expect(screen.getByText(`${formatDh(300)} à exécuter`)).toBeTruthy();
 });
 
-it('validation rapide (cercle) : règle le RESTE (jamais le prévu), via le moteur existant', async () => {
-  renderWithSafeArea(<TodoScreen />);
-
-  await waitFor(() => screen.getByTestId('todo-row-po-carburant-circle'));
-  await fireEvent.press(screen.getByTestId('todo-row-po-carburant-circle'));
-
-  await waitFor(() => screen.getByTestId('todo-confirm-sheet'));
-  const confirmSheet = within(screen.getByTestId('todo-confirm-sheet'));
-  expect(confirmSheet.getByText('Confirmer le paiement ?')).toBeTruthy();
-  expect(confirmSheet.getByText(formatDh(500))).toBeTruthy();
-
-  await fireEvent.press(screen.getByTestId('todo-confirm-submit'));
-  await waitFor(() => expect(mockRealizePlannedOperation).toHaveBeenCalledWith('po-carburant', { actualAmount: '500' }));
-});
-
-it('ouvrir la ligne : paiement partiel réutilise strictement l\'AdjustModal de Planning (Prévu/Déjà payé/Reste)', async () => {
+// Lot "refonte Planning/À faire" §3/§11 — l'ancien raccourci "cercle de
+// validation rapide" (3e flux distinct) a été retiré : ouvrir une ligne
+// ouvre désormais TOUJOURS le même ActionSheet unique que Planning, jamais
+// un second composant/moteur. Payer le reste en un geste reste possible via
+// ce même ActionSheet ("Payer X DH").
+it('ouvrir une ligne : paie le RESTE (jamais le prévu) via l\'ActionSheet unique, identique à Planning', async () => {
   renderWithSafeArea(<TodoScreen />);
 
   await waitFor(() => screen.getByTestId('todo-row-po-carburant'));
   await fireEvent.press(screen.getByTestId('todo-row-po-carburant'));
 
-  await waitFor(() => screen.getByTestId('planning-adjust-deja-paye'));
-  expect(screen.getByTestId('planning-adjust-deja-paye').props.children.join('')).toContain(formatDh(300));
-  expect(screen.getByTestId('planning-adjust-reste').props.children.join('')).toContain(formatDh(500));
+  await waitFor(() => screen.getByTestId('action-sheet-pay'));
+  expect(screen.getByText('Payer 500 DH')).toBeTruthy();
+  await fireEvent.press(screen.getByTestId('action-sheet-pay'));
 
-  await fireEvent.changeText(screen.getByTestId('planning-adjust-partial-amount'), '200');
-  await fireEvent.press(screen.getByTestId('planning-adjust-partial-submit'));
+  await waitFor(() => screen.getByTestId('action-sheet-pay-submit'));
+  expect(screen.getByTestId('action-sheet-pay-amount').props.value).toBe('500');
+  await fireEvent.press(screen.getByTestId('action-sheet-pay-submit'));
+  await waitFor(() => expect(mockRealizePlannedOperation).toHaveBeenCalledWith('po-carburant', expect.objectContaining({ actualAmount: '500' })));
+});
+
+it('ouvrir la ligne : paiement partiel réutilise strictement le même ActionSheet que Planning (Prévu/Déjà payé/Reste)', async () => {
+  renderWithSafeArea(<TodoScreen />);
+
+  await waitFor(() => screen.getByTestId('todo-row-po-carburant'));
+  await fireEvent.press(screen.getByTestId('todo-row-po-carburant'));
+
+  await waitFor(() => screen.getByTestId('action-sheet-deja-paye'));
+  expect(screen.getByTestId('action-sheet-deja-paye').props.children).toBe(formatDh(300));
+  expect(screen.getByTestId('action-sheet-reste').props.children).toBe(formatDh(500));
+
+  await fireEvent.press(screen.getByTestId('action-sheet-partial'));
+  await waitFor(() => screen.getByTestId('action-sheet-partial-submit'));
+  await fireEvent.changeText(screen.getByTestId('action-sheet-partial-amount'), '200');
+  await waitFor(() => expect(screen.getByTestId('action-sheet-partial-amount').props.value).toBe('200'));
+  await fireEvent.press(screen.getByTestId('action-sheet-partial-submit'));
   await waitFor(() => expect(mockPartialRealizePlannedOperation).toHaveBeenCalledWith('po-carburant', expect.objectContaining({ actualAmount: '200' })));
 });
 

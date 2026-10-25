@@ -587,6 +587,10 @@ export interface PlanningSingleOccurrenceApi {
   kind: PlannedOperationKind;
   /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit des champs source/destination ci-dessus. */
   responsibleMemberId: string | null;
+  /** Lot "refonte Planning/À faire" — date prévue de cette occurrence : un seul objet occurrence utilisable à l'identique depuis Planning ET À faire (ActionSheet unique, choix "cette échéance / et les suivantes" compris), sans jamais retrouver une cellule à part. */
+  expectedDate: string;
+  /** Lot "refonte Planning/À faire" — non-null uniquement si status=REALIZED, pour "Voir la transaction" depuis l'ActionSheet unique. */
+  realizedOperationId: string | null;
 }
 
 export interface PlanningCellApi {

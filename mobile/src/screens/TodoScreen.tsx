@@ -1,6 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
-import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { colors, elevation, radius, spacing, typography } from '../ui/theme';
@@ -10,7 +10,7 @@ import { useBottomInset } from '../ui/useBottomInset';
 import { HelpButton } from '../ui/HelpButton';
 import { Toast } from '../ui/Toast';
 import { accountLabelFor } from '../ui/accountLabel';
-import { AdjustModal } from './PlanningScreen';
+import { PlannedOperationActionFlow } from './PlanningScreen';
 
 const TOAST_DURATION_MS = 1800;
 
@@ -49,6 +49,11 @@ function occurrenceFromAction(action: api.TodoActionApi): api.PlanningSingleOccu
     categoryId: action.categoryId,
     kind: action.kind,
     responsibleMemberId: action.responsibleMemberId,
+    expectedDate: action.expectedDate,
+    // "À faire" n'affiche jamais le détail d'une action déjà réalisée (la
+    // section "Effectué" reste informative, jamais tappable) — cette
+    // reconstruction n'est donc appelée que sur des actions PENDING.
+    realizedOperationId: null,
   };
 }
 
@@ -56,28 +61,33 @@ function occurrenceFromAction(action: api.TodoActionApi): api.PlanningSingleOccu
  * "À faire" (lot dédié) — vue opérationnelle compacte des actions à exécuter
  * ce mois-ci, lue intégralement depuis Planning (GET /todo, lui-même bâti sur
  * buildPlanningTable()) : jamais un second moteur de calcul du réalisé/reste
- * (§12/§20). Validation rapide (tap du cercle) ou ouverture de la ligne pour
- * un paiement partiel (AdjustModal, exactement celui de Planning).
+ * (§12/§20). Ouvrir une ligne ouvre EXACTEMENT le même composant d'action
+ * (ActionSheet, via PlannedOperationActionFlow) que Planning — §3/§11.
  */
 export function TodoScreen() {
+  const navigation = useNavigation<any>();
   const topInset = useTopInset();
   const bottomInset = useBottomInset();
   const [monthsOffset, setMonthsOffset] = useState(0);
   const [data, setData] = useState<api.TodoListApi | null>(null);
   const [accounts, setAccounts] = useState<api.AccountApi[]>([]);
+  const [categories, setCategories] = useState<api.CategoryApi[]>([]);
   const [members, setMembers] = useState<api.HouseholdMembershipApi[]>([]);
   const [filter, setFilter] = useState<string>('ALL');
   const [loading, setLoading] = useState(true);
   const [doneExpanded, setDoneExpanded] = useState(false);
-  const [confirmTarget, setConfirmTarget] = useState<api.TodoActionApi | null>(null);
-  const [adjustTarget, setAdjustTarget] = useState<{ occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string } | null>(null);
+  // Lot "refonte Planning/À faire" §3/§11 — ActionSheet est le SEUL point
+  // d'entrée d'exécution, identique à Planning (jamais un second flux de
+  // validation rapide séparé, ex. l'ancien cercle de confirmation directe).
+  const [actionTarget, setActionTarget] = useState<{ occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async (offset: number) => {
-    const [todo, accountList, household] = await Promise.all([api.getTodo(offset), api.listAccounts(), api.getMyHousehold()]);
+    const [todo, accountList, categoryList, household] = await Promise.all([api.getTodo(offset), api.listAccounts(), api.listCategories(), api.getMyHousehold()]);
     setData(todo);
     setAccounts(accountList);
+    setCategories(categoryList);
     setMembers(household.memberships);
     return todo;
   }, []);
@@ -191,38 +201,39 @@ export function TodoScreen() {
               const destinationLabel =
                 action.kind === 'SAVINGS_CONTRIBUTION' ? accountLabelFor(accounts, action.destinationAccountId, action.destinationSubaccountId) : 'Dépense';
               const hasPartialPayment = action.realizedAmount !== null && action.realizedAmount > 0;
+              // Petit indicateur d'état (§10) : En retard > Partiel > À faire — jamais plus d'un badge à la fois.
+              const stateLabel = action.late ? 'En retard' : hasPartialPayment ? 'Partiel' : 'À faire';
+              const stateStyle = action.late ? styles.badgeLate : hasPartialPayment ? styles.badgePartial : styles.badgeDefault;
               return (
                 <TouchableOpacity
                   key={action.plannedOperationId}
                   style={styles.row}
-                  onPress={() => setAdjustTarget({ occurrence: occurrenceFromAction(action), rowLabel: action.label })}
+                  // Lot "refonte Planning/À faire" §3/§11 — EXACTEMENT le même
+                  // composant d'action que Planning (ActionSheet), jamais un
+                  // second moteur/flux de validation rapide séparé.
+                  onPress={() => setActionTarget({ occurrence: occurrenceFromAction(action), rowLabel: action.label })}
                   testID={`todo-row-${action.plannedOperationId}`}
                 >
-                  <TouchableOpacity
-                    style={styles.stateCircle}
-                    onPress={() => setConfirmTarget(action)}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    testID={`todo-row-${action.plannedOperationId}-circle`}
-                  >
-                    <Ionicons name="ellipse-outline" size={22} color={colors.textPlaceholder} />
-                  </TouchableOpacity>
-                  <View style={{ flex: 1, marginLeft: spacing.sm }}>
+                  <View style={{ flex: 1 }}>
                     <View style={styles.rowTopLine}>
                       <Text style={styles.rowLabel} numberOfLines={1}>
                         {action.label}
                       </Text>
                       <Text style={styles.rowAmount}>{formatDh(action.remaining)}</Text>
                     </View>
-                    <Text style={[styles.rowNature, { color: KIND_COLOR[action.kind] }]}>{KIND_LABEL[action.kind]}</Text>
-                    <Text style={styles.rowAccounts} numberOfLines={1}>
-                      {sourceLabel ?? '—'} → {destinationLabel ?? '—'}
-                    </Text>
+                    {/* "04 nov. · Adil Compte Principal → Courses" — date + comptes sur une seule ligne compacte (§10). */}
                     <Text style={styles.rowMeta} numberOfLines={1}>
-                      {responsibleLabel(action.responsibleMemberId)} ·{' '}
-                      <Text style={action.late ? styles.rowMetaLate : undefined} testID={action.late ? `todo-row-${action.plannedOperationId}-late` : undefined}>
-                        {action.late ? `En retard · ${formatShortDate(action.expectedDate)}` : formatShortDate(action.expectedDate)}
-                      </Text>
+                      {formatShortDate(action.expectedDate)} · {sourceLabel ?? '—'} → {destinationLabel ?? '—'}
                     </Text>
+                    <View style={styles.rowBottomLine}>
+                      <Text style={styles.rowResponsible} numberOfLines={1}>
+                        {responsibleLabel(action.responsibleMemberId)} ·{' '}
+                        <Text style={{ color: KIND_COLOR[action.kind] }}>{KIND_LABEL[action.kind]}</Text>
+                      </Text>
+                      <View style={[styles.badge, stateStyle]} testID={`todo-row-${action.plannedOperationId}-badge`}>
+                        <Text style={styles.badgeText}>{stateLabel}</Text>
+                      </View>
+                    </View>
                     {hasPartialPayment && (
                       <Text style={styles.rowReste} testID={`todo-row-${action.plannedOperationId}-reste`}>
                         Reste sur {formatDh(action.expectedAmount)}
@@ -265,85 +276,26 @@ export function TodoScreen() {
         )}
       </ScrollView>
 
-      <ConfirmSheet
-        target={confirmTarget}
+      <PlannedOperationActionFlow
+        target={actionTarget}
         accounts={accounts}
-        onClose={() => setConfirmTarget(null)}
-        onConfirmed={async (message) => {
-          setConfirmTarget(null);
-          showToast(message);
+        categories={categories}
+        members={members}
+        onClose={() => setActionTarget(null)}
+        onRefresh={async () => {
           await refresh();
         }}
-      />
-
-      <AdjustModal
-        target={adjustTarget}
-        accounts={accounts}
-        onClose={() => setAdjustTarget(null)}
-        onDone={async () => {
-          setAdjustTarget(null);
-          await refresh();
+        onRefreshAndResolve={async (plannedOperationId) => {
+          const todo = await refresh();
+          const fresh = todo.pending.find((a) => a.plannedOperationId === plannedOperationId);
+          return fresh ? occurrenceFromAction(fresh) : null;
         }}
+        showToast={showToast}
+        onViewTransaction={(operationId) => navigation.navigate('TransactionDetail', { id: operationId })}
       />
 
       <Toast message={toast} />
     </View>
-  );
-}
-
-/**
- * Validation rapide (§9) : confirme le paiement COMPLET du reste à payer —
- * jamais le prévu d'origine (une échéance partiellement payée ne doit jamais
- * être réglée en double). Même moteur que Planning (realizePlannedOperation).
- */
-function ConfirmSheet({
-  target,
-  accounts,
-  onClose,
-  onConfirmed,
-}: {
-  target: api.TodoActionApi | null;
-  accounts: api.AccountApi[];
-  onClose: () => void;
-  onConfirmed: (message: string) => Promise<void>;
-}) {
-  const [saving, setSaving] = useState(false);
-  if (!target) return null;
-  const remaining = target.expectedAmount - (target.realizedAmount ?? 0);
-  const sourceLabel = accountLabelFor(accounts, target.sourceAccountId, target.sourceSubaccountId) ?? '—';
-
-  async function confirm() {
-    if (saving || !target) return;
-    setSaving(true);
-    try {
-      await api.realizePlannedOperation(target.plannedOperationId, { actualAmount: String(remaining) });
-      await onConfirmed('Action validée');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} testID="todo-confirm-sheet">
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.backdrop} />
-      </TouchableWithoutFeedback>
-      <View style={styles.confirmBox}>
-        <Text style={styles.confirmTitle}>Confirmer le paiement ?</Text>
-        <Text style={styles.confirmLabel}>{target.label}</Text>
-        <Text style={styles.confirmAmount}>{formatDh(remaining)}</Text>
-        <Text style={styles.confirmMeta}>Depuis : {sourceLabel}</Text>
-        <Text style={styles.confirmMeta}>Date : Aujourd'hui</Text>
-        <View style={styles.confirmActions}>
-          <TouchableOpacity style={styles.confirmCancel} onPress={onClose} testID="todo-confirm-cancel">
-            <Text style={styles.confirmCancelText}>Annuler</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.confirmSubmit} onPress={confirm} testID="todo-confirm-submit">
-            <Text style={styles.confirmSubmitText}>{saving ? '…' : 'Confirmer'}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
   );
 }
 
@@ -373,27 +325,20 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
     ...elevation.card,
   },
-  stateCircle: { paddingTop: 2 },
   rowTopLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   rowLabel: { ...typography.body, fontWeight: '700', flex: 1, marginRight: spacing.sm },
   rowAmount: { ...typography.body, fontWeight: '800' },
-  rowNature: { ...typography.caption, fontWeight: '800', marginTop: 1 },
-  rowAccounts: { ...typography.caption, marginTop: 1 },
   rowMeta: { ...typography.caption, marginTop: 1 },
-  rowMetaLate: { color: colors.warning, fontWeight: '700' },
+  rowBottomLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 1 },
+  rowResponsible: { ...typography.caption, flex: 1, marginRight: spacing.sm },
   rowReste: { ...typography.caption, color: colors.primaryDark, fontWeight: '700', marginTop: 1 },
+  // Petit indicateur d'état (§10) — À faire/Partiel/En retard, jamais plus d'un badge à la fois.
+  badge: { paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.pill },
+  badgeText: { fontSize: 10, fontWeight: '800' },
+  badgeDefault: { backgroundColor: colors.surfaceSecondary },
+  badgePartial: { backgroundColor: colors.warningLight },
+  badgeLate: { backgroundColor: colors.dangerLight },
   doneHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
   doneHeaderText: { ...typography.sectionLabel, color: colors.textSecondary },
   doneRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.xs },
-  backdrop: { flex: 1, backgroundColor: colors.backdrop },
-  confirmBox: { position: 'absolute', left: spacing.xl, right: spacing.xl, top: '35%', backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, ...elevation.raised },
-  confirmTitle: { ...typography.sectionTitle, textAlign: 'center' },
-  confirmLabel: { ...typography.body, textAlign: 'center', marginTop: spacing.sm },
-  confirmAmount: { ...typography.amountSecondary, textAlign: 'center', marginTop: 2 },
-  confirmMeta: { ...typography.bodySecondary, textAlign: 'center', marginTop: spacing.xs },
-  confirmActions: { flexDirection: 'row', marginTop: spacing.lg },
-  confirmCancel: { flex: 1, alignItems: 'center', paddingVertical: spacing.md, marginRight: spacing.sm, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary },
-  confirmCancelText: { ...typography.body, fontWeight: '700' },
-  confirmSubmit: { flex: 1, alignItems: 'center', paddingVertical: spacing.md, borderRadius: radius.md, backgroundColor: colors.primary, ...elevation.button },
-  confirmSubmitText: { ...typography.body, fontWeight: '700', color: colors.textOnPrimary },
 });

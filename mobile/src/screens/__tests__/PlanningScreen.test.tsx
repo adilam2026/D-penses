@@ -125,7 +125,7 @@ it('changer d\'horizon relance getPlanning avec le nouveau nombre de mois', asyn
   await waitFor(() => expect(mockGetPlanning).toHaveBeenCalledWith(12));
 });
 
-it('case prévue (PENDING) : tap simple ouvre un mini pop-up ; seul "Marquer comme payé" déclenche le paiement, avec un toast', async () => {
+it('case prévue (PENDING) : tap simple ouvre l\'ActionSheet ; le paiement n\'est déclenché qu\'après confirmation explicite, avec un toast', async () => {
   mockGetPlanning.mockResolvedValue(
     basePlanning({
       depenses: [
@@ -140,7 +140,7 @@ it('case prévue (PENDING) : tap simple ouvre un mini pop-up ; seul "Marquer com
               pendingAmount: 700,
               realizedAmount: 0,
               status: 'PENDING',
-              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE', responsibleMemberId: null },
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE', responsibleMemberId: null , expectedDate: '2026-09-15', realizedOperationId: null },
               items: [{ type: 'PLANNED_PENDING', plannedOperationId: 'po-1', label: 'Assurance voiture', amount: 700, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
             },
             '2026-10': emptyCell(),
@@ -156,16 +156,19 @@ it('case prévue (PENDING) : tap simple ouvre un mini pop-up ; seul "Marquer com
   await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
 
   fireEvent.press(screen.getAllByTestId(/^planning-cell-/)[0]);
-  await waitFor(() => screen.getByTestId('planning-popup-confirm'));
-  // Le paiement n'a pas encore eu lieu tant que "Marquer comme payé" n'a pas été cliqué.
+  await waitFor(() => screen.getByTestId('action-sheet-pay'));
+  // Le paiement n'a pas encore eu lieu tant que le formulaire n'a pas été confirmé.
   expect(mockRealizePlannedOperation).not.toHaveBeenCalled();
 
-  fireEvent.press(screen.getByTestId('planning-popup-confirm'));
-  await waitFor(() => expect(mockRealizePlannedOperation).toHaveBeenCalledWith('po-1', { actualAmount: '700' }));
-  await waitFor(() => screen.getByText('Transaction marquée comme payée'));
+  fireEvent.press(screen.getByTestId('action-sheet-pay'));
+  await waitFor(() => screen.getByTestId('action-sheet-pay-submit'));
+  expect(screen.getByTestId('action-sheet-pay-amount').props.value).toBe('700');
+  fireEvent.press(screen.getByTestId('action-sheet-pay-submit'));
+  await waitFor(() => expect(mockRealizePlannedOperation).toHaveBeenCalledWith('po-1', expect.objectContaining({ actualAmount: '700' })));
+  await waitFor(() => screen.getByText('Voiture payé'));
 });
 
-it('case prévue : "Fermer" ferme le pop-up sans déclencher de paiement', async () => {
+it('case prévue : "Fermer" ferme l\'ActionSheet sans déclencher de paiement', async () => {
   mockGetPlanning.mockResolvedValue(
     basePlanning({
       depenses: [
@@ -180,7 +183,7 @@ it('case prévue : "Fermer" ferme le pop-up sans déclencher de paiement', async
               pendingAmount: 700,
               realizedAmount: 0,
               status: 'PENDING',
-              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE', responsibleMemberId: null },
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE', responsibleMemberId: null , expectedDate: '2026-09-15', realizedOperationId: null },
               items: [{ type: 'PLANNED_PENDING', plannedOperationId: 'po-1', label: 'Assurance voiture', amount: 700, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
             },
             '2026-10': emptyCell(),
@@ -194,13 +197,13 @@ it('case prévue : "Fermer" ferme le pop-up sans déclencher de paiement', async
   renderWithSafeArea(<PlanningScreen />);
   await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
   fireEvent.press(screen.getAllByTestId(/^planning-cell-/)[0]);
-  await waitFor(() => screen.getByTestId('planning-popup-close'));
-  fireEvent.press(screen.getByTestId('planning-popup-close'));
-  await waitFor(() => expect(screen.queryByTestId('planning-popup-close')).toBeNull());
+  await waitFor(() => screen.getByTestId('action-sheet-close'));
+  fireEvent.press(screen.getByTestId('action-sheet-close'));
+  await waitFor(() => expect(screen.queryByTestId('action-sheet-close')).toBeNull());
   expect(mockRealizePlannedOperation).not.toHaveBeenCalled();
 });
 
-it('case déjà payée : tap simple ouvre un mini pop-up avec "Annuler le paiement", avec un toast après confirmation', async () => {
+it('case déjà payée : tap simple ouvre l\'ActionSheet avec "Annuler le paiement", avec un toast après confirmation', async () => {
   mockGetPlanning.mockResolvedValue(
     basePlanning({
       depenses: [
@@ -215,7 +218,7 @@ it('case déjà payée : tap simple ouvre un mini pop-up avec "Annuler le paieme
               pendingAmount: 0,
               realizedAmount: 820,
               status: 'REALIZED',
-              singleOccurrence: { plannedOperationId: 'po-1', status: 'REALIZED', expectedAmount: 700, realizedAmount: 820, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE', responsibleMemberId: null },
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'REALIZED', expectedAmount: 700, realizedAmount: 820, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE', responsibleMemberId: null , expectedDate: '2026-09-15', realizedOperationId: 'op-1' },
               items: [{ type: 'PLANNED_REALIZED', plannedOperationId: 'po-1', financialOperationId: 'op-1', label: 'Assurance voiture', amount: 820, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
             },
             '2026-10': emptyCell(),
@@ -230,12 +233,12 @@ it('case déjà payée : tap simple ouvre un mini pop-up avec "Annuler le paieme
   renderWithSafeArea(<PlanningScreen />);
   await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
   fireEvent.press(screen.getAllByTestId(/^planning-cell-/)[0]);
-  await waitFor(() => screen.getByText('Annuler le paiement'));
+  await waitFor(() => screen.getByText('✓ Payé entièrement — 700 DH'));
   expect(mockUnrealizePlannedOperation).not.toHaveBeenCalled();
 
-  fireEvent.press(screen.getByTestId('planning-popup-confirm'));
+  fireEvent.press(screen.getByTestId('action-sheet-unrealize'));
   await waitFor(() => expect(mockUnrealizePlannedOperation).toHaveBeenCalledWith('po-1'));
-  await waitFor(() => screen.getByText('Transaction remise à venir'));
+  await waitFor(() => screen.getByText('Paiement annulé'));
 });
 
 it('case prévue : appui long ouvre le modal d\'ajustement pré-rempli avec le montant prévu', async () => {
@@ -253,7 +256,7 @@ it('case prévue : appui long ouvre le modal d\'ajustement pré-rempli avec le m
               pendingAmount: 700,
               realizedAmount: 0,
               status: 'PENDING',
-              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE', responsibleMemberId: null },
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 700, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE', responsibleMemberId: null , expectedDate: '2026-09-15', realizedOperationId: null },
               items: [{ type: 'PLANNED_PENDING', plannedOperationId: 'po-1', label: 'Assurance voiture', amount: 700, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
             },
             '2026-10': emptyCell(),
@@ -268,20 +271,19 @@ it('case prévue : appui long ouvre le modal d\'ajustement pré-rempli avec le m
   await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
   fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
 
-  // Appui long sur une case PENDING ouvre désormais un petit menu
-  // (Payer/Ajuster, Modifier l'échéance, Annuler l'échéance) — "Payer /
-  // Ajuster" mène au même AdjustModal qu'avant (comportement inchangé).
-  await waitFor(() => screen.getByTestId('planning-pending-menu-option-pay'));
-  fireEvent.press(screen.getByTestId('planning-pending-menu-option-pay'));
+  // Appui long OU tap simple ouvrent désormais exactement le même
+  // ActionSheet (§3 "montant cliquable") — jamais deux comportements
+  // différents selon l'appui.
+  await waitFor(() => screen.getByTestId('action-sheet-pay'));
+  fireEvent.press(screen.getByTestId('action-sheet-pay'));
 
-  await waitFor(() => screen.getByTestId('planning-adjust-submit'));
-  expect(screen.getByText('Prévu 700 DH')).toBeTruthy();
-  const amountField = screen.getByTestId('planning-adjust-amount');
+  await waitFor(() => screen.getByTestId('action-sheet-pay-submit'));
+  const amountField = screen.getByTestId('action-sheet-pay-amount');
   await waitFor(() => expect(amountField.props.value).toBe('700'));
 
   fireEvent.changeText(amountField, '820');
   await waitFor(() => expect(amountField.props.value).toBe('820'));
-  fireEvent.press(screen.getByTestId('planning-adjust-submit'));
+  fireEvent.press(screen.getByTestId('action-sheet-pay-submit'));
 
   await waitFor(() => expect(mockRealizePlannedOperation).toHaveBeenCalledWith('po-1', expect.objectContaining({ actualAmount: '820' })));
 });
@@ -301,7 +303,7 @@ it('case prévue : appui long permet un paiement partiel (montant payé < prévu
               pendingAmount: 1000,
               realizedAmount: 0,
               status: 'PENDING',
-              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 1000, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE', responsibleMemberId: null },
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'PENDING', expectedAmount: 1000, realizedAmount: null, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE', responsibleMemberId: null , expectedDate: '2026-09-15', realizedOperationId: null },
               items: [{ type: 'PLANNED_PENDING', plannedOperationId: 'po-1', label: 'Assurance voiture', amount: 1000, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
             },
             '2026-10': emptyCell(),
@@ -316,16 +318,16 @@ it('case prévue : appui long permet un paiement partiel (montant payé < prévu
   renderWithSafeArea(<PlanningScreen />);
   await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
   fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
-  await waitFor(() => screen.getByTestId('planning-pending-menu-option-pay'));
-  fireEvent.press(screen.getByTestId('planning-pending-menu-option-pay'));
-  await waitFor(() => screen.getByTestId('planning-adjust-partial-submit'));
+  await waitFor(() => screen.getByTestId('action-sheet-partial'));
+  fireEvent.press(screen.getByTestId('action-sheet-partial'));
+  await waitFor(() => screen.getByTestId('action-sheet-partial-submit'));
 
   // Bouton désactivé sans montant saisi.
-  expect(screen.getByTestId('planning-adjust-partial-submit').props.accessibilityState?.disabled).toBe(true);
+  expect(screen.getByTestId('action-sheet-partial-submit').props.accessibilityState?.disabled).toBe(true);
 
-  fireEvent.changeText(screen.getByTestId('planning-adjust-partial-amount'), '400');
-  await waitFor(() => expect(screen.getByTestId('planning-adjust-partial-submit').props.accessibilityState?.disabled).toBe(false));
-  fireEvent.press(screen.getByTestId('planning-adjust-partial-submit'));
+  fireEvent.changeText(screen.getByTestId('action-sheet-partial-amount'), '400');
+  await waitFor(() => expect(screen.getByTestId('action-sheet-partial-submit').props.accessibilityState?.disabled).toBe(false));
+  fireEvent.press(screen.getByTestId('action-sheet-partial-submit'));
 
   await waitFor(() => expect(mockPartialRealizePlannedOperation).toHaveBeenCalledWith('po-1', expect.objectContaining({ actualAmount: '400' })));
   // Le paiement partiel n'appelle jamais le realize complet.
@@ -366,6 +368,8 @@ it("case partiellement payée (MIXTE) : l'appui long propose TOUJOURS le menu Pa
                 categoryId: 'cat-transport',
                 kind: 'EXPENSE',
                 responsibleMemberId: null,
+                expectedDate: '2026-09-15',
+                realizedOperationId: null,
               },
               items: [
                 { type: 'PLANNED_REALIZED', plannedOperationId: 'po-carburant', financialOperationId: 'op-1', label: 'Carburant Adil', amount: 300, date: '2026-09-02', sourceAccountId: 'cih', sourceSubaccountId: null, destinationAccountId: null, destinationSubaccountId: null },
@@ -386,30 +390,30 @@ it("case partiellement payée (MIXTE) : l'appui long propose TOUJOURS le menu Pa
   expect(screen.getByText('300/800 DH')).toBeTruthy();
   expect(screen.getByText('reste 500 DH')).toBeTruthy();
 
-  // L'appui long ouvre bien le menu à 3 options (jamais le détail ambigu).
+  // L'appui long ouvre bien l'ActionSheet (jamais le détail ambigu).
   fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
-  await waitFor(() => screen.getByTestId('planning-pending-menu-option-pay'));
+  await waitFor(() => screen.getByTestId('action-sheet-pay'));
   expect(screen.queryByText('RÉALISÉ')).toBeNull(); // CategoryDetailModal ne s'est jamais ouvert
 
-  fireEvent.press(screen.getByTestId('planning-pending-menu-option-pay'));
-  await waitFor(() => screen.getByTestId('planning-adjust-submit'));
-
-  // Affiche clairement Prévu/Déjà payé/Reste.
-  expect(screen.getByText('Prévu 800 DH')).toBeTruthy();
-  expect(screen.getByTestId('planning-adjust-deja-paye')).toBeTruthy();
-  expect(screen.getByText('Déjà payé 300 DH')).toBeTruthy();
-  expect(screen.getByText('Reste à payer 500 DH')).toBeTruthy();
-  // Le montant réel est pré-rempli avec le RESTE (500), jamais le prévu complet (800).
-  expect(screen.getByTestId('planning-adjust-amount').props.value).toBe('500');
+  // Affiche clairement Prévu/Déjà payé/Reste, dès le menu (sans ouvrir de sous-formulaire).
+  expect(screen.getByText('Prévu')).toBeTruthy();
+  expect(screen.getByTestId('action-sheet-deja-paye')).toBeTruthy();
+  expect(screen.getByText('800 DH')).toBeTruthy();
+  expect(screen.getByTestId('action-sheet-deja-paye').props.children).toBe('300 DH');
+  expect(screen.getByTestId('action-sheet-reste').props.children).toBe('500 DH');
+  // "Nouveau paiement partiel" (jamais "Payer partiellement") dès qu'un 1er paiement partiel existe.
+  expect(screen.getByText('Nouveau paiement partiel')).toBeTruthy();
 
   // Un 2e paiement partiel (200 sur les 500 restants) reste possible.
-  fireEvent.changeText(screen.getByTestId('planning-adjust-partial-amount'), '200');
-  await waitFor(() => expect(screen.getByTestId('planning-adjust-partial-submit').props.accessibilityState?.disabled).toBe(false));
-  fireEvent.press(screen.getByTestId('planning-adjust-partial-submit'));
+  fireEvent.press(screen.getByTestId('action-sheet-partial'));
+  await waitFor(() => screen.getByTestId('action-sheet-partial-submit'));
+  fireEvent.changeText(screen.getByTestId('action-sheet-partial-amount'), '200');
+  await waitFor(() => expect(screen.getByTestId('action-sheet-partial-submit').props.accessibilityState?.disabled).toBe(false));
+  fireEvent.press(screen.getByTestId('action-sheet-partial-submit'));
   await waitFor(() => expect(mockPartialRealizePlannedOperation).toHaveBeenCalledWith('po-carburant', expect.objectContaining({ actualAmount: '200' })));
 });
 
-it('case réalisée (verte) : appui long propose Voir/Modifier/Annuler le paiement', async () => {
+it('case réalisée (verte) : appui long propose Voir la transaction / Annuler le paiement / Modifier l\'échéance / Annuler l\'échéance (§8)', async () => {
   mockGetPlanning.mockResolvedValue(
     basePlanning({
       depenses: [
@@ -424,7 +428,7 @@ it('case réalisée (verte) : appui long propose Voir/Modifier/Annuler le paieme
               pendingAmount: 0,
               realizedAmount: 820,
               status: 'REALIZED',
-              singleOccurrence: { plannedOperationId: 'po-1', status: 'REALIZED', expectedAmount: 700, realizedAmount: 820, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE', responsibleMemberId: null },
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'REALIZED', expectedAmount: 700, realizedAmount: 820, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE', responsibleMemberId: null , expectedDate: '2026-09-15', realizedOperationId: 'op-1' },
               items: [{ type: 'PLANNED_REALIZED', plannedOperationId: 'po-1', financialOperationId: 'op-1', label: 'Assurance voiture', amount: 820, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
             },
             '2026-10': emptyCell(),
@@ -440,21 +444,67 @@ it('case réalisée (verte) : appui long propose Voir/Modifier/Annuler le paieme
   expect(screen.getByText(/820 DH ✓/)).toBeTruthy();
 
   fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
-  await waitFor(() => screen.getByTestId('planning-realized-menu-option-cancel'));
-  // Vocabulaire Planning ("le paiement") volontairement distinct de "la transaction"
-  // (TransactionDetailScreen) — jamais un "Modifier"/"Annuler" nu et ambigu.
-  expect(screen.getByText('Modifier le paiement')).toBeTruthy();
+  await waitFor(() => screen.getByTestId('action-sheet-unrealize'));
+  expect(screen.getByText('✓ Payé entièrement — 700 DH')).toBeTruthy();
+  expect(screen.getByTestId('action-sheet-view-transaction')).toBeTruthy();
   expect(screen.getByText('Annuler le paiement')).toBeTruthy();
-  fireEvent.press(screen.getByTestId('planning-realized-menu-option-cancel'));
+  expect(screen.getByTestId('action-sheet-edit-paid')).toBeTruthy();
+  expect(screen.getByTestId('action-sheet-cancel-paid')).toBeTruthy();
 
+  fireEvent.press(screen.getByTestId('action-sheet-unrealize'));
   await waitFor(() => expect(mockUnrealizePlannedOperation).toHaveBeenCalledWith('po-1'));
 
   // "Voir la transaction" navigue vers l'écran de détail canonique (jamais une
-  // mini-modale ad hoc) — même flux Modifier/Annuler/Fermer que partout ailleurs.
+  // mini-modale ad hoc).
   fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
-  await waitFor(() => screen.getByTestId('planning-realized-menu-option-view'));
-  fireEvent.press(screen.getByTestId('planning-realized-menu-option-view'));
+  await waitFor(() => screen.getByTestId('action-sheet-view-transaction'));
+  fireEvent.press(screen.getByTestId('action-sheet-view-transaction'));
   expect(mockNavigate).toHaveBeenCalledWith('TransactionDetail', { id: 'op-1' });
+});
+
+it('échéance déjà payée, "Modifier l\'échéance" (§8) : annule le paiement puis reprend EXACTEMENT le parcours de modification normal', async () => {
+  mockGetPlanning.mockResolvedValue(
+    basePlanning({
+      depenses: [
+        {
+          key: 'cat-voiture',
+          label: 'Voiture',
+          categoryId: 'cat-voiture',
+          cells: {
+            '2026-09': {
+              displayAmount: 700,
+              budgetAmount: 700,
+              pendingAmount: 0,
+              realizedAmount: 700,
+              status: 'REALIZED',
+              singleOccurrence: { plannedOperationId: 'po-1', status: 'REALIZED', expectedAmount: 700, realizedAmount: 700, sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null, recurrenceRuleId: null, categoryId: null, kind: 'EXPENSE', responsibleMemberId: null, expectedDate: '2026-09-15', realizedOperationId: 'op-1' },
+              items: [{ type: 'PLANNED_REALIZED', plannedOperationId: 'po-1', financialOperationId: 'op-1', label: 'Assurance voiture', amount: 700, date: '2026-09-15', sourceAccountId: 'cih', sourceSubaccountId: 'voiture', destinationAccountId: null, destinationSubaccountId: null }],
+            },
+            '2026-10': emptyCell(),
+            '2026-11': emptyCell(),
+          },
+        },
+      ],
+    }),
+  );
+  mockUnrealizePlannedOperation.mockResolvedValue({});
+  mockUpdatePlannedOperation.mockResolvedValue({});
+
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
+  fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
+  await waitFor(() => screen.getByTestId('action-sheet-edit-paid'));
+  fireEvent.press(screen.getByTestId('action-sheet-edit-paid'));
+
+  // Le paiement est d'abord annulé (reversal déjà validé, jamais une suppression)...
+  await waitFor(() => expect(mockUnrealizePlannedOperation).toHaveBeenCalledWith('po-1'));
+  // ...puis le même formulaire d'édition normal s'ouvre sur l'échéance redevenue PENDING.
+  await waitFor(() => screen.getByTestId('planning-edit-submit'));
+
+  fireEvent.changeText(screen.getByTestId('planning-edit-amount'), '750');
+  await waitFor(() => expect(screen.getByTestId('planning-edit-amount').props.value).toBe('750'));
+  fireEvent.press(screen.getByTestId('planning-edit-submit'));
+  await waitFor(() => expect(mockUpdatePlannedOperation).toHaveBeenCalledWith('po-1', expect.objectContaining({ expectedAmount: '750' })));
 });
 
 it('case agrégée (plusieurs éléments, ex. Autres) : tap ouvre le détail de la catégorie', async () => {
@@ -560,13 +610,36 @@ it("Item 6 : case MIXTE (200 réalisé + 70 à venir) affiche un split compact, 
   await waitFor(() => expect(screen.queryByTestId('planning-detail-unrealize-po-1')).toBeNull());
 
   // Lot "paiements partiels successifs" : "Payer / Ajuster" (ex-"Marquer
-  // réalisé") rouvre le flux AdjustModal complet, jamais un realize() instantané.
+  // réalisé") rouvre le même ActionSheet unique, jamais un realize() instantané.
   fireEvent.press(screen.getAllByTestId(/^planning-cell-/)[0]);
   await waitFor(() => screen.getByTestId('planning-detail-pay-adjust-po-2'));
   fireEvent.press(screen.getByTestId('planning-detail-pay-adjust-po-2'));
-  await waitFor(() => screen.getByTestId('planning-adjust-submit'));
-  await fireEvent.press(screen.getByTestId('planning-adjust-submit'));
+  await waitFor(() => screen.getByTestId('action-sheet-pay'));
+  fireEvent.press(screen.getByTestId('action-sheet-pay'));
+  await waitFor(() => screen.getByTestId('action-sheet-pay-submit'));
+  await fireEvent.press(screen.getByTestId('action-sheet-pay-submit'));
   await waitFor(() => expect(mockRealizePlannedOperation).toHaveBeenCalledWith('po-2', expect.objectContaining({ actualAmount: '70' })));
+});
+
+// Lot "refonte Planning/À faire" §2 — chaque bloc (Revenus/Dépenses/Épargne)
+// est pliable indépendamment, jamais un grand tableau continu type Excel.
+// Replié, seule la ligne TOTAL reste visible ; déplié par défaut.
+it('bloc DÉPENSES pliable : repliement masque les lignes (jamais le TOTAL), dépliement les restaure', async () => {
+  mockGetPlanning.mockResolvedValue(
+    basePlanning({ depenses: [{ key: 'cat-voiture', label: 'Voiture', categoryId: 'cat-voiture', cells: { '2026-09': pendingVoitureCell(), '2026-10': emptyCell(), '2026-11': emptyCell() } }] }),
+  );
+
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByText('Voiture'));
+  expect(screen.getByText('TOTAL DÉPENSES')).toBeTruthy();
+
+  fireEvent.press(screen.getByTestId('planning-block-toggle-depenses'));
+  await waitFor(() => expect(screen.queryByText('Voiture')).toBeNull());
+  // Le TOTAL (et le bloc lui-même) restent toujours visibles, même replié.
+  expect(screen.getByText('TOTAL DÉPENSES')).toBeTruthy();
+
+  fireEvent.press(screen.getByTestId('planning-block-toggle-depenses'));
+  await waitFor(() => expect(screen.getByText('Voiture')).toBeTruthy());
 });
 
 it('plans financiers : la carte affiche la prochaine échéance et navigue vers le détail du plan', async () => {
@@ -622,10 +695,12 @@ function voitureSingleOccurrence() {
     categoryId: null as string | null,
     kind: 'EXPENSE' as const,
     responsibleMemberId: null as string | null,
+    expectedDate: '2026-09-15',
+    realizedOperationId: null as string | null,
   };
 }
 
-it("AdjustModal : le sélecteur de source est présélectionné sur la source prévue et l'override est transmis au paiement", async () => {
+it("ActionSheet : le sélecteur de source est présélectionné sur la source prévue et l'override est transmis au paiement", async () => {
   mockListAccounts.mockResolvedValue([
     { id: 'cih', name: 'CIH', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, balance: 20000, nonAffecte: 15000, subaccounts: [{ id: 'voiture', accountId: 'cih', name: 'CIH-Voiture', balance: 5000, active: true }] },
     { id: 'bp', name: 'BP Lamiaa', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, balance: 10000, nonAffecte: 10000, subaccounts: [] },
@@ -637,17 +712,17 @@ it("AdjustModal : le sélecteur de source est présélectionné sur la source pr
   renderWithSafeArea(<PlanningScreen />);
   await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
   fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
-  fireEvent.press(await screen.findByTestId('planning-pending-menu-option-pay'));
+  fireEvent.press(await screen.findByTestId('action-sheet-pay'));
 
-  await waitFor(() => screen.getByTestId('planning-adjust-source'));
+  await waitFor(() => screen.getByTestId('action-sheet-pay-source'));
   // Présélection : la source prévue (CIH — CIH-Voiture) est affichée.
   expect(screen.getByText('CIH — CIH-Voiture')).toBeTruthy();
 
   // Choisir une autre source (BP Lamiaa, compte principal direct) avant de payer.
-  await fireEvent.press(screen.getByTestId('planning-adjust-source'));
-  await fireEvent.press(await screen.findByTestId('planning-adjust-source-option-acc:bp'));
+  await fireEvent.press(screen.getByTestId('action-sheet-pay-source'));
+  await fireEvent.press(await screen.findByTestId('action-sheet-pay-source-option-acc:bp'));
 
-  await fireEvent.press(screen.getByTestId('planning-adjust-submit'));
+  await fireEvent.press(screen.getByTestId('action-sheet-pay-submit'));
   await waitFor(() =>
     expect(mockRealizePlannedOperation).toHaveBeenCalledWith('po-1', expect.objectContaining({ actualAmount: '700', sourceAccountId: 'bp', sourceSubaccountId: undefined })),
   );
@@ -662,7 +737,7 @@ it('"Modifier l\'échéance" sur une échéance ponctuelle ouvre directement le 
   renderWithSafeArea(<PlanningScreen />);
   await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
   fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
-  await fireEvent.press(await screen.findByTestId('planning-pending-menu-option-edit'));
+  await fireEvent.press(await screen.findByTestId('action-sheet-edit'));
 
   // Ponctuelle : jamais le ChoiceSheet "cette échéance uniquement / et les suivantes".
   expect(screen.queryByTestId('planning-scope-choice-option-single')).toBeNull();
@@ -690,7 +765,7 @@ it('"Modifier l\'échéance" — modifier EXPLICITEMENT le Responsable envoie re
   renderWithSafeArea(<PlanningScreen />);
   await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
   fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
-  await fireEvent.press(await screen.findByTestId('planning-pending-menu-option-edit'));
+  await fireEvent.press(await screen.findByTestId('action-sheet-edit'));
   await waitFor(() => screen.getByTestId('planning-edit-submit'));
 
   await fireEvent.press(screen.getByTestId('planning-edit-responsible-member'));
@@ -723,7 +798,7 @@ it('"Modifier l\'échéance" sur une occurrence récurrente propose le choix de 
   renderWithSafeArea(<PlanningScreen />);
   await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
   fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
-  await fireEvent.press(await screen.findByTestId('planning-pending-menu-option-edit'));
+  await fireEvent.press(await screen.findByTestId('action-sheet-edit'));
 
   await fireEvent.press(await screen.findByTestId('planning-scope-choice-option-series'));
   await waitFor(() => screen.getByTestId('planning-edit-submit'));
@@ -752,7 +827,7 @@ it('"Annuler l\'échéance" sur une échéance ponctuelle demande confirmation p
   renderWithSafeArea(<PlanningScreen />);
   await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
   fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
-  await fireEvent.press(await screen.findByTestId('planning-pending-menu-option-cancel'));
+  await fireEvent.press(await screen.findByTestId('action-sheet-cancel'));
 
   await waitFor(() => expect(alertSpy).toHaveBeenCalled());
   await waitFor(() => expect(mockCancelPlannedOperation).toHaveBeenCalledWith('po-1'));
@@ -780,7 +855,7 @@ it('"Annuler l\'échéance" sur une récurrence propose le choix de portée ; "e
   renderWithSafeArea(<PlanningScreen />);
   await waitFor(() => screen.getAllByTestId(/^planning-cell-/));
   fireEvent(screen.getAllByTestId(/^planning-cell-/)[0], 'longPress');
-  await fireEvent.press(await screen.findByTestId('planning-pending-menu-option-cancel'));
+  await fireEvent.press(await screen.findByTestId('action-sheet-cancel'));
   await fireEvent.press(await screen.findByTestId('planning-scope-choice-option-series'));
 
   await waitFor(() =>
@@ -816,15 +891,21 @@ it('synthèse simplifiée : REVENUS/DÉPENSES/VERSEMENTS/RÉSULTAT PRÉVU repren
   );
 
   renderWithSafeArea(<PlanningScreen />);
-  await waitFor(() => screen.getByText('RÉSULTAT PRÉVU'));
-  // "REVENUS"/"DÉPENSES" apparaissent aussi comme titres de section du tableau —
-  // la nouvelle ligne de synthèse en est une occurrence DE PLUS, jamais une seule.
+  await waitFor(() => screen.getAllByText('RÉSULTAT PRÉVU'));
+  // "REVENUS"/"DÉPENSES" apparaissent aussi comme titres de section du tableau
+  // ET comme carte de synthèse (§2) — jamais une seule occurrence.
   expect(screen.getAllByText('REVENUS').length).toBeGreaterThanOrEqual(2);
   expect(screen.getAllByText('DÉPENSES').length).toBeGreaterThanOrEqual(2);
-  expect(screen.getByText('VERSEMENTS')).toBeTruthy();
+  expect(screen.getAllByText('VERSEMENTS').length).toBeGreaterThanOrEqual(2);
   expect(screen.getByText('RESTE À EXÉCUTER')).toBeTruthy();
   // L'ancienne terminologie "balance" a disparu (§14).
   expect(screen.queryByText(/balance/i)).toBeNull();
+
+  // Cartes de synthèse (§2) — mois courant (2026-09), mêmes totaux, aucun second calcul.
+  expect(within(screen.getByTestId('planning-summary-card-revenus')).getByText('2 000 DH')).toBeTruthy();
+  expect(within(screen.getByTestId('planning-summary-card-depenses')).getByText('7 300 DH')).toBeTruthy();
+  expect(within(screen.getByTestId('planning-summary-card-versements')).getByText('1 000 DH')).toBeTruthy();
+  expect(within(screen.getByTestId('planning-summary-card-resultat')).getByText('-6 300 DH')).toBeTruthy();
 
   // REVENUS/DÉPENSES/VERSEMENTS/RÉSULTAT PRÉVU = EXACTEMENT les totaux ci-dessus, aucune divergence.
   expect(within(screen.getByTestId('planning-synthese-revenus-2026-09')).getByText('2 000 DH')).toBeTruthy();

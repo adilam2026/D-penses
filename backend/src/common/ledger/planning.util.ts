@@ -106,6 +106,22 @@ export type PlanningSingleOccurrence = {
   kind: 'EXPENSE' | 'INCOME' | 'SAVINGS_CONTRIBUTION';
   /** Lot "À faire" — RESPONSABLE ≠ SOURCE, jamais déduit des champs source/destination ci-dessus. */
   responsibleMemberId: string | null;
+  /**
+   * Lot "refonte Planning/À faire" — date prévue de CETTE occurrence, portée
+   * directement ici pour que le mobile n'ait plus besoin de retrouver une
+   * cellule/case (cell.items[0].date) juste pour connaître la date d'une
+   * échéance : un seul objet occurrence, utilisable à l'identique depuis
+   * Planning (case) ET À faire (ligne), pour le composant d'action unique
+   * (choix "cette échéance / et les suivantes" compris).
+   */
+  expectedDate: string;
+  /**
+   * Lot "refonte Planning/À faire" — id de l'opération réelle qui a clôturé
+   * CETTE échéance (non-null uniquement si status=REALIZED), pour que
+   * l'ActionSheet unique puisse toujours proposer "Voir la transaction"
+   * sans avoir besoin d'une case/cell à part.
+   */
+  realizedOperationId: string | null;
 };
 
 export interface PlanningCell {
@@ -557,6 +573,8 @@ export function buildPlanningTable(params: {
         status: 'PENDING',
         expectedAmount: expected,
         realizedAmount: paidDisplay > 0 ? paidDisplay : null,
+        expectedDate: planned.expectedDate.toISOString(),
+        realizedOperationId: null,
         ...plannedAccounts,
         ...meta,
       });
@@ -566,6 +584,8 @@ export function buildPlanningTable(params: {
         status: 'REALIZED',
         expectedAmount: expected,
         realizedAmount: paidDisplay,
+        expectedDate: planned.expectedDate.toISOString(),
+        realizedOperationId: planned.realizedOperationId,
         ...plannedAccounts,
         ...meta,
       });

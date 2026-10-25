@@ -105,7 +105,29 @@ function occurrenceFromItem(item: api.PlanningCellItemApi): api.PlanningSingleOc
     categoryId: item.categoryId ?? null,
     kind: item.kind!,
     responsibleMemberId: item.responsibleMemberId ?? null,
+    expectedDate: item.date,
+    realizedOperationId: null,
   };
+}
+
+/**
+ * Retrouve, dans une table Planning fraîchement chargée, l'occurrence
+ * singleOccurrence d'une échéance précise — utilisé après un unrealize()
+ * pour reprendre la main avec le "déjà payé" RÉEL (d'éventuels paiements
+ * partiels antérieurs à l'opération annulée restent comptés), jamais une
+ * valeur figée capturée avant le refresh. Fonction pure (module-level),
+ * réutilisable par tout écran qui charge un PlanningTableApi.
+ */
+function findOccurrenceById(planning: api.PlanningTableApi, plannedOperationId: string): api.PlanningSingleOccurrenceApi | null {
+  for (const block of [planning.depenses, planning.revenus, planning.epargne]) {
+    for (const row of block) {
+      for (const m of planning.months) {
+        const occ = row.cells[m]?.singleOccurrence;
+        if (occ?.plannedOperationId === plannedOperationId) return occ;
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -126,24 +148,30 @@ export function PlanningScreen() {
   const [plans, setPlans] = useState<api.FinancialPlanApi[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Lot "paiements partiels successifs" : AdjustModal est découplé de la case
-  // (une échéance partiellement payée peut être atteinte depuis une case dont
-  // singleOccurrence est renseigné, OU reconstruite depuis un item précis
-  // d'une case ambiguë via occurrenceFromItem — cf. CategoryDetailModal).
-  const [adjustTarget, setAdjustTarget] = useState<{ occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string } | null>(null);
+  // Lot "refonte Planning/À faire" §3/§11 — ActionSheet est le SEUL point
+  // d'entrée d'exécution d'une échéance, qu'elle vienne d'une case Planning
+  // (singleOccurrence) ou d'un item précis d'une case ambiguë (reconstruit
+  // via occurrenceFromItem, cf. CategoryDetailModal) — jamais un second
+  // composant/moteur (remplace l'ancien trio PayPopupModal/AdjustModal/menus
+  // pending+realized séparés).
+  const [actionTarget, setActionTarget] = useState<{ occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string } | null>(null);
   const [detailTarget, setDetailTarget] = useState<{ cell: api.PlanningCellApi; rowLabel: string; month: string } | null>(null);
-  const [realizedMenuTarget, setRealizedMenuTarget] = useState<{ cell: api.PlanningCellApi; rowLabel: string } | null>(null);
-  const [payPopupTarget, setPayPopupTarget] = useState<{ cell: api.PlanningCellApi; rowLabel: string } | null>(null);
-  // Menu "Modifier l'échéance" / "Annuler l'échéance" (lot Planning — édition
-  // des échéances) — ouvert par l'appui long sur une case PENDING, en plus de
-  // "Payer / Ajuster" qui conserve le comportement existant (AdjustModal).
-  const [pendingMenuTarget, setPendingMenuTarget] = useState<{ cell: api.PlanningCellApi; rowLabel: string } | null>(null);
-  // Choix "cette échéance uniquement / et les suivantes" — affiché uniquement
-  // quand l'occurrence provient d'une récurrence (recurrenceRuleId non null).
-  const [scopeChoiceTarget, setScopeChoiceTarget] = useState<{ cell: api.PlanningCellApi; rowLabel: string; intent: 'edit' | 'cancel' } | null>(null);
-  const [editTarget, setEditTarget] = useState<{ cell: api.PlanningCellApi; rowLabel: string; scope: 'single' | 'series' } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Lot "refonte Planning/À faire" §2 — chaque bloc (Revenus/Dépenses/
+  // Épargne) est pliable indépendamment (jamais un grand tableau continu
+  // type Excel) ; replié, seule la ligne TOTAL reste visible. Tous dépliés
+  // par défaut (comportement historique préservé, rien ne disparaît sans
+  // action explicite de l'utilisateur).
+  const [collapsedBlocks, setCollapsedBlocks] = useState<Set<string>>(new Set());
+  function toggleBlock(title: string) {
+    setCollapsedBlocks((prev) => {
+      const next = new Set(prev);
+      if (next.has(title)) next.delete(title);
+      else next.add(title);
+      return next;
+    });
+  }
 
   // Fenêtre de 3 mois glissante sur l'horizon chargé (data.months) : windowStart
   // = index du premier mois visible, déplacé par pas de 1 (swipe à snap ou
@@ -195,25 +223,6 @@ export function PlanningScreen() {
     return load(months);
   }
 
-  /**
-   * Retrouve, dans une table Planning fraîchement chargée, l'occurrence
-   * singleOccurrence d'une échéance précise — utilisé après un unrealize()
-   * pour rouvrir AdjustModal avec le "déjà payé" RÉEL (d'éventuels paiements
-   * partiels antérieurs à l'opération annulée restent comptés), jamais une
-   * valeur figée capturée avant le refresh.
-   */
-  function findOccurrenceById(planning: api.PlanningTableApi, plannedOperationId: string): api.PlanningSingleOccurrenceApi | null {
-    for (const block of [planning.depenses, planning.revenus, planning.epargne]) {
-      for (const row of block) {
-        for (const m of planning.months) {
-          const occ = row.cells[m]?.singleOccurrence;
-          if (occ?.plannedOperationId === plannedOperationId) return occ;
-        }
-      }
-    }
-    return null;
-  }
-
   function showToast(message: string) {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast(message);
@@ -221,89 +230,11 @@ export function PlanningScreen() {
   }
 
   /**
-   * "Modifier l'échéance" (lot Planning) : si l'occurrence provient d'une
-   * récurrence, demande d'abord "cette échéance uniquement / et les
-   * suivantes" (ChoiceSheet) ; sinon (ponctuelle) ouvre directement le
-   * formulaire d'édition, portée 'single' implicite.
-   */
-  function openEditFlow(cell: api.PlanningCellApi, rowLabel: string) {
-    const occ = cell.singleOccurrence;
-    if (!occ) return;
-    if (occ.recurrenceRuleId) {
-      setScopeChoiceTarget({ cell, rowLabel, intent: 'edit' });
-    } else {
-      setEditTarget({ cell, rowLabel, scope: 'single' });
-    }
-  }
-
-  /** "Annuler l'échéance" — même logique de choix de portée que l'édition. */
-  function openCancelFlow(cell: api.PlanningCellApi, rowLabel: string) {
-    const occ = cell.singleOccurrence;
-    if (!occ) return;
-    if (occ.recurrenceRuleId) {
-      setScopeChoiceTarget({ cell, rowLabel, intent: 'cancel' });
-    } else {
-      confirmCancelSingle(cell, rowLabel);
-    }
-  }
-
-  /**
-   * Annulation simple (déjà existante) — fonctionne pour TOUTE occurrence,
-   * récurrente ou non : annule exclusivement CETTE ligne (status=CANCELLED),
-   * jamais la règle ni les autres occurrences.
-   */
-  function confirmCancelSingle(cell: api.PlanningCellApi, rowLabel: string) {
-    const occ = cell.singleOccurrence;
-    if (!occ) return;
-    Alert.alert(`Annuler « ${rowLabel} » ?`, "Cette échéance prévue sera retirée — elle n'a pas encore eu lieu.", [
-      { text: 'Fermer', style: 'cancel' },
-      {
-        text: "Confirmer l'annulation",
-        style: 'destructive',
-        onPress: async () => {
-          await api.cancelPlannedOperation(occ.plannedOperationId);
-          showToast('Échéance annulée');
-          await refresh();
-        },
-      },
-    ]);
-  }
-
-  /**
-   * Arrêter la série à partir de cette occurrence (§8) — annule le pivot et
-   * toutes les occurrences encore PENDING à partir de sa date, et désactive
-   * la règle (plus aucune occurrence future générée). Les occurrences déjà
-   * réalisées avant le pivot restent intactes dans l'historique.
-   */
-  function confirmCancelSeries(cell: api.PlanningCellApi, rowLabel: string) {
-    const occ = cell.singleOccurrence;
-    const fromDate = cell.items[0]?.date;
-    if (!occ || !occ.recurrenceRuleId || !fromDate) return;
-    Alert.alert(
-      `Arrêter la série « ${rowLabel} » ?`,
-      "Cette échéance et toutes les suivantes seront annulées. Les occurrences déjà réalisées restent dans l'historique.",
-      [
-        { text: 'Fermer', style: 'cancel' },
-        {
-          text: 'Arrêter la série',
-          style: 'destructive',
-          onPress: async () => {
-            await api.updateRecurrenceRule(occ.recurrenceRuleId!, { applyFrom: 'THIS_AND_FOLLOWING', fromDate: fromDate.slice(0, 10), active: false });
-            showToast('Série arrêtée à partir de cette échéance');
-            await refresh();
-          },
-        },
-      ],
-    );
-  }
-
-  /**
-   * Tap simple (Lot ciblé §4, retour au mini pop-up) : sur une occurrence
-   * unique, ouvre un petit pop-up de confirmation ([Marquer comme payé] ou
-   * [Annuler le paiement] + [Fermer]) — le paiement n'est effectué qu'après
-   * confirmation explicite. Sur une case agrégée (plusieurs opérations),
-   * ouvre toujours le détail — impossible de savoir laquelle basculer sans
-   * ambiguïté.
+   * Montant cliquable (§3) : tap OU appui long sur toute case non vide ouvre
+   * l'ActionSheet unique pour une occurrence unique — même comportement quel
+   * que soit l'appui, jamais un pop-up différent selon tap/appui long. Sur
+   * une case agrégée (plusieurs opérations), ouvre toujours le détail —
+   * impossible de savoir laquelle basculer sans ambiguïté.
    */
   function onCellPress(cell: api.PlanningCellApi, rowLabel: string) {
     if (cell.status === 'EMPTY') return;
@@ -311,27 +242,7 @@ export function PlanningScreen() {
       setDetailTarget({ cell, rowLabel, month: '' });
       return;
     }
-    setPayPopupTarget({ cell, rowLabel });
-  }
-
-  /**
-   * Appui long (§1, puis lot "modifier une échéance") : ouvre le détail/
-   * modifier — jamais le toggle direct. Sur une case PENDING, ouvre
-   * désormais un petit menu (Payer/Ajuster, Modifier l'échéance, Annuler
-   * l'échéance) plutôt que de sauter directement dans l'ajustement — "Payer /
-   * Ajuster" y mène au même AdjustModal qu'avant, comportement inchangé.
-   */
-  function onCellLongPress(cell: api.PlanningCellApi, rowLabel: string) {
-    if (cell.status === 'EMPTY') return;
-    if (cell.singleOccurrence?.status === 'PENDING') {
-      setPendingMenuTarget({ cell, rowLabel });
-      return;
-    }
-    if (cell.singleOccurrence?.status === 'REALIZED') {
-      setRealizedMenuTarget({ cell, rowLabel });
-      return;
-    }
-    setDetailTarget({ cell, rowLabel, month: '' });
+    setActionTarget({ occurrence: cell.singleOccurrence, rowLabel });
   }
 
   if (loading && !data) {
@@ -377,6 +288,43 @@ export function PlanningScreen() {
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: spacing.xxl }}>
+        {/* Cartes de synthèse (§2) — même langage visuel que l'Accueil
+            (cartes arrondies, respiration, couleurs douces), mois COURANT
+            uniquement (data.months[0]) : une vue d'ensemble immédiate,
+            distincte du détail par mois ci-dessous — jamais mélangée au
+            tableau. Mêmes totaux que les blocs/la synthèse par mois (aucun
+            second calcul). */}
+        <View style={styles.summaryCardsRow} testID="planning-summary-cards">
+          <View style={[styles.summaryCard, { borderTopColor: colors.success }]} testID="planning-summary-card-revenus">
+            <Text style={styles.summaryCardLabel}>REVENUS</Text>
+            <Text style={styles.summaryCardAmount} numberOfLines={1} adjustsFontSizeToFit>
+              {formatDh(data.synthese[data.months[0]].totalRevenus)}
+            </Text>
+          </View>
+          <View style={[styles.summaryCard, { borderTopColor: colors.danger }]} testID="planning-summary-card-depenses">
+            <Text style={styles.summaryCardLabel}>DÉPENSES</Text>
+            <Text style={styles.summaryCardAmount} numberOfLines={1} adjustsFontSizeToFit>
+              {formatDh(data.synthese[data.months[0]].totalDepenses)}
+            </Text>
+          </View>
+          <View style={[styles.summaryCard, { borderTopColor: colors.secondary }]} testID="planning-summary-card-versements">
+            <Text style={styles.summaryCardLabel}>VERSEMENTS</Text>
+            <Text style={styles.summaryCardAmount} numberOfLines={1} adjustsFontSizeToFit>
+              {formatDh(data.synthese[data.months[0]].totalEpargne)}
+            </Text>
+          </View>
+          <View style={[styles.summaryCard, styles.summaryCardAccent]} testID="planning-summary-card-resultat">
+            <Text style={styles.summaryCardLabel}>RÉSULTAT PRÉVU</Text>
+            <Text
+              style={[styles.summaryCardAmount, data.synthese[data.months[0]].resultatPrevu < 0 && styles.negativeText]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              {formatDh(data.synthese[data.months[0]].resultatPrevu)}
+            </Text>
+          </View>
+        </View>
+
         <View style={styles.tableRow}>
           <View style={{ width: LABEL_WIDTH }}>
             <View style={[styles.labelCell, styles.headerLabelCell, { height: HEADER_HEIGHT }]}>
@@ -389,63 +337,75 @@ export function PlanningScreen() {
                 <Ionicons name="chevron-back" size={16} color={windowStart === 0 ? colors.textPlaceholder : colors.textPrimary} />
               </TouchableOpacity>
             </View>
-            {blocks.map((block) => (
-              <React.Fragment key={block.title}>
-                <View style={[styles.sectionLabelCell, { height: SECTION_HEIGHT, borderLeftColor: block.accentColor }]}>
-                  <Text style={[styles.sectionLabelText, { color: block.accentColor }]}>{block.title}</Text>
-                </View>
-                {block.rows.length === 0 ? (
-                  <View style={[styles.labelCell, { height: ROW_HEIGHT }]}>
-                    <Text style={styles.emptyRowText} numberOfLines={2}>
-                      {block.emptyText}
+            {blocks.map((block) => {
+              const isCollapsed = collapsedBlocks.has(block.title);
+              return (
+                <React.Fragment key={block.title}>
+                  <TouchableOpacity
+                    style={[styles.sectionLabelCell, { height: SECTION_HEIGHT, borderLeftColor: block.accentColor }]}
+                    onPress={() => toggleBlock(block.title)}
+                    testID={`planning-block-toggle-${testIdSlug(block.title)}`}
+                  >
+                    <Text style={[styles.sectionLabelText, { color: block.accentColor }]} numberOfLines={1}>
+                      {block.title}
                     </Text>
+                    <Ionicons name={isCollapsed ? 'chevron-forward' : 'chevron-down'} size={13} color={block.accentColor} />
+                  </TouchableOpacity>
+                  {isCollapsed ? null : block.rows.length === 0 ? (
+                    <View style={[styles.labelCell, { height: ROW_HEIGHT }]}>
+                      <Text style={styles.emptyRowText} numberOfLines={2}>
+                        {block.emptyText}
+                      </Text>
+                    </View>
+                  ) : (
+                    (blockItemsByTitle.get(block.title) ?? []).map((item, idx) =>
+                      item.kind === 'header' ? (
+                        // Titre de regroupement catégorie (Lot ciblé §5) — PUR AFFICHAGE :
+                        // jamais de montant, jamais tappable, jamais de chevron.
+                        <View key={`h-${idx}`} style={[styles.categoryHeaderCell, { height: CATEGORY_HEADER_HEIGHT }]}>
+                          <Text style={styles.categoryHeaderText} numberOfLines={1}>
+                            {item.label}
+                          </Text>
+                        </View>
+                      ) : (
+                        <View key={item.row.key} style={[styles.labelCell, { height: ROW_HEIGHT }]}>
+                          <Text style={styles.rowLabelText} numberOfLines={2}>
+                            {item.row.label}
+                          </Text>
+                        </View>
+                      ),
+                    )
+                  )}
+                  <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: block.accentColor }]}>
+                    <Text style={styles.totalLabelText}>{block.totalLabel}</Text>
                   </View>
-                ) : (
-                  (blockItemsByTitle.get(block.title) ?? []).map((item, idx) =>
-                    item.kind === 'header' ? (
-                      // Titre de regroupement catégorie (Lot ciblé §5) — PUR AFFICHAGE :
-                      // jamais de montant, jamais tappable, jamais de chevron.
-                      <View key={`h-${idx}`} style={[styles.categoryHeaderCell, { height: CATEGORY_HEADER_HEIGHT }]}>
-                        <Text style={styles.categoryHeaderText} numberOfLines={1}>
-                          {item.label}
-                        </Text>
-                      </View>
-                    ) : (
-                      <View key={item.row.key} style={[styles.labelCell, { height: ROW_HEIGHT }]}>
-                        <Text style={styles.rowLabelText} numberOfLines={2}>
-                          {item.row.label}
-                        </Text>
-                      </View>
-                    ),
-                  )
-                )}
-                <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: block.accentColor }]}>
-                  <Text style={styles.totalLabelText}>{block.totalLabel}</Text>
-                </View>
-              </React.Fragment>
-            ))}
-            {/* Synthèse (lot "Planning allégé" §9) : REVENUS/DÉPENSES/
-                VERSEMENTS reprennent EXACTEMENT les mêmes totaux que les
-                lignes TOTAL ci-dessus (aucun second calcul) + RÉSULTAT PRÉVU
-                — remplace l'ancienne synthèse payé/prévu + BALANCE, devenue
-                incohérente avec les totaux (cf. backend planning.util.ts). */}
-            <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: colors.success }]}>
-              <Text style={styles.totalLabelText}>REVENUS</Text>
-            </View>
-            <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: colors.danger }]}>
-              <Text style={styles.totalLabelText}>DÉPENSES</Text>
-            </View>
-            <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: colors.secondary }]}>
-              <Text style={styles.totalLabelText}>VERSEMENTS</Text>
-            </View>
-            <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, backgroundColor: colors.surfaceActive }]}>
-              <Text style={styles.totalLabelText}>RÉSULTAT PRÉVU</Text>
-            </View>
-            {/* "Reste à exécuter" — MOIS COURANT UNIQUEMENT (§10/§12), vide pour tout mois futur. */}
-            <View style={[styles.totalLabelCell, { height: SYNTHESE_DEPENSES_ROW_HEIGHT }]}>
-              <Text style={styles.totalLabelText} numberOfLines={2}>
-                RESTE À EXÉCUTER
-              </Text>
+                </React.Fragment>
+              );
+            })}
+            {/* "Détail par mois" (§2) : REVENUS/DÉPENSES/VERSEMENTS reprennent
+                EXACTEMENT les mêmes totaux que les lignes TOTAL ci-dessus
+                (aucun second calcul) + RÉSULTAT PRÉVU — visuellement SÉPARÉ du
+                détail par catégorie ci-dessus (fond teinté, jamais fondu dans
+                le même tableau continu). */}
+            <View style={styles.syntheseGroupLabel}>
+              <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: colors.success }]}>
+                <Text style={styles.totalLabelText}>REVENUS</Text>
+              </View>
+              <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: colors.danger }]}>
+                <Text style={styles.totalLabelText}>DÉPENSES</Text>
+              </View>
+              <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: colors.secondary }]}>
+                <Text style={styles.totalLabelText}>VERSEMENTS</Text>
+              </View>
+              <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, backgroundColor: colors.surfaceActive }]}>
+                <Text style={styles.totalLabelText}>RÉSULTAT PRÉVU</Text>
+              </View>
+              {/* "Reste à exécuter" — MOIS COURANT UNIQUEMENT (§10/§12), vide pour tout mois futur. */}
+              <View style={[styles.totalLabelCell, { height: SYNTHESE_DEPENSES_ROW_HEIGHT }]}>
+                <Text style={styles.totalLabelText} numberOfLines={2}>
+                  RESTE À EXÉCUTER
+                </Text>
+              </View>
             </View>
           </View>
 
@@ -483,126 +443,135 @@ export function PlanningScreen() {
                   ))}
                 </View>
 
-                {blocks.map((block) => (
-                  <React.Fragment key={block.title}>
-                    <View style={{ flexDirection: 'row', height: SECTION_HEIGHT }}>
-                      {data.months.map((m) => (
-                        <View key={m} style={[styles.sectionSpacerCell, { width: columnWidth }]} />
-                      ))}
-                    </View>
-                    {block.rows.length === 0
-                      ? [
-                          <View key="empty" style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                            {data.months.map((m) => (
-                              <View key={m} style={[styles.cell, { width: columnWidth }]} />
-                            ))}
-                          </View>,
-                        ]
-                      : (blockItemsByTitle.get(block.title) ?? []).map((item, idx) =>
-                          item.kind === 'header' ? (
-                            <View key={`h-${idx}`} style={{ flexDirection: 'row', height: CATEGORY_HEADER_HEIGHT }}>
-                              {data.months.map((m) => (
-                                <View key={m} style={[styles.categoryHeaderSpacerCell, { width: columnWidth }]} />
-                              ))}
-                            </View>
-                          ) : (
-                            <View key={item.row.key} style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                              {data.months.map((m) => (
-                                <PlanningCellView
-                                  key={m}
-                                  cell={item.row.cells[m]}
-                                  width={columnWidth}
-                                  onPress={() => onCellPress(item.row.cells[m], item.row.label)}
-                                  onLongPress={() => onCellLongPress(item.row.cells[m], item.row.label)}
-                                  testID={`planning-cell-${testIdSlug(item.row.label)}-${m}`}
-                                />
-                              ))}
-                            </View>
-                          ),
-                        )}
-                    <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                      {data.months.map((m) => (
-                        <View key={m} style={[styles.totalCell, { width: columnWidth }]}>
-                          <Text style={styles.totalCellText} numberOfLines={1} adjustsFontSizeToFit>
-                            {formatDh(data.synthese[m][block.totalKey])}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  </React.Fragment>
-                ))}
-
-                {/* Synthèse (§9) : REVENUS/DÉPENSES/VERSEMENTS = EXACTEMENT
-                    les mêmes totaux que TOTAL REVENUS/DÉPENSES/VERSEMENTS
-                    ci-dessus (aucun second calcul, aucune divergence
-                    possible) + RÉSULTAT PRÉVU qui en dérive. */}
-                <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                  {data.months.map((m) => (
-                    <View key={m} style={[styles.totalCell, { width: columnWidth }]} testID={`planning-synthese-revenus-${m}`}>
-                      <Text style={styles.totalCellText} numberOfLines={1} adjustsFontSizeToFit>
-                        {formatDh(data.synthese[m].totalRevenus)}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-                <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                  {data.months.map((m) => (
-                    <View key={m} style={[styles.totalCell, { width: columnWidth }]} testID={`planning-synthese-depenses-${m}`}>
-                      <Text style={styles.totalCellText} numberOfLines={1} adjustsFontSizeToFit>
-                        {formatDh(data.synthese[m].totalDepenses)}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-                <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                  {data.months.map((m) => (
-                    <View key={m} style={[styles.totalCell, { width: columnWidth }]} testID={`planning-synthese-versements-${m}`}>
-                      <Text style={styles.totalCellText} numberOfLines={1} adjustsFontSizeToFit>
-                        {formatDh(data.synthese[m].totalEpargne)}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-                <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                  {data.months.map((m) => (
-                    <View key={m} style={[styles.totalCell, styles.syntheseCell, { width: columnWidth }]} testID={`planning-synthese-resultat-prevu-${m}`}>
-                      <Text style={[styles.totalCellText, data.synthese[m].resultatPrevu < 0 && styles.negativeText]} numberOfLines={1} adjustsFontSizeToFit>
-                        {formatDh(data.synthese[m].resultatPrevu)}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-
-                {/* "Reste à exécuter" (§10/§11) — MOIS COURANT uniquement
-                    (resteDepenses non-null) : vide pour tout mois futur,
-                    jamais une valeur inventée faute de projection fiable. */}
-                <View style={{ flexDirection: 'row', height: SYNTHESE_DEPENSES_ROW_HEIGHT }}>
-                  {data.months.map((m) => {
-                    const s = data.synthese[m];
-                    return (
-                      <View key={m} style={[styles.totalCell, { width: columnWidth }]} testID={`planning-reste-a-executer-${m}`}>
-                        {s.resteDepenses !== null && (
-                          <>
-                            <Text style={styles.syntheseDetailAmount} numberOfLines={1} adjustsFontSizeToFit>
-                              Dépenses {Math.round(s.resteDepenses).toLocaleString('fr-FR')} DH
-                            </Text>
-                            <Text style={styles.syntheseDetailAmount} numberOfLines={1} adjustsFontSizeToFit>
-                              Versements {Math.round(s.resteVersements ?? 0).toLocaleString('fr-FR')} DH
-                            </Text>
-                            {s.couverte ? (
-                              <Text style={styles.syntheseCouvertureOk} numberOfLines={1} adjustsFontSizeToFit>
-                                ✓ Couvert
-                              </Text>
-                            ) : (
-                              <Text style={styles.syntheseCouvertureWarn} numberOfLines={1} adjustsFontSizeToFit>
-                                À provisionner {Math.round(s.aProvisionner ?? 0).toLocaleString('fr-FR')} DH
-                              </Text>
-                            )}
-                          </>
-                        )}
+                {blocks.map((block) => {
+                  const isCollapsed = collapsedBlocks.has(block.title);
+                  return (
+                    <React.Fragment key={block.title}>
+                      <View style={{ flexDirection: 'row', height: SECTION_HEIGHT }}>
+                        {data.months.map((m) => (
+                          <View key={m} style={[styles.sectionSpacerCell, { width: columnWidth }]} />
+                        ))}
                       </View>
-                    );
-                  })}
+                      {isCollapsed
+                        ? null
+                        : block.rows.length === 0
+                          ? [
+                              <View key="empty" style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
+                                {data.months.map((m) => (
+                                  <View key={m} style={[styles.cell, { width: columnWidth }]} />
+                                ))}
+                              </View>,
+                            ]
+                          : (blockItemsByTitle.get(block.title) ?? []).map((item, idx) =>
+                              item.kind === 'header' ? (
+                                <View key={`h-${idx}`} style={{ flexDirection: 'row', height: CATEGORY_HEADER_HEIGHT }}>
+                                  {data.months.map((m) => (
+                                    <View key={m} style={[styles.categoryHeaderSpacerCell, { width: columnWidth }]} />
+                                  ))}
+                                </View>
+                              ) : (
+                                <View key={item.row.key} style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
+                                  {data.months.map((m) => (
+                                    <PlanningCellView
+                                      key={m}
+                                      cell={item.row.cells[m]}
+                                      width={columnWidth}
+                                      onPress={() => onCellPress(item.row.cells[m], item.row.label)}
+                                      onLongPress={() => onCellPress(item.row.cells[m], item.row.label)}
+                                      testID={`planning-cell-${testIdSlug(item.row.label)}-${m}`}
+                                    />
+                                  ))}
+                                </View>
+                              ),
+                            )}
+                      <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
+                        {data.months.map((m) => (
+                          <View key={m} style={[styles.totalCell, { width: columnWidth }]}>
+                            <Text style={styles.totalCellText} numberOfLines={1} adjustsFontSizeToFit>
+                              {formatDh(data.synthese[m][block.totalKey])}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    </React.Fragment>
+                  );
+                })}
+
+                {/* "Détail par mois" (§2) : REVENUS/DÉPENSES/VERSEMENTS =
+                    EXACTEMENT les mêmes totaux que TOTAL REVENUS/DÉPENSES/
+                    VERSEMENTS ci-dessus (aucun second calcul, aucune
+                    divergence possible) + RÉSULTAT PRÉVU qui en dérive —
+                    fond teinté (styles.syntheseGroupGrid), visuellement
+                    séparé du détail par catégorie ci-dessus. */}
+                <View style={styles.syntheseGroupGrid}>
+                  <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
+                    {data.months.map((m) => (
+                      <View key={m} style={[styles.totalCell, { width: columnWidth }]} testID={`planning-synthese-revenus-${m}`}>
+                        <Text style={styles.totalCellText} numberOfLines={1} adjustsFontSizeToFit>
+                          {formatDh(data.synthese[m].totalRevenus)}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                  <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
+                    {data.months.map((m) => (
+                      <View key={m} style={[styles.totalCell, { width: columnWidth }]} testID={`planning-synthese-depenses-${m}`}>
+                        <Text style={styles.totalCellText} numberOfLines={1} adjustsFontSizeToFit>
+                          {formatDh(data.synthese[m].totalDepenses)}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                  <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
+                    {data.months.map((m) => (
+                      <View key={m} style={[styles.totalCell, { width: columnWidth }]} testID={`planning-synthese-versements-${m}`}>
+                        <Text style={styles.totalCellText} numberOfLines={1} adjustsFontSizeToFit>
+                          {formatDh(data.synthese[m].totalEpargne)}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                  <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
+                    {data.months.map((m) => (
+                      <View key={m} style={[styles.totalCell, styles.syntheseCell, { width: columnWidth }]} testID={`planning-synthese-resultat-prevu-${m}`}>
+                        <Text style={[styles.totalCellText, data.synthese[m].resultatPrevu < 0 && styles.negativeText]} numberOfLines={1} adjustsFontSizeToFit>
+                          {formatDh(data.synthese[m].resultatPrevu)}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  {/* "Reste à exécuter" (§10/§11) — MOIS COURANT uniquement
+                      (resteDepenses non-null) : vide pour tout mois futur,
+                      jamais une valeur inventée faute de projection fiable. */}
+                  <View style={{ flexDirection: 'row', height: SYNTHESE_DEPENSES_ROW_HEIGHT }}>
+                    {data.months.map((m) => {
+                      const s = data.synthese[m];
+                      return (
+                        <View key={m} style={[styles.totalCell, { width: columnWidth }]} testID={`planning-reste-a-executer-${m}`}>
+                          {s.resteDepenses !== null && (
+                            <>
+                              <Text style={styles.syntheseDetailAmount} numberOfLines={1} adjustsFontSizeToFit>
+                                Dépenses {Math.round(s.resteDepenses).toLocaleString('fr-FR')} DH
+                              </Text>
+                              <Text style={styles.syntheseDetailAmount} numberOfLines={1} adjustsFontSizeToFit>
+                                Versements {Math.round(s.resteVersements ?? 0).toLocaleString('fr-FR')} DH
+                              </Text>
+                              {s.couverte ? (
+                                <Text style={styles.syntheseCouvertureOk} numberOfLines={1} adjustsFontSizeToFit>
+                                  ✓ Couvert
+                                </Text>
+                              ) : (
+                                <Text style={styles.syntheseCouvertureWarn} numberOfLines={1} adjustsFontSizeToFit>
+                                  À provisionner {Math.round(s.aProvisionner ?? 0).toLocaleString('fr-FR')} DH
+                                </Text>
+                              )}
+                            </>
+                          )}
+                        </View>
+                      );
+                    })}
+                  </View>
                 </View>
               </View>
             </ScrollView>
@@ -623,14 +592,21 @@ export function PlanningScreen() {
         <PlansSection plans={plans} onOpen={(id) => navigation.navigate('FinancialPlanDetail', { id })} />
       </ScrollView>
 
-      <AdjustModal
-        target={adjustTarget}
+      <PlannedOperationActionFlow
+        target={actionTarget}
         accounts={accounts}
-        onClose={() => setAdjustTarget(null)}
-        onDone={async () => {
-          setAdjustTarget(null);
+        categories={categories}
+        members={members}
+        onClose={() => setActionTarget(null)}
+        onRefresh={async () => {
           await refresh();
         }}
+        onRefreshAndResolve={async (plannedOperationId) => {
+          const planning = await refresh();
+          return findOccurrenceById(planning, plannedOperationId);
+        }}
+        showToast={showToast}
+        onViewTransaction={(operationId) => navigation.navigate('TransactionDetail', { id: operationId })}
       />
 
       <CategoryDetailModal
@@ -643,212 +619,12 @@ export function PlanningScreen() {
         onViewOperation={(operationId) => navigation.navigate('TransactionDetail', { id: operationId })}
         onPayAdjust={(occurrence, rowLabel) => {
           setDetailTarget(null);
-          setAdjustTarget({ occurrence, rowLabel });
-        }}
-      />
-
-      <ChoiceSheet
-        visible={!!realizedMenuTarget}
-        title={realizedMenuTarget?.rowLabel ?? ''}
-        onClose={() => setRealizedMenuTarget(null)}
-        testID="planning-realized-menu"
-        options={[
-          {
-            key: 'view',
-            label: 'Voir la transaction',
-            icon: 'receipt-outline',
-            onPress: () => {
-              const operationId = realizedMenuTarget?.cell.items[0]?.financialOperationId;
-              if (operationId) navigation.navigate('TransactionDetail', { id: operationId });
-            },
-          },
-          {
-            key: 'edit',
-            label: 'Modifier le paiement',
-            icon: 'create-outline',
-            onPress: async () => {
-              const occ = realizedMenuTarget?.cell.singleOccurrence;
-              const rowLabel = realizedMenuTarget?.rowLabel;
-              if (!occ || !rowLabel) return;
-              await api.unrealizePlannedOperation(occ.plannedOperationId);
-              // Rouvre avec l'état FRAIS (jamais la case périmée d'avant le
-              // unrealize) : d'éventuels paiements partiels antérieurs à ce
-              // paiement restent comptés dans "déjà payé".
-              const planning = await refresh();
-              const freshOcc = findOccurrenceById(planning, occ.plannedOperationId);
-              if (freshOcc) setAdjustTarget({ occurrence: freshOcc, rowLabel });
-            },
-          },
-          {
-            key: 'cancel',
-            label: 'Annuler le paiement',
-            icon: 'close-circle-outline',
-            onPress: async () => {
-              const occ = realizedMenuTarget?.cell.singleOccurrence;
-              if (!occ) return;
-              await api.unrealizePlannedOperation(occ.plannedOperationId);
-              await refresh();
-            },
-          },
-        ]}
-      />
-
-      {/* Case PENDING, appui long (lot "modifier une échéance") : Payer/Ajuster
-          mène à l'AdjustModal existant (inchangé), Modifier/Annuler ouvrent les
-          nouveaux parcours ci-dessous. */}
-      <ChoiceSheet
-        visible={!!pendingMenuTarget}
-        title={pendingMenuTarget?.rowLabel ?? ''}
-        onClose={() => setPendingMenuTarget(null)}
-        testID="planning-pending-menu"
-        options={[
-          {
-            key: 'pay',
-            label: 'Payer / Ajuster',
-            icon: 'card-outline',
-            onPress: () => {
-              const occ = pendingMenuTarget!.cell.singleOccurrence;
-              if (occ) setAdjustTarget({ occurrence: occ, rowLabel: pendingMenuTarget!.rowLabel });
-            },
-          },
-          {
-            key: 'edit',
-            label: "Modifier l'échéance",
-            icon: 'create-outline',
-            onPress: () => openEditFlow(pendingMenuTarget!.cell, pendingMenuTarget!.rowLabel),
-          },
-          {
-            key: 'cancel',
-            label: "Annuler l'échéance",
-            icon: 'close-circle-outline',
-            onPress: () => openCancelFlow(pendingMenuTarget!.cell, pendingMenuTarget!.rowLabel),
-          },
-        ]}
-      />
-
-      {/* "Que souhaitez-vous modifier ?" (§5) — uniquement pour une occurrence
-          issue d'une récurrence ; une échéance ponctuelle ne passe jamais ici. */}
-      <ChoiceSheet
-        visible={!!scopeChoiceTarget}
-        title="Que souhaitez-vous modifier ?"
-        onClose={() => setScopeChoiceTarget(null)}
-        testID="planning-scope-choice"
-        options={[
-          {
-            key: 'single',
-            label: 'Cette échéance uniquement',
-            onPress: () => {
-              if (!scopeChoiceTarget) return;
-              if (scopeChoiceTarget.intent === 'edit') setEditTarget({ cell: scopeChoiceTarget.cell, rowLabel: scopeChoiceTarget.rowLabel, scope: 'single' });
-              else confirmCancelSingle(scopeChoiceTarget.cell, scopeChoiceTarget.rowLabel);
-            },
-          },
-          {
-            key: 'series',
-            label: 'Cette échéance et les suivantes',
-            onPress: () => {
-              if (!scopeChoiceTarget) return;
-              if (scopeChoiceTarget.intent === 'edit') setEditTarget({ cell: scopeChoiceTarget.cell, rowLabel: scopeChoiceTarget.rowLabel, scope: 'series' });
-              else confirmCancelSeries(scopeChoiceTarget.cell, scopeChoiceTarget.rowLabel);
-            },
-          },
-        ]}
-      />
-
-      <EditOccurrenceModal
-        target={editTarget}
-        accounts={accounts}
-        categories={categories}
-        members={members}
-        onClose={() => setEditTarget(null)}
-        onDone={async (message) => {
-          setEditTarget(null);
-          showToast(message);
-          await refresh();
-        }}
-      />
-
-      <PayPopupModal
-        target={payPopupTarget}
-        onClose={() => setPayPopupTarget(null)}
-        onConfirmed={async (message) => {
-          setPayPopupTarget(null);
-          showToast(message);
-          await refresh();
+          setActionTarget({ occurrence, rowLabel });
         }}
       />
 
       <Toast message={toast} />
     </View>
-  );
-}
-
-/**
- * Mini pop-up de confirmation (Lot ciblé §4) — sur une occurrence unique :
- * [Marquer comme payé] si PENDING, [Annuler le paiement] si REALIZED, + un
- * [Fermer] toujours disponible. Le paiement/l'annulation n'a lieu qu'après ce
- * clic explicite ; le toast existant confirme ensuite l'action.
- */
-function PayPopupModal({
-  target,
-  onClose,
-  onConfirmed,
-}: {
-  target: { cell: api.PlanningCellApi; rowLabel: string } | null;
-  onClose: () => void;
-  onConfirmed: (message: string) => Promise<void>;
-}) {
-  const [saving, setSaving] = useState(false);
-  if (!target || !target.cell.singleOccurrence) return null;
-  const occ = target.cell.singleOccurrence;
-  const isPending = occ.status === 'PENDING';
-  const dejaPayeAvant = occ.realizedAmount ?? 0;
-  // Lot "paiements partiels successifs" : le tap simple règle le RESTE à
-  // payer, jamais le prévu complet — sinon une échéance déjà partiellement
-  // payée serait réglée en double (ex. 800 prévu, 300 déjà payé -> ce popup
-  // ne doit solder QUE les 500 restants, jamais les 800 à nouveau).
-  const remaining = occ.expectedAmount - dejaPayeAvant;
-
-  async function confirm() {
-    if (saving) return;
-    setSaving(true);
-    try {
-      if (isPending) {
-        await api.realizePlannedOperation(occ.plannedOperationId, { actualAmount: String(remaining) });
-        await onConfirmed('Transaction marquée comme payée');
-      } else {
-        await api.unrealizePlannedOperation(occ.plannedOperationId);
-        await onConfirmed('Transaction remise à venir');
-      }
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} testID="planning-pay-popup">
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.backdrop} />
-      </TouchableWithoutFeedback>
-      <View style={styles.confirmBox}>
-        <Text style={styles.confirmTitle}>{target.rowLabel}</Text>
-        <Text style={styles.confirmText}>
-          {isPending
-            ? dejaPayeAvant > 0
-              ? `Déjà payé ${formatDh(dejaPayeAvant)} — reste à payer ${formatDh(remaining)}`
-              : `Prévu ${formatDh(occ.expectedAmount)}`
-            : `Réglé ${formatDh(occ.realizedAmount ?? occ.expectedAmount)}`}
-        </Text>
-        <View style={styles.confirmActions}>
-          <TouchableOpacity style={styles.confirmCancel} onPress={onClose} testID="planning-popup-close">
-            <Text style={styles.confirmCancelText}>Fermer</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.confirmPay} onPress={confirm} testID="planning-popup-confirm">
-            <Text style={styles.confirmPayText}>{saving ? '…' : isPending ? 'Marquer comme payé' : 'Annuler le paiement'}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
   );
 }
 
@@ -912,24 +688,44 @@ function PlanningCellView({
 }
 
 /**
- * Exportée pour réutilisation par TodoScreen ("À faire" — §10 : paiement
- * total/partiel d'une échéance, STRICTEMENT le même moteur/la même UI que
- * Planning, jamais un second composant dupliqué).
+ * Composant d'action UNIQUE (§3/§11, "moteur commun Planning/À faire") —
+ * exporté pour réutilisation STRICTE par TodoScreen : même composant, même
+ * moteur backend (realize/partialRealize/unrealize), jamais une seconde
+ * implémentation. Ouvert par un tap sur le montant d'une échéance (case
+ * Planning ou ligne À faire) : affiche Prévu/Déjà payé/Reste (ou "✓ Payé
+ * entièrement" pour une occurrence REALIZED), puis le menu d'actions
+ * pertinent pour son état — Payer/Payer partiellement/Modifier/Annuler pour
+ * une échéance non payée (§4/§5/§6/§9), Annuler le paiement/Modifier
+ * l'échéance/Annuler l'échéance pour une échéance déjà payée (§8, via le
+ * mécanisme de reversal déjà validé, cf. handlePaidOccurrenceAction).
  */
-export function AdjustModal({
+export function ActionSheet({
   target,
   accounts,
   onClose,
   onDone,
+  onEdit,
+  onCancel,
+  onViewTransaction,
+  onPaidAction,
 }: {
   target: { occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string } | null;
   accounts: api.AccountApi[];
   onClose: () => void;
-  onDone: () => Promise<void>;
+  onDone: (message: string) => Promise<void>;
+  onEdit: (occurrence: api.PlanningSingleOccurrenceApi, rowLabel: string) => void;
+  onCancel: (occurrence: api.PlanningSingleOccurrenceApi, rowLabel: string) => void;
+  onViewTransaction: (operationId: string) => void;
+  onPaidAction: (occurrence: api.PlanningSingleOccurrenceApi, rowLabel: string, intent: 'unrealize' | 'edit' | 'cancel') => Promise<void>;
 }) {
   const bottomInset = useBottomInset(spacing.lg);
   const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const occ = target?.occurrence ?? null;
+  // 'menu' = résumé + liste d'actions (les 5 écrans de la maquette
+  // "Exécuter une échéance"/"Options sur échéance déjà payée" s'y résument à
+  // UN seul composant, le menu changeant selon le statut) ; 'pay'/'partial' =
+  // les deux sous-formulaires ("Paiement" / "Paiement partiel").
+  const [view, setView] = useState<'menu' | 'pay' | 'partial'>('menu');
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState('');
   const [partialAmount, setPartialAmount] = useState('');
@@ -948,6 +744,7 @@ export function AdjustModal({
 
   React.useEffect(() => {
     if (occ) {
+      setView('menu');
       setAmount(String(remaining));
       setDate(new Date().toISOString().slice(0, 10));
       setPartialAmount('');
@@ -971,20 +768,21 @@ export function AdjustModal({
    * c'est la paire COMPLÈTE (compte + sous-compte éventuel) qui est envoyée.
    */
   function paymentSourceOverride(): Partial<api.RealizePlannedOperationData> {
-    if (!occ || !accountOption) return {};
+    if (!accountOption) return {};
     const decoded = decodeAccountOption(accountOption, accounts);
     return preposition === 'depuis'
       ? { sourceAccountId: decoded.accountId, sourceSubaccountId: decoded.subaccountId }
       : { destinationAccountId: decoded.accountId, destinationSubaccountId: decoded.subaccountId };
   }
 
-  async function submit() {
-    if (!amount.trim() || saving || !occ) return;
+  /** Paiement total (§4). */
+  async function submitPay() {
+    if (!amount.trim() || saving) return;
     setSaving(true);
     setError(null);
     try {
-      await api.realizePlannedOperation(occ.plannedOperationId, { actualAmount: amount, actualDate: date || undefined, ...paymentSourceOverride() });
-      await onDone();
+      await api.realizePlannedOperation(occ!.plannedOperationId, { actualAmount: amount, actualDate: date || undefined, ...paymentSourceOverride() });
+      await onDone(`${target!.rowLabel} payé`);
     } catch (e) {
       setError(e instanceof api.ApiError ? e.message : "Erreur lors de l'enregistrement du paiement");
     } finally {
@@ -993,18 +791,18 @@ export function AdjustModal({
   }
 
   /**
-   * Paiement partiel (§correction) : enregistre le montant réellement payé
-   * sans clore l'échéance — le reste continue d'apparaître comme à venir
-   * (même case, affichage "payé/total" + "reste X" déjà géré par la case
-   * MIXTE existante, aucune UI dédiée nécessaire côté affichage).
+   * Paiement partiel (§5) : enregistre le montant réellement payé sans
+   * clore l'échéance — le reste continue d'apparaître comme à venir (même
+   * échéance, toujours PENDING), et peut recevoir d'AUTRES paiements
+   * partiels (paiements partiels successifs), chacun indépendant.
    */
   async function submitPartial() {
-    if (!canSubmitPartial || saving || !occ) return;
+    if (!canSubmitPartial || saving) return;
     setSaving(true);
     setError(null);
     try {
-      await api.partialRealizePlannedOperation(occ.plannedOperationId, { actualAmount: partialAmount, actualDate: date || undefined, ...paymentSourceOverride() });
-      await onDone();
+      await api.partialRealizePlannedOperation(occ!.plannedOperationId, { actualAmount: partialAmount, actualDate: date || undefined, ...paymentSourceOverride() });
+      await onDone('Paiement partiel enregistré');
     } catch (e) {
       setError(e instanceof api.ApiError ? e.message : "Erreur lors de l'enregistrement du paiement partiel");
     } finally {
@@ -1017,58 +815,363 @@ export function AdjustModal({
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.backdrop} />
       </TouchableWithoutFeedback>
-      <ScrollView ref={scrollRef} style={styles.adjustSheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
+      <ScrollView ref={scrollRef} style={styles.actionSheet} contentContainerStyle={{ paddingBottom: bottomInset }} testID="action-sheet">
         <Text style={styles.confirmTitle}>{target.rowLabel}</Text>
-        <Text style={styles.adjustPrevu}>Prévu {formatDh(occ.expectedAmount)}</Text>
-        {dejaPaye > 0 && (
+
+        {view === 'menu' && (
           <>
-            <Text style={styles.adjustPrevu} testID="planning-adjust-deja-paye">
-              Déjà payé {formatDh(dejaPaye)}
-            </Text>
-            <Text style={styles.adjustPrevu} testID="planning-adjust-reste">
-              Reste à payer {formatDh(remaining)}
-            </Text>
+            <View style={styles.actionSheetSummary}>
+              {occ.status === 'REALIZED' ? (
+                <Text style={styles.actionSheetPaidFull} testID="action-sheet-paid-full">
+                  ✓ Payé entièrement — {formatDh(occ.expectedAmount)}
+                </Text>
+              ) : dejaPaye > 0 ? (
+                <>
+                  <View style={styles.actionSheetSummaryRow}>
+                    <Text style={styles.actionSheetSummaryLabel}>Prévu</Text>
+                    <Text style={styles.actionSheetSummaryValue}>{formatDh(occ.expectedAmount)}</Text>
+                  </View>
+                  <View style={styles.actionSheetSummaryRow}>
+                    <Text style={styles.actionSheetSummaryLabel}>Déjà payé</Text>
+                    <Text style={[styles.actionSheetSummaryValue, styles.cellAmountRealized]} testID="action-sheet-deja-paye">
+                      {formatDh(dejaPaye)}
+                    </Text>
+                  </View>
+                  <View style={styles.actionSheetSummaryRow}>
+                    <Text style={styles.actionSheetSummaryLabel}>Reste</Text>
+                    <Text style={[styles.actionSheetSummaryValue, styles.actionSheetRemainingText]} testID="action-sheet-reste">
+                      {formatDh(remaining)}
+                    </Text>
+                  </View>
+                </>
+              ) : (
+                <Text style={styles.actionSheetAmount}>{formatDh(occ.expectedAmount)}</Text>
+              )}
+            </View>
+
+            {occ.status === 'PENDING' ? (
+              <>
+                <TouchableOpacity style={styles.actionPrimary} onPress={() => setView('pay')} testID="action-sheet-pay">
+                  <Text style={styles.actionPrimaryText}>Payer {formatDh(remaining)}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.actionSecondary} onPress={() => setView('partial')} testID="action-sheet-partial">
+                  <Text style={styles.actionSecondaryText}>{dejaPaye > 0 ? 'Nouveau paiement partiel' : 'Payer partiellement'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.actionSecondary} onPress={() => onEdit(occ!, target.rowLabel)} testID="action-sheet-edit">
+                  <Text style={styles.actionSecondaryText}>Modifier l'échéance</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.actionSecondary} onPress={() => onCancel(occ!, target.rowLabel)} testID="action-sheet-cancel">
+                  <Text style={styles.actionSecondaryText}>Annuler l'échéance</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                {occ.realizedOperationId && (
+                  <TouchableOpacity style={styles.actionSecondary} onPress={() => onViewTransaction(occ!.realizedOperationId!)} testID="action-sheet-view-transaction">
+                    <Text style={styles.actionSecondaryText}>Voir la transaction</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.actionSecondary}
+                  onPress={async () => {
+                    setSaving(true);
+                    await onPaidAction(occ!, target.rowLabel, 'unrealize');
+                    setSaving(false);
+                  }}
+                  disabled={saving}
+                  testID="action-sheet-unrealize"
+                >
+                  <Text style={styles.actionSecondaryText}>{saving ? '…' : 'Annuler le paiement'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionSecondary}
+                  onPress={async () => {
+                    setSaving(true);
+                    await onPaidAction(occ!, target.rowLabel, 'edit');
+                    setSaving(false);
+                  }}
+                  disabled={saving}
+                  testID="action-sheet-edit-paid"
+                >
+                  <Text style={styles.actionSecondaryText}>Modifier l'échéance</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionSecondary}
+                  onPress={async () => {
+                    setSaving(true);
+                    await onPaidAction(occ!, target.rowLabel, 'cancel');
+                    setSaving(false);
+                  }}
+                  disabled={saving}
+                  testID="action-sheet-cancel-paid"
+                >
+                  <Text style={styles.actionSecondaryText}>Annuler l'échéance</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            <TouchableOpacity style={styles.actionClose} onPress={onClose} testID="action-sheet-close">
+              <Text style={styles.actionCloseText}>Fermer</Text>
+            </TouchableOpacity>
           </>
         )}
-        <FormField label="Montant réel" value={amount} onChangeText={setAmount} onFocus={handleFocus} keyboardType="decimal-pad" testID="planning-adjust-amount" />
-        <DateField label="Date" value={date} onChange={setDate} />
-        <Select
-          label={accountFieldLabel}
-          value={accountOption}
-          options={sourceSelectOptions}
-          onChange={setAccountOption}
-          testID="planning-adjust-source"
-        />
-        {error ? <Text style={styles.errorText} testID="planning-adjust-error">{error}</Text> : null}
-        <View style={styles.confirmActions}>
-          <TouchableOpacity style={styles.confirmCancel} onPress={onClose} testID="planning-adjust-cancel">
-            <Text style={styles.confirmCancelText}>Annuler</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.confirmPay} onPress={submit} testID="planning-adjust-submit">
-            <Text style={styles.confirmPayText}>{saving ? '…' : `Payer ${amount ? formatDh(Number(amount)) : ''}`}</Text>
-          </TouchableOpacity>
-        </View>
 
-        <Text style={styles.partialSectionLabel}>PAIEMENT PARTIEL</Text>
-        <Text style={styles.adjustPrevu}>Enregistre un paiement sans clore l'échéance — le reste continue d'apparaître comme à venir.</Text>
-        <FormField
-          label="Montant payé maintenant"
-          value={partialAmount}
-          onChangeText={setPartialAmount}
-          onFocus={handleFocus}
-          keyboardType="decimal-pad"
-          testID="planning-adjust-partial-amount"
-        />
-        <TouchableOpacity
-          style={[styles.partialButton, !canSubmitPartial && styles.buttonDisabled]}
-          onPress={submitPartial}
-          disabled={!canSubmitPartial || saving}
-          testID="planning-adjust-partial-submit"
-        >
-          <Text style={styles.partialButtonText}>{saving ? '…' : 'Enregistrer le paiement partiel'}</Text>
-        </TouchableOpacity>
+        {view === 'pay' && (
+          <>
+            <Text style={styles.actionSheetSectionLabel}>Confirmer le paiement</Text>
+            <FormField label="Montant" value={amount} onChangeText={setAmount} onFocus={handleFocus} keyboardType="decimal-pad" testID="action-sheet-pay-amount" />
+            <DateField label="Date" value={date} onChange={setDate} />
+            <Select label={accountFieldLabel} value={accountOption} options={sourceSelectOptions} onChange={setAccountOption} testID="action-sheet-pay-source" />
+            {error ? (
+              <Text style={styles.errorText} testID="action-sheet-error">
+                {error}
+              </Text>
+            ) : null}
+            <View style={styles.confirmActions}>
+              <TouchableOpacity style={styles.confirmCancel} onPress={() => setView('menu')} testID="action-sheet-pay-back">
+                <Text style={styles.confirmCancelText}>Retour</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmPay} onPress={submitPay} disabled={saving} testID="action-sheet-pay-submit">
+                <Text style={styles.confirmPayText}>{saving ? '…' : `Payer ${amount ? formatDh(Number(amount)) : ''}`}</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+
+        {view === 'partial' && (
+          <>
+            <Text style={styles.actionSheetSectionLabel}>Paiement partiel</Text>
+            <Text style={styles.adjustPrevu}>Enregistre un paiement sans clore l'échéance — le reste continue d'apparaître comme à venir.</Text>
+            <FormField
+              label="Montant payé maintenant"
+              value={partialAmount}
+              onChangeText={setPartialAmount}
+              onFocus={handleFocus}
+              keyboardType="decimal-pad"
+              testID="action-sheet-partial-amount"
+            />
+            <DateField label="Date" value={date} onChange={setDate} />
+            <Select label={accountFieldLabel} value={accountOption} options={sourceSelectOptions} onChange={setAccountOption} testID="action-sheet-partial-source" />
+            {error ? (
+              <Text style={styles.errorText} testID="action-sheet-error">
+                {error}
+              </Text>
+            ) : null}
+            <View style={styles.confirmActions}>
+              <TouchableOpacity style={styles.confirmCancel} onPress={() => setView('menu')} testID="action-sheet-partial-back">
+                <Text style={styles.confirmCancelText}>Retour</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.confirmPay, !canSubmitPartial && styles.buttonDisabled]} onPress={submitPartial} disabled={!canSubmitPartial || saving} testID="action-sheet-partial-submit">
+                <Text style={styles.confirmPayText}>{saving ? '…' : 'Enregistrer'}</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
       </ScrollView>
     </Modal>
+  );
+}
+
+/**
+ * Enveloppe le composant d'action unique (ActionSheet) avec tout ce qu'il
+ * peut déclencher — choix de portée (§6/§9), formulaire de modification
+ * (EditOccurrenceModal), confirmations d'annulation — en UN seul bloc
+ * exporté, réutilisé À L'IDENTIQUE par Planning ET TodoScreen (§3/§11 :
+ * "même composant d'exécution ET même moteur backend", jamais une seconde
+ * implémentation ne serait-ce que pour la navigation interne
+ * menu -> modifier/annuler). `onRefreshAndResolve` est fourni par l'écran
+ * appelant car Planning et À faire ne chargent pas la même forme de données
+ * (PlanningTableApi vs TodoListApi) — seul ce petit "retrouve la ligne dans
+ * MES données déjà rechargées" diffère, jamais les appels API eux-mêmes
+ * (realize/partialRealize/update/cancel/unrealize, strictement partagés).
+ */
+export function PlannedOperationActionFlow({
+  target,
+  accounts,
+  categories,
+  members,
+  onClose,
+  onRefresh,
+  onRefreshAndResolve,
+  showToast,
+  onViewTransaction,
+}: {
+  target: { occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string } | null;
+  accounts: api.AccountApi[];
+  categories: api.CategoryApi[];
+  members: api.HouseholdMembershipApi[];
+  onClose: () => void;
+  onRefresh: () => Promise<void>;
+  onRefreshAndResolve: (plannedOperationId: string) => Promise<api.PlanningSingleOccurrenceApi | null>;
+  showToast: (message: string) => void;
+  onViewTransaction: (operationId: string) => void;
+}) {
+  // Choix "cette échéance uniquement / et les suivantes" — affiché uniquement
+  // quand l'occurrence provient d'une récurrence (recurrenceRuleId non null).
+  const [scopeChoiceTarget, setScopeChoiceTarget] = useState<{ occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string; intent: 'edit' | 'cancel' } | null>(null);
+  const [editTarget, setEditTarget] = useState<{ occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string; scope: 'single' | 'series' } | null>(null);
+
+  /**
+   * "Modifier l'échéance" (§6) : si l'occurrence provient d'une récurrence,
+   * demande d'abord "cette échéance uniquement / et les suivantes"
+   * (ChoiceSheet) ; sinon (ponctuelle) ouvre directement le formulaire
+   * d'édition, portée 'single' implicite — jamais ce choix pour une
+   * opération non récurrente (§6).
+   */
+  function openEditFlow(occurrence: api.PlanningSingleOccurrenceApi, rowLabel: string) {
+    if (occurrence.recurrenceRuleId) {
+      setScopeChoiceTarget({ occurrence, rowLabel, intent: 'edit' });
+    } else {
+      setEditTarget({ occurrence, rowLabel, scope: 'single' });
+    }
+  }
+
+  /** "Annuler l'échéance" (§9) — même logique de choix de portée que l'édition. */
+  function openCancelFlow(occurrence: api.PlanningSingleOccurrenceApi, rowLabel: string) {
+    if (occurrence.recurrenceRuleId) {
+      setScopeChoiceTarget({ occurrence, rowLabel, intent: 'cancel' });
+    } else {
+      confirmCancelSingle(occurrence, rowLabel);
+    }
+  }
+
+  /**
+   * Annulation simple (déjà existante) — fonctionne pour TOUTE occurrence,
+   * récurrente ou non : annule exclusivement CETTE ligne (status=CANCELLED),
+   * jamais la règle ni les autres occurrences.
+   */
+  function confirmCancelSingle(occurrence: api.PlanningSingleOccurrenceApi, rowLabel: string) {
+    Alert.alert(`Annuler « ${rowLabel} » ?`, "Cette échéance prévue sera retirée — elle n'a pas encore eu lieu.", [
+      { text: 'Fermer', style: 'cancel' },
+      {
+        text: "Confirmer l'annulation",
+        style: 'destructive',
+        onPress: async () => {
+          await api.cancelPlannedOperation(occurrence.plannedOperationId);
+          showToast('Échéance annulée');
+          await onRefresh();
+        },
+      },
+    ]);
+  }
+
+  /**
+   * Arrêter la série à partir de cette occurrence (§9) — annule le pivot et
+   * toutes les occurrences encore PENDING à partir de sa date, et désactive
+   * la règle (plus aucune occurrence future générée). Les occurrences déjà
+   * réalisées avant le pivot restent intactes dans l'historique.
+   */
+  function confirmCancelSeries(occurrence: api.PlanningSingleOccurrenceApi, rowLabel: string) {
+    if (!occurrence.recurrenceRuleId) return;
+    Alert.alert(
+      `Arrêter la série « ${rowLabel} » ?`,
+      "Cette échéance et toutes les suivantes seront annulées. Les occurrences déjà réalisées restent dans l'historique.",
+      [
+        { text: 'Fermer', style: 'cancel' },
+        {
+          text: 'Arrêter la série',
+          style: 'destructive',
+          onPress: async () => {
+            await api.updateRecurrenceRule(occurrence.recurrenceRuleId!, { applyFrom: 'THIS_AND_FOLLOWING', fromDate: occurrence.expectedDate.slice(0, 10), active: false });
+            showToast('Série arrêtée à partir de cette échéance');
+            await onRefresh();
+          },
+        },
+      ],
+    );
+  }
+
+  /**
+   * Échéance déjà payée, actions "Modifier l'échéance" / "Annuler
+   * l'échéance" (§8) — ces deux actions supposent une occurrence PENDING
+   * (invariant backend inchangé) : on repasse donc d'abord par le
+   * mécanisme de reversal déjà validé (unrealize, jamais une suppression),
+   * puis on reprend EXACTEMENT le même parcours single/series que pour une
+   * occurrence jamais payée, sur l'occurrence fraîche (PENDING) qui en
+   * résulte. "unrealize" seul (sans action supplémentaire) correspond à
+   * "Annuler le paiement".
+   */
+  async function handlePaidOccurrenceAction(occurrence: api.PlanningSingleOccurrenceApi, rowLabel: string, intent: 'unrealize' | 'edit' | 'cancel') {
+    onClose();
+    await api.unrealizePlannedOperation(occurrence.plannedOperationId);
+    if (intent === 'unrealize') {
+      await onRefresh();
+      showToast('Paiement annulé');
+      return;
+    }
+    const fresh = await onRefreshAndResolve(occurrence.plannedOperationId);
+    if (!fresh) return;
+    if (intent === 'edit') openEditFlow(fresh, rowLabel);
+    else openCancelFlow(fresh, rowLabel);
+  }
+
+  return (
+    <>
+      <ActionSheet
+        target={target}
+        accounts={accounts}
+        onClose={onClose}
+        onDone={async (message) => {
+          onClose();
+          showToast(message);
+          await onRefresh();
+        }}
+        onEdit={(occurrence, rowLabel) => {
+          onClose();
+          openEditFlow(occurrence, rowLabel);
+        }}
+        onCancel={(occurrence, rowLabel) => {
+          onClose();
+          openCancelFlow(occurrence, rowLabel);
+        }}
+        onViewTransaction={(operationId) => {
+          onClose();
+          onViewTransaction(operationId);
+        }}
+        onPaidAction={handlePaidOccurrenceAction}
+      />
+
+      {/* "Que souhaitez-vous modifier ?" (§6/§9) — uniquement pour une occurrence
+          issue d'une récurrence ; une échéance ponctuelle ne passe jamais ici. */}
+      <ChoiceSheet
+        visible={!!scopeChoiceTarget}
+        title="Que souhaitez-vous modifier ?"
+        onClose={() => setScopeChoiceTarget(null)}
+        testID="planning-scope-choice"
+        options={[
+          {
+            key: 'single',
+            label: 'Cette échéance uniquement',
+            onPress: () => {
+              if (!scopeChoiceTarget) return;
+              if (scopeChoiceTarget.intent === 'edit') setEditTarget({ occurrence: scopeChoiceTarget.occurrence, rowLabel: scopeChoiceTarget.rowLabel, scope: 'single' });
+              else confirmCancelSingle(scopeChoiceTarget.occurrence, scopeChoiceTarget.rowLabel);
+            },
+          },
+          {
+            key: 'series',
+            label: 'Cette échéance et les suivantes',
+            onPress: () => {
+              if (!scopeChoiceTarget) return;
+              if (scopeChoiceTarget.intent === 'edit') setEditTarget({ occurrence: scopeChoiceTarget.occurrence, rowLabel: scopeChoiceTarget.rowLabel, scope: 'series' });
+              else confirmCancelSeries(scopeChoiceTarget.occurrence, scopeChoiceTarget.rowLabel);
+            },
+          },
+        ]}
+      />
+
+      <EditOccurrenceModal
+        target={editTarget}
+        accounts={accounts}
+        categories={categories}
+        members={members}
+        onClose={() => setEditTarget(null)}
+        onDone={async (message) => {
+          setEditTarget(null);
+          showToast(message);
+          await onRefresh();
+        }}
+      />
+    </>
   );
 }
 
@@ -1089,7 +1192,7 @@ function EditOccurrenceModal({
   onClose,
   onDone,
 }: {
-  target: { cell: api.PlanningCellApi; rowLabel: string; scope: 'single' | 'series' } | null;
+  target: { occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string; scope: 'single' | 'series' } | null;
   accounts: api.AccountApi[];
   categories: api.CategoryApi[];
   members: api.HouseholdMembershipApi[];
@@ -1098,8 +1201,8 @@ function EditOccurrenceModal({
 }) {
   const bottomInset = useBottomInset(spacing.lg);
   const { scrollRef, handleFocus } = useKeyboardAwareScroll();
-  const occ = target?.cell.singleOccurrence ?? null;
-  const originalDate = target?.cell.items[0]?.date.slice(0, 10) ?? '';
+  const occ = target?.occurrence ?? null;
+  const originalDate = target?.occurrence.expectedDate.slice(0, 10) ?? '';
 
   const [label, setLabel] = useState('');
   const [amount, setAmount] = useState('');
@@ -1431,8 +1534,29 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     zIndex: 2,
   },
-  sectionLabelCell: { justifyContent: 'flex-end', paddingBottom: 4, paddingLeft: spacing.xs, borderLeftWidth: 3 },
-  sectionLabelText: { fontSize: 11, fontFamily: fontFamily.sansExtraBold, letterSpacing: 0.5 },
+  sectionLabelCell: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 4, paddingLeft: spacing.xs, paddingRight: 2, borderLeftWidth: 3 },
+  sectionLabelText: { fontSize: 11, fontFamily: fontFamily.sansExtraBold, letterSpacing: 0.5, flex: 1 },
+  // Cartes de synthèse (§2) — même langage visuel que l'Accueil : cartes
+  // arrondies, respiration, couleurs douces, hiérarchie claire. Mois courant
+  // uniquement, distinct du détail par mois (jamais un second calcul).
+  summaryCardsRow: { flexDirection: 'row', paddingHorizontal: spacing.lg, gap: spacing.sm, marginBottom: spacing.lg },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderTopWidth: 3,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    ...elevation.card,
+  },
+  summaryCardAccent: { backgroundColor: colors.surfaceActive, borderTopColor: colors.primary },
+  summaryCardLabel: { fontSize: 9.5, fontFamily: fontFamily.sansExtraBold, color: colors.textSecondary, letterSpacing: 0.4, marginBottom: 2 },
+  summaryCardAmount: { fontSize: 13, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
+  // Groupe "Détail par mois" (§2) — fond teinté + marge, pour se détacher
+  // visuellement du détail par catégorie juste au-dessus (jamais un seul
+  // tableau continu indifférencié).
+  syntheseGroupLabel: { marginTop: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, overflow: 'hidden' },
+  syntheseGroupGrid: { marginTop: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, overflow: 'hidden' },
   rowLabelText: { fontSize: 13, fontFamily: fontFamily.sansSemiBold, color: colors.textPrimary },
   emptyRowText: { ...typography.caption, color: colors.textPlaceholder },
   totalLabelCell: { justifyContent: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, backgroundColor: colors.surfaceSecondary, paddingRight: spacing.sm, paddingLeft: spacing.xs, borderLeftWidth: 3 },
@@ -1500,6 +1624,23 @@ const styles = StyleSheet.create({
   partialButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginTop: spacing.sm, ...elevation.button },
   partialButtonText: { ...typography.body, fontWeight: '700', color: colors.textOnPrimary },
   buttonDisabled: { opacity: 0.5 },
+  // ActionSheet (§3/§11, composant d'action unique Planning/À faire) — même
+  // langage visuel "cartes arrondies, respiration" que le reste de l'app.
+  actionSheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 6, borderTopRightRadius: radius.xl + 6, padding: spacing.xl, maxHeight: '85%' },
+  actionSheetSummary: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.lg },
+  actionSheetSummaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 2 },
+  actionSheetSummaryLabel: { ...typography.bodySecondary },
+  actionSheetSummaryValue: { ...typography.body, fontFamily: fontFamily.sansExtraBold },
+  actionSheetRemainingText: { color: colors.primaryDark },
+  actionSheetAmount: { ...typography.amountSecondary, textAlign: 'center' },
+  actionSheetPaidFull: { ...typography.body, fontFamily: fontFamily.sansExtraBold, color: colors.success, textAlign: 'center' },
+  actionSheetSectionLabel: { ...typography.sectionTitle, marginBottom: spacing.md },
+  actionPrimary: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginBottom: spacing.sm, ...elevation.button },
+  actionPrimaryText: { ...typography.body, fontFamily: fontFamily.sansExtraBold, color: colors.textOnPrimary },
+  actionSecondary: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginBottom: spacing.sm },
+  actionSecondaryText: { ...typography.body, fontFamily: fontFamily.sansSemiBold, color: colors.textPrimary },
+  actionClose: { alignItems: 'center', paddingVertical: spacing.sm, marginTop: spacing.xs },
+  actionCloseText: { ...typography.bodySecondary, fontFamily: fontFamily.sansSemiBold },
   errorText: { ...typography.body, color: colors.danger, marginTop: spacing.sm },
   detailSectionLabel: { ...typography.caption, fontWeight: '800', color: colors.textSecondary, letterSpacing: 0.5, marginBottom: spacing.xs },
   detailRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider, gap: spacing.sm },
