@@ -16,8 +16,6 @@ import { PlannedOperationActionFlow } from './PlanningScreen';
 const TOAST_DURATION_MS = 1800;
 const UNASSIGNED_KEY = '__unassigned__';
 const DONE_KEY = '__done__';
-const PICKER_YEARS_BEFORE = 1;
-const PICKER_YEARS_AFTER = 3;
 
 /** "2026-10" → "octobre" (minuscule — "✓ Tout est fait pour octobre"). */
 function monthNameLower(monthKey: string): string {
@@ -144,8 +142,6 @@ export function TodoScreen() {
     }
   }
   const doneTotal = data.done.reduce((sum, a) => sum + (a.realizedAmount ?? a.expectedAmount), 0);
-  // Année du mois courant réel (data.month décalé de -monthsOffset), base des années proposées.
-  const currentYear = Number(shiftMonthKey(data.month, -monthsOffset).slice(0, 4));
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -173,7 +169,7 @@ export function TodoScreen() {
           active={{ monthKey: data.month, label: formatMonthLabel(data.month).toUpperCase() }}
           next={{ monthKey: shiftMonthKey(data.month, 1), label: formatMonthShort(shiftMonthKey(data.month, 1)).toUpperCase(), onPress: () => setMonthsOffset((o) => o + 1) }}
           picker={{
-            years: Array.from({ length: PICKER_YEARS_BEFORE + PICKER_YEARS_AFTER + 1 }, (_, i) => currentYear - PICKER_YEARS_BEFORE + i),
+            // Années glissantes sans limite, comme le Planning (cf. PeriodPickerSheet).
             onSelect: (m) => setMonthsOffset(monthsOffset + monthKeyDiff(data.month, m)),
           }}
         />

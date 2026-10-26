@@ -415,6 +415,32 @@ it('swipe gauche -> mois suivant, swipe droite -> mois précédent ; geste verti
   expect(bar.props.onMoveShouldSetResponderCapture({ nativeEvent: { pageX: 170, pageY: 104 } })).toBe(true);
 });
 
+it('sélecteur : années glissantes sans limite, novembre 2030 puis retour au mois courant', async () => {
+  todoByOffset();
+  renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => expect(periodLabels()[1]).toBe('OCTOBRE 2026'));
+  const years = () => screen.getAllByTestId(/^todo-period-picker-year-\d{4}$/).map((e) => Number(e.props.testID.slice(-4)));
+
+  await fireEvent.press(screen.getByTestId('todo-period-active'));
+  await waitFor(() => expect(years()).toEqual([2025, 2026, 2027]));
+  for (const y of [2027, 2028, 2029, 2030]) await fireEvent.press(screen.getByTestId(`todo-period-picker-year-${y}`));
+  await waitFor(() => expect(years()).toEqual([2029, 2030, 2031]));
+  await fireEvent.press(screen.getByTestId('todo-period-picker-month-11'));
+  await fireEvent.press(screen.getByTestId('todo-period-picker-confirm'));
+  await waitFor(() => expect(periodLabels()).toEqual(['OCT. 30', 'NOVEMBRE 2030', 'DÉC. 30']));
+  expect(mockGetTodo).toHaveBeenLastCalledWith(49);
+
+  await fireEvent.press(screen.getByTestId('todo-period-active'));
+  for (const y of [2029, 2028, 2027, 2026]) await fireEvent.press(screen.getByTestId(`todo-period-picker-year-${y}`));
+  await waitFor(() => expect(years()).toEqual([2025, 2026, 2027]));
+  await fireEvent.press(screen.getByTestId('todo-period-picker-month-10'));
+  await fireEvent.press(screen.getByTestId('todo-period-picker-confirm'));
+  await waitFor(() => expect(periodLabels()).toEqual(['SEPT. 26', 'OCTOBRE 2026', 'NOV. 26']));
+  expect(mockGetTodo).toHaveBeenLastCalledWith(0);
+  // Liste inchangée : libellé + montant uniquement.
+  await waitFor(() => expect(screen.getByTestId('todo-row-po-courses-label')).toBeTruthy());
+});
+
 it('toucher le mois central ouvre "Choisir une période" ; juillet 2027 affiche directement juillet 2027', async () => {
   todoByOffset();
   renderWithSafeArea(<TodoScreen />);

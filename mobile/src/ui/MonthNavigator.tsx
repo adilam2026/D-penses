@@ -14,12 +14,6 @@ export interface NavigatorPeriod {
 }
 
 export interface PeriodPickerConfig {
-  /**
-   * Liste fixe d'années proposées. Absente : années glissantes — trois
-   * années centrées sur l'année choisie ; toucher une année voisine recentre
-   * la liste, sans limite dans un sens ni dans l'autre.
-   */
-  years?: number[];
   /** Mois proposés mais non sélectionnables (ex. hors de l'horizon Planning). */
   isSelectable?: (monthKey: string) => boolean;
   onSelect: (monthKey: string) => void;
@@ -71,7 +65,6 @@ export function MonthNavigator({
       <PeriodPickerSheet
         visible={pickerOpen}
         value={active.monthKey}
-        years={picker.years}
         isSelectable={picker.isSelectable}
         onCancel={() => setPickerOpen(false)}
         onConfirm={(monthKey) => {
@@ -121,7 +114,6 @@ function monthName(month: number): string {
 export function PeriodPickerSheet({
   visible,
   value,
-  years,
   isSelectable,
   onCancel,
   onConfirm,
@@ -129,7 +121,6 @@ export function PeriodPickerSheet({
 }: {
   visible: boolean;
   value: string;
-  years?: number[];
   isSelectable?: (monthKey: string) => boolean;
   onCancel: () => void;
   onConfirm: (monthKey: string) => void;
@@ -146,7 +137,9 @@ export function PeriodPickerSheet({
   }, [visible, value]);
 
   if (!visible) return null;
-  const shownYears = years ?? [year - 1, year, year + 1];
+  // Années glissantes : trois années centrées sur l'année choisie ; toucher
+  // une voisine recentre la liste, sans limite dans un sens ni dans l'autre.
+  const shownYears = [year - 1, year, year + 1];
   const selectable = (y: number, m: number) => !isSelectable || isSelectable(monthKeyOf(y, m));
   const canConfirm = selectable(year, month);
 

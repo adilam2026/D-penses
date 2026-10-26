@@ -136,6 +136,16 @@ export async function ensurePlannedOccurrencesInRange(tx: TxClient, householdId:
 }
 
 /**
+ * Point d'entrée commun Planning / À faire avant toute lecture d'une période
+ * consultée : fenêtre glissante de 12 mois à jour, puis occurrences
+ * manquantes de la période elle-même (même règles, mêmes garanties).
+ */
+export async function ensureOccurrencesForPeriod(tx: TxClient, householdId: string, periodStart: Date, periodEnd: Date): Promise<void> {
+  await ensurePlannedOccurrences(tx, householdId);
+  await ensurePlannedOccurrencesInRange(tx, householdId, periodStart, periodEnd);
+}
+
+/**
  * Occurrences que les règles actives produiraient sur [rangeStart, rangeEnd]
  * sans être encore en base — CALCULÉES EN MÉMOIRE, jamais enregistrées.
  * Sert uniquement aux mois intermédiaires d'une projection cumulée (ni

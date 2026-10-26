@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
-import { ensurePlannedOccurrences } from '../common/ledger/recurrence.util';
+import { ensureOccurrencesForPeriod } from '../common/ledger/recurrence.util';
 import { buildPlanningTable, monthBounds, monthRange } from '../common/ledger/planning.util';
 import { buildTodoList, TodoList } from '../common/ledger/todo.util';
 
@@ -19,8 +19,6 @@ export class TodoService {
   async getTodo(userId: string, householdId: string, monthsOffset = 0): Promise<TodoList> {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
-      await ensurePlannedOccurrences(tx, householdId);
-
       const household = await tx.household.findUniqueOrThrow({ where: { id: householdId }, select: { monthStartDay: true } });
       const monthStartDay = household.monthStartDay;
 
@@ -30,6 +28,9 @@ export class TodoService {
       const shifted = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + monthsOffset, now.getUTCDate()));
       const targetMonth = monthRange(shifted, 1, monthStartDay)[0];
       const { start: rangeStart, end: rangeEnd } = monthBounds(targetMonth, monthStartDay);
+      // Même matérialisation que le Planning : un mois consulté directement
+      // dans À faire, même au-delà de 12 mois, contient ses récurrences.
+      await ensureOccurrencesForPeriod(tx, householdId, rangeStart, rangeEnd);
 
       const [plannedOperations, categories, accounts, subaccounts] = await Promise.all([
         tx.plannedOperation.findMany({ where: { householdId, expectedDate: { gte: rangeStart, lte: rangeEnd } } }),

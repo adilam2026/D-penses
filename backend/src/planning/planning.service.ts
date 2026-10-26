@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
-import { ensurePlannedOccurrences, ensurePlannedOccurrencesInRange, occurrenceKey, virtualPlannedOccurrences } from '../common/ledger/recurrence.util';
+import { ensureOccurrencesForPeriod, occurrenceKey, virtualPlannedOccurrences } from '../common/ledger/recurrence.util';
 import { computeNonAffecte, computeSubaccountBalance } from '../common/ledger/ledger.util';
 import { buildPlanningTable, monthBounds, monthKey, monthKeyDiff, monthKeysFrom, PlanningMonthKey, restrictPlanningTable } from '../common/ledger/planning.util';
 
@@ -54,8 +54,7 @@ export class PlanningService {
       // matérialisation des seules occurrences manquantes de la plage
       // AFFICHÉE (≤ 12 mois, jamais dans le passé) : une récurrence sans fin
       // apparaît sur tout mois consultable, payable/modifiable comme les autres.
-      await ensurePlannedOccurrences(tx, householdId);
-      await ensurePlannedOccurrencesInRange(tx, householdId, displayedStart, rangeEnd);
+      await ensureOccurrencesForPeriod(tx, householdId, displayedStart, rangeEnd);
 
       const [storedPlannedOperations, categories, accounts, subaccounts] = await Promise.all([
         tx.plannedOperation.findMany({ where: { householdId, expectedDate: { gte: rangeStart, lte: rangeEnd } } }),
