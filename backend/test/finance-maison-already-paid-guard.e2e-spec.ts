@@ -182,4 +182,155 @@ describe('Finance Maison — garde "déjà payé" sur la modification du montant
     );
     for (const occ of refreshed) expect(Number(occ.expectedAmount)).toBe(1500);
   });
+
+  // Lot "refonte Planning/À faire" §20-24 — modifier une échéance déjà PAYÉE
+  // (REALIZED) est désormais autorisé directement : augmenter le prévu
+  // au-delà du déjà-payé la rebascule en PENDING (reste à exécuter), sans
+  // jamais toucher le paiement déjà enregistré.
+  it('échéance REALIZED (600 payés) : prévu 600 -> 800 rebascule en PENDING avec reste 200, le paiement initial reste intact', async () => {
+    const token = await freshHousehold();
+    const account = await createAccount(token, 'BP', '5000');
+    const planned = await http
+      .post('/planned-operations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ kind: 'EXPENSE', label: 'CNSS', expectedDate: todayIso(), expectedAmount: '600', sourceAccountId: account.id })
+      .expect(201);
+    const realize = await http
+      .post(`/planned-operations/${planned.body.id}/realize`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ actualAmount: '600' })
+      .expect(201);
+
+    const res = await http.patch(`/planned-operations/${planned.body.id}`).set('Authorization', `Bearer ${token}`).send({ expectedAmount: '800' }).expect(200);
+    expect(res.body.status).toBe('PENDING');
+    expect(res.body.realizedOperationId).toBeNull();
+    expect(Number(res.body.expectedAmount)).toBe(800);
+
+    // Le paiement initial de 600 reste intact (jamais renversé) — le solde du compte le reflète toujours.
+    expect(realize.body.amount).toBeDefined();
+    const balance = await http.get('/accounts').set('Authorization', `Bearer ${token}`).expect(200);
+    expect(Number(balance.body.find((a: any) => a.id === account.id).balance)).toBe(5000 - 600);
+  });
+
+  it('échéance REALIZED (600 payés) : prévu 600 -> 600 (inchangé) reste REALIZED', async () => {
+    const token = await freshHousehold();
+    const account = await createAccount(token, 'BP', '5000');
+    const planned = await http
+      .post('/planned-operations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ kind: 'EXPENSE', label: 'CNSS', expectedDate: todayIso(), expectedAmount: '600', sourceAccountId: account.id })
+      .expect(201);
+    await http.post(`/planned-operations/${planned.body.id}/realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '600' }).expect(201);
+
+    const res = await http.patch(`/planned-operations/${planned.body.id}`).set('Authorization', `Bearer ${token}`).send({ label: 'CNSS (modifié)' }).expect(200);
+    expect(res.body.status).toBe('REALIZED');
+  });
+
+  it('échéance REALIZED (600 payés) : tentative 600 -> 500 refusée avec le message exact, statut inchangé', async () => {
+    const token = await freshHousehold();
+    const account = await createAccount(token, 'BP', '5000');
+    const planned = await http
+      .post('/planned-operations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ kind: 'EXPENSE', label: 'CNSS', expectedDate: todayIso(), expectedAmount: '600', sourceAccountId: account.id })
+      .expect(201);
+    await http.post(`/planned-operations/${planned.body.id}/realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '600' }).expect(201);
+
+    const res = await http.patch(`/planned-operations/${planned.body.id}`).set('Authorization', `Bearer ${token}`).send({ expectedAmount: '500' }).expect(400);
+    expect(res.body.message).toBe(
+      "600 DH ont déjà été payés. Annulez ou corrigez d'abord les paiements existants pour réduire l'échéance sous ce montant.",
+    );
+    const list = await http.get('/planned-operations').set('Authorization', `Bearer ${token}`).expect(200);
+    const fresh = list.body.find((p: any) => p.id === planned.body.id);
+    expect(fresh.status).toBe('REALIZED');
+    expect(Number(fresh.expectedAmount)).toBe(600);
+  });
+
+  it('échéance REALIZED récurrente : changer uniquement le libellé ne mute rien d\'autre (ouvrir/choisir Modifier seul ne doit jamais déclencher de mutation implicite)', async () => {
+    const token = await freshHousehold();
+    const account = await createAccount(token, 'BP', '5000');
+    const planned = await http
+      .post('/planned-operations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ kind: 'EXPENSE', label: 'CNSS', expectedDate: todayIso(), expectedAmount: '600', sourceAccountId: account.id })
+      .expect(201);
+    await http.post(`/planned-operations/${planned.body.id}/realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '600' }).expect(201);
+
+    // Simplement RELIRE l'échéance (équivalent d'ouvrir le menu/le formulaire côté mobile) ne doit rien changer.
+    const before = await http.get('/planned-operations').set('Authorization', `Bearer ${token}`).expect(200);
+    expect(before.body.find((p: any) => p.id === planned.body.id).status).toBe('REALIZED');
+    const stillBefore = await http.get('/planned-operations').set('Authorization', `Bearer ${token}`).expect(200);
+    expect(stillBefore.body.find((p: any) => p.id === planned.body.id).status).toBe('REALIZED');
+  });
+
+  it('"cette échéance et les suivantes" sur un pivot REALIZED : le pivot rebascule en PENDING (reste), les occurrences futures PENDING reçoivent aussi le nouveau montant', async () => {
+    const token = await freshHousehold();
+    const account = await createAccount(token, 'BP', '10000');
+    const rule = await http
+      .post('/recurrence-rules')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ frequency: 'MONTHLY', anchorDate: todayIso(), kind: 'EXPENSE', label: 'Abonnement', expectedAmount: '600', sourceAccountId: account.id })
+      .expect(201);
+    const occurrences = (await http.get('/planned-operations').set('Authorization', `Bearer ${token}`).expect(200)).body
+      .filter((p: any) => p.recurrenceRuleId === rule.body.id)
+      .sort((a: any, b: any) => a.expectedDate.localeCompare(b.expectedDate));
+    const [first, second] = occurrences;
+    await http.post(`/planned-operations/${first.id}/realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '600' }).expect(201);
+
+    await http
+      .patch(`/recurrence-rules/${rule.body.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ applyFrom: 'THIS_AND_FOLLOWING', fromDate: first.expectedDate.slice(0, 10), expectedAmount: '800' })
+      .expect(200);
+
+    const refreshed = (await http.get('/planned-operations').set('Authorization', `Bearer ${token}`).expect(200)).body;
+    const pivot = refreshed.find((p: any) => p.id === first.id);
+    expect(pivot.status).toBe('PENDING');
+    expect(pivot.realizedOperationId).toBeNull();
+    expect(Number(pivot.expectedAmount)).toBe(800);
+    const next = refreshed.find((p: any) => p.id === second.id);
+    expect(Number(next.expectedAmount)).toBe(800);
+  });
+
+  it('"cette échéance et les suivantes" : rejette le lot entier si le pivot REALIZED a déjà reçu plus que le nouveau montant', async () => {
+    const token = await freshHousehold();
+    const account = await createAccount(token, 'BP', '10000');
+    const rule = await http
+      .post('/recurrence-rules')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ frequency: 'MONTHLY', anchorDate: todayIso(), kind: 'EXPENSE', label: 'Abonnement', expectedAmount: '600', sourceAccountId: account.id })
+      .expect(201);
+    const occurrences = (await http.get('/planned-operations').set('Authorization', `Bearer ${token}`).expect(200)).body
+      .filter((p: any) => p.recurrenceRuleId === rule.body.id)
+      .sort((a: any, b: any) => a.expectedDate.localeCompare(b.expectedDate));
+    const [first] = occurrences;
+    await http.post(`/planned-operations/${first.id}/realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '600' }).expect(201);
+
+    const res = await http
+      .patch(`/recurrence-rules/${rule.body.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ applyFrom: 'THIS_AND_FOLLOWING', fromDate: first.expectedDate.slice(0, 10), expectedAmount: '500' })
+      .expect(400);
+    expect(res.body.message).toContain('600 DH ont déjà été payés');
+
+    const refreshed = (await http.get('/planned-operations').set('Authorization', `Bearer ${token}`).expect(200)).body.find((p: any) => p.id === first.id);
+    expect(refreshed.status).toBe('REALIZED');
+    expect(Number(refreshed.expectedAmount)).toBe(600);
+  });
+
+  it('impossible de changer la date d\'une échéance récurrente ayant déjà un paiement partiel enregistré', async () => {
+    const token = await freshHousehold();
+    const account = await createAccount(token, 'BP', '5000');
+    const rule = await http
+      .post('/recurrence-rules')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ frequency: 'MONTHLY', anchorDate: todayIso(), kind: 'EXPENSE', label: 'Internet', expectedAmount: '1000', sourceAccountId: account.id })
+      .expect(201);
+    const occ = (await http.get('/planned-operations').set('Authorization', `Bearer ${token}`).expect(200)).body.find((p: any) => p.recurrenceRuleId === rule.body.id);
+    await http.post(`/planned-operations/${occ.id}/partial-realize`).set('Authorization', `Bearer ${token}`).send({ actualAmount: '300' }).expect(201);
+
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    const res = await http.patch(`/planned-operations/${occ.id}`).set('Authorization', `Bearer ${token}`).send({ expectedDate: tomorrow }).expect(400);
+    expect(res.body.message).toContain('Impossible de changer la date');
+  });
 });

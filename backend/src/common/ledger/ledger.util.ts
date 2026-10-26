@@ -231,6 +231,23 @@ export function effectiveAmount(op: { amount: Prisma.Decimal; reversalOfOperatio
   return op.reversalOfOperationId ? op.amount.neg() : op.amount;
 }
 
+/**
+ * Montant déjà payé cumulé sur UNE échéance (paiements partiels + éventuel
+ * paiement final, net des renversements) — SEUL calcul partagé par
+ * PlannedOperationsService#update/realize/partialRealize ET
+ * RecurrenceRulesService#update (édition "cette échéance et les suivantes"
+ * quand le pivot est déjà payé) : jamais un second calcul dupliqué.
+ */
+export async function computePlannedOperationAlreadyPaid(tx: TxClient, plannedOperationId: string): Promise<Prisma.Decimal> {
+  const realizations = await tx.financialOperation.findMany({ where: { plannedOperationId } });
+  return realizations.reduce((sum, op) => sum.add(effectiveAmount(op)), new Prisma.Decimal(0));
+}
+
+/** Message EXACT requis (lot "refonte Planning/À faire" §23) — un montant prévu ne peut jamais descendre sous ce qui a déjà été payé. */
+export function alreadyPaidGuardMessage(alreadyPaid: Prisma.Decimal): string {
+  return `${formatMontant(alreadyPaid)} DH ont déjà été payés. Annulez ou corrigez d'abord les paiements existants pour réduire l'échéance sous ce montant.`;
+}
+
 export interface InsertOperationParams {
   householdId: string;
   createdByUserId: string;

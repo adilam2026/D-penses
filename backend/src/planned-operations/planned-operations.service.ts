@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { OperationKind, Prisma, ResponsibleSource } from '@prisma/client';
 import { RlsContextService } from '../common/prisma/rls-context.service';
-import { insertFinancialOperation, formatMontant } from '../common/ledger/ledger.util';
+import { insertFinancialOperation, computePlannedOperationAlreadyPaid, alreadyPaidGuardMessage } from '../common/ledger/ledger.util';
 import { ensurePlannedOccurrences } from '../common/ledger/recurrence.util';
 import { resolveFallbackCategoryId } from '../categories/categories.service';
 
@@ -19,11 +19,6 @@ export interface UpdatePlannedOperationInput {
   /** Lot "refonte Planning/À faire" §1 — ignoré si responsibleMemberId est omis (cf. service#update : ne touche alors jamais la source existante). */
   responsibleSource?: ResponsibleSource;
   includeInTodo?: boolean;
-}
-
-/** Message EXACT requis (§7) — jamais une incohérence comptable silencieuse : un montant prévu ne peut jamais descendre sous ce qui a déjà été payé. */
-function alreadyPaidGuardMessage(alreadyPaid: Prisma.Decimal): string {
-  return `${formatMontant(alreadyPaid)} DH ont déjà été payés. Annulez ou corrigez d'abord les paiements existants pour réduire l'échéance sous ce montant.`;
 }
 
 export interface RealizePlannedOperationInput {
@@ -166,17 +161,6 @@ export class PlannedOperationsService {
   }
 
   /**
-   * Montant déjà payé (somme nette de TOUTES les opérations réelles déjà
-   * liées à cette échéance — paiements partiels + éventuel paiement final,
-   * un renversement nette correctement via effectiveAmount) — jamais déduit
-   * de expected_amount, qui reste la valeur PRÉVUE d'origine, constante.
-   */
-  private async computeAlreadyPaid(tx: Prisma.TransactionClient, plannedId: string): Promise<Prisma.Decimal> {
-    const realizations = await tx.financialOperation.findMany({ where: { plannedOperationId: plannedId } });
-    return realizations.reduce((sum, op) => sum.add(op.reversalOfOperationId ? op.amount.neg() : op.amount), new Prisma.Decimal(0));
-  }
-
-  /**
    * Paiement partiel (Planning, appui long, §correction "paiements partiels
    * successifs") — enregistre le montant réellement payé maintenant comme
    * une vraie opération réelle LIÉE à l'échéance (planned_operation_id),
@@ -199,7 +183,7 @@ export class PlannedOperationsService {
       const partialAmount = new Prisma.Decimal(dto.actualAmount);
       if (partialAmount.lte(0)) throw new BadRequestException('Le montant payé doit être positif');
 
-      const alreadyPaid = await this.computeAlreadyPaid(tx, id);
+      const alreadyPaid = await computePlannedOperationAlreadyPaid(tx, id);
       const remaining = planned.expectedAmount.sub(alreadyPaid);
       if (partialAmount.gte(remaining)) {
         throw new BadRequestException('Pour régler le reste en totalité, utilisez le paiement total plutôt que le paiement partiel');
@@ -247,21 +231,33 @@ export class PlannedOperationsService {
    * NOUVELLE occurrence autonome (recurrenceRuleId=null, comme une échéance
    * ponctuelle) est créée à la nouvelle date avec les valeurs mises à jour.
    * La règle de récurrence et toutes les autres occurrences restent intactes.
+   *
+   * Lot "refonte Planning/À faire" §20-24 — MODIFIER une échéance déjà payée
+   * (REALIZED, ou PENDING avec paiement(s) partiel(s)) est maintenant
+   * autorisé directement ici (seul CANCELLED reste refusé) : ouvrir le
+   * formulaire, y changer des champs localement, ne mute RIEN avant cet
+   * appel — jamais un unrealize() déclenché par la simple navigation.
+   * Augmenter expectedAmount au-delà du déjà-payé d'une occurrence REALIZED
+   * la REBASCULE en PENDING (le paiement déjà enregistré reste intact,
+   * jamais renversé) ; l'égaler la laisse REALIZED. Le garde-fou "jamais
+   * sous ce qui est déjà payé" (alreadyPaidGuardMessage) s'applique dans les
+   * deux cas, PENDING ou REALIZED.
    */
   async update(userId: string, householdId: string, id: string, dto: UpdatePlannedOperationInput) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
       const planned = await tx.plannedOperation.findUnique({ where: { id } });
       if (!planned || planned.householdId !== householdId) throw new NotFoundException('Échéance prévue introuvable');
-      if (planned.status !== 'PENDING') throw new BadRequestException('Cette échéance a déjà été réalisée ou annulée');
+      if (planned.status === 'CANCELLED') throw new BadRequestException('Cette échéance a déjà été annulée');
 
-      // §7 "Ne jamais créer une incohérence comptable silencieuse" — un montant
-      // prévu ne peut jamais descendre sous ce qui a déjà été payé (paiements
-      // partiels compris) : 300 déjà payés sur 1000 -> 1200/800 autorisés,
-      // 200 refusé avec le message exact requis.
+      const alreadyPaid = await computePlannedOperationAlreadyPaid(tx, id);
+
+      // §23/§24 "Ne jamais créer une incohérence comptable silencieuse" — un
+      // montant prévu ne peut jamais descendre sous ce qui a déjà été payé
+      // (paiements partiels compris, échéance REALIZED comprise) : 300 déjà
+      // payés sur 1000 -> 1200/800 autorisés, 200 refusé avec le message exact.
       if (dto.expectedAmount !== undefined) {
         const newAmount = new Prisma.Decimal(dto.expectedAmount);
-        const alreadyPaid = await this.computeAlreadyPaid(tx, id);
         if (newAmount.lt(alreadyPaid)) throw new BadRequestException(alreadyPaidGuardMessage(alreadyPaid));
       }
 
@@ -275,6 +271,16 @@ export class PlannedOperationsService {
       const changesDate = !!newExpectedDate && newExpectedDate.getTime() !== planned.expectedDate.getTime();
 
       if (changesDate && planned.recurrenceRuleId) {
+        // Le détachement (cancel + recréation à une nouvelle date, cf.
+        // ci-dessus) perdrait le lien vers les paiements déjà enregistrés
+        // sur CETTE ligne (financial_operation.planned_operation_id reste sur
+        // l'ancien id) — jamais toléré : la date d'une échéance ayant déjà un
+        // paiement ne se change pas silencieusement.
+        if (alreadyPaid.gt(0)) {
+          throw new BadRequestException(
+            "Impossible de changer la date d'une échéance ayant déjà un paiement enregistré. Modifiez le montant, ou annulez d'abord le paiement.",
+          );
+        }
         await tx.plannedOperation.update({ where: { id }, data: { status: 'CANCELLED' } });
         return tx.plannedOperation.create({
           data: {
@@ -299,6 +305,14 @@ export class PlannedOperationsService {
         });
       }
 
+      // §20/§24 — une occurrence REALIZED dont le prévu est augmenté
+      // au-delà du déjà-payé redevient PENDING (reste à exécuter) ; le
+      // paiement déjà enregistré (realizedOperationId) n'est jamais
+      // renversé, seulement détaché de "la seule opération de clôture" —
+      // exactement comme une échéance partiellement payée.
+      const resultingAmount = dto.expectedAmount !== undefined ? new Prisma.Decimal(dto.expectedAmount) : planned.expectedAmount;
+      const becomesPending = planned.status === 'REALIZED' && resultingAmount.gt(alreadyPaid);
+
       return tx.plannedOperation.update({
         where: { id },
         data: {
@@ -318,6 +332,8 @@ export class PlannedOperationsService {
           responsibleMemberId: dto.responsibleMemberId,
           responsibleSource: responsibleSourcePatch,
           includeInTodo: dto.includeInTodo,
+          status: becomesPending ? 'PENDING' : undefined,
+          realizedOperationId: becomesPending ? null : undefined,
         },
       });
     });

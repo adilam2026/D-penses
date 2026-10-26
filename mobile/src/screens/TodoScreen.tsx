@@ -13,27 +13,19 @@ import { accountLabelFor } from '../ui/accountLabel';
 import { PlannedOperationActionFlow } from './PlanningScreen';
 
 const TOAST_DURATION_MS = 1800;
+const UNASSIGNED_KEY = '__unassigned__';
+const DONE_KEY = '__done__';
 
-const KIND_LABEL: Record<'EXPENSE' | 'SAVINGS_CONTRIBUTION', string> = {
-  EXPENSE: 'DÉPENSE',
-  SAVINGS_CONTRIBUTION: 'VERSEMENT',
-};
-const KIND_COLOR: Record<'EXPENSE' | 'SAVINGS_CONTRIBUTION', string> = {
-  EXPENSE: colors.danger,
-  SAVINGS_CONTRIBUTION: colors.primary,
-};
-
-/** "2026-10" → "octobre" (minuscule — §18 "✓ Tout est fait pour octobre"). */
+/** "2026-10" → "octobre" (minuscule — "✓ Tout est fait pour octobre"). */
 function monthNameLower(monthKey: string): string {
   const [year, month] = monthKey.split('-').map(Number);
   return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('fr-FR', { month: 'long', timeZone: 'UTC' });
 }
 
 /**
- * Reconstruit une occurrence "Payer / Ajuster" (même forme que Planning,
- * §12 : les deux écrans lisent le même état métier) à partir d'une action À
- * faire — AdjustModal est STRICTEMENT le composant de Planning, réutilisé
- * tel quel (§10 "réutilise exactement le moteur déjà développé").
+ * Reconstruit une occurrence "Payer / Ajuster" (même forme que Planning) à
+ * partir d'une action À faire — ActionSheet est STRICTEMENT le composant de
+ * Planning, réutilisé tel quel (§36 "aucune variante métier spécifique à Todo").
  */
 function occurrenceFromAction(action: api.TodoActionApi): api.PlanningSingleOccurrenceApi {
   return {
@@ -58,11 +50,12 @@ function occurrenceFromAction(action: api.TodoActionApi): api.PlanningSingleOccu
 }
 
 /**
- * "À faire" (lot dédié) — vue opérationnelle compacte des actions à exécuter
- * ce mois-ci, lue intégralement depuis Planning (GET /todo, lui-même bâti sur
- * buildPlanningTable()) : jamais un second moteur de calcul du réalisé/reste
- * (§12/§20). Ouvrir une ligne ouvre EXACTEMENT le même composant d'action
- * (ActionSheet, via PlannedOperationActionFlow) que Planning — §3/§11.
+ * "À faire" (lot "refonte Planning/À faire" §28-39) — vue opérationnelle
+ * compacte des actions à exécuter ce mois-ci, lue intégralement depuis
+ * Planning (GET /todo, lui-même bâti sur buildPlanningTable()) : jamais un
+ * second moteur de calcul du réalisé/reste. Structurée en accordéons PAR
+ * RESPONSABLE (plus de filtres Tous/Adil/Lamiaa) — ouvrir une ligne ouvre
+ * EXACTEMENT le même composant d'action (ActionSheet) que Planning.
  */
 export function TodoScreen() {
   const navigation = useNavigation<any>();
@@ -73,12 +66,22 @@ export function TodoScreen() {
   const [accounts, setAccounts] = useState<api.AccountApi[]>([]);
   const [categories, setCategories] = useState<api.CategoryApi[]>([]);
   const [members, setMembers] = useState<api.HouseholdMembershipApi[]>([]);
-  const [filter, setFilter] = useState<string>('ALL');
   const [loading, setLoading] = useState(true);
-  const [doneExpanded, setDoneExpanded] = useState(false);
-  // Lot "refonte Planning/À faire" §3/§11 — ActionSheet est le SEUL point
+  // §29-34 — un accordéon par section (un par membre + Non attribué si
+  // nécessaire + Effectué) ; toutes ouvertes par défaut SAUF Effectué, état
+  // conservé pendant la navigation tant que l'écran reste monté.
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set([DONE_KEY]));
+  function toggleSection(key: string) {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+  // Lot "refonte Planning/À faire" §3/§11/§36 — ActionSheet est le SEUL point
   // d'entrée d'exécution, identique à Planning (jamais un second flux de
-  // validation rapide séparé, ex. l'ancien cercle de confirmation directe).
+  // validation rapide séparé).
   const [actionTarget, setActionTarget] = useState<{ occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -109,12 +112,6 @@ export function TodoScreen() {
     toastTimer.current = setTimeout(() => setToast(null), TOAST_DURATION_MS);
   }
 
-  function responsibleLabel(memberId: string | null): string {
-    if (!memberId) return 'Responsable à définir';
-    const m = members.find((mm) => mm.id === memberId);
-    return m ? m.user.firstName : 'Responsable à définir';
-  }
-
   if (loading && !data) {
     return (
       <View style={[styles.center, { paddingTop: topInset }]}>
@@ -124,14 +121,26 @@ export function TodoScreen() {
   }
   if (!data) return null;
 
-  // §15 : la synthèse (et la liste) se filtre par responsable ; le badge de
-  // navigation (RootTabs), lui, reste TOUJOURS le total tous-responsables
-  // (lu via un appel séparé sans offset — jamais celui-ci).
-  const pending = filter === 'ALL' ? data.pending : data.pending.filter((a) => a.responsibleMemberId === filter);
-  const done = filter === 'ALL' ? data.done : data.done.filter((a) => a.responsibleMemberId === filter);
-  const pendingCount = pending.length;
-  const totalRemaining = pending.reduce((sum, a) => sum + a.remaining, 0);
+  const pendingCount = data.pending.length;
+  const totalRemaining = data.pending.reduce((sum, a) => sum + a.remaining, 0);
   const nothingEverPlanned = data.pending.length === 0 && data.done.length === 0;
+
+  // §29-33 — regroupement PAR RESPONSABLE : un bucket par membre du foyer
+  // (dans l'ordre du foyer, jamais un ordre arbitraire/codé en dur), un
+  // bucket "Non attribué" distinct — affiché UNIQUEMENT s'il contient au
+  // moins une échéance (§32), jamais pour repérer une anomalie masquée.
+  const pendingByMember = new Map<string, api.TodoActionApi[]>();
+  const unassigned: api.TodoActionApi[] = [];
+  for (const action of data.pending) {
+    if (action.responsibleMemberId) {
+      const list = pendingByMember.get(action.responsibleMemberId) ?? [];
+      list.push(action);
+      pendingByMember.set(action.responsibleMemberId, list);
+    } else {
+      unassigned.push(action);
+    }
+  }
+  const doneTotal = data.done.reduce((sum, a) => sum + (a.realizedAmount ?? a.expectedAmount), 0);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -143,7 +152,7 @@ export function TodoScreen() {
           </View>
           <HelpButton
             title="À faire"
-            text="Les actions à exécuter ce mois-ci, tous comptes confondus. Touchez le cercle pour valider un paiement complet, ou la ligne pour l'ajuster ou la payer partiellement."
+            text="Les actions à exécuter ce mois-ci, regroupées par responsable. Touchez une ligne pour la payer, la payer partiellement, la modifier ou l'annuler."
           />
         </View>
 
@@ -159,22 +168,6 @@ export function TodoScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.filterRow}>
-          <TouchableOpacity style={[styles.filterPill, filter === 'ALL' && styles.filterPillActive]} onPress={() => setFilter('ALL')} testID="todo-filter-tous">
-            <Text style={[styles.filterPillText, filter === 'ALL' && styles.filterPillTextActive]}>Tous</Text>
-          </TouchableOpacity>
-          {members.map((m) => (
-            <TouchableOpacity
-              key={m.id}
-              style={[styles.filterPill, filter === m.id && styles.filterPillActive]}
-              onPress={() => setFilter(m.id)}
-              testID={`todo-filter-${m.id}`}
-            >
-              <Text style={[styles.filterPillText, filter === m.id && styles.filterPillTextActive]}>{m.user.firstName}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
         <View style={styles.synthese} testID="todo-synthese">
           <Text style={styles.syntheseCount} testID="todo-synthese-count">
             {pendingCount} action{pendingCount > 1 ? 's' : ''} restante{pendingCount > 1 ? 's' : ''}
@@ -185,95 +178,88 @@ export function TodoScreen() {
         </View>
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: bottomInset }}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: bottomInset }}>
         {nothingEverPlanned ? (
           <Text style={styles.emptyText} testID="todo-empty">
             Aucune action prévue ce mois-ci.
           </Text>
-        ) : pending.length === 0 ? (
+        ) : pendingCount === 0 ? (
           <Text style={styles.emptyText} testID="todo-all-done">
             ✓ Tout est fait pour {monthNameLower(data.month)}
           </Text>
         ) : (
-          <View style={{ paddingHorizontal: spacing.lg }}>
-            {pending.map((action) => {
-              const sourceLabel = accountLabelFor(accounts, action.sourceAccountId, action.sourceSubaccountId);
-              const destinationLabel =
-                action.kind === 'SAVINGS_CONTRIBUTION' ? accountLabelFor(accounts, action.destinationAccountId, action.destinationSubaccountId) : 'Dépense';
-              const hasPartialPayment = action.realizedAmount !== null && action.realizedAmount > 0;
-              // Petit indicateur d'état (§10) : En retard > Partiel > À faire — jamais plus d'un badge à la fois.
-              const stateLabel = action.late ? 'En retard' : hasPartialPayment ? 'Partiel' : 'À faire';
-              const stateStyle = action.late ? styles.badgeLate : hasPartialPayment ? styles.badgePartial : styles.badgeDefault;
+          <>
+            {members.map((m) => {
+              const list = pendingByMember.get(m.id);
+              if (!list || list.length === 0) return null;
               return (
-                <TouchableOpacity
-                  key={action.plannedOperationId}
-                  style={styles.row}
-                  // Lot "refonte Planning/À faire" §3/§11 — EXACTEMENT le même
-                  // composant d'action que Planning (ActionSheet), jamais un
-                  // second moteur/flux de validation rapide séparé.
-                  onPress={() => setActionTarget({ occurrence: occurrenceFromAction(action), rowLabel: action.label })}
-                  testID={`todo-row-${action.plannedOperationId}`}
-                >
-                  <View style={{ flex: 1 }}>
-                    <View style={styles.rowTopLine}>
+                <TodoSection
+                  key={m.id}
+                  sectionKey={m.id}
+                  title={m.user.firstName}
+                  icon="person-circle-outline"
+                  actions={list}
+                  accounts={accounts}
+                  isCollapsed={collapsedSections.has(m.id)}
+                  onToggle={() => toggleSection(m.id)}
+                  onPressAction={(action) => setActionTarget({ occurrence: occurrenceFromAction(action), rowLabel: action.label })}
+                />
+              );
+            })}
+            {unassigned.length > 0 && (
+              <TodoSection
+                sectionKey={UNASSIGNED_KEY}
+                title="Non attribué"
+                icon="help-circle-outline"
+                actions={unassigned}
+                accounts={accounts}
+                isCollapsed={collapsedSections.has(UNASSIGNED_KEY)}
+                onToggle={() => toggleSection(UNASSIGNED_KEY)}
+                onPressAction={(action) => setActionTarget({ occurrence: occurrenceFromAction(action), rowLabel: action.label })}
+                neutral
+              />
+            )}
+          </>
+        )}
+
+        {/* §34 — "Effectué" : accordéon global fermé par défaut, informatif uniquement. */}
+        <View style={styles.sectionCard} testID="todo-section-done">
+          <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(DONE_KEY)} testID="todo-done-toggle">
+            <View style={[styles.sectionIconCircle, { backgroundColor: colors.successLight }]}>
+              <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+            </View>
+            <Text style={styles.sectionTitle} numberOfLines={1}>
+              Effectué
+            </Text>
+            <Text style={styles.sectionMeta} numberOfLines={1}>
+              {data.done.length} échéance{data.done.length > 1 ? 's' : ''}
+              {data.done.length > 0 ? ` · ${formatDh(doneTotal)}` : ''}
+            </Text>
+            <Ionicons name={collapsedSections.has(DONE_KEY) ? 'chevron-forward' : 'chevron-down'} size={16} color={colors.textSecondary} />
+          </TouchableOpacity>
+          {!collapsedSections.has(DONE_KEY) && (
+            <View style={styles.sectionBody}>
+              {data.done.length === 0 ? (
+                <Text style={styles.emptyText}>Aucune action réalisée ce mois-ci.</Text>
+              ) : (
+                data.done.map((action) => (
+                  <View key={action.plannedOperationId} style={styles.doneRow} testID={`todo-done-row-${action.plannedOperationId}`}>
+                    <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+                    <View style={{ flex: 1, marginLeft: spacing.sm }}>
                       <Text style={styles.rowLabel} numberOfLines={1}>
                         {action.label}
                       </Text>
-                      <Text style={styles.rowAmount}>{formatDh(action.remaining)}</Text>
-                    </View>
-                    {/* "04 nov. · Adil Compte Principal → Courses" — date + comptes sur une seule ligne compacte (§10). */}
-                    <Text style={styles.rowMeta} numberOfLines={1}>
-                      {formatShortDate(action.expectedDate)} · {sourceLabel ?? '—'} → {destinationLabel ?? '—'}
-                    </Text>
-                    <View style={styles.rowBottomLine}>
-                      <Text style={styles.rowResponsible} numberOfLines={1}>
-                        {responsibleLabel(action.responsibleMemberId)} ·{' '}
-                        <Text style={{ color: KIND_COLOR[action.kind] }}>{KIND_LABEL[action.kind]}</Text>
+                      <Text style={styles.rowMeta} numberOfLines={1}>
+                        {formatShortDate(action.expectedDate)}
                       </Text>
-                      <View style={[styles.badge, stateStyle]} testID={`todo-row-${action.plannedOperationId}-badge`}>
-                        <Text style={styles.badgeText}>{stateLabel}</Text>
-                      </View>
                     </View>
-                    {hasPartialPayment && (
-                      <Text style={styles.rowReste} testID={`todo-row-${action.plannedOperationId}-reste`}>
-                        Reste sur {formatDh(action.expectedAmount)}
-                      </Text>
-                    )}
+                    <Text style={styles.rowAmount}>{formatDh(action.realizedAmount ?? action.expectedAmount)}</Text>
                   </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-
-        <TouchableOpacity style={styles.doneHeader} onPress={() => setDoneExpanded((v) => !v)} testID="todo-done-toggle">
-          <Text style={styles.doneHeaderText}>
-            ✓ EFFECTUÉ ({done.length})
-          </Text>
-          <Ionicons name={doneExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textSecondary} />
-        </TouchableOpacity>
-        {doneExpanded && (
-          <View style={{ paddingHorizontal: spacing.lg, paddingBottom: bottomInset }}>
-            {done.length === 0 ? (
-              <Text style={styles.emptyText}>Aucune action réalisée ce mois-ci.</Text>
-            ) : (
-              done.map((action) => (
-                <View key={action.plannedOperationId} style={styles.doneRow} testID={`todo-done-row-${action.plannedOperationId}`}>
-                  <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-                  <View style={{ flex: 1, marginLeft: spacing.sm }}>
-                    <Text style={styles.rowLabel} numberOfLines={1}>
-                      {action.label}
-                    </Text>
-                    <Text style={styles.rowMeta} numberOfLines={1}>
-                      {responsibleLabel(action.responsibleMemberId)} · {formatShortDate(action.expectedDate)}
-                    </Text>
-                  </View>
-                  <Text style={styles.rowAmount}>{formatDh(action.realizedAmount ?? action.expectedAmount)}</Text>
-                </View>
-              ))
-            )}
-          </View>
-        )}
+                ))
+              )}
+            </View>
+          )}
+        </View>
       </ScrollView>
 
       <PlannedOperationActionFlow
@@ -285,16 +271,96 @@ export function TodoScreen() {
         onRefresh={async () => {
           await refresh();
         }}
-        onRefreshAndResolve={async (plannedOperationId) => {
-          const todo = await refresh();
-          const fresh = todo.pending.find((a) => a.plannedOperationId === plannedOperationId);
-          return fresh ? occurrenceFromAction(fresh) : null;
-        }}
         showToast={showToast}
         onViewTransaction={(operationId) => navigation.navigate('TransactionDetail', { id: operationId })}
       />
 
       <Toast message={toast} />
+    </View>
+  );
+}
+
+/**
+ * Accordéon "À faire" par responsable (§30-32) — header : icône + nom +
+ * nombre d'échéances + montant restant total + chevron. Contenu : lignes
+ * compactes (§35), chacune ouvrant l'ActionSheet au tap.
+ */
+function TodoSection({
+  sectionKey,
+  title,
+  icon,
+  actions,
+  accounts,
+  isCollapsed,
+  onToggle,
+  onPressAction,
+  neutral,
+}: {
+  sectionKey: string;
+  title: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  actions: api.TodoActionApi[];
+  accounts: api.AccountApi[];
+  isCollapsed: boolean;
+  onToggle: () => void;
+  onPressAction: (action: api.TodoActionApi) => void;
+  /** "Non attribué" (§32) — couleur neutre/orange très clair, jamais la même teinte qu'un membre réel. */
+  neutral?: boolean;
+}) {
+  const total = actions.reduce((sum, a) => sum + a.remaining, 0);
+  return (
+    <View style={styles.sectionCard} testID={`todo-section-${sectionKey}`}>
+      <TouchableOpacity style={styles.sectionHeader} onPress={onToggle} testID={`todo-section-${sectionKey}-toggle`}>
+        <View style={[styles.sectionIconCircle, { backgroundColor: neutral ? colors.warningLight : colors.surfaceActive }]}>
+          <Ionicons name={icon} size={16} color={neutral ? colors.warning : colors.primary} />
+        </View>
+        <Text style={styles.sectionTitle} numberOfLines={1}>
+          {title}
+        </Text>
+        <Text style={styles.sectionMeta} numberOfLines={1}>
+          {actions.length} échéance{actions.length > 1 ? 's' : ''} · {formatDh(total)}
+        </Text>
+        <Ionicons name={isCollapsed ? 'chevron-forward' : 'chevron-down'} size={16} color={colors.textSecondary} />
+      </TouchableOpacity>
+      {!isCollapsed && (
+        <View style={styles.sectionBody}>
+          {actions.map((action) => {
+            const sourceLabel = accountLabelFor(accounts, action.sourceAccountId, action.sourceSubaccountId);
+            const destinationLabel =
+              action.kind === 'SAVINGS_CONTRIBUTION' ? accountLabelFor(accounts, action.destinationAccountId, action.destinationSubaccountId) : 'Dépense';
+            const hasPartialPayment = action.realizedAmount !== null && action.realizedAmount > 0;
+            // Petit indicateur d'état (§35) : En retard > Partiel > À faire — jamais plus d'un badge à la fois.
+            const stateLabel = action.late ? 'En retard' : hasPartialPayment ? 'Partiel' : 'À faire';
+            const stateStyle = action.late ? styles.badgeLate : hasPartialPayment ? styles.badgePartial : styles.badgeDefault;
+            return (
+              <TouchableOpacity key={action.plannedOperationId} style={styles.row} onPress={() => onPressAction(action)} testID={`todo-row-${action.plannedOperationId}`}>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.rowTopLine}>
+                    <Text style={styles.rowLabel} numberOfLines={1}>
+                      {action.label}
+                    </Text>
+                    <Text style={styles.rowAmount}>{formatDh(action.remaining)}</Text>
+                  </View>
+                  {/* "04 nov. · Adil Compte Principal → Courses" — date + comptes sur une seule ligne compacte (§35). */}
+                  <View style={styles.rowBottomLine}>
+                    <Text style={styles.rowMeta} numberOfLines={1}>
+                      {formatShortDate(action.expectedDate)} · {sourceLabel ?? '—'} → {destinationLabel ?? '—'}
+                    </Text>
+                    <View style={[styles.badge, stateStyle]} testID={`todo-row-${action.plannedOperationId}-badge`}>
+                      <Text style={styles.badgeText}>{stateLabel}</Text>
+                    </View>
+                  </View>
+                  {hasPartialPayment && (
+                    <Text style={styles.rowReste} testID={`todo-row-${action.plannedOperationId}-reste`}>
+                      Reste sur {formatDh(action.expectedAmount)}
+                    </Text>
+                  )}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
     </View>
   );
 }
@@ -306,39 +372,35 @@ const styles = StyleSheet.create({
   subtitle: { ...typography.bodySecondary, marginTop: 2 },
   monthNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.sm },
   monthLabel: { ...typography.sectionTitle, marginHorizontal: spacing.md, minWidth: 140, textAlign: 'center' },
-  filterRow: { flexDirection: 'row', paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
-  filterPill: { paddingVertical: spacing.xs, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, marginRight: spacing.sm },
-  filterPillActive: { backgroundColor: colors.primary },
-  filterPillText: { ...typography.caption, fontWeight: '700', color: colors.textSecondary },
-  filterPillTextActive: { color: colors.textOnPrimary },
   synthese: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },
   syntheseCount: { ...typography.body, fontWeight: '700' },
   syntheseAmount: { ...typography.body, fontWeight: '700', color: colors.primaryDark },
-  emptyText: { ...typography.bodySecondary, paddingHorizontal: spacing.lg, paddingVertical: spacing.lg, textAlign: 'center' },
+  emptyText: { ...typography.bodySecondary, paddingVertical: spacing.lg, textAlign: 'center' },
+  // Accordéon par responsable (§30-34) — même langage visuel que les accordéons Planning.
+  sectionCard: { backgroundColor: colors.surface, borderRadius: radius.lg, marginTop: spacing.md, overflow: 'hidden', ...elevation.card },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', padding: spacing.md },
+  sectionIconCircle: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginRight: spacing.sm },
+  sectionTitle: { ...typography.body, fontWeight: '800', flex: 1 },
+  sectionMeta: { ...typography.caption, fontWeight: '700', color: colors.textSecondary, marginRight: spacing.sm },
+  sectionBody: { paddingHorizontal: spacing.sm, paddingBottom: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
   row: {
-    flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    marginBottom: spacing.xs,
-    ...elevation.card,
+    paddingHorizontal: spacing.xs,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.divider,
   },
   rowTopLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   rowLabel: { ...typography.body, fontWeight: '700', flex: 1, marginRight: spacing.sm },
   rowAmount: { ...typography.body, fontWeight: '800' },
-  rowMeta: { ...typography.caption, marginTop: 1 },
-  rowBottomLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 1 },
-  rowResponsible: { ...typography.caption, flex: 1, marginRight: spacing.sm },
+  rowMeta: { ...typography.caption, flex: 1, marginRight: spacing.sm },
+  rowBottomLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 },
   rowReste: { ...typography.caption, color: colors.primaryDark, fontWeight: '700', marginTop: 1 },
-  // Petit indicateur d'état (§10) — À faire/Partiel/En retard, jamais plus d'un badge à la fois.
+  // Petit indicateur d'état (§35) — À faire/Partiel/En retard, jamais plus d'un badge à la fois.
   badge: { paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.pill },
   badgeText: { fontSize: 10, fontWeight: '800' },
   badgeDefault: { backgroundColor: colors.surfaceSecondary },
   badgePartial: { backgroundColor: colors.warningLight },
   badgeLate: { backgroundColor: colors.dangerLight },
-  doneHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
-  doneHeaderText: { ...typography.sectionLabel, color: colors.textSecondary },
-  doneRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.xs },
+  doneRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.xs, paddingHorizontal: spacing.xs },
 });

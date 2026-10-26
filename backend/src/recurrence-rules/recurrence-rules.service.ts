@@ -2,17 +2,9 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma, PlannedOperationKind, RecurrenceFrequency, ResponsibleSource } from '@prisma/client';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { ensurePlannedOccurrences } from '../common/ledger/recurrence.util';
-import { formatMontant } from '../common/ledger/ledger.util';
+import { formatMontant, computePlannedOperationAlreadyPaid } from '../common/ledger/ledger.util';
 import { resolveFallbackCategoryId } from '../categories/categories.service';
 import { RecurrenceRuleApplyFrom } from './dto/update-recurrence-rule.dto';
-
-type TxClient = Prisma.TransactionClient;
-
-/** Même convention que PlannedOperationsService#computeAlreadyPaid (jamais un second calcul) — somme nette de toutes les opérations réelles déjà liées à CETTE occurrence. */
-async function computeAlreadyPaid(tx: TxClient, plannedId: string): Promise<Prisma.Decimal> {
-  const realizations = await tx.financialOperation.findMany({ where: { plannedOperationId: plannedId } });
-  return realizations.reduce((sum, op) => sum.add(op.reversalOfOperationId ? op.amount.neg() : op.amount), new Prisma.Decimal(0));
-}
 
 export interface CreateRecurrenceRuleInput {
   frequency: RecurrenceFrequency;
@@ -137,18 +129,23 @@ export class RecurrenceRulesService {
       const cadenceChanges = dto.frequency !== undefined || dto.anchorDate !== undefined;
       const newAnchorDate = dto.anchorDate !== undefined ? new Date(dto.anchorDate) : fromDate;
 
-      // §7 "Ne jamais créer une incohérence comptable silencieuse", étendu à
-      // "cette échéance et les suivantes" : REJETTE le lot ENTIER si une
-      // SEULE occurrence PENDING affectée a déjà reçu plus que le nouveau
-      // montant — jamais un lot partiellement appliqué qui laisserait
-      // certaines occurrences incohérentes silencieusement.
+      // §7/§24 "Ne jamais créer une incohérence comptable silencieuse", étendu
+      // à "cette échéance et les suivantes" : REJETTE le lot ENTIER si une
+      // SEULE occurrence affectée (PENDING ou REALIZED — le pivot lui-même
+      // peut déjà être payé, lot "refonte Planning/À faire" §20-24) a déjà
+      // reçu plus que le nouveau montant — jamais un lot partiellement
+      // appliqué qui laisserait certaines occurrences incohérentes.
+      const realizedPivotCandidates =
+        dto.applyFrom === 'THIS_AND_FOLLOWING'
+          ? await tx.plannedOperation.findMany({ where: { recurrenceRuleId: id, status: 'REALIZED', expectedDate: { gte: fromDate } } })
+          : [];
       if (dto.applyFrom === 'THIS_AND_FOLLOWING' && dto.expectedAmount !== undefined) {
         const newAmount = new Prisma.Decimal(dto.expectedAmount);
-        const affected = await tx.plannedOperation.findMany({
+        const affectedPending = await tx.plannedOperation.findMany({
           where: { recurrenceRuleId: id, status: 'PENDING', expectedDate: { gte: fromDate } },
         });
-        for (const occ of affected) {
-          const alreadyPaid = await computeAlreadyPaid(tx, occ.id);
+        for (const occ of [...affectedPending, ...realizedPivotCandidates]) {
+          const alreadyPaid = await computePlannedOperationAlreadyPaid(tx, occ.id);
           if (newAmount.lt(alreadyPaid)) {
             throw new BadRequestException(
               `${formatMontant(alreadyPaid)} DH ont déjà été payés sur l'échéance « ${occ.label} » du ${occ.expectedDate.toISOString().slice(0, 10)}. Annulez ou corrigez d'abord les paiements existants pour réduire l'échéance sous ce montant.`,
@@ -241,6 +238,26 @@ export class RecurrenceRulesService {
             where: { recurrenceRuleId: id, status: 'PENDING', expectedDate: { gte: fromDate } },
             data: occurrencePatch,
           });
+
+          // §20-24 — occurrence(s) REALIZED dans la plage (typiquement le
+          // pivot déjà payé) : updateMany ci-dessus les exclut (status
+          // PENDING uniquement) EXPRÈS, car chacune a besoin du même
+          // rebasculement PENDING-si-prévu->déjà-payé que
+          // PlannedOperationsService#update — jamais un second calcul,
+          // appliqué ici ligne par ligne via le même garde-fou.
+          for (const occ of realizedPivotCandidates) {
+            const alreadyPaid = await computePlannedOperationAlreadyPaid(tx, occ.id);
+            const resultingAmount = dto.expectedAmount !== undefined ? new Prisma.Decimal(dto.expectedAmount) : occ.expectedAmount;
+            const becomesPending = resultingAmount.gt(alreadyPaid);
+            await tx.plannedOperation.update({
+              where: { id: occ.id },
+              data: {
+                ...occurrencePatch,
+                status: becomesPending ? 'PENDING' : undefined,
+                realizedOperationId: becomesPending ? null : undefined,
+              },
+            });
+          }
         }
       }
 

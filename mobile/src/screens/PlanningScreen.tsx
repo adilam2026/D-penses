@@ -9,7 +9,6 @@ import { HelpButton } from '../ui/HelpButton';
 import { FormField } from '../ui/FormField';
 import { Select } from '../ui/Select';
 import { DateField } from '../ui/DateField';
-import { ChoiceSheet } from '../ui/ChoiceSheet';
 import { Toast } from '../ui/Toast';
 import { useBottomInset } from '../ui/useBottomInset';
 import { testIdSlug } from '../ui/testIdSlug';
@@ -18,23 +17,10 @@ import { accountSelectOptions, decodeAccountOption, encodeAccountOption } from '
 import { RECURRENCE_FREQUENCY_OPTIONS, RecurrenceOption } from '../ui/recurrenceLabels';
 
 const HORIZON_OPTIONS = [3, 6, 9, 12] as const;
-// Fenêtre multi-mois compacte (correctif Planning) — 3 colonnes visibles à la
-// fois sur mobile, balayables horizontalement (swipe ou flèches ‹ ›) sur tout
-// l'horizon sélectionné. Jamais plus de 3 colonnes en largeur disponible,
-// jamais un seul mois à la fois (le moteur/les données restent inchangés).
+// Fenêtre multi-mois compacte — 3 colonnes visibles à la fois (flèches ‹ ›)
+// sur tout l'horizon sélectionné, partagées par tous les accordéons (§3).
 const VISIBLE_COLUMNS = 3;
-const FALLBACK_COLUMN_WIDTH = 90;
-const LABEL_WIDTH = 108;
-const ROW_HEIGHT = 46;
-// Lot "couverture des dépenses restantes" — la ligne "DÉPENSES payé/prévu"
-// gagne une 3e ligne compacte ("À provisionner"/"✓ Tout est couvert"),
-// UNIQUEMENT visible dans la colonne du mois courant (les mois futurs
-// gardent 2 lignes, faute de couverture fiable) : légèrement plus haute que
-// ROW_HEIGHT pour l'accueillir sans écraser le texte existant.
-const SYNTHESE_DEPENSES_ROW_HEIGHT = 60;
-const SECTION_HEIGHT = 30;
-const HEADER_HEIGHT = 40;
-const CATEGORY_HEADER_HEIGHT = 24;
+const CENTER_COLUMN_INDEX = 1;
 const TOAST_DURATION_MS = 1800;
 
 interface BlockDef {
@@ -111,26 +97,6 @@ function occurrenceFromItem(item: api.PlanningCellItemApi): api.PlanningSingleOc
 }
 
 /**
- * Retrouve, dans une table Planning fraîchement chargée, l'occurrence
- * singleOccurrence d'une échéance précise — utilisé après un unrealize()
- * pour reprendre la main avec le "déjà payé" RÉEL (d'éventuels paiements
- * partiels antérieurs à l'opération annulée restent comptés), jamais une
- * valeur figée capturée avant le refresh. Fonction pure (module-level),
- * réutilisable par tout écran qui charge un PlanningTableApi.
- */
-function findOccurrenceById(planning: api.PlanningTableApi, plannedOperationId: string): api.PlanningSingleOccurrenceApi | null {
-  for (const block of [planning.depenses, planning.revenus, planning.epargne]) {
-    for (const row of block) {
-      for (const m of planning.months) {
-        const occ = row.cells[m]?.singleOccurrence;
-        if (occ?.plannedOperationId === plannedOperationId) return occ;
-      }
-    }
-  }
-  return null;
-}
-
-/**
  * Planning multi-mois (Checkpoint 3, correctif fenêtre compacte) — 4 blocs
  * (Revenus/Dépenses/Épargne/Synthèse), horizon 3-12 mois, colonne de
  * libellés figée + 3 colonnes de mois visibles simultanément, balayables
@@ -158,12 +124,12 @@ export function PlanningScreen() {
   const [detailTarget, setDetailTarget] = useState<{ cell: api.PlanningCellApi; rowLabel: string; month: string } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Lot "refonte Planning/À faire" §2 — chaque bloc (Revenus/Dépenses/
-  // Épargne) est pliable indépendamment (jamais un grand tableau continu
-  // type Excel) ; replié, seule la ligne TOTAL reste visible. Tous dépliés
-  // par défaut (comportement historique préservé, rien ne disparaît sans
-  // action explicite de l'utilisateur).
-  const [collapsedBlocks, setCollapsedBlocks] = useState<Set<string>>(new Set());
+  // Lot "refonte Planning/À faire" §7 — chaque bloc (Revenus/Dépenses/
+  // Versements) est un accordéon indépendant ; replié, seul le header (titre
+  // + total du mois actif) reste visible. Revenus ouvert par défaut, les
+  // autres fermés (§7) — état conservé pendant la navigation tant que l'écran
+  // reste monté, rien ne se replie/déplie sans action explicite.
+  const [collapsedBlocks, setCollapsedBlocks] = useState<Set<string>>(new Set(['DÉPENSES', 'ÉPARGNE / VERSEMENTS']));
   function toggleBlock(title: string) {
     setCollapsedBlocks((prev) => {
       const next = new Set(prev);
@@ -174,12 +140,10 @@ export function PlanningScreen() {
   }
 
   // Fenêtre de 3 mois glissante sur l'horizon chargé (data.months) : windowStart
-  // = index du premier mois visible, déplacé par pas de 1 (swipe à snap ou
-  // flèches), jamais par pas de 3 — cf. l'exemple Oct|Nov|Déc → Nov|Déc|Jan.
+  // = index du premier mois visible, déplacé par pas de 1 (flèches), jamais
+  // par pas de 3 — cf. l'exemple Oct|Nov|Déc → Nov|Déc|Jan. UNE seule barre
+  // de navigation (§3), partagée par tous les accordéons.
   const [windowStart, setWindowStart] = useState(0);
-  const [areaWidth, setAreaWidth] = useState(0);
-  const monthScrollRef = useRef<ScrollView>(null);
-  const columnWidth = areaWidth > 0 ? areaWidth / VISIBLE_COLUMNS : FALLBACK_COLUMN_WIDTH;
 
   const load = useCallback(async (h: number) => {
     const [planning, accountList, categoryList, planList, household] = await Promise.all([
@@ -208,15 +172,12 @@ export function PlanningScreen() {
   // après un simple refresh de données, pour ne pas sauter la fenêtre affichée).
   React.useEffect(() => {
     setWindowStart(0);
-    monthScrollRef.current?.scrollTo({ x: 0, animated: false });
   }, [months]);
 
   function goToWindow(idx: number) {
     if (!data) return;
     const maxStart = Math.max(0, data.months.length - VISIBLE_COLUMNS);
-    const clamped = Math.max(0, Math.min(maxStart, idx));
-    setWindowStart(clamped);
-    monthScrollRef.current?.scrollTo({ x: clamped * columnWidth, animated: true });
+    setWindowStart(Math.max(0, Math.min(maxStart, idx)));
   }
 
   async function refresh() {
@@ -261,10 +222,15 @@ export function PlanningScreen() {
   ];
   const blockItemsByTitle = new Map(blocks.map((b) => [b.title, buildBlockItems(b.rows, b.uncategorizedLabel)]));
   const maxWindowStart = Math.max(0, data.months.length - VISIBLE_COLUMNS);
-  // Dernier mois VISIBLE de la fenêtre 3 mois courante (§13) — recalculé à
+  // Dernier mois VISIBLE de la fenêtre 3 mois courante (§5) — recalculé à
   // chaque navigation (windowStart change), jamais figé sur le dernier mois
   // de tout l'horizon chargé.
   const lastVisibleMonth = data.months[Math.min(windowStart + VISIBLE_COLUMNS - 1, data.months.length - 1)];
+  const visibleMonths = data.months.slice(windowStart, windowStart + VISIBLE_COLUMNS);
+  // Mois actif (§4) : toujours le premier mois chargé (le mois réel en
+  // cours), indépendant de la fenêtre de navigation — une référence stable,
+  // jamais "ce sur quoi l'utilisateur a navigué".
+  const currentSynthese = data.synthese[data.months[0]];
 
   return (
     <View style={styles.container}>
@@ -325,269 +291,88 @@ export function PlanningScreen() {
           </View>
         </View>
 
-        <View style={styles.tableRow}>
-          <View style={{ width: LABEL_WIDTH }}>
-            <View style={[styles.labelCell, styles.headerLabelCell, { height: HEADER_HEIGHT }]}>
-              <TouchableOpacity
-                onPress={() => goToWindow(windowStart - 1)}
-                disabled={windowStart === 0}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                testID="planning-month-prev"
-              >
-                <Ionicons name="chevron-back" size={16} color={windowStart === 0 ? colors.textPlaceholder : colors.textPrimary} />
-              </TouchableOpacity>
+        {/* Navigation temporelle (§3) — UNE SEULE barre de mois, partagée par
+            tous les accordéons ci-dessous (jamais un scroll horizontal par
+            bloc) : les flèches déplacent la fenêtre de 3 mois d'un pas à la
+            fois (ex. Oct|Nov|Déc -> Nov|Déc|Jan). Toujours 3 mois visibles. */}
+        <View style={styles.monthNavRow} testID="planning-month-nav">
+          <TouchableOpacity onPress={() => goToWindow(windowStart - 1)} disabled={windowStart === 0} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} testID="planning-month-prev">
+            <Ionicons name="chevron-back" size={18} color={windowStart === 0 ? colors.textPlaceholder : colors.textPrimary} />
+          </TouchableOpacity>
+          {visibleMonths.map((m, i) => (
+            <Text key={m} style={[styles.monthNavLabel, i === CENTER_COLUMN_INDEX && styles.monthNavLabelActive]} numberOfLines={1}>
+              {formatMonthShort(m)}
+            </Text>
+          ))}
+          <TouchableOpacity
+            onPress={() => goToWindow(windowStart + 1)}
+            disabled={windowStart >= maxWindowStart}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            testID="planning-month-next"
+          >
+            <Ionicons name="chevron-forward" size={18} color={windowStart >= maxWindowStart ? colors.textPlaceholder : colors.textPrimary} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Carte Projection (§5) — toujours visuellement séparée, jamais une
+            phrase perdue sous un tableau. Cumul jusqu'au DERNIER mois visible
+            de la fenêtre 3 mois, recalculé à chaque navigation. */}
+        <View style={styles.projectionCard} testID="planning-projection-cumulee">
+          <View style={styles.projectionCardIcon}>
+            <Ionicons name="flag" size={18} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.projectionCardLabel}>Projection à fin {formatMonthLabel(lastVisibleMonth)}</Text>
+            <Text style={[styles.projectionCardAmount, data.synthese[lastVisibleMonth].projectionCumulee < 0 && styles.negativeText]}>
+              {formatDh(data.synthese[lastVisibleMonth].projectionCumulee)}
+            </Text>
+          </View>
+        </View>
+
+        {/* "Reste à exécuter" (§12) — carte compacte, MOIS COURANT uniquement
+            (resteDepenses non-null) : jamais une ligne supplémentaire d'un
+            tableau, jamais une valeur inventée faute de projection fiable. */}
+        {currentSynthese.resteDepenses !== null && (
+          <View style={styles.resteCard} testID="planning-reste-card">
+            <Text style={styles.resteCardTitle}>Reste à exécuter</Text>
+            <View style={styles.resteCardRow}>
+              <Text style={styles.resteCardLabel}>Dépenses</Text>
+              <Text style={styles.resteCardValue}>{formatDh(currentSynthese.resteDepenses)}</Text>
             </View>
-            {blocks.map((block) => {
-              const isCollapsed = collapsedBlocks.has(block.title);
-              return (
-                <React.Fragment key={block.title}>
-                  <TouchableOpacity
-                    style={[styles.sectionLabelCell, { height: SECTION_HEIGHT, borderLeftColor: block.accentColor }]}
-                    onPress={() => toggleBlock(block.title)}
-                    testID={`planning-block-toggle-${testIdSlug(block.title)}`}
-                  >
-                    <Text style={[styles.sectionLabelText, { color: block.accentColor }]} numberOfLines={1}>
-                      {block.title}
-                    </Text>
-                    <Ionicons name={isCollapsed ? 'chevron-forward' : 'chevron-down'} size={13} color={block.accentColor} />
-                  </TouchableOpacity>
-                  {isCollapsed ? null : block.rows.length === 0 ? (
-                    <View style={[styles.labelCell, { height: ROW_HEIGHT }]}>
-                      <Text style={styles.emptyRowText} numberOfLines={2}>
-                        {block.emptyText}
-                      </Text>
-                    </View>
-                  ) : (
-                    (blockItemsByTitle.get(block.title) ?? []).map((item, idx) =>
-                      item.kind === 'header' ? (
-                        // Titre de regroupement catégorie (Lot ciblé §5) — PUR AFFICHAGE :
-                        // jamais de montant, jamais tappable, jamais de chevron.
-                        <View key={`h-${idx}`} style={[styles.categoryHeaderCell, { height: CATEGORY_HEADER_HEIGHT }]}>
-                          <Text style={styles.categoryHeaderText} numberOfLines={1}>
-                            {item.label}
-                          </Text>
-                        </View>
-                      ) : (
-                        <View key={item.row.key} style={[styles.labelCell, { height: ROW_HEIGHT }]}>
-                          <Text style={styles.rowLabelText} numberOfLines={2}>
-                            {item.row.label}
-                          </Text>
-                        </View>
-                      ),
-                    )
-                  )}
-                  <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: block.accentColor }]}>
-                    <Text style={styles.totalLabelText}>{block.totalLabel}</Text>
-                  </View>
-                </React.Fragment>
-              );
-            })}
-            {/* "Détail par mois" (§2) : REVENUS/DÉPENSES/VERSEMENTS reprennent
-                EXACTEMENT les mêmes totaux que les lignes TOTAL ci-dessus
-                (aucun second calcul) + RÉSULTAT PRÉVU — visuellement SÉPARÉ du
-                détail par catégorie ci-dessus (fond teinté, jamais fondu dans
-                le même tableau continu). */}
-            <View style={styles.syntheseGroupLabel}>
-              <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: colors.success }]}>
-                <Text style={styles.totalLabelText}>REVENUS</Text>
-              </View>
-              <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: colors.danger }]}>
-                <Text style={styles.totalLabelText}>DÉPENSES</Text>
-              </View>
-              <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, borderLeftColor: colors.secondary }]}>
-                <Text style={styles.totalLabelText}>VERSEMENTS</Text>
-              </View>
-              <View style={[styles.totalLabelCell, { height: ROW_HEIGHT, backgroundColor: colors.surfaceActive }]}>
-                <Text style={styles.totalLabelText}>RÉSULTAT PRÉVU</Text>
-              </View>
-              {/* "Reste à exécuter" — MOIS COURANT UNIQUEMENT (§10/§12), vide pour tout mois futur. */}
-              <View style={[styles.totalLabelCell, { height: SYNTHESE_DEPENSES_ROW_HEIGHT }]}>
-                <Text style={styles.totalLabelText} numberOfLines={2}>
-                  RESTE À EXÉCUTER
+            <View style={styles.resteCardRow}>
+              <Text style={styles.resteCardLabel}>Versements</Text>
+              <Text style={styles.resteCardValue}>{formatDh(currentSynthese.resteVersements ?? 0)}</Text>
+            </View>
+            <View style={styles.resteCardRow}>
+              {currentSynthese.couverte ? (
+                <Text style={styles.syntheseCouvertureOk} testID="planning-reste-couvert">
+                  ✓ Tout est couvert
                 </Text>
-              </View>
+              ) : (
+                <Text style={styles.syntheseCouvertureWarn} testID="planning-reste-a-provisionner">
+                  À provisionner {formatDh(currentSynthese.aProvisionner ?? 0)}
+                </Text>
+              )}
             </View>
           </View>
+        )}
 
-          <View style={{ flex: 1, position: 'relative' }} onLayout={(e) => setAreaWidth(e.nativeEvent.layout.width)}>
-            <TouchableOpacity
-              style={styles.monthNextButton}
-              onPress={() => goToWindow(windowStart + 1)}
-              disabled={windowStart >= maxWindowStart}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              testID="planning-month-next"
-            >
-              <Ionicons name="chevron-forward" size={16} color={windowStart >= maxWindowStart ? colors.textPlaceholder : colors.textPrimary} />
-            </TouchableOpacity>
-            <ScrollView
-              ref={monthScrollRef}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              snapToInterval={columnWidth}
-              decelerationRate="fast"
-              disableIntervalMomentum
-              onMomentumScrollEnd={(e) => {
-                if (!columnWidth) return;
-                const idx = Math.round(e.nativeEvent.contentOffset.x / columnWidth);
-                setWindowStart(Math.max(0, Math.min(maxWindowStart, idx)));
-              }}
-            >
-              <View>
-                <View style={{ flexDirection: 'row', height: HEADER_HEIGHT }}>
-                  {data.months.map((m) => (
-                    <View key={m} style={[styles.monthHeaderCell, { width: columnWidth }]}>
-                      <Text style={styles.monthHeaderText} numberOfLines={1}>
-                        {formatMonthShort(m)}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-
-                {blocks.map((block) => {
-                  const isCollapsed = collapsedBlocks.has(block.title);
-                  return (
-                    <React.Fragment key={block.title}>
-                      <View style={{ flexDirection: 'row', height: SECTION_HEIGHT }}>
-                        {data.months.map((m) => (
-                          <View key={m} style={[styles.sectionSpacerCell, { width: columnWidth }]} />
-                        ))}
-                      </View>
-                      {isCollapsed
-                        ? null
-                        : block.rows.length === 0
-                          ? [
-                              <View key="empty" style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                                {data.months.map((m) => (
-                                  <View key={m} style={[styles.cell, { width: columnWidth }]} />
-                                ))}
-                              </View>,
-                            ]
-                          : (blockItemsByTitle.get(block.title) ?? []).map((item, idx) =>
-                              item.kind === 'header' ? (
-                                <View key={`h-${idx}`} style={{ flexDirection: 'row', height: CATEGORY_HEADER_HEIGHT }}>
-                                  {data.months.map((m) => (
-                                    <View key={m} style={[styles.categoryHeaderSpacerCell, { width: columnWidth }]} />
-                                  ))}
-                                </View>
-                              ) : (
-                                <View key={item.row.key} style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                                  {data.months.map((m) => (
-                                    <PlanningCellView
-                                      key={m}
-                                      cell={item.row.cells[m]}
-                                      width={columnWidth}
-                                      onPress={() => onCellPress(item.row.cells[m], item.row.label)}
-                                      onLongPress={() => onCellPress(item.row.cells[m], item.row.label)}
-                                      testID={`planning-cell-${testIdSlug(item.row.label)}-${m}`}
-                                    />
-                                  ))}
-                                </View>
-                              ),
-                            )}
-                      <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                        {data.months.map((m) => (
-                          <View key={m} style={[styles.totalCell, { width: columnWidth }]}>
-                            <Text style={styles.totalCellText} numberOfLines={1} adjustsFontSizeToFit>
-                              {formatDh(data.synthese[m][block.totalKey])}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-                    </React.Fragment>
-                  );
-                })}
-
-                {/* "Détail par mois" (§2) : REVENUS/DÉPENSES/VERSEMENTS =
-                    EXACTEMENT les mêmes totaux que TOTAL REVENUS/DÉPENSES/
-                    VERSEMENTS ci-dessus (aucun second calcul, aucune
-                    divergence possible) + RÉSULTAT PRÉVU qui en dérive —
-                    fond teinté (styles.syntheseGroupGrid), visuellement
-                    séparé du détail par catégorie ci-dessus. */}
-                <View style={styles.syntheseGroupGrid}>
-                  <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                    {data.months.map((m) => (
-                      <View key={m} style={[styles.totalCell, { width: columnWidth }]} testID={`planning-synthese-revenus-${m}`}>
-                        <Text style={styles.totalCellText} numberOfLines={1} adjustsFontSizeToFit>
-                          {formatDh(data.synthese[m].totalRevenus)}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                  <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                    {data.months.map((m) => (
-                      <View key={m} style={[styles.totalCell, { width: columnWidth }]} testID={`planning-synthese-depenses-${m}`}>
-                        <Text style={styles.totalCellText} numberOfLines={1} adjustsFontSizeToFit>
-                          {formatDh(data.synthese[m].totalDepenses)}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                  <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                    {data.months.map((m) => (
-                      <View key={m} style={[styles.totalCell, { width: columnWidth }]} testID={`planning-synthese-versements-${m}`}>
-                        <Text style={styles.totalCellText} numberOfLines={1} adjustsFontSizeToFit>
-                          {formatDh(data.synthese[m].totalEpargne)}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                  <View style={{ flexDirection: 'row', height: ROW_HEIGHT }}>
-                    {data.months.map((m) => (
-                      <View key={m} style={[styles.totalCell, styles.syntheseCell, { width: columnWidth }]} testID={`planning-synthese-resultat-prevu-${m}`}>
-                        <Text style={[styles.totalCellText, data.synthese[m].resultatPrevu < 0 && styles.negativeText]} numberOfLines={1} adjustsFontSizeToFit>
-                          {formatDh(data.synthese[m].resultatPrevu)}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-
-                  {/* "Reste à exécuter" (§10/§11) — MOIS COURANT uniquement
-                      (resteDepenses non-null) : vide pour tout mois futur,
-                      jamais une valeur inventée faute de projection fiable. */}
-                  <View style={{ flexDirection: 'row', height: SYNTHESE_DEPENSES_ROW_HEIGHT }}>
-                    {data.months.map((m) => {
-                      const s = data.synthese[m];
-                      return (
-                        <View key={m} style={[styles.totalCell, { width: columnWidth }]} testID={`planning-reste-a-executer-${m}`}>
-                          {s.resteDepenses !== null && (
-                            <>
-                              <Text style={styles.syntheseDetailAmount} numberOfLines={1} adjustsFontSizeToFit>
-                                Dépenses {Math.round(s.resteDepenses).toLocaleString('fr-FR')} DH
-                              </Text>
-                              <Text style={styles.syntheseDetailAmount} numberOfLines={1} adjustsFontSizeToFit>
-                                Versements {Math.round(s.resteVersements ?? 0).toLocaleString('fr-FR')} DH
-                              </Text>
-                              {s.couverte ? (
-                                <Text style={styles.syntheseCouvertureOk} numberOfLines={1} adjustsFontSizeToFit>
-                                  ✓ Couvert
-                                </Text>
-                              ) : (
-                                <Text style={styles.syntheseCouvertureWarn} numberOfLines={1} adjustsFontSizeToFit>
-                                  À provisionner {Math.round(s.aProvisionner ?? 0).toLocaleString('fr-FR')} DH
-                                </Text>
-                              )}
-                            </>
-                          )}
-                        </View>
-                      );
-                    })}
-                  </View>
-                </View>
-              </View>
-            </ScrollView>
-          </View>
-        </View>
-
-        {/* Projection (§13) — ligne UNIQUE sous le tableau (plus de grosse
-            BALANCE CUMULÉE par colonne) : cumul des résultats prévus jusqu'au
-            DERNIER MOIS VISIBLE de la fenêtre 3 mois, recalculée à chaque
-            navigation (windowStart). */}
-        <View style={styles.projectionLine} testID="planning-projection-cumulee">
-          <Text style={styles.projectionLabel}>Projection à fin {formatMonthLabel(lastVisibleMonth)} :</Text>
-          <Text style={[styles.projectionAmount, data.synthese[lastVisibleMonth].projectionCumulee < 0 && styles.negativeText]}>
-            {formatDh(data.synthese[lastVisibleMonth].projectionCumulee)}
-          </Text>
-        </View>
+        {/* Structure principale (§6/§7) — 3 cartes/accordéons indépendants,
+            partageant la même fenêtre de 3 mois (visibleMonths) que la
+            navigation ci-dessus — plus aucun grand tableau continu. */}
+        {blocks.map((block) => (
+          <PlanningAccordion
+            key={block.title}
+            block={block}
+            items={blockItemsByTitle.get(block.title) ?? []}
+            visibleMonths={visibleMonths}
+            currentMonth={data.months[0]}
+            synthese={data.synthese}
+            isCollapsed={collapsedBlocks.has(block.title)}
+            onToggle={() => toggleBlock(block.title)}
+            onCellPress={onCellPress}
+          />
+        ))}
 
         <PlansSection plans={plans} onOpen={(id) => navigation.navigate('FinancialPlanDetail', { id })} />
       </ScrollView>
@@ -600,10 +385,6 @@ export function PlanningScreen() {
         onClose={() => setActionTarget(null)}
         onRefresh={async () => {
           await refresh();
-        }}
-        onRefreshAndResolve={async (plannedOperationId) => {
-          const planning = await refresh();
-          return findOccurrenceById(planning, plannedOperationId);
         }}
         showToast={showToast}
         onViewTransaction={(operationId) => navigation.navigate('TransactionDetail', { id: operationId })}
@@ -630,13 +411,11 @@ export function PlanningScreen() {
 
 function PlanningCellView({
   cell,
-  width,
   onPress,
   onLongPress,
   testID,
 }: {
   cell: api.PlanningCellApi;
-  width: number;
   onPress: () => void;
   onLongPress: () => void;
   testID: string;
@@ -646,7 +425,7 @@ function PlanningCellView({
   const isMixed = cell.status === 'MIXED';
   return (
     <TouchableOpacity
-      style={[styles.cell, { width }, isRealized && styles.cellRealized, isPending && styles.cellPending, isMixed && styles.cellMixed]}
+      style={[styles.cell, isRealized && styles.cellRealized, isPending && styles.cellPending, isMixed && styles.cellMixed]}
       onPress={onPress}
       onLongPress={onLongPress}
       disabled={cell.status === 'EMPTY'}
@@ -687,6 +466,102 @@ function PlanningCellView({
   );
 }
 
+const BLOCK_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
+  REVENUS: 'trending-up-outline',
+  DÉPENSES: 'cart-outline',
+  'ÉPARGNE / VERSEMENTS': 'wallet-outline',
+};
+
+/**
+ * Accordéon Planning (§6/§7) — carte autonome : header toujours visible
+ * (icône + titre + total du mois ACTIF + chevron), contenu replié par
+ * défaut sauf ouvert explicitement. Les 3 colonnes mensuelles affichées sont
+ * celles de `visibleMonths` (fenêtre partagée, pilotée par la barre de
+ * navigation unique en haut de l'écran) — jamais un scroll horizontal
+ * indépendant par bloc.
+ */
+function PlanningAccordion({
+  block,
+  items,
+  visibleMonths,
+  currentMonth,
+  synthese,
+  isCollapsed,
+  onToggle,
+  onCellPress,
+}: {
+  block: BlockDef;
+  items: BlockItem[];
+  visibleMonths: string[];
+  currentMonth: string;
+  synthese: Record<string, api.PlanningMonthSyntheseApi>;
+  isCollapsed: boolean;
+  onToggle: () => void;
+  onCellPress: (cell: api.PlanningCellApi, rowLabel: string) => void;
+}) {
+  const total = synthese[currentMonth][block.totalKey];
+  return (
+    <View style={styles.accordionCard} testID={`planning-accordion-${testIdSlug(block.title)}`}>
+      <TouchableOpacity style={styles.accordionHeader} onPress={onToggle} testID={`planning-block-toggle-${testIdSlug(block.title)}`}>
+        <View style={[styles.accordionIconCircle, { backgroundColor: `${block.accentColor}22` }]}>
+          <Ionicons name={BLOCK_ICONS[block.title] ?? 'ellipse-outline'} size={16} color={block.accentColor} />
+        </View>
+        <Text style={styles.accordionTitle} numberOfLines={1}>
+          {block.title}
+        </Text>
+        <Text style={[styles.accordionTotal, { color: block.accentColor }]}>{formatDh(total)}</Text>
+        <Ionicons name={isCollapsed ? 'chevron-forward' : 'chevron-down'} size={16} color={colors.textSecondary} />
+      </TouchableOpacity>
+
+      {!isCollapsed && (
+        <View style={styles.accordionBody}>
+          {items.length === 0 ? (
+            <Text style={styles.accordionEmptyText}>{block.emptyText}</Text>
+          ) : (
+            <>
+              <View style={styles.monthColHeaderRow}>
+                <View style={styles.monthColSpacer} />
+                {visibleMonths.map((m) => (
+                  <Text key={m} style={styles.monthColHeader} numberOfLines={1}>
+                    {formatMonthShort(m)}
+                  </Text>
+                ))}
+              </View>
+              {items.map((item, idx) =>
+                item.kind === 'header' ? (
+                  // Titre de regroupement catégorie — PUR AFFICHAGE : jamais de montant, jamais tappable.
+                  <View key={`h-${idx}`} style={styles.accordionCategoryHeader}>
+                    <Text style={styles.accordionCategoryHeaderText} numberOfLines={1}>
+                      {item.label}
+                    </Text>
+                  </View>
+                ) : (
+                  <View key={item.row.key} style={styles.accordionRow}>
+                    <Text style={styles.accordionRowLabel} numberOfLines={2}>
+                      {item.row.label}
+                    </Text>
+                    <View style={styles.accordionCellsRow}>
+                      {visibleMonths.map((m) => (
+                        <PlanningCellView
+                          key={m}
+                          cell={item.row.cells[m]}
+                          onPress={() => onCellPress(item.row.cells[m], item.row.label)}
+                          onLongPress={() => onCellPress(item.row.cells[m], item.row.label)}
+                          testID={`planning-cell-${testIdSlug(item.row.label)}-${m}`}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                ),
+              )}
+            </>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
 /**
  * Composant d'action UNIQUE (§3/§11, "moteur commun Planning/À faire") —
  * exporté pour réutilisation STRICTE par TodoScreen : même composant, même
@@ -701,38 +576,29 @@ function PlanningCellView({
  */
 export function ActionSheet({
   target,
-  accounts,
   onClose,
   onDone,
   onEdit,
   onCancel,
   onViewTransaction,
-  onPaidAction,
+  onUnrealize,
 }: {
   target: { occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string } | null;
-  accounts: api.AccountApi[];
   onClose: () => void;
   onDone: (message: string) => Promise<void>;
   onEdit: (occurrence: api.PlanningSingleOccurrenceApi, rowLabel: string) => void;
   onCancel: (occurrence: api.PlanningSingleOccurrenceApi, rowLabel: string) => void;
   onViewTransaction: (operationId: string) => void;
-  onPaidAction: (occurrence: api.PlanningSingleOccurrenceApi, rowLabel: string, intent: 'unrealize' | 'edit' | 'cancel') => Promise<void>;
+  onUnrealize: (occurrence: api.PlanningSingleOccurrenceApi, rowLabel: string) => Promise<void>;
 }) {
   const bottomInset = useBottomInset(spacing.lg);
   const { scrollRef, handleFocus } = useKeyboardAwareScroll();
   const occ = target?.occurrence ?? null;
-  // 'menu' = résumé + liste d'actions (les 5 écrans de la maquette
-  // "Exécuter une échéance"/"Options sur échéance déjà payée" s'y résument à
-  // UN seul composant, le menu changeant selon le statut) ; 'pay'/'partial' =
-  // les deux sous-formulaires ("Paiement" / "Paiement partiel").
-  const [view, setView] = useState<'menu' | 'pay' | 'partial'>('menu');
-  const [amount, setAmount] = useState('');
-  const [date, setDate] = useState('');
+  // 'menu' = résumé + liste d'actions ; 'partial' = le SEUL sous-formulaire
+  // restant (§15 — le paiement total est désormais une action directe, sans
+  // formulaire : montant/date/source sont automatiques, jamais redemandés).
+  const [view, setView] = useState<'menu' | 'partial'>('menu');
   const [partialAmount, setPartialAmount] = useState('');
-  // Source RÉELLE de CE paiement (lot "choisir la source au moment du
-  // paiement") — présélectionnée sur la source PRÉVUE de l'échéance, mais
-  // librement modifiable ; n'est JAMAIS écrite sur l'échéance elle-même.
-  const [accountOption, setAccountOption] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -745,43 +611,29 @@ export function ActionSheet({
   React.useEffect(() => {
     if (occ) {
       setView('menu');
-      setAmount(String(remaining));
-      setDate(new Date().toISOString().slice(0, 10));
       setPartialAmount('');
       setError(null);
-      const { accountId, subaccountId } = relevantAccount(occ);
-      setAccountOption(encodeAccountOption(accountId, subaccountId));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [occ?.plannedOperationId, occ?.realizedAmount]);
 
   if (!target || !occ) return null;
-  const { preposition } = relevantAccount(occ);
-  const sourceSelectOptions = accountSelectOptions(accounts, true);
-  const accountFieldLabel = preposition === 'depuis' ? 'Compte / enveloppe à débiter' : 'Compte / enveloppe à créditer';
   const partialValue = Number(partialAmount);
   const canSubmitPartial = partialAmount.trim() !== '' && partialValue > 0 && partialValue < remaining;
+  const todayIso = () => new Date().toISOString().slice(0, 10);
 
   /**
-   * Traduit le Select en override pour realize/partialRealize — jamais une
-   * fusion avec la source prévue : si l'utilisateur a choisi une valeur,
-   * c'est la paire COMPLÈTE (compte + sous-compte éventuel) qui est envoyée.
+   * Paiement total (§15) — UNE SEULE action, immédiate : montant restant,
+   * date = aujourd'hui, source/destination PRÉVUES — jamais un formulaire
+   * intermédiaire. Si la source prévue n'est plus valide (§16), le backend
+   * refuse et l'erreur s'affiche ici même, sans jamais transformer le
+   * parcours normal en formulaire.
    */
-  function paymentSourceOverride(): Partial<api.RealizePlannedOperationData> {
-    if (!accountOption) return {};
-    const decoded = decodeAccountOption(accountOption, accounts);
-    return preposition === 'depuis'
-      ? { sourceAccountId: decoded.accountId, sourceSubaccountId: decoded.subaccountId }
-      : { destinationAccountId: decoded.accountId, destinationSubaccountId: decoded.subaccountId };
-  }
-
-  /** Paiement total (§4). */
   async function submitPay() {
-    if (!amount.trim() || saving) return;
+    if (saving || !occ) return;
     setSaving(true);
     setError(null);
     try {
-      await api.realizePlannedOperation(occ!.plannedOperationId, { actualAmount: amount, actualDate: date || undefined, ...paymentSourceOverride() });
+      await api.realizePlannedOperation(occ.plannedOperationId, { actualAmount: String(remaining), actualDate: todayIso() });
       await onDone(`${target!.rowLabel} payé`);
     } catch (e) {
       setError(e instanceof api.ApiError ? e.message : "Erreur lors de l'enregistrement du paiement");
@@ -791,17 +643,18 @@ export function ActionSheet({
   }
 
   /**
-   * Paiement partiel (§5) : enregistre le montant réellement payé sans
-   * clore l'échéance — le reste continue d'apparaître comme à venir (même
-   * échéance, toujours PENDING), et peut recevoir d'AUTRES paiements
-   * partiels (paiements partiels successifs), chacun indépendant.
+   * Paiement partiel (§17) — SEUL le montant est demandé : date =
+   * aujourd'hui, source = celle prévue, jamais redemandées. Enregistre le
+   * montant réellement payé sans clore l'échéance — le reste continue
+   * d'apparaître comme à venir (même échéance, toujours PENDING), et peut
+   * recevoir d'AUTRES paiements partiels, chacun indépendant.
    */
   async function submitPartial() {
-    if (!canSubmitPartial || saving) return;
+    if (!canSubmitPartial || saving || !occ) return;
     setSaving(true);
     setError(null);
     try {
-      await api.partialRealizePlannedOperation(occ!.plannedOperationId, { actualAmount: partialAmount, actualDate: date || undefined, ...paymentSourceOverride() });
+      await api.partialRealizePlannedOperation(occ.plannedOperationId, { actualAmount: partialAmount, actualDate: todayIso() });
       await onDone('Paiement partiel enregistré');
     } catch (e) {
       setError(e instanceof api.ApiError ? e.message : "Erreur lors de l'enregistrement du paiement partiel");
@@ -849,10 +702,16 @@ export function ActionSheet({
               )}
             </View>
 
+            {error ? (
+              <Text style={styles.errorText} testID="action-sheet-error">
+                {error}
+              </Text>
+            ) : null}
+
             {occ.status === 'PENDING' ? (
               <>
-                <TouchableOpacity style={styles.actionPrimary} onPress={() => setView('pay')} testID="action-sheet-pay">
-                  <Text style={styles.actionPrimaryText}>Payer {formatDh(remaining)}</Text>
+                <TouchableOpacity style={styles.actionPrimary} onPress={submitPay} disabled={saving} testID="action-sheet-pay">
+                  <Text style={styles.actionPrimaryText}>{saving ? '…' : `Payer ${formatDh(remaining)}`}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.actionSecondary} onPress={() => setView('partial')} testID="action-sheet-partial">
                   <Text style={styles.actionSecondaryText}>{dejaPaye > 0 ? 'Nouveau paiement partiel' : 'Payer partiellement'}</Text>
@@ -875,7 +734,7 @@ export function ActionSheet({
                   style={styles.actionSecondary}
                   onPress={async () => {
                     setSaving(true);
-                    await onPaidAction(occ!, target.rowLabel, 'unrealize');
+                    await onUnrealize(occ!, target.rowLabel);
                     setSaving(false);
                   }}
                   disabled={saving}
@@ -883,28 +742,13 @@ export function ActionSheet({
                 >
                   <Text style={styles.actionSecondaryText}>{saving ? '…' : 'Annuler le paiement'}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.actionSecondary}
-                  onPress={async () => {
-                    setSaving(true);
-                    await onPaidAction(occ!, target.rowLabel, 'edit');
-                    setSaving(false);
-                  }}
-                  disabled={saving}
-                  testID="action-sheet-edit-paid"
-                >
+                {/* §20 — ouvrir Modifier/Annuler sur une échéance payée ne mute
+                    RIEN : mêmes callbacks que pour une échéance à faire, qui
+                    ouvrent directement la sheet concernée. */}
+                <TouchableOpacity style={styles.actionSecondary} onPress={() => onEdit(occ!, target.rowLabel)} testID="action-sheet-edit-paid">
                   <Text style={styles.actionSecondaryText}>Modifier l'échéance</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.actionSecondary}
-                  onPress={async () => {
-                    setSaving(true);
-                    await onPaidAction(occ!, target.rowLabel, 'cancel');
-                    setSaving(false);
-                  }}
-                  disabled={saving}
-                  testID="action-sheet-cancel-paid"
-                >
+                <TouchableOpacity style={styles.actionSecondary} onPress={() => onCancel(occ!, target.rowLabel)} testID="action-sheet-cancel-paid">
                   <Text style={styles.actionSecondaryText}>Annuler l'échéance</Text>
                 </TouchableOpacity>
               </>
@@ -915,42 +759,23 @@ export function ActionSheet({
           </>
         )}
 
-        {view === 'pay' && (
-          <>
-            <Text style={styles.actionSheetSectionLabel}>Confirmer le paiement</Text>
-            <FormField label="Montant" value={amount} onChangeText={setAmount} onFocus={handleFocus} keyboardType="decimal-pad" testID="action-sheet-pay-amount" />
-            <DateField label="Date" value={date} onChange={setDate} />
-            <Select label={accountFieldLabel} value={accountOption} options={sourceSelectOptions} onChange={setAccountOption} testID="action-sheet-pay-source" />
-            {error ? (
-              <Text style={styles.errorText} testID="action-sheet-error">
-                {error}
-              </Text>
-            ) : null}
-            <View style={styles.confirmActions}>
-              <TouchableOpacity style={styles.confirmCancel} onPress={() => setView('menu')} testID="action-sheet-pay-back">
-                <Text style={styles.confirmCancelText}>Retour</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.confirmPay} onPress={submitPay} disabled={saving} testID="action-sheet-pay-submit">
-                <Text style={styles.confirmPayText}>{saving ? '…' : `Payer ${amount ? formatDh(Number(amount)) : ''}`}</Text>
-              </TouchableOpacity>
-            </View>
-          </>
-        )}
-
         {view === 'partial' && (
           <>
             <Text style={styles.actionSheetSectionLabel}>Paiement partiel</Text>
             <Text style={styles.adjustPrevu}>Enregistre un paiement sans clore l'échéance — le reste continue d'apparaître comme à venir.</Text>
             <FormField
-              label="Montant payé maintenant"
+              label="Montant à payer maintenant"
               value={partialAmount}
               onChangeText={setPartialAmount}
               onFocus={handleFocus}
               keyboardType="decimal-pad"
               testID="action-sheet-partial-amount"
             />
-            <DateField label="Date" value={date} onChange={setDate} />
-            <Select label={accountFieldLabel} value={accountOption} options={sourceSelectOptions} onChange={setAccountOption} testID="action-sheet-partial-source" />
+            {partialValue > 0 && partialValue < remaining ? (
+              <Text style={styles.adjustPrevu} testID="action-sheet-partial-reste">
+                Il restera {formatDh(remaining - partialValue)} à payer.
+              </Text>
+            ) : null}
             {error ? (
               <Text style={styles.errorText} testID="action-sheet-error">
                 {error}
@@ -961,7 +786,7 @@ export function ActionSheet({
                 <Text style={styles.confirmCancelText}>Retour</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.confirmPay, !canSubmitPartial && styles.buttonDisabled]} onPress={submitPartial} disabled={!canSubmitPartial || saving} testID="action-sheet-partial-submit">
-                <Text style={styles.confirmPayText}>{saving ? '…' : 'Enregistrer'}</Text>
+                <Text style={styles.confirmPayText}>{saving ? '…' : 'Enregistrer le paiement partiel'}</Text>
               </TouchableOpacity>
             </View>
           </>
@@ -991,7 +816,6 @@ export function PlannedOperationActionFlow({
   members,
   onClose,
   onRefresh,
-  onRefreshAndResolve,
   showToast,
   onViewTransaction,
 }: {
@@ -1001,114 +825,38 @@ export function PlannedOperationActionFlow({
   members: api.HouseholdMembershipApi[];
   onClose: () => void;
   onRefresh: () => Promise<void>;
-  onRefreshAndResolve: (plannedOperationId: string) => Promise<api.PlanningSingleOccurrenceApi | null>;
   showToast: (message: string) => void;
   onViewTransaction: (operationId: string) => void;
 }) {
-  // Choix "cette échéance uniquement / et les suivantes" — affiché uniquement
-  // quand l'occurrence provient d'une récurrence (recurrenceRuleId non null).
-  const [scopeChoiceTarget, setScopeChoiceTarget] = useState<{ occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string; intent: 'edit' | 'cancel' } | null>(null);
-  const [editTarget, setEditTarget] = useState<{ occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string; scope: 'single' | 'series' } | null>(null);
+  const [editTarget, setEditTarget] = useState<{ occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string } | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<{ occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string } | null>(null);
 
   /**
-   * "Modifier l'échéance" (§6) : si l'occurrence provient d'une récurrence,
-   * demande d'abord "cette échéance uniquement / et les suivantes"
-   * (ChoiceSheet) ; sinon (ponctuelle) ouvre directement le formulaire
-   * d'édition, portée 'single' implicite — jamais ce choix pour une
-   * opération non récurrente (§6).
+   * "Modifier l'échéance" (§20-22) — ouvre TOUJOURS directement le
+   * formulaire d'édition, sur l'occurrence TELLE QU'ELLE EST (PENDING,
+   * partiellement payée, ou REALIZED — le backend accepte désormais les
+   * trois) : aucun appel réseau avant que l'utilisateur n'appuie sur
+   * "Enregistrer" (§20/§40 — ouvrir/choisir Modifier ne mute jamais rien).
+   * Le choix "cette échéance / et les suivantes" est posé DANS le même
+   * formulaire (EditOccurrenceModal), jamais une étape séparée.
    */
   function openEditFlow(occurrence: api.PlanningSingleOccurrenceApi, rowLabel: string) {
-    if (occurrence.recurrenceRuleId) {
-      setScopeChoiceTarget({ occurrence, rowLabel, intent: 'edit' });
-    } else {
-      setEditTarget({ occurrence, rowLabel, scope: 'single' });
-    }
+    setEditTarget({ occurrence, rowLabel });
   }
 
-  /** "Annuler l'échéance" (§9) — même logique de choix de portée que l'édition. */
+  /**
+   * "Annuler l'échéance" (§25-27) — ouvre TOUJOURS directement la sheet de
+   * confirmation (CancelOccurrenceSheet, ci-dessous) : aucune mutation avant
+   * "Confirmer l'annulation", y compris quand un paiement existe déjà.
+   */
   function openCancelFlow(occurrence: api.PlanningSingleOccurrenceApi, rowLabel: string) {
-    if (occurrence.recurrenceRuleId) {
-      setScopeChoiceTarget({ occurrence, rowLabel, intent: 'cancel' });
-    } else {
-      confirmCancelSingle(occurrence, rowLabel);
-    }
-  }
-
-  /**
-   * Annulation simple (déjà existante) — fonctionne pour TOUTE occurrence,
-   * récurrente ou non : annule exclusivement CETTE ligne (status=CANCELLED),
-   * jamais la règle ni les autres occurrences.
-   */
-  function confirmCancelSingle(occurrence: api.PlanningSingleOccurrenceApi, rowLabel: string) {
-    Alert.alert(`Annuler « ${rowLabel} » ?`, "Cette échéance prévue sera retirée — elle n'a pas encore eu lieu.", [
-      { text: 'Fermer', style: 'cancel' },
-      {
-        text: "Confirmer l'annulation",
-        style: 'destructive',
-        onPress: async () => {
-          await api.cancelPlannedOperation(occurrence.plannedOperationId);
-          showToast('Échéance annulée');
-          await onRefresh();
-        },
-      },
-    ]);
-  }
-
-  /**
-   * Arrêter la série à partir de cette occurrence (§9) — annule le pivot et
-   * toutes les occurrences encore PENDING à partir de sa date, et désactive
-   * la règle (plus aucune occurrence future générée). Les occurrences déjà
-   * réalisées avant le pivot restent intactes dans l'historique.
-   */
-  function confirmCancelSeries(occurrence: api.PlanningSingleOccurrenceApi, rowLabel: string) {
-    if (!occurrence.recurrenceRuleId) return;
-    Alert.alert(
-      `Arrêter la série « ${rowLabel} » ?`,
-      "Cette échéance et toutes les suivantes seront annulées. Les occurrences déjà réalisées restent dans l'historique.",
-      [
-        { text: 'Fermer', style: 'cancel' },
-        {
-          text: 'Arrêter la série',
-          style: 'destructive',
-          onPress: async () => {
-            await api.updateRecurrenceRule(occurrence.recurrenceRuleId!, { applyFrom: 'THIS_AND_FOLLOWING', fromDate: occurrence.expectedDate.slice(0, 10), active: false });
-            showToast('Série arrêtée à partir de cette échéance');
-            await onRefresh();
-          },
-        },
-      ],
-    );
-  }
-
-  /**
-   * Échéance déjà payée, actions "Modifier l'échéance" / "Annuler
-   * l'échéance" (§8) — ces deux actions supposent une occurrence PENDING
-   * (invariant backend inchangé) : on repasse donc d'abord par le
-   * mécanisme de reversal déjà validé (unrealize, jamais une suppression),
-   * puis on reprend EXACTEMENT le même parcours single/series que pour une
-   * occurrence jamais payée, sur l'occurrence fraîche (PENDING) qui en
-   * résulte. "unrealize" seul (sans action supplémentaire) correspond à
-   * "Annuler le paiement".
-   */
-  async function handlePaidOccurrenceAction(occurrence: api.PlanningSingleOccurrenceApi, rowLabel: string, intent: 'unrealize' | 'edit' | 'cancel') {
-    onClose();
-    await api.unrealizePlannedOperation(occurrence.plannedOperationId);
-    if (intent === 'unrealize') {
-      await onRefresh();
-      showToast('Paiement annulé');
-      return;
-    }
-    const fresh = await onRefreshAndResolve(occurrence.plannedOperationId);
-    if (!fresh) return;
-    if (intent === 'edit') openEditFlow(fresh, rowLabel);
-    else openCancelFlow(fresh, rowLabel);
+    setCancelTarget({ occurrence, rowLabel });
   }
 
   return (
     <>
       <ActionSheet
         target={target}
-        accounts={accounts}
         onClose={onClose}
         onDone={async (message) => {
           onClose();
@@ -1127,36 +875,15 @@ export function PlannedOperationActionFlow({
           onClose();
           onViewTransaction(operationId);
         }}
-        onPaidAction={handlePaidOccurrenceAction}
-      />
-
-      {/* "Que souhaitez-vous modifier ?" (§6/§9) — uniquement pour une occurrence
-          issue d'une récurrence ; une échéance ponctuelle ne passe jamais ici. */}
-      <ChoiceSheet
-        visible={!!scopeChoiceTarget}
-        title="Que souhaitez-vous modifier ?"
-        onClose={() => setScopeChoiceTarget(null)}
-        testID="planning-scope-choice"
-        options={[
-          {
-            key: 'single',
-            label: 'Cette échéance uniquement',
-            onPress: () => {
-              if (!scopeChoiceTarget) return;
-              if (scopeChoiceTarget.intent === 'edit') setEditTarget({ occurrence: scopeChoiceTarget.occurrence, rowLabel: scopeChoiceTarget.rowLabel, scope: 'single' });
-              else confirmCancelSingle(scopeChoiceTarget.occurrence, scopeChoiceTarget.rowLabel);
-            },
-          },
-          {
-            key: 'series',
-            label: 'Cette échéance et les suivantes',
-            onPress: () => {
-              if (!scopeChoiceTarget) return;
-              if (scopeChoiceTarget.intent === 'edit') setEditTarget({ occurrence: scopeChoiceTarget.occurrence, rowLabel: scopeChoiceTarget.rowLabel, scope: 'series' });
-              else confirmCancelSeries(scopeChoiceTarget.occurrence, scopeChoiceTarget.rowLabel);
-            },
-          },
-        ]}
+        // "Annuler le paiement" (§19) reste la SEULE action du menu d'une
+        // échéance payée qui mute immédiatement — c'est l'action elle-même,
+        // pas une étape préalable à autre chose.
+        onUnrealize={async (occurrence) => {
+          await api.unrealizePlannedOperation(occurrence.plannedOperationId);
+          onClose();
+          showToast('Paiement annulé');
+          await onRefresh();
+        }}
       />
 
       <EditOccurrenceModal
@@ -1171,18 +898,154 @@ export function PlannedOperationActionFlow({
           await onRefresh();
         }}
       />
+
+      <CancelOccurrenceSheet
+        target={cancelTarget}
+        onClose={() => setCancelTarget(null)}
+        onDone={async (message) => {
+          setCancelTarget(null);
+          showToast(message);
+          await onRefresh();
+        }}
+      />
     </>
   );
 }
 
 /**
- * "Modifier l'échéance" (lot Planning — distinct de "Réaliser/Payer") :
- * modifie ce qui était PRÉVU, jamais un paiement. scope='single' modifie
- * uniquement l'occurrence visée (PATCH /planned-operations/:id, jamais la
- * règle) ; scope='series' modifie le gabarit de la règle ET les occurrences
- * encore PENDING à partir de cette occurrence (PATCH /recurrence-rules/:id,
- * applyFrom=THIS_AND_FOLLOWING) — jamais l'historique avant elle, jamais les
- * occurrences déjà réalisées/annulées.
+ * "Annuler l'échéance" (§25-27) — UNE seule sheet, mutation différée jusqu'à
+ * "Confirmer l'annulation" (§40). Si un paiement existe déjà (partiel ou
+ * total), l'affiche explicitement (§27, jamais une disparition silencieuse) :
+ * - "Cette échéance uniquement" (ou échéance ponctuelle) : si REALIZED,
+ *   annule D'ABORD le paiement (reversal déjà validé, unrealize) puis annule
+ *   l'échéance redevenue PENDING ; si PENDING avec paiement(s) partiel(s),
+ *   ceux-ci restent des transactions réelles intactes, seule l'échéance
+ *   passe CANCELLED (rien à reverser, le ledger ne bouge pas).
+ * - "Cette échéance et les suivantes" : arrête la série à partir de cette
+ *   date (occurrences encore PENDING) — ne touche JAMAIS un paiement déjà
+ *   enregistré sur le pivot lui-même, récurrent ou non.
+ */
+function CancelOccurrenceSheet({
+  target,
+  onClose,
+  onDone,
+}: {
+  target: { occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string } | null;
+  onClose: () => void;
+  onDone: (message: string) => Promise<void>;
+}) {
+  const bottomInset = useBottomInset(spacing.lg);
+  const [scope, setScope] = useState<'single' | 'series'>('single');
+  const [saving, setSaving] = useState(false);
+
+  React.useEffect(() => {
+    if (target) setScope('single');
+  }, [target?.occurrence.plannedOperationId]);
+
+  if (!target) return null;
+  const { occurrence: occ, rowLabel } = target;
+  const dejaPaye = occ.realizedAmount ?? 0;
+  const hasPayment = dejaPaye > 0;
+  const isRecurring = !!occ.recurrenceRuleId;
+
+  async function confirm() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      if (scope === 'series' && isRecurring) {
+        await api.updateRecurrenceRule(occ.recurrenceRuleId!, { applyFrom: 'THIS_AND_FOLLOWING', fromDate: occ.expectedDate.slice(0, 10), active: false });
+        await onDone('Série arrêtée à partir de cette échéance');
+        return;
+      }
+      if (occ.status === 'REALIZED') {
+        await api.unrealizePlannedOperation(occ.plannedOperationId);
+      }
+      await api.cancelPlannedOperation(occ.plannedOperationId);
+      await onDone('Échéance annulée');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.backdrop} />
+      </TouchableWithoutFeedback>
+      <ScrollView style={styles.adjustSheet} contentContainerStyle={{ paddingBottom: bottomInset }} testID="cancel-occurrence-sheet">
+        <Text style={styles.confirmTitle}>Annuler « {rowLabel} » ?</Text>
+        {hasPayment ? (
+          <Text style={styles.cancelPaymentWarning} testID="cancel-sheet-payment-warning">
+            {formatDh(dejaPaye)} déjà payé{dejaPaye !== occ.expectedAmount ? ` sur ${formatDh(occ.expectedAmount)} prévus` : ''} sur cette échéance.
+            {occ.status === 'REALIZED' ? ' Ce paiement sera annulé (reversal) avant que l\'échéance ne soit annulée.' : " Ce paiement reste une transaction réelle, conservée dans l'historique."}
+          </Text>
+        ) : (
+          <Text style={styles.confirmText}>Cette échéance prévue sera retirée — elle n'a pas encore eu lieu.</Text>
+        )}
+        {isRecurring && (
+          <ScopeRadioGroup
+            value={scope}
+            onChange={setScope}
+            testIDPrefix="cancel-sheet-scope"
+            seriesHelp="N'affecte jamais un paiement déjà enregistré sur cette échéance précise — seules les suivantes encore à venir sont annulées."
+          />
+        )}
+        <View style={styles.confirmActions}>
+          <TouchableOpacity style={styles.confirmCancel} onPress={onClose} testID="cancel-sheet-close">
+            <Text style={styles.confirmCancelText}>Fermer</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.dangerButton} onPress={confirm} disabled={saving} testID="cancel-sheet-confirm">
+            <Text style={styles.dangerButtonText}>{saving ? '…' : "Confirmer l'annulation"}</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </Modal>
+  );
+}
+
+/** Choix de portée "cette échéance uniquement / et les suivantes" (§21/§26) — EMBARQUÉ dans la sheet concernée, jamais une étape séparée. */
+function ScopeRadioGroup({
+  value,
+  onChange,
+  testIDPrefix,
+  seriesHelp,
+}: {
+  value: 'single' | 'series';
+  onChange: (v: 'single' | 'series') => void;
+  testIDPrefix: string;
+  seriesHelp?: string;
+}) {
+  const options: { key: 'single' | 'series'; label: string }[] = [
+    { key: 'single', label: 'Cette échéance uniquement' },
+    { key: 'series', label: 'Cette échéance et les suivantes' },
+  ];
+  return (
+    <View style={styles.scopeGroup}>
+      {options.map((o) => (
+        <TouchableOpacity key={o.key} style={styles.scopeOption} onPress={() => onChange(o.key)} testID={`${testIDPrefix}-${o.key}`}>
+          <Ionicons name={value === o.key ? 'radio-button-on' : 'radio-button-off'} size={18} color={value === o.key ? colors.primary : colors.textSecondary} />
+          <View style={{ flex: 1, marginLeft: spacing.sm }}>
+            <Text style={styles.scopeOptionLabel}>{o.label}</Text>
+            {o.key === 'series' && seriesHelp ? <Text style={styles.scopeOptionHelp}>{seriesHelp}</Text> : null}
+          </View>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
+/**
+ * "Modifier l'échéance" (§20-23) — UNE SEULE sheet, ouverte DIRECTEMENT
+ * (aucun écran intermédiaire) : aucune mutation avant "Enregistrer" (§40),
+ * y compris sur une occurrence déjà payée (REALIZED ou partiellement payée
+ * — le backend l'accepte désormais directement). Le choix de portée ("cette
+ * échéance uniquement" / "et les suivantes") est un simple champ radio EN
+ * BAS du même formulaire quand l'occurrence est récurrente — jamais une
+ * étape séparée. 'single' modifie uniquement l'occurrence visée (PATCH
+ * /planned-operations/:id, jamais la règle) ; 'series' modifie le gabarit de
+ * la règle ET les occurrences encore PENDING/REALIZED à partir de cette
+ * occurrence (PATCH /recurrence-rules/:id, applyFrom=THIS_AND_FOLLOWING) —
+ * jamais l'historique avant elle, jamais les occurrences annulées.
  */
 function EditOccurrenceModal({
   target,
@@ -1192,7 +1055,7 @@ function EditOccurrenceModal({
   onClose,
   onDone,
 }: {
-  target: { occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string; scope: 'single' | 'series' } | null;
+  target: { occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string } | null;
   accounts: api.AccountApi[];
   categories: api.CategoryApi[];
   members: api.HouseholdMembershipApi[];
@@ -1204,6 +1067,7 @@ function EditOccurrenceModal({
   const occ = target?.occurrence ?? null;
   const originalDate = target?.occurrence.expectedDate.slice(0, 10) ?? '';
 
+  const [scope, setScope] = useState<'single' | 'series'>('single');
   const [label, setLabel] = useState('');
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState('');
@@ -1228,6 +1092,7 @@ function EditOccurrenceModal({
 
   React.useEffect(() => {
     if (!occ || !target) return;
+    setScope('single');
     setLabel(target.rowLabel);
     setAmount(String(occ.expectedAmount));
     setDate(originalDate);
@@ -1239,7 +1104,14 @@ function EditOccurrenceModal({
     setError(null);
     setFrequency(null);
     setOriginalFrequency(null);
-    if (target.scope === 'series' && occ.recurrenceRuleId) {
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [occ?.plannedOperationId]);
+
+  // La périodicité n'est chargée que si/quand l'utilisateur bascule sur
+  // "et les suivantes" — jamais au chargement initial (évite un appel réseau
+  // inutile pour la grande majorité des modifications, scope 'single').
+  React.useEffect(() => {
+    if (scope === 'series' && occ?.recurrenceRuleId && originalFrequency === null) {
       api.listRecurrenceRules().then((rules) => {
         const rule = rules.find((r) => r.id === occ.recurrenceRuleId);
         if (rule && rule.frequency !== 'ONCE') {
@@ -1249,12 +1121,14 @@ function EditOccurrenceModal({
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [occ?.plannedOperationId, target?.scope]);
+  }, [scope, occ?.recurrenceRuleId]);
 
   if (!target || !occ) return null;
   const { preposition } = relevantAccount(occ);
   const accountOptionsList = accountSelectOptions(accounts, true);
   const canSubmit = label.trim() !== '' && amount.trim() !== '' && date.trim() !== '';
+  const dejaPaye = occ.realizedAmount ?? 0;
+  const isRecurring = !!occ.recurrenceRuleId;
 
   async function submit() {
     if (!canSubmit || saving || !occ || !target) return;
@@ -1272,8 +1146,8 @@ function EditOccurrenceModal({
       // responsable ET son origine (AUTO/MANUAL) existants inchangés.
       const responsibleFields = responsibleTouched ? { responsibleMemberId: responsibleMemberId ?? undefined, responsibleSource: 'MANUAL' as const } : {};
 
-      if (target.scope === 'single') {
-        await api.updatePlannedOperation(occ.plannedOperationId, {
+      if (scope === 'single' || !isRecurring) {
+        const updated = await api.updatePlannedOperation(occ.plannedOperationId, {
           label: label.trim(),
           expectedAmount: amount,
           expectedDate: date,
@@ -1281,7 +1155,9 @@ function EditOccurrenceModal({
           ...responsibleFields,
           ...sideFields,
         });
-        await onDone('Échéance modifiée');
+        // §20/§24 — une occurrence REALIZED dont le prévu dépasse désormais
+        // le déjà-payé redevient PENDING côté backend : le message le reflète.
+        await onDone(updated.status === 'PENDING' && dejaPaye > 0 && dejaPaye < Number(amount) ? 'Échéance modifiée — reste à exécuter' : 'Échéance modifiée');
       } else {
         const frequencyChanged = frequency !== null && frequency !== originalFrequency;
         const dateChanged = date !== originalDate;
@@ -1311,10 +1187,16 @@ function EditOccurrenceModal({
         <View style={styles.backdrop} />
       </TouchableWithoutFeedback>
       <ScrollView ref={scrollRef} style={styles.adjustSheet} contentContainerStyle={{ paddingBottom: bottomInset }}>
-        <Text style={styles.confirmTitle}>{target.scope === 'series' ? 'Modifier cette échéance et les suivantes' : "Modifier l'échéance"}</Text>
+        <Text style={styles.confirmTitle}>Modifier l'échéance</Text>
+        <Text style={styles.editSubtitle}>{target.rowLabel}</Text>
+        {dejaPaye > 0 && (
+          <Text style={styles.cancelPaymentWarning} testID="planning-edit-already-paid">
+            {formatDh(dejaPaye)} déjà payés sur cette échéance — le nouveau montant prévu ne peut jamais être inférieur à ce montant.
+          </Text>
+        )}
         <FormField label="Libellé" value={label} onChangeText={setLabel} onFocus={handleFocus} testID="planning-edit-label" />
         <FormField label="Montant prévu" value={amount} onChangeText={setAmount} onFocus={handleFocus} keyboardType="decimal-pad" testID="planning-edit-amount" />
-        <DateField label={target.scope === 'series' ? 'Date prévue (nouveau jour de référence)' : 'Date prévue'} value={date} onChange={setDate} />
+        <DateField label="Date prévue" value={date} onChange={setDate} />
         <Select label="Catégorie" value={categoryId} options={categories.map((c) => ({ value: c.id, label: c.name }))} onChange={setCategoryId} testID="planning-edit-category" />
         <Select label="Compte / enveloppe prévu(e)" value={accountOption} options={accountOptionsList} onChange={setAccountOption} testID="planning-edit-source" />
         <Select
@@ -1328,7 +1210,7 @@ function EditOccurrenceModal({
           }}
           testID="planning-edit-responsible-member"
         />
-        {target.scope === 'series' && (
+        {isRecurring && scope === 'series' && (
           <Select
             label="Périodicité"
             value={frequency}
@@ -1337,6 +1219,7 @@ function EditOccurrenceModal({
             testID="planning-edit-frequency"
           />
         )}
+        {isRecurring && <ScopeRadioGroup value={scope} onChange={setScope} testIDPrefix="planning-edit-scope" />}
         {error ? <Text style={styles.errorText} testID="planning-edit-error">{error}</Text> : null}
         <View style={styles.confirmActions}>
           <TouchableOpacity style={styles.confirmCancel} onPress={onClose} testID="planning-edit-cancel">
@@ -1516,90 +1399,84 @@ const styles = StyleSheet.create({
   horizonPillActive: { backgroundColor: colors.primary },
   horizonPillText: { fontSize: 11, fontFamily: fontFamily.sansBold, color: colors.textSecondary },
   horizonPillTextActive: { color: colors.textOnPrimary },
-  tableRow: { flexDirection: 'row', paddingLeft: spacing.lg },
-  labelCell: { justifyContent: 'center', paddingRight: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider },
-  // Flèches ‹ › intégrées à l'en-tête des mois (correctif finition) — ‹ dans
-  // la cellule d'en-tête de la colonne de libellés figée, › en superposition
-  // compacte au-dessus du défilement, jamais une rangée séparée qui ajoute
-  // de la hauteur. Déplacent la même fenêtre que le swipe (goToWindow).
-  headerLabelCell: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' },
-  monthNextButton: {
-    position: 'absolute',
-    top: 0,
-    right: 2,
-    height: HEADER_HEIGHT,
-    width: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.background,
-    zIndex: 2,
-  },
-  sectionLabelCell: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 4, paddingLeft: spacing.xs, paddingRight: 2, borderLeftWidth: 3 },
-  sectionLabelText: { fontSize: 11, fontFamily: fontFamily.sansExtraBold, letterSpacing: 0.5, flex: 1 },
-  // Cartes de synthèse (§2) — même langage visuel que l'Accueil : cartes
-  // arrondies, respiration, couleurs douces, hiérarchie claire. Mois courant
-  // uniquement, distinct du détail par mois (jamais un second calcul).
-  summaryCardsRow: { flexDirection: 'row', paddingHorizontal: spacing.lg, gap: spacing.sm, marginBottom: spacing.lg },
+  // Cartes de synthèse (§4) — même langage visuel que l'Accueil : cartes
+  // arrondies, respiration, couleurs douces, hiérarchie claire. Grille 2×2 sur
+  // mobile (jamais 4 cases minuscules serrées) — mois ACTIF uniquement.
+  summaryCardsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: spacing.lg, gap: spacing.sm, marginBottom: spacing.md },
   summaryCard: {
-    flex: 1,
+    width: '47%',
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderTopWidth: 3,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
     ...elevation.card,
   },
   summaryCardAccent: { backgroundColor: colors.surfaceActive, borderTopColor: colors.primary },
-  summaryCardLabel: { fontSize: 9.5, fontFamily: fontFamily.sansExtraBold, color: colors.textSecondary, letterSpacing: 0.4, marginBottom: 2 },
-  summaryCardAmount: { fontSize: 13, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
-  // Groupe "Détail par mois" (§2) — fond teinté + marge, pour se détacher
-  // visuellement du détail par catégorie juste au-dessus (jamais un seul
-  // tableau continu indifférencié).
-  syntheseGroupLabel: { marginTop: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, overflow: 'hidden' },
-  syntheseGroupGrid: { marginTop: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, overflow: 'hidden' },
-  rowLabelText: { fontSize: 13, fontFamily: fontFamily.sansSemiBold, color: colors.textPrimary },
+  summaryCardLabel: { fontSize: 10.5, fontFamily: fontFamily.sansExtraBold, color: colors.textSecondary, letterSpacing: 0.4, marginBottom: 4 },
+  summaryCardAmount: { fontSize: 16, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
   emptyRowText: { ...typography.caption, color: colors.textPlaceholder },
-  totalLabelCell: { justifyContent: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, backgroundColor: colors.surfaceSecondary, paddingRight: spacing.sm, paddingLeft: spacing.xs, borderLeftWidth: 3 },
-  totalLabelText: { fontSize: 11, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
-  monthHeaderCell: { justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 4 },
-  monthHeaderText: { fontSize: 11, fontFamily: fontFamily.sansExtraBold, color: colors.textSecondary },
-  sectionSpacerCell: {},
-  // Titre de regroupement catégorie (Lot ciblé §5) — jamais une ligne financière :
-  // pas de bordure de cellule, pas de fond de statut, juste un libellé discret.
-  categoryHeaderCell: { justifyContent: 'flex-end', paddingBottom: 2 },
-  categoryHeaderText: { fontSize: 10, fontFamily: fontFamily.sansBold, color: colors.textPlaceholder, letterSpacing: 0.4, textTransform: 'uppercase' },
-  categoryHeaderSpacerCell: {},
-  // Séparateurs ALLÉGÉS (lot "Planning allégé" §3) — hairline plutôt qu'1px plein,
-  // pour un tableau beaucoup moins chargé visuellement (mêmes données, même structure).
-  cell: { alignItems: 'center', justifyContent: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider, borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.divider },
+  // Barre de navigation temporelle UNIQUE (§3), partagée par tous les accordéons.
+  monthNavRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.lg, paddingVertical: spacing.sm, marginBottom: spacing.md },
+  monthNavLabel: { ...typography.bodySecondary, fontFamily: fontFamily.sansSemiBold },
+  monthNavLabelActive: { ...typography.body, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
+  // Carte Projection (§5) — jamais une phrase perdue sous un tableau.
+  projectionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    ...elevation.card,
+  },
+  projectionCardIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surfaceActive, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md },
+  projectionCardLabel: { ...typography.caption, fontWeight: '700', color: colors.textSecondary },
+  projectionCardAmount: { ...typography.sectionTitle, fontFamily: fontFamily.sansExtraBold, marginTop: 2 },
+  // "Reste à exécuter" (§12) — carte compacte, mois courant uniquement.
+  resteCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, marginHorizontal: spacing.lg, marginBottom: spacing.lg, padding: spacing.md },
+  resteCardTitle: { ...typography.caption, fontWeight: '800', color: colors.textSecondary, letterSpacing: 0.4, marginBottom: spacing.xs },
+  resteCardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 2 },
+  resteCardLabel: { ...typography.bodySecondary },
+  resteCardValue: { ...typography.body, fontFamily: fontFamily.sansBold },
+  syntheseCouvertureWarn: { ...typography.caption, fontFamily: fontFamily.sansExtraBold, color: colors.danger },
+  syntheseCouvertureOk: { ...typography.caption, fontFamily: fontFamily.sansExtraBold, color: colors.success },
+  negativeText: { color: colors.danger },
+  // Accordéon (§6/§7) — carte arrondie, header toujours visible (icône +
+  // titre + total du mois actif + chevron), contenu replié par défaut sauf
+  // Revenus. Trois colonnes mensuelles FIXES quand ouvert (jamais de scroll
+  // horizontal par bloc — la navigation se fait via monthNavRow, partagée).
+  accordionCard: { backgroundColor: colors.surface, borderRadius: radius.lg, marginHorizontal: spacing.lg, marginBottom: spacing.md, overflow: 'hidden', ...elevation.card },
+  accordionHeader: { flexDirection: 'row', alignItems: 'center', padding: spacing.md },
+  accordionIconCircle: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginRight: spacing.sm },
+  accordionTitle: { ...typography.body, fontFamily: fontFamily.sansExtraBold, flex: 1 },
+  accordionTotal: { ...typography.body, fontFamily: fontFamily.sansExtraBold, marginRight: spacing.sm },
+  accordionBody: { paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
+  monthColHeaderRow: { flexDirection: 'row', paddingTop: spacing.sm, paddingBottom: 2 },
+  monthColSpacer: { flex: 1.4 },
+  monthColHeader: { flex: 1, textAlign: 'center', fontSize: 10.5, fontFamily: fontFamily.sansExtraBold, color: colors.textSecondary },
+  accordionCategoryHeader: { paddingTop: spacing.sm, paddingBottom: 2 },
+  accordionCategoryHeaderText: { fontSize: 10, fontFamily: fontFamily.sansBold, color: colors.textPlaceholder, letterSpacing: 0.4, textTransform: 'uppercase' },
+  accordionRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.xs },
+  accordionRowLabel: { flex: 1.4, fontSize: 13, fontFamily: fontFamily.sansSemiBold, color: colors.textPrimary, paddingRight: spacing.xs },
+  accordionEmptyText: { ...typography.caption, color: colors.textPlaceholder, paddingVertical: spacing.sm },
+  accordionCellsRow: { flex: 3, flexDirection: 'row' },
+  // Séparateurs ALLÉGÉS — jamais de grosses lignes verticales/quadrillage complet.
+  cell: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 32, borderRadius: radius.sm },
   cellRealized: {},
   cellPending: {},
-  // MIXTE (partiellement réalisée) : accent ocre discret (liseré gauche),
-  // JAMAIS un fond saturé — §3 : "orange/ocre discret", jamais une grosse
-  // capsule pleine comme l'ancien design.
-  cellMixed: { borderLeftWidth: 3, borderLeftColor: colors.warning },
+  // MIXTE (partiellement réalisée) : accent ocre discret (liseré gauche), JAMAIS un fond saturé.
+  cellMixed: { borderLeftWidth: 2, borderLeftColor: colors.warning },
   cellEmpty: { color: colors.textPlaceholder },
-  // Montant affiché en chip/pill — RÉSERVÉ au statut RÉALISÉ (vert) depuis le
-  // lot "Planning allégé" : À VENIR n'a plus de capsule du tout (cf. cellAmountPending).
-  cellChip: { borderRadius: radius.pill, paddingHorizontal: 6, paddingVertical: 3, maxWidth: '92%', backgroundColor: colors.successLight },
+  // Montant affiché en chip/pill — RÉSERVÉ au statut RÉALISÉ (vert) : fond vert très clair + ✓.
+  cellChip: { borderRadius: radius.pill, paddingHorizontal: 6, paddingVertical: 3, maxWidth: '96%', backgroundColor: colors.successLight },
   cellAmountRealized: { fontSize: 11, fontFamily: fontFamily.sansBold, color: colors.success },
-  // À VENIR : texte neutre ocre/gris, SANS fond — remplace l'ancienne capsule jaune pleine.
+  // À VENIR : texte neutre, fond très légèrement teinté (jamais une grosse capsule).
   cellAmountPending: { fontSize: 11, fontFamily: fontFamily.sansMedium, color: colors.textSecondary },
   cellMixedWrap: { alignItems: 'center' },
   cellAmountMixed: { fontSize: 9.5, fontFamily: fontFamily.sansExtraBold, color: colors.warning, paddingHorizontal: 2 },
   cellRestantMixed: { fontSize: 8.5, fontFamily: fontFamily.sansBold, color: colors.textSecondary, paddingHorizontal: 2, marginTop: 1 },
-  totalCell: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceSecondary, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.divider, paddingHorizontal: 2 },
-  totalCellText: { fontSize: 11.5, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
-  syntheseCell: { backgroundColor: colors.surfaceActive },
-  // "RESTE À EXÉCUTER" (mois courant uniquement, lot "Planning allégé" §10) — 2 lignes compactes.
-  syntheseDetailAmount: { fontSize: 9.5, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary, paddingHorizontal: 2 },
-  syntheseDetailReste: { fontSize: 8.5, fontFamily: fontFamily.sansBold, color: colors.textSecondary, paddingHorizontal: 2, marginTop: 1 },
-  syntheseCouvertureWarn: { fontSize: 8, fontFamily: fontFamily.sansExtraBold, color: colors.danger, paddingHorizontal: 2, marginTop: 1 },
-  syntheseCouvertureOk: { fontSize: 8, fontFamily: fontFamily.sansExtraBold, color: colors.success, paddingHorizontal: 2, marginTop: 1 },
-  negativeText: { color: colors.danger },
-  projectionLine: { flexDirection: 'row', justifyContent: 'center', alignItems: 'baseline', paddingVertical: spacing.sm },
-  projectionLabel: { ...typography.bodySecondary },
-  projectionAmount: { ...typography.body, fontFamily: fontFamily.sansExtraBold, marginLeft: spacing.xs },
   backdrop: { flex: 1, backgroundColor: colors.backdrop },
   confirmBox: {
     position: 'absolute',
@@ -1642,6 +1519,17 @@ const styles = StyleSheet.create({
   actionClose: { alignItems: 'center', paddingVertical: spacing.sm, marginTop: spacing.xs },
   actionCloseText: { ...typography.bodySecondary, fontFamily: fontFamily.sansSemiBold },
   errorText: { ...typography.body, color: colors.danger, marginTop: spacing.sm },
+  editSubtitle: { ...typography.bodySecondary, marginBottom: spacing.md },
+  // Avertissement "paiement déjà existant" (§23/§27, Modifier ET Annuler
+  // d'une échéance déjà payée) — jamais une disparition silencieuse de ce fait.
+  cancelPaymentWarning: { ...typography.body, backgroundColor: colors.warningLight, color: colors.textPrimary, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.md },
+  // Choix de portée embarqué (§21/§26) — deux lignes à bouton radio, jamais une sheet séparée.
+  scopeGroup: { marginTop: spacing.sm, marginBottom: spacing.sm },
+  scopeOption: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: spacing.sm },
+  scopeOptionLabel: { ...typography.body, fontWeight: '600' },
+  scopeOptionHelp: { ...typography.caption, marginTop: 2 },
+  dangerButton: { flex: 1, backgroundColor: colors.danger, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', ...elevation.button },
+  dangerButtonText: { ...typography.body, fontWeight: '700', color: colors.textOnPrimary },
   detailSectionLabel: { ...typography.caption, fontWeight: '800', color: colors.textSecondary, letterSpacing: 0.5, marginBottom: spacing.xs },
   detailRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider, gap: spacing.sm },
   detailLabel: { ...typography.body, fontWeight: '600' },
