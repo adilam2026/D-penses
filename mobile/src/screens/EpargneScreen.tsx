@@ -1,43 +1,25 @@
 import React, { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ActivityIndicator, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as api from '../api/client';
 import { cached } from '../state/cache';
 import { colors, elevation, fontFamily, radius, spacing, typography } from '../ui/theme';
 import { formatDh } from '../ui/formatMoney';
 import { HelpButton } from '../ui/HelpButton';
+import { AccountCard, GoalProgressLine } from '../ui/AccountCard';
 import { isSanteSubaccount } from '../ui/santeDetection';
 import { FormField } from '../ui/FormField';
 import { DateField } from '../ui/DateField';
 import { useBottomInset } from '../ui/useBottomInset';
 import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
 
-// Dégradés d'enveloppe (maquette « Foyer » 07-Épargne validée) — rotation
-// fixe de 4 paires de teintes, jamais une seule couleur plate par carte.
-const ENVELOPE_GRADIENTS: [string, string][] = [
-  ['#1FA3A3', '#0F6E6E'],
-  ['#E2567C', '#B33B61'],
-  ['#8E4F97', '#6A3B74'],
-  ['#4C5FA6', '#36488A'],
-];
-
-interface Card {
-  key: string;
-  name: string;
-  meta: string;
-  amount: number;
-  extraLine?: string;
-  goal: api.GoalApi | null;
-  accountId?: string;
-  subaccountId?: string;
-  onPress: () => void;
-}
-
 /**
- * Épargne (Checkpoint 2 §3) — sans curation cachée : tous les comptes de type
- * EPARGNE sans sous-compte, et TOUS les sous-comptes de TOUS les comptes
- * (enveloppes de réserve), y compris ceux sans objectif explicite.
+ * Épargne — même identité que « MES COMPTES » (Accueil) : une carte blanche
+ * par COMPTE RÉEL (AccountCard partagé), avec ses enveloppes à l'intérieur et
+ * le non affecté — une enveloppe n'est jamais présentée comme un compte
+ * indépendant. Sans curation cachée : tout compte portant des enveloppes
+ * (quel que soit son type) et tout compte EPARGNE sans enveloppe. Objectif
+ * affiché discrètement sous la ligne concernée, uniquement s'il existe.
  */
 export function EpargneScreen() {
   const navigation = useNavigation<any>();
@@ -46,7 +28,6 @@ export function EpargneScreen() {
   const [goals, setGoals] = useState<api.GoalApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [goalTarget, setGoalTarget] = useState<{ accountId?: string; subaccountId?: string; name: string; goal: api.GoalApi | null } | null>(null);
 
   const load = useCallback(async (force = false) => {
     const [accountsData, claimsData, goalsData] = await Promise.all([
@@ -80,32 +61,23 @@ export function EpargneScreen() {
     );
   }
 
-  const cards: Card[] = [];
-  for (const account of accounts ?? []) {
-    if (account.type === 'EPARGNE' && account.subaccounts.length === 0) {
-      cards.push({
-        key: account.id,
-        name: account.name,
-        meta: 'Compte bancaire',
-        amount: account.balance,
-        goal: goals.find((g) => g.accountId === account.id) ?? null,
-        accountId: account.id,
-        onPress: () => navigation.navigate('AccountDetail', { id: account.id }),
-      });
+  // L'index d'origine est conservé pour que la pastille ait la même couleur
+  // que sur l'Accueil (paletteForAccount retombe sur l'index sans colorKey).
+  const shown = (accounts ?? [])
+    .map((account, idx) => ({ account, idx }))
+    .filter(({ account }) => account.subaccounts.length > 0 || account.type === 'EPARGNE');
+  // En-tête : mêmes enveloppes et même total qu'avant la refonte (enveloppes
+  // + comptes épargne sans enveloppe) — aucun calcul modifié.
+  let envelopeCount = 0;
+  let totalSaved = 0;
+  for (const { account } of shown) {
+    if (account.subaccounts.length === 0) {
+      envelopeCount += 1;
+      totalSaved += account.balance;
     }
     for (const sub of account.subaccounts) {
-      const sante = isSanteSubaccount(sub.name);
-      const pendingCount = sante ? claims.filter((c) => c.subaccountId === sub.id && c.status === 'PENDING').length : 0;
-      cards.push({
-        key: sub.id,
-        name: sub.name,
-        meta: 'Disponible',
-        amount: sub.balance,
-        extraLine: pendingCount > 0 ? `${pendingCount} remboursement${pendingCount > 1 ? 's' : ''} en attente` : undefined,
-        goal: goals.find((g) => g.subaccountId === sub.id) ?? null,
-        subaccountId: sub.id,
-        onPress: () => navigation.navigate(sante ? 'Health' : 'SubaccountDetail', { id: sub.id }),
-      });
+      envelopeCount += 1;
+      totalSaved += sub.balance;
     }
   }
 
@@ -118,8 +90,8 @@ export function EpargneScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Épargne</Text>
-          <Text style={styles.subtitle}>
-            {cards.length} enveloppe{cards.length > 1 ? 's' : ''} · {formatDh(cards.reduce((sum, c) => sum + c.amount, 0))} épargnés
+          <Text style={styles.subtitle} testID="epargne-subtitle">
+            {envelopeCount} enveloppe{envelopeCount > 1 ? 's' : ''} · {formatDh(totalSaved)} épargnés
           </Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
@@ -128,67 +100,44 @@ export function EpargneScreen() {
           </TouchableOpacity>
           <HelpButton
             title="Épargne"
-            text="Retrouvez ici tous vos comptes d'épargne ainsi que les enveloppes réservées à l'intérieur de vos comptes courants (voiture, voyage, santé, scolarité…)."
+            text="Chaque carte est un compte bancaire réel ; les enveloppes (voiture, voyage, santé, scolarité…) sont des parts réservées à l'intérieur de ce compte. Solde du compte = enveloppes + non affecté."
           />
         </View>
       </View>
 
-      {cards.length === 0 ? (
+      {shown.length === 0 ? (
         <Text style={styles.emptyText}>Aucune épargne pour l'instant.</Text>
       ) : (
-        <View style={styles.list}>
-          {cards.map((card, idx) => {
-            const [from, to] = ENVELOPE_GRADIENTS[idx % ENVELOPE_GRADIENTS.length];
-            return (
-              <TouchableOpacity key={card.key} activeOpacity={0.9} onPress={card.onPress} testID={`epargne-card-${card.key}`}>
-                <LinearGradient colors={[from, to]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.card}>
-                  <View style={styles.cardTopRow}>
-                    <Text style={styles.cardName} numberOfLines={1}>
-                      {card.name}
-                    </Text>
-                    {card.goal ? <Text style={styles.cardPercent}>{Math.round(card.goal.percent)}%</Text> : null}
-                  </View>
-                  <Text style={[typography.amountSecondary, styles.cardAmount]}>
-                    {formatDh(card.amount)}
-                    {card.goal ? <Text style={styles.cardAmountTarget}> / {formatDh(card.goal.targetAmount)}</Text> : null}
-                  </Text>
-                  {card.goal ? (
-                    <View testID={`epargne-goal-${card.key}`}>
-                      <View style={styles.goalBarTrack}>
-                        <View style={[styles.goalBarFill, { width: `${Math.min(100, card.goal.percent)}%` }]} />
-                      </View>
-                      <Text style={[styles.cardMeta, { marginTop: spacing.xs }]}>
-                        Objectif {formatDh(card.goal.targetAmount)} · {Math.round(card.goal.percent)}%
+        shown.map(({ account, idx }) => {
+          const accountGoal = account.subaccounts.length === 0 ? (goals.find((g) => g.accountId === account.id) ?? null) : null;
+          return (
+            <AccountCard
+              key={account.id}
+              account={account}
+              accountIdx={idx}
+              testIDPrefix="epargne"
+              onPressAccount={() => navigation.navigate('AccountDetail', { id: account.id })}
+              onPressSubaccount={(sub) => navigation.navigate(isSanteSubaccount(sub.name) ? 'Health' : 'SubaccountDetail', { id: sub.id })}
+              accountExtra={accountGoal ? <GoalProgressLine goal={accountGoal} testID={`epargne-goal-${account.id}`} /> : undefined}
+              renderSubaccountExtra={(sub) => {
+                const goal = goals.find((g) => g.subaccountId === sub.id) ?? null;
+                const pendingCount = isSanteSubaccount(sub.name) ? claims.filter((c) => c.subaccountId === sub.id && c.status === 'PENDING').length : 0;
+                if (!goal && pendingCount === 0) return null;
+                return (
+                  <>
+                    {goal ? <GoalProgressLine goal={goal} testID={`epargne-goal-${sub.id}`} /> : null}
+                    {pendingCount > 0 ? (
+                      <Text style={styles.extraLine}>
+                        {pendingCount} remboursement{pendingCount > 1 ? 's' : ''} en attente
                       </Text>
-                    </View>
-                  ) : (
-                    <Text style={styles.cardMeta}>{card.meta}</Text>
-                  )}
-                  {card.extraLine ? <Text style={styles.cardExtra}>{card.extraLine}</Text> : null}
-                  {!card.goal ? (
-                    <TouchableOpacity
-                      style={styles.goalAddLink}
-                      onPress={() => setGoalTarget({ accountId: card.accountId, subaccountId: card.subaccountId, name: card.name, goal: null })}
-                      testID={`epargne-add-goal-${card.key}`}
-                    >
-                      <Text style={styles.goalAddLinkText}>+ Définir un objectif</Text>
-                    </TouchableOpacity>
-                  ) : null}
-                </LinearGradient>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+                    ) : null}
+                  </>
+                );
+              }}
+            />
+          );
+        })
       )}
-
-      <GoalModal
-        target={goalTarget}
-        onClose={() => setGoalTarget(null)}
-        onSaved={async () => {
-          setGoalTarget(null);
-          await load(true);
-        }}
-      />
     </ScrollView>
   );
 }
@@ -278,26 +227,7 @@ const styles = StyleSheet.create({
   newButton: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   newButtonText: { fontSize: 11.5, fontFamily: fontFamily.sansBold, color: colors.textPrimary },
   emptyText: { ...typography.bodySecondary },
-  // Une carte pleine largeur par enveloppe, dégradé propre (maquette « Foyer »
-  // 07-Épargne validée) — pourcentage d'objectif en en-tête, montant en
-  // Fraunces, barre de progression blanche translucide DANS la carte.
-  list: { gap: spacing.md },
-  card: {
-    borderRadius: radius.xl,
-    padding: spacing.lg,
-    ...elevation.floating,
-  },
-  cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cardName: { fontSize: 14, fontFamily: fontFamily.sansBold, color: colors.textOnPrimary },
-  cardPercent: { fontSize: 11, fontFamily: fontFamily.sansBold, color: colors.textOnPrimary, opacity: 0.9 },
-  cardMeta: { fontSize: 11, fontFamily: fontFamily.sansMedium, color: 'rgba(255,255,255,0.85)', marginTop: spacing.xs },
-  cardAmount: { marginTop: 4, color: colors.textOnPrimary },
-  cardAmountTarget: { fontSize: 13, fontFamily: fontFamily.sans, color: 'rgba(255,255,255,0.8)' },
-  cardExtra: { fontSize: 11, fontFamily: fontFamily.sansBold, color: '#FFFFFF', marginTop: spacing.xs },
-  goalBarTrack: { height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.3)', overflow: 'hidden', marginTop: spacing.sm },
-  goalBarFill: { height: 6, borderRadius: 3, backgroundColor: '#FFFFFF' },
-  goalAddLink: { marginTop: spacing.sm },
-  goalAddLinkText: { fontSize: 11, fontFamily: fontFamily.sansBold, color: colors.textOnPrimary, textDecorationLine: 'underline' },
+  extraLine: { ...typography.caption, color: colors.textSecondary, paddingLeft: 10 + spacing.sm, paddingBottom: spacing.xs },
   backdrop: { flex: 1, backgroundColor: colors.backdrop },
   sheet: { backgroundColor: colors.background, borderTopLeftRadius: radius.xl + 6, borderTopRightRadius: radius.xl + 6, padding: spacing.xl, maxHeight: '85%' },
   sheetTitle: { ...typography.sectionTitle, marginBottom: spacing.lg },

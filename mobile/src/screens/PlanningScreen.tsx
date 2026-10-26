@@ -17,6 +17,7 @@ import { accountSelectOptions, decodeAccountOption, encodeAccountOption } from '
 import { estimateTextEm, fitFontSize, fitPaidAmount, fitTwoParts } from '../ui/fitAmount';
 import { RECURRENCE_FREQUENCY_OPTIONS, RecurrenceOption } from '../ui/recurrenceLabels';
 import { MonthNavigator } from '../ui/MonthNavigator';
+import { transferEndpointLabel } from '../ui/accountLabel';
 import { useHorizontalSwipe } from '../ui/useHorizontalSwipe';
 import { shiftMonthKey } from '../ui/monthKey';
 
@@ -774,6 +775,7 @@ function PlanningAccordion({
  */
 export function ActionSheet({
   target,
+  accounts = [],
   onClose,
   onDone,
   onEdit,
@@ -782,6 +784,8 @@ export function ActionSheet({
   onUnrealize,
 }: {
   target: { occurrence: api.PlanningSingleOccurrenceApi; rowLabel: string } | null;
+  /** Comptes du foyer — uniquement pour afficher source → destination d'un versement. */
+  accounts?: api.AccountApi[];
   onClose: () => void;
   onDone: (message: string) => Promise<void>;
   onEdit: (occurrence: api.PlanningSingleOccurrenceApi, rowLabel: string) => void;
@@ -815,6 +819,12 @@ export function ActionSheet({
   }, [occ?.plannedOperationId, occ?.realizedAmount]);
 
   if (!target || !occ) return null;
+  // Versement (SAVINGS_CONTRIBUTION) : c'est un virement bancaire — on montre
+  // exactement quel virement faire (source → destination) et l'action dit
+  // « Virer ». Une dépense garde l'affichage simple et « Payer ».
+  const isTransfer = occ.kind === 'SAVINGS_CONTRIBUTION';
+  const transferFrom = isTransfer ? transferEndpointLabel(accounts, occ.sourceAccountId, occ.sourceSubaccountId) : null;
+  const transferTo = isTransfer ? transferEndpointLabel(accounts, occ.destinationAccountId, occ.destinationSubaccountId) : null;
   const partialValue = Number(partialAmount);
   const canSubmitPartial = partialAmount.trim() !== '' && partialValue > 0 && partialValue < remaining;
   const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -898,6 +908,20 @@ export function ActionSheet({
               ) : (
                 <Text style={styles.actionSheetAmount}>{formatDh(occ.expectedAmount)}</Text>
               )}
+              {isTransfer && (transferFrom || transferTo) ? (
+                <View style={styles.actionSheetTransfer} testID="action-sheet-transfer">
+                  {transferFrom ? (
+                    <Text style={styles.actionSheetTransferFrom} testID="action-sheet-transfer-from">
+                      {transferFrom}
+                    </Text>
+                  ) : null}
+                  {transferTo ? (
+                    <Text style={styles.actionSheetTransferTo} testID="action-sheet-transfer-to">
+                      → {transferTo}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
             </View>
 
             {error ? (
@@ -909,7 +933,7 @@ export function ActionSheet({
             {occ.status === 'PENDING' ? (
               <>
                 <TouchableOpacity style={styles.actionPrimary} onPress={submitPay} disabled={saving} testID="action-sheet-pay">
-                  <Text style={styles.actionPrimaryText}>{saving ? '…' : `Payer ${formatDh(remaining)}`}</Text>
+                  <Text style={styles.actionPrimaryText}>{saving ? '…' : `${isTransfer ? 'Virer' : 'Payer'} ${formatDh(remaining)}`}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.actionSecondary} onPress={() => setView('partial')} testID="action-sheet-partial">
                   <Text style={styles.actionSecondaryText}>{dejaPaye > 0 ? 'Nouveau paiement partiel' : 'Payer partiellement'}</Text>
@@ -1055,6 +1079,7 @@ export function PlannedOperationActionFlow({
     <>
       <ActionSheet
         target={target}
+        accounts={accounts}
         onClose={onClose}
         onDone={async (message) => {
           onClose();
@@ -1707,6 +1732,9 @@ const styles = StyleSheet.create({
   actionSheetSummaryValue: { ...typography.body, fontFamily: fontFamily.sansExtraBold },
   actionSheetRemainingText: { color: colors.primaryDark },
   actionSheetAmount: { ...typography.amountSecondary, textAlign: 'center' },
+  actionSheetTransfer: { marginTop: spacing.sm, alignItems: 'center' },
+  actionSheetTransferFrom: { ...typography.body, fontFamily: fontFamily.sansSemiBold, textAlign: 'center' },
+  actionSheetTransferTo: { ...typography.body, fontFamily: fontFamily.sansSemiBold, color: colors.textSecondary, textAlign: 'center', marginTop: 2 },
   actionSheetPaidFull: { ...typography.body, fontFamily: fontFamily.sansExtraBold, color: colors.success, textAlign: 'center' },
   actionSheetSectionLabel: { ...typography.sectionTitle, marginBottom: spacing.md },
   actionPrimary: { backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', marginBottom: spacing.sm, ...elevation.button },

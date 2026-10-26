@@ -11,3 +11,19 @@ export function accountLabelFor(accounts: AccountApi[], accountId: string | null
   }
   return account.name;
 }
+
+/**
+ * Libellé d'une extrémité de virement (ActionSheet d'un versement) :
+ * "Compte" ou "Compte / Enveloppe", lu des vraies données de l'échéance. Si
+ * un autre compte porte le même nom, la banque est ajoutée pour lever toute
+ * ambiguïté ("Épargne BCP / Voyage").
+ */
+export function transferEndpointLabel(accounts: AccountApi[], accountId: string | null, subaccountId: string | null): string | null {
+  if (!accountId) return null;
+  const account = accounts.find((a) => a.id === accountId);
+  if (!account) return null;
+  const homonym = accounts.some((a) => a.id !== account.id && a.name.trim().toLowerCase() === account.name.trim().toLowerCase());
+  const accountName = homonym && account.bank?.trim() ? `${account.name} ${account.bank.trim()}` : account.name;
+  const sub = subaccountId ? account.subaccounts.find((s) => s.id === subaccountId) : undefined;
+  return sub ? `${accountName} / ${sub.name}` : accountName;
+}

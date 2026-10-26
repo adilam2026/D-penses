@@ -7,10 +7,9 @@ import { cached } from '../state/cache';
 import { colors, elevation, fontFamily, radius, spacing, typography } from '../ui/theme';
 import { formatDh, formatShortDate } from '../ui/formatMoney';
 import { HelpButton } from '../ui/HelpButton';
-import { segmentColor } from '../ui/SegmentBar';
 import { isSanteSubaccount } from '../ui/santeDetection';
 import { PlannedOperationActionsModal } from '../ui/PlannedOperationActionsModal';
-import { paletteForAccount } from '../ui/accountPalette';
+import { AccountCard } from '../ui/AccountCard';
 import { accountLabelFor } from '../ui/accountLabel';
 import { PLANNED_OPERATION_KIND_VISUALS } from '../ui/plannedOperationVisuals';
 import { useTopInset } from '../ui/useTopInset';
@@ -26,24 +25,6 @@ interface ActionItem {
 }
 
 const UPCOMING_PREVIEW_COUNT = 5;
-
-function accountInitials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
-  return name.trim().slice(0, 2).toUpperCase();
-}
-
-/**
- * Pastille compte (Accueil, lot correctif §E) — affiche le sigle de la banque
- * (ex. "SG", "BCP", "CIH") quand `account.bank` est renseigné, jamais une
- * banque en dur : seule la valeur réelle du compte est utilisée. À défaut de
- * banque, retombe sur les initiales du nom du compte (comportement historique
- * inchangé).
- */
-function accountBadgeLabel(account: api.AccountApi): string {
-  const bank = account.bank?.trim();
-  return bank ? bank.toUpperCase() : accountInitials(account.name);
-}
 
 /**
  * Accueil Finance Maison — reconstruit à partir de la maquette validée
@@ -205,62 +186,16 @@ export function AccueilScreen() {
         </TouchableOpacity>
       </View>
 
-      {(accounts ?? []).map((account, accountIdx) => {
-        const hasSubaccounts = account.subaccounts.length > 0;
-        const palette = paletteForAccount(account.colorKey, accountIdx);
-
-        return (
-          <View key={account.id} style={styles.accountCard}>
-            <TouchableOpacity
-              style={styles.accountRow}
-              onPress={() => navigation.navigate('AccountDetail', { id: account.id })}
-              testID={`accueil-account-${account.id}`}
-            >
-              <View style={[styles.accountBadge, { backgroundColor: palette.bg }]}>
-                <Text style={styles.accountBadgeText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
-                  {accountBadgeLabel(account)}
-                </Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.accountName}>{account.name}</Text>
-                <Text style={styles.accountMeta}>
-                  {account.bank ?? (hasSubaccounts ? `${account.subaccounts.length} sous-compte${account.subaccounts.length > 1 ? 's' : ''}` : 'Compte courant')}
-                </Text>
-              </View>
-              <Text style={styles.accountBalance}>{formatDh(account.balance)}</Text>
-            </TouchableOpacity>
-
-            {hasSubaccounts && (
-              <View style={styles.subaccountsList}>
-                {account.subaccounts.map((sub, idx) => {
-                  const sante = isSanteSubaccount(sub.name);
-                  return (
-                    <TouchableOpacity
-                      key={sub.id}
-                      style={styles.subaccountRow}
-                      onPress={() => navigation.navigate(sante ? 'Health' : 'SubaccountDetail', { id: sub.id })}
-                      testID={`accueil-subaccount-${sub.id}`}
-                    >
-                      <View style={styles.subaccountNameRow}>
-                        <View style={[styles.colorDot, { backgroundColor: segmentColor(idx) }]} testID={`accueil-subaccount-dot-${sub.id}`} />
-                        <Text style={styles.subaccountName}>{sub.name}</Text>
-                      </View>
-                      <Text style={styles.subaccountBalance}>{formatDh(sub.balance)}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-                <View style={styles.subaccountRow}>
-                  <View style={styles.subaccountNameRow}>
-                    <View style={[styles.colorDot, { backgroundColor: colors.border }]} />
-                    <Text style={styles.nonAffecteLabel}>Non affecté</Text>
-                  </View>
-                  <Text style={styles.nonAffecteValue}>{formatDh(account.nonAffecte)}</Text>
-                </View>
-              </View>
-            )}
-          </View>
-        );
-      })}
+      {(accounts ?? []).map((account, accountIdx) => (
+        <AccountCard
+          key={account.id}
+          account={account}
+          accountIdx={accountIdx}
+          testIDPrefix="accueil"
+          onPressAccount={() => navigation.navigate('AccountDetail', { id: account.id })}
+          onPressSubaccount={(sub) => navigation.navigate(isSanteSubaccount(sub.name) ? 'Health' : 'SubaccountDetail', { id: sub.id })}
+        />
+      ))}
 
       <View style={styles.sectionHeaderRow}>
         <Text style={styles.sectionLabel}>PROCHAINES TRANSACTIONS</Text>
@@ -378,26 +313,6 @@ const styles = StyleSheet.create({
   sectionLabel: { ...typography.sectionLabel, color: colors.textSecondary, letterSpacing: 0.5 },
   sectionLink: { fontSize: 12, fontFamily: fontFamily.sansBold, color: colors.primary },
   emptyText: { ...typography.bodySecondary },
-
-  accountCard: { backgroundColor: colors.surface, borderRadius: radius.lg, marginBottom: spacing.sm, ...elevation.card },
-  accountRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, gap: spacing.md },
-  accountBadge: { width: 44, height: 44, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2 },
-  // fontSize réduit (13 -> 12) pour que des sigles de 3 lettres ("BCP", "CIH")
-  // tiennent sans débordement ; adjustsFontSizeToFit (ci-dessus) couvre le cas
-  // d'un nom de banque saisi plus long.
-  accountBadgeText: { color: colors.textOnPrimary, fontFamily: fontFamily.sansBold, fontSize: 12 },
-  accountName: { fontSize: 14, fontFamily: fontFamily.sansBold, color: colors.textPrimary },
-  accountMeta: { ...typography.caption, marginTop: 2 },
-  accountBalance: { fontSize: 15, fontFamily: fontFamily.sansBold, color: colors.textPrimary },
-
-  subaccountsList: { marginTop: 0, paddingHorizontal: spacing.md, paddingBottom: spacing.sm, paddingTop: spacing.xs, borderTopWidth: 1, borderTopColor: colors.divider },
-  subaccountRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.xs },
-  subaccountNameRow: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  colorDot: { width: 10, height: 10, borderRadius: 5, marginRight: spacing.sm },
-  subaccountName: { ...typography.body },
-  subaccountBalance: { ...typography.body, fontFamily: fontFamily.sansSemiBold },
-  nonAffecteLabel: { ...typography.bodySecondary },
-  nonAffecteValue: { ...typography.bodySecondary, fontFamily: fontFamily.sansSemiBold },
 
   upcomingListCard: { backgroundColor: colors.surface, borderRadius: radius.lg, paddingHorizontal: spacing.md, ...elevation.card },
   upcomingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.md },

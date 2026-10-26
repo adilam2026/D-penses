@@ -335,6 +335,91 @@ it('paiement partiel depuis À faire : réutilise strictement le même ActionShe
 });
 
 // ---------------------------------------------------------------------------
+// ActionSheet : dépense (simple, « Payer ») vs versement (source → destination, « Virer »).
+// ---------------------------------------------------------------------------
+
+it('dépense : ActionSheet simple — libellé, montant, « Payer », sans compte ni bloc de virement', async () => {
+  mockGetTodo.mockResolvedValue({
+    month: '2026-10',
+    pending: [{ ...actionDepensePartielleRetard, realizedAmount: null, remaining: 800 }],
+    done: [],
+    pendingCount: 1,
+    totalRemaining: 800,
+  });
+  renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-row-po-carburant'));
+  fireEvent.press(screen.getByTestId('todo-row-po-carburant'));
+  await waitFor(() => screen.getByTestId('action-sheet-pay'));
+  const sheet = screen.getByTestId('action-sheet');
+  expect(within(sheet).getByText('Carburant')).toBeTruthy();
+  expect(textContent(screen.getByTestId('action-sheet-pay') as unknown as HostNode)).toBe(`Payer ${formatDh(800)}`.replace(/\s+/g, ' '));
+  expect(screen.queryByTestId('action-sheet-transfer')).toBeNull();
+  expect(within(sheet).queryByText(/BP Adil/)).toBeNull();
+  expect(within(sheet).queryByText(/Virer/)).toBeNull();
+});
+
+it('versement : ActionSheet affiche le virement exact (source → enveloppe de destination, compte parent inclus) et « Virer X DH »', async () => {
+  renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-row-po-epargne'));
+  fireEvent.press(screen.getByTestId('todo-row-po-epargne'));
+  await waitFor(() => screen.getByTestId('action-sheet-transfer'));
+  expect(textContent(screen.getByTestId('action-sheet-transfer-from') as unknown as HostNode)).toBe('BP Adil');
+  expect(textContent(screen.getByTestId('action-sheet-transfer-to') as unknown as HostNode)).toBe('→ CIH / Voyage');
+  expect(textContent(screen.getByTestId('action-sheet-pay') as unknown as HostNode)).toBe(`Virer ${formatDh(1000)}`.replace(/\s+/g, ' '));
+  expect(within(screen.getByTestId('action-sheet')).queryByText(/^Payer \d/)).toBeNull();
+  // Actions secondaires inchangées.
+  expect(screen.getByText('Payer partiellement')).toBeTruthy();
+  expect(screen.getByText("Modifier l'échéance")).toBeTruthy();
+  expect(screen.getByText("Annuler l'échéance")).toBeTruthy();
+});
+
+it('versement : « Virer X DH » valide directement (même moteur que Payer, aucune étape intermédiaire)', async () => {
+  renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-row-po-epargne'));
+  fireEvent.press(screen.getByTestId('todo-row-po-epargne'));
+  await waitFor(() => screen.getByTestId('action-sheet-pay'));
+  fireEvent.press(screen.getByTestId('action-sheet-pay'));
+  await waitFor(() => expect(mockRealizePlannedOperation).toHaveBeenCalledWith('po-epargne', expect.objectContaining({ actualAmount: '1000' })));
+  expect(mockRealizePlannedOperation).toHaveBeenCalledTimes(1);
+  expect(mockPartialRealizePlannedOperation).not.toHaveBeenCalled();
+});
+
+it('versement : paiement partiel = exactement le même moteur (partialRealize)', async () => {
+  renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-row-po-epargne'));
+  fireEvent.press(screen.getByTestId('todo-row-po-epargne'));
+  await waitFor(() => screen.getByTestId('action-sheet-partial'));
+  fireEvent.press(screen.getByTestId('action-sheet-partial'));
+  await waitFor(() => screen.getByTestId('action-sheet-partial-amount'));
+  fireEvent.changeText(screen.getByTestId('action-sheet-partial-amount'), '400');
+  await waitFor(() => expect(screen.getByTestId('action-sheet-partial-amount').props.value).toBe('400'));
+  fireEvent.press(screen.getByTestId('action-sheet-partial-submit'));
+  await waitFor(() => expect(mockPartialRealizePlannedOperation).toHaveBeenCalledWith('po-epargne', expect.objectContaining({ actualAmount: '400' })));
+  expect(mockRealizePlannedOperation).not.toHaveBeenCalled();
+});
+
+it('versement vers une enveloppe dont le compte parent a un homonyme : la banque est ajoutée pour lever l\'ambiguïté', async () => {
+  mockListAccounts.mockResolvedValue([
+    { ...ACCOUNTS[0], id: 'adil', name: 'Adil Compte Principal', bank: 'SG' },
+    { ...ACCOUNTS[1], id: 'bcp', name: 'Épargne', bank: 'BCP', subaccounts: [{ id: 'voyage', accountId: 'bcp', name: 'Voyage', balance: 0, active: true }] },
+    { ...ACCOUNTS[1], id: 'cih-ep', name: 'Épargne', bank: 'CIH', subaccounts: [] },
+  ]);
+  mockGetTodo.mockResolvedValue({
+    month: '2026-10',
+    pending: [{ ...actionVersementSansResponsable, sourceAccountId: 'adil', destinationAccountId: 'bcp', destinationSubaccountId: 'voyage' }],
+    done: [],
+    pendingCount: 1,
+    totalRemaining: 1000,
+  });
+  renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-row-po-epargne'));
+  fireEvent.press(screen.getByTestId('todo-row-po-epargne'));
+  await waitFor(() => screen.getByTestId('action-sheet-transfer'));
+  expect(textContent(screen.getByTestId('action-sheet-transfer-from') as unknown as HostNode)).toBe('Adil Compte Principal');
+  expect(textContent(screen.getByTestId('action-sheet-transfer-to') as unknown as HostNode)).toBe('→ Épargne BCP / Voyage');
+});
+
+// ---------------------------------------------------------------------------
 // Navigation temporelle : "OCT. 26 | NOVEMBRE 2026 | DÉC. 26".
 // ---------------------------------------------------------------------------
 
