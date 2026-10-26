@@ -1,6 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, Alert, GestureResponderEvent, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { ActivityIndicator, Alert, GestureResponderEvent, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { colors, elevation, fontFamily, radius, spacing, typography } from '../ui/theme';
@@ -14,6 +14,7 @@ import { useBottomInset } from '../ui/useBottomInset';
 import { testIdSlug } from '../ui/testIdSlug';
 import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
 import { accountSelectOptions, decodeAccountOption, encodeAccountOption } from '../ui/accountOptions';
+import { estimateTextEm, fitFontSize, fitPaidAmount, fitTwoParts } from '../ui/fitAmount';
 import { RECURRENCE_FREQUENCY_OPTIONS, RecurrenceOption } from '../ui/recurrenceLabels';
 
 const HORIZON_OPTIONS = [3, 6, 9, 12] as const;
@@ -28,6 +29,27 @@ const TOAST_DURATION_MS = 1800;
 const SWIPE_CLAIM_DISTANCE = 16;
 const SWIPE_THRESHOLD = 60;
 const SWIPE_DIRECTION_RATIO = 2;
+// Grille mensuelle : colonne libellé (flex 1.4, paddingRight xs) + 3 colonnes
+// mois (flex 1), sur la largeur intérieure des cartes (marge lg + padding md).
+const LABEL_COLUMN_FLEX = 1.4;
+const CARD_INNER_INSET = spacing.lg + spacing.md;
+
+// Largeur horizontale non disponible pour le texte dans une cellule : marge
+// de sécurité (texte neutre), padding de la capsule payée, liseré + padding
+// de la case mixte.
+const CELL_TEXT_INSET = 4;
+const CELL_CHIP_INSET = 2 * 4 + 4;
+const CELL_MIXED_INSET = 2 + 2 * 2 + 2;
+const SUMMARY_CARD_PADDING = 10;
+const SUMMARY_LABEL_FONT_SIZE = 9.5;
+const SUMMARY_LABEL_LETTER_SPACING = 0.3;
+const SUMMARY_CARD_WIDTH_RATIO = 0.485;
+// Case mixte : sous cette taille, le texte passe sur deux lignes plutôt que de rapetisser.
+const MIXED_MIN_FONT_SIZE = 8;
+
+function monthColumnWidth(gridWidth: number): number {
+  return Math.max(0, (gridWidth - spacing.xs) / (LABEL_COLUMN_FLEX + VISIBLE_COLUMNS));
+}
 
 /** "2026-12" → "Déc. 2026" (libellé discret de la projection de fin de période). */
 function formatMonthShortFullYear(monthKey: string): string {
@@ -158,6 +180,13 @@ export function PlanningScreen() {
   // de navigation (§3), partagée par tous les accordéons.
   const [windowStart, setWindowStart] = useState(0);
   const swipeStart = useRef<{ x: number; y: number } | null>(null);
+  // Largeur réelle d'une colonne mois (mesurée sur la barre de navigation,
+  // estimée depuis la fenêtre avant la première mesure) : sert à ajuster la
+  // taille des montants pour qu'ils ne soient jamais tronqués.
+  const { width: windowWidth } = useWindowDimensions();
+  const [gridWidth, setGridWidth] = useState<number | null>(null);
+  const colWidth = monthColumnWidth(gridWidth ?? windowWidth - 2 * CARD_INNER_INSET);
+  const summaryCardWidth = (windowWidth - 2 * spacing.lg) * SUMMARY_CARD_WIDTH_RATIO;
 
   const load = useCallback(async (h: number) => {
     const [planning, accountList, categoryList, planList, household] = await Promise.all([
@@ -318,7 +347,7 @@ export function PlanningScreen() {
             >
               <Ionicons name="chevron-back" size={18} color={windowStart === 0 ? colors.textPlaceholder : colors.textPrimary} />
             </TouchableOpacity>
-            <View style={[styles.gridRow, styles.monthNavGrid]}>
+            <View style={[styles.gridRow, styles.monthNavGrid]} onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}>
               <View style={styles.gridLabelCol} />
               {visibleMonths.map((m, i) => (
                 <Text
@@ -345,10 +374,10 @@ export function PlanningScreen() {
           {/* Cartes de synthèse compactes (mois actif) : une seule ligne
               libellé/montant par carte, grille 2×2. */}
           <View style={styles.summaryCardsRow} testID="planning-summary-cards">
-            <SummaryCard label="REVENUS" amount={currentSynthese.totalRevenus} accentColor={colors.success} testID="planning-summary-card-revenus" />
-            <SummaryCard label="DÉPENSES" amount={currentSynthese.totalDepenses} accentColor={colors.danger} testID="planning-summary-card-depenses" />
-            <SummaryCard label="VERSEMENTS" amount={currentSynthese.totalEpargne} accentColor={colors.secondary} testID="planning-summary-card-versements" />
-            <SummaryCard label="RÉSULTAT" amount={currentSynthese.resultatPrevu} accentColor={colors.primary} testID="planning-summary-card-resultat" highlightNegative />
+            <SummaryCard label="REVENUS" amount={currentSynthese.totalRevenus} accentColor={colors.success} estimatedWidth={summaryCardWidth} testID="planning-summary-card-revenus" />
+            <SummaryCard label="DÉPENSES" amount={currentSynthese.totalDepenses} accentColor={colors.danger} estimatedWidth={summaryCardWidth} testID="planning-summary-card-depenses" />
+            <SummaryCard label="VERSEMENTS" amount={currentSynthese.totalEpargne} accentColor={colors.secondary} estimatedWidth={summaryCardWidth} testID="planning-summary-card-versements" />
+            <SummaryCard label="RÉSULTAT" amount={currentSynthese.resultatPrevu} accentColor={colors.primary} estimatedWidth={summaryCardWidth} testID="planning-summary-card-resultat" highlightNegative />
           </View>
 
           {blocks.map((block) => (
@@ -362,10 +391,11 @@ export function PlanningScreen() {
               isCollapsed={collapsedBlocks.has(block.title)}
               onToggle={() => toggleBlock(block.title)}
               onCellPress={onCellPress}
+              colWidth={colWidth}
             />
           ))}
 
-          <PlanningFinalSynthese visibleMonths={visibleMonths} synthese={data.synthese} lastVisibleMonth={lastVisibleMonth} />
+          <PlanningFinalSynthese visibleMonths={visibleMonths} synthese={data.synthese} lastVisibleMonth={lastVisibleMonth} colWidth={colWidth} />
         </View>
 
         <PlansSection plans={plans} onOpen={(id) => navigation.navigate('FinancialPlanDetail', { id })} />
@@ -408,15 +438,20 @@ function PlanningCellView({
   onPress,
   onLongPress,
   testID,
+  colWidth,
 }: {
   cell: api.PlanningCellApi;
   onPress: () => void;
   onLongPress: () => void;
   testID: string;
+  colWidth: number;
 }) {
   const isRealized = cell.status === 'REALIZED';
   const isPending = cell.status === 'PENDING';
   const isMixed = cell.status === 'MIXED';
+  // Priorité d'affichage : montant complet > "DH" complet > ✓. La taille de
+  // police s'adapte à la largeur de colonne au lieu de tronquer ("…").
+  const amountText = formatDh(cell.displayAmount);
   return (
     <TouchableOpacity
       style={[styles.cell, isRealized && styles.cellRealized, isPending && styles.cellPending, isMixed && styles.cellMixed]}
@@ -429,32 +464,48 @@ function PlanningCellView({
         <Text style={styles.cellEmpty}>—</Text>
       ) : isMixed ? (
         // Case MIXTE (partiellement réalisée) : réalisé ET à venir dans la
-        // même case — jamais fondus en un seul total ambigu (§9 : ex. 570
-        // réalisé / 592 total ne doit jamais lire "réalisé"). Allégé (lot
-        // "Planning allégé") : plus de capsule jaune pleine, un simple accent
-        // ocre discret (bordure) + texte ocre, jamais un fond saturé.
-        <View style={styles.cellMixedWrap} testID={`${testID}-mixed`}>
-          <Text style={styles.cellAmountMixed} numberOfLines={1} adjustsFontSizeToFit>
-            {Math.round(cell.realizedAmount).toLocaleString('fr-FR')}/{Math.round(cell.displayAmount).toLocaleString('fr-FR')} DH
-          </Text>
-          <Text style={styles.cellRestantMixed} numberOfLines={1} adjustsFontSizeToFit>
-            reste {Math.round(cell.pendingAmount).toLocaleString('fr-FR')} DH
-          </Text>
-        </View>
+        // même case — jamais fondus en un seul total ambigu (§9).
+        (() => {
+          const avail = colWidth - CELL_MIXED_INSET;
+          const paid = fitTwoParts(`${Math.round(cell.realizedAmount).toLocaleString('fr-FR')}/`, amountText, avail, 9.5, MIXED_MIN_FONT_SIZE);
+          const reste = fitTwoParts('reste ', formatDh(cell.pendingAmount), avail, 8.5, MIXED_MIN_FONT_SIZE);
+          return (
+            <View style={styles.cellMixedWrap} testID={`${testID}-mixed`}>
+              {paid.lines.map((line, i) => (
+                <Text key={`p${i}`} style={[styles.cellAmountMixed, { fontSize: paid.fontSize }]} numberOfLines={1} adjustsFontSizeToFit testID={i === 0 ? `${testID}-text` : undefined}>
+                  {line}
+                </Text>
+              ))}
+              {reste.lines.map((line, i) => (
+                <Text key={`r${i}`} style={[styles.cellRestantMixed, { fontSize: reste.fontSize }]} numberOfLines={1} adjustsFontSizeToFit>
+                  {line}
+                </Text>
+              ))}
+            </View>
+          );
+        })()
       ) : isPending ? (
-        // À VENIR : affichage NEUTRE (lot "Planning allégé" §3) — jamais de
-        // grosse capsule jaune derrière le montant, un simple texte discret
-        // ocre/gris, sans fond.
-        <Text style={styles.cellAmountPending} numberOfLines={1} adjustsFontSizeToFit>
-          {formatDh(cell.displayAmount)}
+        // À VENIR : affichage NEUTRE, texte discret sans fond.
+        <Text
+          style={[styles.cellAmountPending, { fontSize: fitFontSize(amountText, colWidth - CELL_TEXT_INSET, 11) }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          testID={`${testID}-text`}
+        >
+          {amountText}
         </Text>
       ) : (
-        // RÉALISÉ : vert (seul statut gardant une capsule colorée, jamais allégée).
-        <View style={styles.cellChip}>
-          <Text style={styles.cellAmountRealized} numberOfLines={1} adjustsFontSizeToFit>
-            {formatDh(cell.displayAmount)} ✓
-          </Text>
-        </View>
+        // RÉALISÉ : capsule verte ; le ✓ est le premier sacrifié si la place manque.
+        (() => {
+          const { fontSize, showCheck } = fitPaidAmount(amountText, colWidth - CELL_CHIP_INSET, 11);
+          return (
+            <View style={styles.cellChip}>
+              <Text style={[styles.cellAmountRealized, { fontSize }]} numberOfLines={1} adjustsFontSizeToFit testID={`${testID}-text`}>
+                {showCheck ? `${amountText} ✓` : amountText}
+              </Text>
+            </View>
+          );
+        })()
       )}
     </TouchableOpacity>
   );
@@ -466,21 +517,35 @@ function SummaryCard({
   accentColor,
   testID,
   highlightNegative = false,
+  estimatedWidth,
 }: {
   label: string;
   amount: number;
   accentColor: string;
   testID: string;
   highlightNegative?: boolean;
+  estimatedWidth: number;
 }) {
+  const [measuredWidth, setMeasuredWidth] = useState<number | null>(null);
+  const [measuredLabelWidth, setMeasuredLabelWidth] = useState<number | null>(null);
   const negative = highlightNegative && amount < 0;
+  const amountText = formatDh(amount);
+  // Le montant passe avant le libellé : il prend la place restante et sa
+  // police s'adapte au lieu d'être tronqué.
+  const inner = (measuredWidth ?? estimatedWidth) - 2 * SUMMARY_CARD_PADDING;
+  const labelWidth = measuredLabelWidth ?? estimateTextEm(label) * SUMMARY_LABEL_FONT_SIZE + SUMMARY_LABEL_LETTER_SPACING * label.length;
+  const amountFontSize = fitFontSize(amountText, inner - labelWidth - spacing.xs, 14);
   return (
-    <View style={[styles.summaryCard, { borderTopColor: accentColor }, highlightNegative && styles.summaryCardAccent, negative && styles.summaryCardNegative]} testID={testID}>
-      <Text style={styles.summaryCardLabel} numberOfLines={1}>
+    <View
+      style={[styles.summaryCard, { borderTopColor: accentColor }, highlightNegative && styles.summaryCardAccent, negative && styles.summaryCardNegative]}
+      onLayout={(e) => setMeasuredWidth(e.nativeEvent.layout.width)}
+      testID={testID}
+    >
+      <Text style={styles.summaryCardLabel} numberOfLines={1} onLayout={(e) => setMeasuredLabelWidth(e.nativeEvent.layout.width)}>
         {label}
       </Text>
-      <Text style={[styles.summaryCardAmount, negative && styles.negativeText]} numberOfLines={1} adjustsFontSizeToFit>
-        {formatDh(amount)}
+      <Text style={[styles.summaryCardAmount, { fontSize: amountFontSize }, negative && styles.negativeText]} numberOfLines={1} adjustsFontSizeToFit>
+        {amountText}
       </Text>
     </View>
   );
@@ -496,11 +561,14 @@ function PlanningFinalSynthese({
   visibleMonths,
   synthese,
   lastVisibleMonth,
+  colWidth,
 }: {
   visibleMonths: string[];
   synthese: Record<string, api.PlanningMonthSyntheseApi>;
   lastVisibleMonth: string;
+  colWidth: number;
 }) {
+  const fit = (text: string, maxFontSize: number) => ({ fontSize: fitFontSize(text, colWidth - 2, maxFontSize) });
   const hasReste = visibleMonths.some((m) => synthese[m].resteDepenses !== null);
   const resteCell = (m: string, render: (s: api.PlanningMonthSyntheseApi) => React.ReactNode) => (
     <View key={m} style={styles.gridMonthCol}>
@@ -525,7 +593,7 @@ function PlanningFinalSynthese({
         {visibleMonths.map((m) => (
           <Text
             key={m}
-            style={[styles.gridMonthCol, styles.finalValueStrong, synthese[m].resultatPrevu < 0 && styles.negativeText]}
+            style={[styles.gridMonthCol, styles.finalValueStrong, fit(formatDh(synthese[m].resultatPrevu), 12), synthese[m].resultatPrevu < 0 && styles.negativeText]}
             numberOfLines={1}
             adjustsFontSizeToFit
             testID={`planning-resultat-prevu-${m}`}
@@ -542,7 +610,7 @@ function PlanningFinalSynthese({
             <Text style={[styles.gridLabelCol, styles.finalRowLabel]}>Dépenses</Text>
             {visibleMonths.map((m) =>
               resteCell(m, (s) => (
-                <Text style={styles.finalValue} numberOfLines={1} adjustsFontSizeToFit testID={`planning-reste-depenses-${m}`}>
+                <Text style={[styles.finalValue, fit(formatDh(s.resteDepenses ?? 0), 11.5)]} numberOfLines={1} adjustsFontSizeToFit testID={`planning-reste-depenses-${m}`}>
                   {formatDh(s.resteDepenses ?? 0)}
                 </Text>
               )),
@@ -552,7 +620,7 @@ function PlanningFinalSynthese({
             <Text style={[styles.gridLabelCol, styles.finalRowLabel]}>Versements</Text>
             {visibleMonths.map((m) =>
               resteCell(m, (s) => (
-                <Text style={styles.finalValue} numberOfLines={1} adjustsFontSizeToFit testID={`planning-reste-versements-${m}`}>
+                <Text style={[styles.finalValue, fit(formatDh(s.resteVersements ?? 0), 11.5)]} numberOfLines={1} adjustsFontSizeToFit testID={`planning-reste-versements-${m}`}>
                   {formatDh(s.resteVersements ?? 0)}
                 </Text>
               )),
@@ -563,11 +631,11 @@ function PlanningFinalSynthese({
             {visibleMonths.map((m) =>
               resteCell(m, (s) =>
                 s.couverte ? (
-                  <Text style={[styles.finalValue, styles.syntheseCouvertureOk]} numberOfLines={1} adjustsFontSizeToFit testID="planning-reste-couvert">
+                  <Text style={[styles.finalValue, styles.syntheseCouvertureOk, fit('✓ Couvert', 11.5)]} numberOfLines={1} adjustsFontSizeToFit testID="planning-reste-couvert">
                     ✓ Couvert
                   </Text>
                 ) : (
-                  <Text style={[styles.finalValue, styles.syntheseCouvertureWarn]} numberOfLines={1} adjustsFontSizeToFit testID="planning-reste-a-provisionner">
+                  <Text style={[styles.finalValue, styles.syntheseCouvertureWarn, fit(formatDh(s.aProvisionner ?? 0), 11.5)]} numberOfLines={1} adjustsFontSizeToFit testID="planning-reste-a-provisionner">
                     {formatDh(s.aProvisionner ?? 0)}
                   </Text>
                 ),
@@ -584,7 +652,7 @@ function PlanningFinalSynthese({
         {visibleMonths.map((m) =>
           m === lastVisibleMonth ? (
             <View key={m} style={[styles.gridMonthCol, styles.projectionCol]} testID="planning-projection-cumulee">
-              <Text style={[styles.finalValueStrong, synthese[m].projectionCumulee < 0 && styles.negativeText]} numberOfLines={1} adjustsFontSizeToFit>
+              <Text style={[styles.finalValueStrong, fit(formatDh(synthese[m].projectionCumulee), 12), synthese[m].projectionCumulee < 0 && styles.negativeText]} numberOfLines={1} adjustsFontSizeToFit>
                 {formatDh(synthese[m].projectionCumulee)}
               </Text>
               <Text style={styles.projectionCaption} numberOfLines={2}>
@@ -623,6 +691,7 @@ function PlanningAccordion({
   isCollapsed,
   onToggle,
   onCellPress,
+  colWidth,
 }: {
   block: BlockDef;
   items: BlockItem[];
@@ -632,6 +701,7 @@ function PlanningAccordion({
   isCollapsed: boolean;
   onToggle: () => void;
   onCellPress: (cell: api.PlanningCellApi, rowLabel: string) => void;
+  colWidth: number;
 }) {
   const total = synthese[currentMonth][block.totalKey];
   return (
@@ -681,6 +751,7 @@ function PlanningAccordion({
                         onPress={() => onCellPress(item.row.cells[m], item.row.label)}
                         onLongPress={() => onCellPress(item.row.cells[m], item.row.label)}
                         testID={`planning-cell-${testIdSlug(item.row.label)}-${m}`}
+                        colWidth={colWidth}
                       />
                     ))}
                   </View>
@@ -1543,12 +1614,12 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     borderTopWidth: 3,
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: SUMMARY_CARD_PADDING,
     ...elevation.card,
   },
   summaryCardAccent: { backgroundColor: colors.surfaceActive },
   summaryCardNegative: { backgroundColor: colors.dangerLight },
-  summaryCardLabel: { fontSize: 10, fontFamily: fontFamily.sansExtraBold, color: colors.textSecondary, letterSpacing: 0.3, marginRight: spacing.xs },
+  summaryCardLabel: { flexShrink: 0, fontSize: SUMMARY_LABEL_FONT_SIZE, fontFamily: fontFamily.sansExtraBold, color: colors.textSecondary, letterSpacing: SUMMARY_LABEL_LETTER_SPACING, marginRight: spacing.xs },
   summaryCardAmount: { flexShrink: 1, textAlign: 'right', fontSize: 14, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
   emptyRowText: { ...typography.caption, color: colors.textPlaceholder },
   // Grille mensuelle partagée (navigation, accordéons, synthèse finale) :
@@ -1601,16 +1672,17 @@ const styles = StyleSheet.create({
   cellRealized: {},
   cellPending: {},
   // MIXTE (partiellement réalisée) : accent ocre discret (liseré gauche), JAMAIS un fond saturé.
-  cellMixed: { borderLeftWidth: 2, borderLeftColor: colors.warning },
+  cellMixed: {},
   cellEmpty: { color: colors.textPlaceholder },
   // Montant affiché en chip/pill — RÉSERVÉ au statut RÉALISÉ (vert) : fond vert très clair + ✓.
-  cellChip: { borderRadius: radius.pill, paddingHorizontal: 6, paddingVertical: 3, maxWidth: '96%', backgroundColor: colors.successLight },
+  cellChip: { borderRadius: radius.pill, paddingHorizontal: 4, paddingVertical: 3, backgroundColor: colors.successLight },
   cellAmountRealized: { fontSize: 11, fontFamily: fontFamily.sansBold, color: colors.success },
   // À VENIR : texte neutre, fond très légèrement teinté (jamais une grosse capsule).
   cellAmountPending: { fontSize: 11, fontFamily: fontFamily.sansMedium, color: colors.textSecondary },
-  cellMixedWrap: { alignItems: 'center' },
-  cellAmountMixed: { fontSize: 9.5, fontFamily: fontFamily.sansExtraBold, color: colors.warning, paddingHorizontal: 2 },
-  cellRestantMixed: { fontSize: 8.5, fontFamily: fontFamily.sansBold, color: colors.textSecondary, paddingHorizontal: 2, marginTop: 1 },
+  // Liseré ocre porté par le contenu, pas par la cellule : la largeur de colonne reste identique.
+  cellMixedWrap: { alignItems: 'center', alignSelf: 'stretch', borderLeftWidth: 2, borderLeftColor: colors.warning },
+  cellAmountMixed: { fontSize: 9.5, fontFamily: fontFamily.sansExtraBold, color: colors.warning, paddingHorizontal: 2, textAlign: 'center' },
+  cellRestantMixed: { fontSize: 8.5, fontFamily: fontFamily.sansBold, color: colors.textSecondary, paddingHorizontal: 2, marginTop: 1, textAlign: 'center' },
   backdrop: { flex: 1, backgroundColor: colors.backdrop },
   confirmBox: {
     position: 'absolute',
