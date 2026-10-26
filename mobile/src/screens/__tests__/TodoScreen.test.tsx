@@ -55,7 +55,7 @@ function textContent(node: HostNode): string {
   return node.children.map((c) => (typeof c === 'string' ? c : textContent(c))).join('').replace(/\s+/g, ' ');
 }
 
-function rowText(id: string, part: 'label' | 'status' | 'amount' | 'meta'): string {
+function rowText(id: string, part: 'label' | 'amount'): string {
   return textContent(screen.getByTestId(`todo-row-${id}-${part}`) as unknown as HostNode);
 }
 
@@ -202,71 +202,85 @@ it('section responsable : header affiche nombre d\'échéances + montant restant
   expect(within(section).getByText('Lamiaa')).toBeTruthy();
   expect(within(section).getByText(/1 échéance · 500 DH/)).toBeTruthy();
 
-  // Plus de libellé nature séparé (DÉPENSE/VERSEMENT) ni de responsable dans
-  // la ligne (§35) — le responsable est déjà porté par la section elle-même.
   expect(screen.queryByText('DÉPENSE')).toBeNull();
-  expect(rowText('po-carburant', 'meta')).toBe('05 oct. · BP Adil');
-  expect(rowText('po-carburant', 'status').trim()).toBe('· En retard');
 });
 
 // ---------------------------------------------------------------------------
-// Ligne d'échéance : "Libellé · statut … Montant" puis "Date · Source → Destination".
+// Vue synthétique : une échéance = une ligne "Libellé … Montant".
 // ---------------------------------------------------------------------------
 
-it("chaque ligne affiche son vrai libellé, son montant, et jamais le montant seul", async () => {
-  mockGetTodo.mockResolvedValue({ month: '2026-10', pending: [actionAdil, actionDepensePartielleRetard, actionVersementSansResponsable], done: [], pendingCount: 3, totalRemaining: 1800 });
-  renderWithSafeArea(<TodoScreen />);
-  await waitFor(() => screen.getByTestId('todo-row-po-courses'));
+/** Tous les textes affichés dans une ligne, dans l'ordre. */
+function rowTexts(id: string): string[] {
+  const out: string[] = [];
+  const walk = (node: HostNode) => {
+    if (node.children.every((c) => typeof c === 'string') && node.children.length > 0) {
+      out.push(textContent(node));
+      return;
+    }
+    node.children.forEach((c) => typeof c !== 'string' && walk(c));
+  };
+  walk(screen.getByTestId(`todo-row-${id}`) as unknown as HostNode);
+  return out;
+}
 
-  for (const [id, label, amount] of [
-    ['po-courses', 'Courses', '300 DH'],
-    ['po-carburant', 'Carburant', '500 DH'],
-    ['po-epargne', 'Épargne voyage', '1 000 DH'],
-  ]) {
-    expect(rowText(id, 'label').startsWith(label)).toBe(true);
-    expect(rowText(id, 'amount')).toBe(amount);
-    expect(screen.getByTestId(`todo-row-${id}-label`).props.numberOfLines).toBeUndefined();
-  }
-});
-
-it('statut sur la même ligne que le libellé, en texte discret sans badge : À faire / En retard / Partiel', async () => {
+it('une échéance affiche uniquement son libellé et son montant (ni statut, ni date, ni comptes)', async () => {
   const partielNonRetard = { ...actionDepensePartielleRetard, plannedOperationId: 'po-partiel', label: 'LYDEC', late: false, responsibleMemberId: 'm-adil' };
-  mockGetTodo.mockResolvedValue({ month: '2026-10', pending: [actionAdil, actionDepensePartielleRetard, partielNonRetard], done: [], pendingCount: 3, totalRemaining: 1300 });
+  mockGetTodo.mockResolvedValue({
+    month: '2026-10',
+    pending: [actionAdil, actionDepensePartielleRetard, partielNonRetard, actionVersementSansResponsable],
+    done: [],
+    pendingCount: 4,
+    totalRemaining: 2300,
+  });
   renderWithSafeArea(<TodoScreen />);
   await waitFor(() => screen.getByTestId('todo-row-po-courses'));
 
-  expect(rowText('po-courses', 'label')).toBe('Courses · À faire');
-  expect(rowText('po-carburant', 'label')).toBe('Carburant · En retard');
-  expect(rowText('po-partiel', 'label')).toBe('LYDEC · Partiel');
+  expect(rowTexts('po-courses')).toEqual(['Courses', '300 DH']);
+  expect(rowTexts('po-carburant')).toEqual(['Carburant', '500 DH']);
+  expect(rowTexts('po-partiel')).toEqual(['LYDEC', '500 DH']);
+  expect(rowTexts('po-epargne')).toEqual(['Épargne voyage', '1 000 DH']);
 
-  // Le statut est imbriqué dans le Text du libellé (même ligne logique), et
-  // le libellé partage sa ligne avec le montant.
-  const label = screen.getByTestId('todo-row-po-courses-label');
-  expect(within(label).getByTestId('todo-row-po-courses-status')).toBeTruthy();
-  expect(screen.getByTestId('todo-row-po-courses-amount').parent).toBe(label.parent);
-
-  const colorOf = (id: string) => StyleSheet.flatten(screen.getByTestId(`todo-row-${id}-status`).props.style);
-  expect(colorOf('po-courses').color).toBe(colors.textSecondary);
-  expect(colorOf('po-carburant').color).toBe(colors.danger);
-  expect(colorOf('po-partiel').color).toBe(colors.warning);
-  for (const id of ['po-courses', 'po-carburant', 'po-partiel']) {
-    expect(colorOf(id).backgroundColor).toBeUndefined();
+  for (const hidden of [/À faire/, /En retard/, /Partiel/, /oct\./, /BP Adil/, /→/, /Reste sur/]) {
+    for (const id of ['po-courses', 'po-carburant', 'po-partiel', 'po-epargne']) {
+      expect(within(screen.getByTestId(`todo-row-${id}`)).queryByText(hidden)).toBeNull();
+    }
+  }
+  for (const id of ['po-courses', 'po-carburant']) {
+    expect(screen.queryByTestId(`todo-row-${id}-status`)).toBeNull();
+    expect(screen.queryByTestId(`todo-row-${id}-meta`)).toBeNull();
     expect(screen.queryByTestId(`todo-row-${id}-badge`)).toBeNull();
-    expect(screen.queryByTestId(`todo-row-${id}-reste`)).toBeNull();
   }
 });
 
-it('deuxième ligne : date · source, puis → destination seulement quand il y en a une', async () => {
-  mockGetTodo.mockResolvedValue({ month: '2026-10', pending: [actionAdil, actionVersementSansResponsable], done: [], pendingCount: 2, totalRemaining: 1300 });
+it('libellé long : jusqu\'à 2 lignes, le montant garde toujours sa place et n\'est jamais tronqué', async () => {
+  const longLabel = { ...actionAdil, label: 'LYDEC — électricité et eau de la résidence principale et du garage' };
+  mockGetTodo.mockResolvedValue({ month: '2026-10', pending: [longLabel], done: [], pendingCount: 1, totalRemaining: 300 });
   renderWithSafeArea(<TodoScreen />);
   await waitFor(() => screen.getByTestId('todo-row-po-courses'));
 
-  expect(rowText('po-courses', 'meta')).toBe('04 oct. · BP Adil');
-  expect(rowText('po-epargne', 'meta')).toBe(`20 oct. · BP Adil → ${ACCOUNTS[1].name} — Voyage`);
-  // Une seule ligne, tronquée par la fin : la destination part en premier.
-  const meta = screen.getByTestId('todo-row-po-epargne-meta');
-  expect(meta.props.numberOfLines).toBe(1);
-  expect(meta.props.ellipsizeMode ?? 'tail').toBe('tail');
+  const label = screen.getByTestId('todo-row-po-courses-label');
+  const amount = screen.getByTestId('todo-row-po-courses-amount');
+  expect(textContent(label as unknown as HostNode)).toBe(longLabel.label);
+  expect(label.props.numberOfLines).toBe(2);
+  expect(amount.props.numberOfLines).toBeUndefined();
+  expect(StyleSheet.flatten(amount.props.style).flexShrink).toBe(0);
+  expect(StyleSheet.flatten(screen.getByTestId('todo-row-po-courses').props.style).flexDirection).toBe('row');
+});
+
+it('toucher une ligne simplifiée ouvre toujours le même flux, avec prévu / déjà payé / reste', async () => {
+  renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-row-po-epargne'));
+
+  fireEvent.press(screen.getByTestId('todo-row-po-epargne'));
+  await waitFor(() => screen.getByTestId('action-sheet'));
+  expect(screen.getByTestId('action-sheet-pay')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('action-sheet-close'));
+  await waitFor(() => expect(screen.queryByTestId('action-sheet')).toBeNull());
+
+  fireEvent.press(screen.getByTestId('todo-row-po-carburant'));
+  await waitFor(() => screen.getByTestId('action-sheet-deja-paye'));
+  expect(screen.getByTestId('action-sheet-deja-paye').props.children).toBe(formatDh(300));
+  expect(screen.getByTestId('action-sheet-reste').props.children).toBe(formatDh(500));
 });
 
 it('regroupement Adil / Lamiaa inchangé : chaque échéance sous son responsable, totaux = somme des restes', async () => {

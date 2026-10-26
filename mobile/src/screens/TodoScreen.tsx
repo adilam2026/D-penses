@@ -4,12 +4,11 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View
 import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { colors, elevation, radius, spacing, typography } from '../ui/theme';
-import { formatDh, formatMonthLabel, formatShortDate } from '../ui/formatMoney';
+import { formatDh, formatMonthLabel } from '../ui/formatMoney';
 import { useTopInset } from '../ui/useTopInset';
 import { useBottomInset } from '../ui/useBottomInset';
 import { HelpButton } from '../ui/HelpButton';
 import { Toast } from '../ui/Toast';
-import { accountLabelFor } from '../ui/accountLabel';
 import { PlannedOperationActionFlow } from './PlanningScreen';
 
 const TOAST_DURATION_MS = 1800;
@@ -199,7 +198,6 @@ export function TodoScreen() {
                   title={m.user.firstName}
                   icon="person-circle-outline"
                   actions={list}
-                  accounts={accounts}
                   isCollapsed={collapsedSections.has(m.id)}
                   onToggle={() => toggleSection(m.id)}
                   onPressAction={(action) => setActionTarget({ occurrence: occurrenceFromAction(action), rowLabel: action.label })}
@@ -212,7 +210,6 @@ export function TodoScreen() {
                 title="Non attribué"
                 icon="help-circle-outline"
                 actions={unassigned}
-                accounts={accounts}
                 isCollapsed={collapsedSections.has(UNASSIGNED_KEY)}
                 onToggle={() => toggleSection(UNASSIGNED_KEY)}
                 onPressAction={(action) => setActionTarget({ occurrence: occurrenceFromAction(action), rowLabel: action.label })}
@@ -245,14 +242,9 @@ export function TodoScreen() {
                 data.done.map((action) => (
                   <View key={action.plannedOperationId} style={styles.doneRow} testID={`todo-done-row-${action.plannedOperationId}`}>
                     <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-                    <View style={{ flex: 1, marginLeft: spacing.sm }}>
-                      <Text style={[styles.rowLabel, { marginRight: 0 }]} numberOfLines={1}>
-                        {action.label}
-                      </Text>
-                      <Text style={styles.rowMeta} numberOfLines={1}>
-                        {formatShortDate(action.expectedDate)}
-                      </Text>
-                    </View>
+                    <Text style={[styles.rowLabel, { marginLeft: spacing.sm }]} numberOfLines={2}>
+                      {action.label}
+                    </Text>
                     <Text style={styles.rowAmount}>{formatDh(action.realizedAmount ?? action.expectedAmount)}</Text>
                   </View>
                 ))
@@ -290,7 +282,6 @@ function TodoSection({
   title,
   icon,
   actions,
-  accounts,
   isCollapsed,
   onToggle,
   onPressAction,
@@ -300,7 +291,6 @@ function TodoSection({
   title: string;
   icon: keyof typeof Ionicons.glyphMap;
   actions: api.TodoActionApi[];
-  accounts: api.AccountApi[];
   isCollapsed: boolean;
   onToggle: () => void;
   onPressAction: (action: api.TodoActionApi) => void;
@@ -325,34 +315,16 @@ function TodoSection({
       {!isCollapsed && (
         <View style={styles.sectionBody}>
           {actions.map((action) => {
-            const sourceLabel = accountLabelFor(accounts, action.sourceAccountId, action.sourceSubaccountId);
-            const destinationLabel = action.destinationAccountId ? accountLabelFor(accounts, action.destinationAccountId, action.destinationSubaccountId) : null;
-            const hasPartialPayment = action.realizedAmount !== null && action.realizedAmount > 0;
-            // Un seul statut, en texte discret (jamais de badge) : En retard > Partiel > À faire.
-            const stateLabel = action.late ? 'En retard' : hasPartialPayment ? 'Partiel' : 'À faire';
-            const stateStyle = action.late ? styles.stateLate : hasPartialPayment ? styles.statePartial : styles.stateDefault;
-            // Ligne 2 : date · source → destination. Tronquée par la fin si
-            // trop longue, donc la destination disparaît en premier.
-            const meta = [formatShortDate(action.expectedDate), sourceLabel].filter(Boolean).join(' · ') + (destinationLabel ? ` → ${destinationLabel}` : '');
+            // Vue synthétique : libellé + montant restant uniquement. Le
+            // détail (prévu, déjà payé, source, destination…) reste dans
+            // l'ActionSheet ouvert au tap.
             return (
               <TouchableOpacity key={action.plannedOperationId} style={styles.row} onPress={() => onPressAction(action)} testID={`todo-row-${action.plannedOperationId}`}>
-                <View style={styles.rowTopLine}>
-                  {/* Libellé et statut dans un même Text : le statut suit le
-                      libellé, et un libellé très long passe à la ligne au
-                      lieu d'être tronqué. */}
-                  <Text style={styles.rowLabel} testID={`todo-row-${action.plannedOperationId}-label`}>
-                    {action.label}
-                    <Text style={[styles.rowState, stateStyle]} testID={`todo-row-${action.plannedOperationId}-status`}>
-                      {'  ·  '}
-                      {stateLabel}
-                    </Text>
-                  </Text>
-                  <Text style={styles.rowAmount} testID={`todo-row-${action.plannedOperationId}-amount`}>
-                    {formatDh(action.remaining)}
-                  </Text>
-                </View>
-                <Text style={styles.rowMeta} numberOfLines={1} testID={`todo-row-${action.plannedOperationId}-meta`}>
-                  {meta}
+                <Text style={styles.rowLabel} numberOfLines={2} testID={`todo-row-${action.plannedOperationId}-label`}>
+                  {action.label}
+                </Text>
+                <Text style={styles.rowAmount} testID={`todo-row-${action.plannedOperationId}-amount`}>
+                  {formatDh(action.remaining)}
                 </Text>
               </TouchableOpacity>
             );
@@ -381,22 +353,18 @@ const styles = StyleSheet.create({
   sectionTitle: { ...typography.body, fontWeight: '800', flex: 1 },
   sectionMeta: { ...typography.caption, fontWeight: '700', color: colors.textSecondary, marginRight: spacing.sm },
   sectionBody: { paddingHorizontal: spacing.sm, paddingBottom: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
-  // Échéance sur deux lignes : "Libellé · statut … Montant" puis "Date · Source → Destination".
-  // Pas d'alignItems 'flex-start' ici : le contenu doit occuper toute la largeur
-  // (sinon Android calcule une largeur nulle pour le libellé).
+  // Une échéance = une ligne : libellé à gauche (2 lignes max si très long),
+  // montant en gras à droite, jamais rétréci. Pas d'alignItems 'flex-start'
+  // sur le conteneur : Android donnerait une largeur nulle au libellé.
   row: {
-    paddingVertical: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 7,
     paddingHorizontal: spacing.xs,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.divider,
   },
-  rowTopLine: { flexDirection: 'row', alignItems: 'flex-start' },
-  rowLabel: { ...typography.body, fontWeight: '700', flexGrow: 1, flexShrink: 1, flexBasis: 'auto', marginRight: spacing.sm },
-  rowState: { fontSize: 12, fontWeight: '500' },
-  stateDefault: { color: colors.textSecondary },
-  stateLate: { color: colors.danger },
-  statePartial: { color: colors.warning },
+  rowLabel: { ...typography.body, fontWeight: '600', flexGrow: 1, flexShrink: 1, flexBasis: 'auto', marginRight: spacing.md },
   rowAmount: { ...typography.body, fontWeight: '800', flexShrink: 0 },
-  rowMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  doneRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.xs, paddingHorizontal: spacing.xs },
+  doneRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: spacing.xs },
 });
