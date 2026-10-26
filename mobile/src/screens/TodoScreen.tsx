@@ -246,7 +246,7 @@ export function TodoScreen() {
                   <View key={action.plannedOperationId} style={styles.doneRow} testID={`todo-done-row-${action.plannedOperationId}`}>
                     <Ionicons name="checkmark-circle" size={16} color={colors.success} />
                     <View style={{ flex: 1, marginLeft: spacing.sm }}>
-                      <Text style={styles.rowLabel} numberOfLines={1}>
+                      <Text style={[styles.rowLabel, { marginRight: 0 }]} numberOfLines={1}>
                         {action.label}
                       </Text>
                       <Text style={styles.rowMeta} numberOfLines={1}>
@@ -326,36 +326,34 @@ function TodoSection({
         <View style={styles.sectionBody}>
           {actions.map((action) => {
             const sourceLabel = accountLabelFor(accounts, action.sourceAccountId, action.sourceSubaccountId);
-            const destinationLabel =
-              action.kind === 'SAVINGS_CONTRIBUTION' ? accountLabelFor(accounts, action.destinationAccountId, action.destinationSubaccountId) : 'Dépense';
+            const destinationLabel = action.destinationAccountId ? accountLabelFor(accounts, action.destinationAccountId, action.destinationSubaccountId) : null;
             const hasPartialPayment = action.realizedAmount !== null && action.realizedAmount > 0;
-            // Petit indicateur d'état (§35) : En retard > Partiel > À faire — jamais plus d'un badge à la fois.
+            // Un seul statut, en texte discret (jamais de badge) : En retard > Partiel > À faire.
             const stateLabel = action.late ? 'En retard' : hasPartialPayment ? 'Partiel' : 'À faire';
-            const stateStyle = action.late ? styles.badgeLate : hasPartialPayment ? styles.badgePartial : styles.badgeDefault;
+            const stateStyle = action.late ? styles.stateLate : hasPartialPayment ? styles.statePartial : styles.stateDefault;
+            // Ligne 2 : date · source → destination. Tronquée par la fin si
+            // trop longue, donc la destination disparaît en premier.
+            const meta = [formatShortDate(action.expectedDate), sourceLabel].filter(Boolean).join(' · ') + (destinationLabel ? ` → ${destinationLabel}` : '');
             return (
               <TouchableOpacity key={action.plannedOperationId} style={styles.row} onPress={() => onPressAction(action)} testID={`todo-row-${action.plannedOperationId}`}>
-                <View style={{ flex: 1 }}>
-                  <View style={styles.rowTopLine}>
-                    <Text style={styles.rowLabel} numberOfLines={1}>
-                      {action.label}
+                <View style={styles.rowTopLine}>
+                  {/* Libellé et statut dans un même Text : le statut suit le
+                      libellé, et un libellé très long passe à la ligne au
+                      lieu d'être tronqué. */}
+                  <Text style={styles.rowLabel} testID={`todo-row-${action.plannedOperationId}-label`}>
+                    {action.label}
+                    <Text style={[styles.rowState, stateStyle]} testID={`todo-row-${action.plannedOperationId}-status`}>
+                      {'  ·  '}
+                      {stateLabel}
                     </Text>
-                    <Text style={styles.rowAmount}>{formatDh(action.remaining)}</Text>
-                  </View>
-                  {/* "04 nov. · Adil Compte Principal → Courses" — date + comptes sur une seule ligne compacte (§35). */}
-                  <View style={styles.rowBottomLine}>
-                    <Text style={styles.rowMeta} numberOfLines={1}>
-                      {formatShortDate(action.expectedDate)} · {sourceLabel ?? '—'} → {destinationLabel ?? '—'}
-                    </Text>
-                    <View style={[styles.badge, stateStyle]} testID={`todo-row-${action.plannedOperationId}-badge`}>
-                      <Text style={styles.badgeText}>{stateLabel}</Text>
-                    </View>
-                  </View>
-                  {hasPartialPayment && (
-                    <Text style={styles.rowReste} testID={`todo-row-${action.plannedOperationId}-reste`}>
-                      Reste sur {formatDh(action.expectedAmount)}
-                    </Text>
-                  )}
+                  </Text>
+                  <Text style={styles.rowAmount} testID={`todo-row-${action.plannedOperationId}-amount`}>
+                    {formatDh(action.remaining)}
+                  </Text>
                 </View>
+                <Text style={styles.rowMeta} numberOfLines={1} testID={`todo-row-${action.plannedOperationId}-meta`}>
+                  {meta}
+                </Text>
               </TouchableOpacity>
             );
           })}
@@ -383,24 +381,22 @@ const styles = StyleSheet.create({
   sectionTitle: { ...typography.body, fontWeight: '800', flex: 1 },
   sectionMeta: { ...typography.caption, fontWeight: '700', color: colors.textSecondary, marginRight: spacing.sm },
   sectionBody: { paddingHorizontal: spacing.sm, paddingBottom: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
+  // Échéance sur deux lignes : "Libellé · statut … Montant" puis "Date · Source → Destination".
+  // Pas d'alignItems 'flex-start' ici : le contenu doit occuper toute la largeur
+  // (sinon Android calcule une largeur nulle pour le libellé).
   row: {
-    alignItems: 'flex-start',
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.xs,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.divider,
   },
-  rowTopLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  rowLabel: { ...typography.body, fontWeight: '700', flex: 1, marginRight: spacing.sm },
-  rowAmount: { ...typography.body, fontWeight: '800' },
-  rowMeta: { ...typography.caption, flex: 1, marginRight: spacing.sm },
-  rowBottomLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 },
-  rowReste: { ...typography.caption, color: colors.primaryDark, fontWeight: '700', marginTop: 1 },
-  // Petit indicateur d'état (§35) — À faire/Partiel/En retard, jamais plus d'un badge à la fois.
-  badge: { paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.pill },
-  badgeText: { fontSize: 10, fontWeight: '800' },
-  badgeDefault: { backgroundColor: colors.surfaceSecondary },
-  badgePartial: { backgroundColor: colors.warningLight },
-  badgeLate: { backgroundColor: colors.dangerLight },
+  rowTopLine: { flexDirection: 'row', alignItems: 'flex-start' },
+  rowLabel: { ...typography.body, fontWeight: '700', flexGrow: 1, flexShrink: 1, flexBasis: 'auto', marginRight: spacing.sm },
+  rowState: { fontSize: 12, fontWeight: '500' },
+  stateDefault: { color: colors.textSecondary },
+  stateLate: { color: colors.danger },
+  statePartial: { color: colors.warning },
+  rowAmount: { ...typography.body, fontWeight: '800', flexShrink: 0 },
+  rowMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   doneRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.xs, paddingHorizontal: spacing.xs },
 });
