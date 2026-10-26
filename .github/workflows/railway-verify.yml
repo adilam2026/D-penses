@@ -210,6 +210,103 @@ jobs:
 
           ! grep -io "does not exist\|internal server error\|500 " created.json partial.json realized.json modified.json rule.json planning2.json planning3.json planning4.json
 
+      - name: "Recette : navigation temporelle + récurrences à la demande (Planning from=…, À faire lointain)"
+        # Rejoue sur STAGING les appels exacts émis par les écrans (barre des
+        # mois, sélecteur de période, À faire direct) avec une règle de test
+        # créée puis arrêtée dans le seul foyer de démonstration.
+        env:
+          API_URL: ${{ github.event.inputs.api_url }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          node <<'EOF'
+          const fs = require('fs');
+          const API = process.env.API_URL;
+          const TOKEN = JSON.parse(fs.readFileSync('login.json', 'utf8')).accessToken;
+          const H = { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' };
+          const LABEL = `CI Recette Récurrence ${process.env.RUN_ID}`;
+          const req = async (method, path, body) => {
+            const res = await fetch(API + path, { method, headers: H, body: body ? JSON.stringify(body) : undefined });
+            const text = await res.text();
+            if (/internal server error|does not exist/i.test(text)) throw new Error(`${method} ${path} : erreur serveur ${text}`);
+            return { status: res.status, body: text ? JSON.parse(text) : null };
+          };
+          const ok = async (method, path, body, expected = 200) => {
+            const r = await req(method, path, body);
+            if (r.status !== expected) throw new Error(`${method} ${path} -> HTTP ${r.status} (attendu ${expected}) ${JSON.stringify(r.body)}`);
+            console.log(`OK ${method} ${path} -> ${r.status}`);
+            return r.body;
+          };
+          const shift = (k, n) => { const [y, m] = k.split('-').map(Number); const i = y * 12 + m - 1 + n; return `${Math.floor(i / 12)}-${String(i % 12 + 1).padStart(2, '0')}`; };
+          const assert = (cond, msg) => { if (!cond) throw new Error(msg); console.log('  ✓ ' + msg); };
+          const cellOf = (p, month) => { const row = [...p.revenus, ...p.depenses, ...p.epargne].find((r) => r.label === LABEL); return row && row.cells[month]; };
+          const storedByDate = async () => {
+            const all = await ok('GET', '/planned-operations');
+            const mine = all.filter((p) => p.label === LABEL);
+            const counts = {};
+            for (const p of mine) counts[p.expectedDate.slice(0, 10)] = (counts[p.expectedDate.slice(0, 10)] || 0) + 1;
+            return counts;
+          };
+
+          (async () => {
+            // 1. Contrat déployé : currentMonth présent = nouveau backend actif.
+            const def = await ok('GET', '/planning?months=6');
+            const cur = def.currentMonth;
+            assert(/^\d{4}-\d{2}$/.test(cur || ''), `currentMonth renvoyé par /planning (${cur}) : commit avec from=… bien déployé`);
+            assert(def.months[0] === cur && def.months.length === 6, 'plage par défaut = 6 mois depuis le mois courant');
+            const explicit = await ok('GET', `/planning?months=6&from=${cur}`);
+            assert(JSON.stringify(explicit) === JSON.stringify(def), '/planning?from=<mois courant> identique au Planning par défaut');
+            await ok('GET', '/planning?months=6&from=2027-13', undefined, 400);
+            const todoNow = await ok('GET', '/todo');
+            assert(todoNow.month === cur, `/todo mois courant = ${cur}`);
+
+            // 2. Règle de test (foyer démo) : mensuelle sans fin, le 10 à partir du mois prochain.
+            const accounts = await ok('GET', '/accounts');
+            const anchor = `${shift(cur, 1)}-10`;
+            const rule = await ok('POST', '/recurrence-rules', { frequency: 'MONTHLY', anchorDate: anchor, kind: 'EXPENSE', label: LABEL, expectedAmount: '123', sourceAccountId: accounts[0].id, includeInTodo: true }, 201);
+            try {
+              // 3. Navigation Planning : mois voisin (swipe/toucher) puis sélection directe à +20 mois (fenêtre F-1|F|F+1).
+              const next = await ok('GET', `/planning?months=6&from=${shift(cur, 1)}`);
+              assert(next.months[0] === shift(cur, 1) && next.months.length === 6, 'navigation mois suivant : plage décalée d’un mois');
+              const F = shift(cur, 20);
+              for (let i = 0; i < 3; i++) await ok('GET', `/planning?months=6&from=${shift(F, -1)}`);
+              const far = await ok('GET', `/planning?months=6&from=${shift(F, -1)}`);
+              assert(far.months[1] === F, `sélection directe ${F} : mois central de la fenêtre`);
+              for (const m of [shift(F, -1), F, shift(F, 1)]) {
+                const c = cellOf(far, m);
+                assert(c && c.displayAmount === 123 && c.singleOccurrence && c.singleOccurrence.plannedOperationId, `récurrence présente et actionnable en ${m}`);
+              }
+              assert(far.synthese[F].resteDepenses === null, 'reste à exécuter absent hors mois courant');
+
+              // 4. À faire directement à +30 mois, jamais ouvert dans le Planning.
+              const G = shift(cur, 30);
+              for (let i = 0; i < 3; i++) await ok('GET', '/todo?monthsOffset=30');
+              const todoFar = await ok('GET', '/todo?monthsOffset=30');
+              assert(todoFar.month === G, `/todo?monthsOffset=30 -> ${G}`);
+              const action = todoFar.pending.find((a) => a.label === LABEL);
+              assert(action && action.expectedAmount === 123 && action.remaining === 123, `récurrence présente dans À faire ${G} sans passage par le Planning`);
+              const planningG = await ok('GET', `/planning?months=3&from=${shift(G, -1)}`);
+              const cG = cellOf(planningG, G);
+              assert(cG && cG.singleOccurrence.plannedOperationId === action.plannedOperationId, 'Planning et À faire désignent la même occurrence (même id)');
+
+              // 5. Aucun doublon, aucun mois intermédiaire écrit, retour au mois courant.
+              const counts = await storedByDate();
+              assert(Object.values(counts).every((n) => n === 1), `une seule occurrence par date (${Object.keys(counts).length} dates)`);
+              for (const n of [14, 15, 16, 17, 18]) assert(!counts[`${shift(cur, n)}-10`], `mois intermédiaire ${shift(cur, n)} non matérialisé`);
+              for (const m of [shift(F, -1), F, shift(F, 1), G]) assert(counts[`${m}-10`] === 1, `${m} matérialisé une fois`);
+              const back = await ok('GET', `/planning?months=6&from=${shift(cur, -1)}`);
+              assert(back.months[1] === cur && back.synthese[cur].resteDepenses !== null, 'retour au mois courant : reste à exécuter sur le mois courant');
+              const defAfter = await ok('GET', '/planning?months=6');
+              assert(defAfter.currentMonth === cur && defAfter.months.join() === def.months.join(), 'Planning par défaut inchangé après les consultations lointaines');
+            } finally {
+              // 6. Nettoyage : arrêt de la série de test (occurrences PENDING annulées, règle inactive).
+              await ok('PATCH', `/recurrence-rules/${rule.id}`, { applyFrom: 'THIS_AND_FOLLOWING', fromDate: anchor, active: false });
+            }
+            const stopped = await ok('GET', `/planning?months=3&from=${shift(cur, 25)}`);
+            assert(!cellOf(stopped, shift(cur, 26)) || cellOf(stopped, shift(cur, 26)).status === 'EMPTY', 'série arrêtée : plus aucune occurrence active après nettoyage');
+            console.log('RECETTE NAVIGATION + RÉCURRENCES : OK');
+          })().catch((e) => { console.error('ÉCHEC : ' + e.message); process.exit(1); });
+          EOF
+
       - name: Aucune référence à localhost dans les réponses publiques
         run: |
           ! grep -io "localhost" signup.json verify.json body.json login.json planning.json todo.json
