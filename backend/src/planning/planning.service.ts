@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
-import { ensurePlannedOccurrences } from '../common/ledger/recurrence.util';
+import { ensurePlannedOccurrences, ensurePlannedOccurrencesInRange, occurrenceKey, virtualPlannedOccurrences } from '../common/ledger/recurrence.util';
 import { computeNonAffecte, computeSubaccountBalance } from '../common/ledger/ledger.util';
 import { buildPlanningTable, monthBounds, monthKey, monthKeyDiff, monthKeysFrom, PlanningMonthKey, restrictPlanningTable } from '../common/ledger/planning.util';
 
 export const PLANNING_MIN_MONTHS = 3;
 export const PLANNING_MAX_MONTHS = 12;
 export const PLANNING_DEFAULT_MONTHS = 6;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function clampMonths(months?: number): number {
   if (!months || Number.isNaN(months)) return PLANNING_DEFAULT_MONTHS;
@@ -30,9 +31,6 @@ export class PlanningService {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
 
-      // Fenêtre glissante toujours à jour (§génération des occurrences) avant lecture.
-      await ensurePlannedOccurrences(tx, householdId);
-
       const household = await tx.household.findUniqueOrThrow({ where: { id: householdId }, select: { monthStartDay: true } });
       const monthStartDay = household.monthStartDay;
 
@@ -50,8 +48,16 @@ export class PlanningService {
       // 1er/dernier jour calendaire naïf quand monthStartDay ≠ 1.
       const rangeStart = monthBounds(computedMonths[0], monthStartDay).start;
       const rangeEnd = monthBounds(computedMonths[computedMonths.length - 1], monthStartDay).end;
+      const displayedStart = monthBounds(monthsList[0], monthStartDay).start;
 
-      const [plannedOperations, categories, accounts, subaccounts] = await Promise.all([
+      // Fenêtre glissante toujours à jour (§génération des occurrences), puis
+      // matérialisation des seules occurrences manquantes de la plage
+      // AFFICHÉE (≤ 12 mois, jamais dans le passé) : une récurrence sans fin
+      // apparaît sur tout mois consultable, payable/modifiable comme les autres.
+      await ensurePlannedOccurrences(tx, householdId);
+      await ensurePlannedOccurrencesInRange(tx, householdId, displayedStart, rangeEnd);
+
+      const [storedPlannedOperations, categories, accounts, subaccounts] = await Promise.all([
         tx.plannedOperation.findMany({ where: { householdId, expectedDate: { gte: rangeStart, lte: rangeEnd } } }),
         tx.category.findMany({ where: { householdId } }),
         tx.account.findMany({ where: { householdId } }),
@@ -65,7 +71,23 @@ export class PlanningService {
       // (celle du mois de l'échéance, cf. planning.util.ts). On récupère donc
       // en plus, sans condition de date, toute opération déjà liée à l'une
       // des échéances affichées.
-      const plannedOperationIds = plannedOperations.map((p) => p.id);
+      const plannedOperationIds = storedPlannedOperations.map((p) => p.id);
+
+      // Mois intermédiaires (entre le mois courant et une plage future) :
+      // seule la projection cumulée en dépend, ils ne sont ni renvoyés ni
+      // actionnables — leurs récurrences non encore en base sont donc
+      // calculées en mémoire, sans aucune écriture.
+      const virtualOccurrences =
+        computedMonths.length > monthsList.length
+          ? await virtualPlannedOccurrences(
+              tx,
+              householdId,
+              rangeStart,
+              new Date(displayedStart.getTime() - DAY_MS),
+              new Set(storedPlannedOperations.filter((p) => p.recurrenceRuleId).map((p) => occurrenceKey(p.recurrenceRuleId!, p.expectedDate))),
+            )
+          : [];
+      const plannedOperations = [...storedPlannedOperations, ...virtualOccurrences];
       const financialOperations = await tx.financialOperation.findMany({
         where: {
           householdId,

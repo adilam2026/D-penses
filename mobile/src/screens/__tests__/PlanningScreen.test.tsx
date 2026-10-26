@@ -959,15 +959,39 @@ it("changement d'horizon après repositionnement : même période affichée, pla
   expect(visibleMonthLabels()).toEqual(['JUIN 27', 'JUIL. 27', 'AOÛT 27']);
 });
 
-it('années du sélecteur calculées autour du mois courant renvoyé par le backend, jamais codées en dur', async () => {
-  planningByRange('2030-03');
+/** Années actuellement proposées par le sélecteur. */
+function pickerYears(): number[] {
+  return screen.getAllByTestId(/^planning-period-picker-year-\d{4}$/).map((e) => Number(e.props.testID.slice(-4)));
+}
+
+it('années du sélecteur : glissantes et sans limite, navigation vers une année lointaine puis retour à la période actuelle', async () => {
+  planningByRange('2026-09');
   renderWithSafeArea(<PlanningScreen />);
   await waitFor(() => screen.getByTestId('planning-period-active'));
   await fireEvent.press(screen.getByTestId('planning-period-active'));
   await waitFor(() => screen.getByTestId('planning-period-picker'));
-  for (const y of [2029, 2030, 2031]) expect(screen.getByTestId(`planning-period-picker-year-${y}`)).toBeTruthy();
-  expect(screen.queryByTestId('planning-period-picker-year-2026')).toBeNull();
-  expect(screen.queryByTestId('planning-period-picker-year-2032')).toBeNull();
+  // Centrées sur l'année du mois actif, jamais une liste fixe.
+  expect(pickerYears()).toEqual([2025, 2026, 2027]);
+
+  for (const y of [2027, 2028, 2029, 2030]) await fireEvent.press(screen.getByTestId(`planning-period-picker-year-${y}`));
+  await waitFor(() => expect(pickerYears()).toEqual([2029, 2030, 2031]));
+  await fireEvent.press(screen.getByTestId('planning-period-picker-month-11'));
+  await fireEvent.press(screen.getByTestId('planning-period-picker-confirm'));
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(['OCT. 30', 'NOV. 30', 'DÉC. 30']));
+  expect(mockGetPlanning).toHaveBeenLastCalledWith(6, '2030-10');
+  await waitFor(() => expect(screen.getByTestId('planning-resultat-prevu-2030-11')).toBeTruthy());
+
+  // Retour en arrière d'autant d'années, jusqu'à la période actuelle.
+  await fireEvent.press(screen.getByTestId('planning-period-active'));
+  await waitFor(() => expect(pickerYears()).toEqual([2029, 2030, 2031]));
+  for (const y of [2029, 2028, 2027, 2026]) await fireEvent.press(screen.getByTestId(`planning-period-picker-year-${y}`));
+  await waitFor(() => expect(pickerYears()).toEqual([2025, 2026, 2027]));
+  await fireEvent.press(screen.getByTestId('planning-period-picker-month-9'));
+  await fireEvent.press(screen.getByTestId('planning-period-picker-confirm'));
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(['AOÛT 26', 'SEPT. 26', 'OCT. 26']));
+  // Période actuelle : reste à exécuter et cartes du mois courant comme avant.
+  await waitFor(() => expect(screen.getByTestId('planning-reste-section')).toBeTruthy());
+  expect(within(screen.getByTestId('planning-summary-card-revenus')).getByText(formatDh(revenusOf('2026-09')))).toBeTruthy();
 });
 
 it('accordéons et synthèse suivent la barre ; changer d’horizon conserve la fenêtre affichée', async () => {

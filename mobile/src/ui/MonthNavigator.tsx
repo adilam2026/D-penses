@@ -14,7 +14,12 @@ export interface NavigatorPeriod {
 }
 
 export interface PeriodPickerConfig {
-  years: number[];
+  /**
+   * Liste fixe d'années proposées. Absente : années glissantes — trois
+   * années centrées sur l'année choisie ; toucher une année voisine recentre
+   * la liste, sans limite dans un sens ni dans l'autre.
+   */
+  years?: number[];
   /** Mois proposés mais non sélectionnables (ex. hors de l'horizon Planning). */
   isSelectable?: (monthKey: string) => boolean;
   onSelect: (monthKey: string) => void;
@@ -124,7 +129,7 @@ export function PeriodPickerSheet({
 }: {
   visible: boolean;
   value: string;
-  years: number[];
+  years?: number[];
   isSelectable?: (monthKey: string) => boolean;
   onCancel: () => void;
   onConfirm: (monthKey: string) => void;
@@ -141,6 +146,7 @@ export function PeriodPickerSheet({
   }, [visible, value]);
 
   if (!visible) return null;
+  const shownYears = years ?? [year - 1, year, year + 1];
   const selectable = (y: number, m: number) => !isSelectable || isSelectable(monthKeyOf(y, m));
   const canConfirm = selectable(year, month);
 
@@ -176,7 +182,7 @@ export function PeriodPickerSheet({
 
         <Text style={styles.sheetSectionLabel}>Année</Text>
         <View style={styles.chipGrid}>
-          {years.map((y) => {
+          {shownYears.map((y) => {
             const selected = y === year;
             return (
               <TouchableOpacity

@@ -72,41 +72,93 @@ export function computeOccurrenceDates(anchorDate: Date, frequency: RecurrenceFr
  * ainsi que la fenêtre glissante "se complète progressivement" avec le temps.
  */
 export async function ensurePlannedOccurrences(tx: TxClient, householdId: string, horizonMonths = RECURRENCE_HORIZON_MONTHS): Promise<void> {
-  const rules = await tx.recurrenceRule.findMany({ where: { householdId, active: true } });
-  if (rules.length === 0) return;
-
   const rangeStart = new Date();
   // -1 jour : exactement horizonMonths occurrences mensuelles (jamais horizonMonths+1
   // en incluant par erreur la borne du 13e mois) — §21, jamais au-delà de 12 mois.
   const rangeEnd = new Date(addMonthsUtc(rangeStart, horizonMonths).getTime() - 24 * 60 * 60 * 1000);
+  await ensurePlannedOccurrencesInRange(tx, householdId, rangeStart, rangeEnd);
+}
 
+type RuleRow = Awaited<ReturnType<TxClient['recurrenceRule']['findMany']>>[number];
+
+/** Champs d'une occurrence copiés du gabarit de la règle (puis indépendants par occurrence). */
+function occurrenceFromRule(householdId: string, rule: RuleRow, expectedDate: Date) {
+  return {
+    householdId,
+    kind: rule.kind,
+    recurrenceRuleId: rule.id,
+    categoryId: rule.categoryId,
+    financialPlanItemId: rule.financialPlanItemId,
+    financialPlanDeadlineId: rule.financialPlanDeadlineId,
+    sourceAccountId: rule.sourceAccountId,
+    sourceSubaccountId: rule.sourceSubaccountId,
+    destinationAccountId: rule.destinationAccountId,
+    destinationSubaccountId: rule.destinationSubaccountId,
+    expectedAmount: rule.expectedAmount,
+    expectedDate,
+    label: rule.label ?? 'Récurrence',
+    // Lot "À faire" — même mécanique que source/montant ci-dessus : le
+    // gabarit porte responsable/inclusion, chaque occurrence générée les
+    // copie puis vit indépendamment (modifiable occurrence par occurrence).
+    responsibleMemberId: rule.responsibleMemberId,
+    responsibleSource: rule.responsibleSource,
+    includeInTodo: rule.includeInTodo,
+  };
+}
+
+/** Jamais de génération dans le passé : une date antérieure à aujourd'hui relève de l'historique. */
+function notBeforeToday(date: Date): Date {
+  const today = startOfUtcDay(new Date());
+  return date < today ? today : date;
+}
+
+/**
+ * Matérialise les occurrences manquantes des règles actives sur
+ * [rangeStart, rangeEnd] uniquement (dates passées exclues). Même garantie
+ * que la fenêtre glissante : `skipDuplicates` sur
+ * @@unique([recurrenceRuleId, expectedDate]) — une occurrence existante
+ * (modifiée, payée, annulée ou déplacée, qui laisse une ligne CANCELLED à sa
+ * date d'origine) n'est jamais recréée ni écrasée. Utilisée par le Planning
+ * pour la seule plage affichée au-delà de la fenêtre de 12 mois.
+ */
+export async function ensurePlannedOccurrencesInRange(tx: TxClient, householdId: string, rangeStart: Date, rangeEnd: Date): Promise<void> {
+  const start = notBeforeToday(rangeStart);
+  if (start > rangeEnd) return;
+  const rules = await tx.recurrenceRule.findMany({ where: { householdId, active: true } });
   for (const rule of rules) {
-    const dates = computeOccurrenceDates(rule.anchorDate, rule.frequency, rangeStart, rangeEnd);
+    const dates = computeOccurrenceDates(rule.anchorDate, rule.frequency, start, rangeEnd);
     if (dates.length === 0) continue;
-
     await tx.plannedOperation.createMany({
-      data: dates.map((expectedDate) => ({
-        householdId,
-        kind: rule.kind,
-        recurrenceRuleId: rule.id,
-        categoryId: rule.categoryId ?? undefined,
-        financialPlanItemId: rule.financialPlanItemId ?? undefined,
-        financialPlanDeadlineId: rule.financialPlanDeadlineId ?? undefined,
-        sourceAccountId: rule.sourceAccountId ?? undefined,
-        sourceSubaccountId: rule.sourceSubaccountId ?? undefined,
-        destinationAccountId: rule.destinationAccountId ?? undefined,
-        destinationSubaccountId: rule.destinationSubaccountId ?? undefined,
-        expectedAmount: rule.expectedAmount,
-        expectedDate,
-        label: rule.label ?? 'Récurrence',
-        // Lot "À faire" — même mécanique que source/montant ci-dessus : le
-        // gabarit porte responsable/inclusion, chaque occurrence générée les
-        // copie puis vit indépendamment (modifiable occurrence par occurrence).
-        responsibleMemberId: rule.responsibleMemberId ?? undefined,
-        responsibleSource: rule.responsibleSource,
-        includeInTodo: rule.includeInTodo,
-      })),
+      data: dates.map((expectedDate) => occurrenceFromRule(householdId, rule, expectedDate)),
       skipDuplicates: true,
     });
   }
+}
+
+/**
+ * Occurrences que les règles actives produiraient sur [rangeStart, rangeEnd]
+ * sans être encore en base — CALCULÉES EN MÉMOIRE, jamais enregistrées.
+ * Sert uniquement aux mois intermédiaires d'une projection cumulée (ni
+ * affichés ni actionnables). `existingKeys` : "ruleId|AAAA-MM-JJ" déjà en
+ * base, tous statuts confondus (une annulée ou déplacée n'est jamais
+ * réintroduite).
+ */
+export async function virtualPlannedOccurrences(tx: TxClient, householdId: string, rangeStart: Date, rangeEnd: Date, existingKeys: Set<string>) {
+  const start = notBeforeToday(rangeStart);
+  if (start > rangeEnd) return [];
+  const rules = await tx.recurrenceRule.findMany({ where: { householdId, active: true } });
+  return rules.flatMap((rule) =>
+    computeOccurrenceDates(rule.anchorDate, rule.frequency, start, rangeEnd)
+      .filter((date) => !existingKeys.has(occurrenceKey(rule.id, date)))
+      .map((date) => ({
+        ...occurrenceFromRule(householdId, rule, date),
+        id: `virtual:${occurrenceKey(rule.id, date)}`,
+        status: 'PENDING' as const,
+        realizedOperationId: null,
+      })),
+  );
+}
+
+export function occurrenceKey(ruleId: string, date: Date): string {
+  return `${ruleId}|${date.toISOString().slice(0, 10)}`;
 }

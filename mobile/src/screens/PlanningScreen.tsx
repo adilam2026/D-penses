@@ -26,9 +26,6 @@ const HORIZON_OPTIONS = [3, 6, 9, 12] as const;
 const VISIBLE_COLUMNS = 3;
 const CENTER_COLUMN_INDEX = 1;
 const TOAST_DURATION_MS = 1800;
-// Années proposées par le sélecteur de période, autour de l'année courante.
-const PICKER_YEARS_BEFORE = 1;
-const PICKER_YEARS_AFTER = 1;
 // Grille mensuelle : colonne libellé (flex 1.4, paddingRight xs) + 3 colonnes
 // mois (flex 1), sur la largeur intérieure des cartes (marge lg + padding md).
 const LABEL_COLUMN_FLEX = 1.4;
@@ -308,7 +305,6 @@ export function PlanningScreen() {
   const currentMonth = data.currentMonth ?? data.months[0];
   const referenceMonth = visibleMonths.includes(currentMonth) ? currentMonth : visibleMonths[CENTER_COLUMN_INDEX];
   const currentSynthese = data.synthese[referenceMonth];
-  const currentYear = Number(currentMonth.slice(0, 4));
 
   return (
     <View style={styles.container}>
@@ -357,8 +353,8 @@ export function PlanningScreen() {
                 onPress: () => goToWindow(windowStart + 1),
               }}
               picker={{
-                // Années relatives au mois courant réel, jamais codées en dur.
-                years: Array.from({ length: PICKER_YEARS_BEFORE + PICKER_YEARS_AFTER + 1 }, (_, i) => currentYear - PICKER_YEARS_BEFORE + i),
+                // Pas de liste d'années : années glissantes autour de l'année
+                // choisie, sans limite (cf. PeriodPickerSheet).
                 // Tout mois est sélectionnable, indépendamment de l'horizon :
                 // il devient le mois central de la fenêtre.
                 onSelect: selectPeriod,
