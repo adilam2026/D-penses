@@ -9,6 +9,17 @@ import type { PlanningTableApi } from '../../api/client';
 import { colors } from '../../ui/theme';
 import { formatDh, formatMonthShort } from '../../ui/formatMoney';
 import { shiftMonthKey } from '../../ui/monthKey';
+import { testIdSlug } from '../../ui/testIdSlug';
+
+// Date du téléphone figée : aujourd'hui = 15 octobre 2026 (mois courant OCT. 26).
+// Seule l'horloge est simulée ; les minuteries restent réelles pour waitFor.
+beforeAll(() => {
+  jest.useFakeTimers({
+    now: new Date('2026-10-15T12:00:00Z'),
+    doNotFake: ['nextTick', 'setImmediate', 'clearImmediate', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'queueMicrotask', 'requestAnimationFrame', 'cancelAnimationFrame', 'requestIdleCallback', 'cancelIdleCallback', 'hrtime', 'performance'],
+  });
+});
+afterAll(() => jest.useRealTimers());
 
 const mockNavigate = jest.fn();
 
@@ -164,8 +175,8 @@ async function openAccordionAndPressCell() {
 it("affiche le sélecteur d'horizon (3/6/9/12) avec 6 mois actif par défaut", async () => {
   mockGetPlanning.mockResolvedValue(basePlanning());
   renderWithSafeArea(<PlanningScreen />);
-  // Sans navigation : aucune période demandée, le backend part du mois courant.
-  await waitFor(() => expect(mockGetPlanning).toHaveBeenCalledWith(6, null));
+  // Ouverture centrée sur le mois courant : la plage part du mois précédent.
+  await waitFor(() => expect(mockGetPlanning).toHaveBeenCalledWith(6, '2026-09'));
   expect(screen.getByTestId('planning-horizon-3')).toBeTruthy();
   expect(screen.getByTestId('planning-horizon-12')).toBeTruthy();
 });
@@ -173,9 +184,9 @@ it("affiche le sélecteur d'horizon (3/6/9/12) avec 6 mois actif par défaut", a
 it("changer d'horizon relance getPlanning avec le nouveau nombre de mois", async () => {
   mockGetPlanning.mockResolvedValue(basePlanning());
   renderWithSafeArea(<PlanningScreen />);
-  await waitFor(() => expect(mockGetPlanning).toHaveBeenCalledWith(6, null));
+  await waitFor(() => expect(mockGetPlanning).toHaveBeenCalledWith(6, '2026-09'));
   fireEvent.press(screen.getByTestId('planning-horizon-12'));
-  await waitFor(() => expect(mockGetPlanning).toHaveBeenCalledWith(12, null));
+  await waitFor(() => expect(mockGetPlanning).toHaveBeenCalledWith(12, '2026-09'));
 });
 
 it('accordéons (§7) : Revenus ouvert par défaut, Dépenses/Versements repliés par défaut', async () => {
@@ -708,7 +719,7 @@ function revenusOf(month: string): number {
  * plage de N mois à partir de `from` (ou du mois courant), reste à exécuter
  * sur le seul mois courant, projection nulle pour un mois passé.
  */
-function planningByRange(current = '2026-09') {
+function planningByRange(current = '2026-10') {
   mockGetPlanning.mockImplementation((n: number, from?: string | null) => {
     const months = Array.from({ length: n }, (_, i) => shiftMonthKey(from ?? current, i));
     const synthese: PlanningTableApi['synthese'] = {};
@@ -788,8 +799,8 @@ it('cartes synthétiques compactes : une seule ligne libellé/montant, "RÉSULTA
   mockGetPlanning.mockResolvedValue(
     basePlanning({
       synthese: {
-        '2026-09': { totalRevenus: 81400, totalDepenses: 71650, totalEpargne: 11600, resultatPrevu: -1850, projectionCumulee: -1850, resteDepenses: null, resteVersements: null, couverte: null, aProvisionner: null },
-        '2026-10': emptySynthese(),
+        '2026-09': emptySynthese(),
+        '2026-10': { totalRevenus: 81400, totalDepenses: 71650, totalEpargne: 11600, resultatPrevu: -1850, projectionCumulee: -1850, resteDepenses: null, resteVersements: null, couverte: null, aProvisionner: null },
         '2026-11': emptySynthese(),
       },
     }),
@@ -1103,10 +1114,10 @@ it('reste à exécuter : "✓ Couvert" quand couverte=true, section absente si r
   await waitFor(() => screen.getByTestId('planning-reste-section'));
   expect(within(screen.getByTestId('planning-reste-section')).getByTestId('planning-reste-couvert')).toBeTruthy();
   expect(screen.queryByTestId('planning-reste-a-provisionner')).toBeNull();
-  screen.unmount();
+  await screen.unmount();
 
   mockGetPlanning.mockResolvedValue(basePlanning());
-  renderWithSafeArea(<PlanningScreen />);
+  await renderWithSafeArea(<PlanningScreen />);
   await waitFor(() => screen.getByTestId('planning-final-synthese'));
   expect(screen.queryByTestId('planning-reste-section')).toBeNull();
 });
@@ -1115,8 +1126,8 @@ it('résultat prévu par mois en bas + total du mois actif dans le header de l�
   mockGetPlanning.mockResolvedValue(
     basePlanning({
       synthese: {
-        '2026-09': { ...emptySynthese(), totalDepenses: 7300, resultatPrevu: -1850 },
-        '2026-10': { ...emptySynthese(), resultatPrevu: 13800 },
+        '2026-09': { ...emptySynthese(), resultatPrevu: -1850 },
+        '2026-10': { ...emptySynthese(), totalDepenses: 7300, resultatPrevu: 13800 },
         '2026-11': { ...emptySynthese(), resultatPrevu: 13700 },
       },
     }),
@@ -1128,3 +1139,188 @@ it('résultat prévu par mois en bas + total du mois actif dans le header de l�
   expect(textOf('planning-resultat-prevu-2026-11')).toBe('13 700 DH');
   expect(within(screen.getByTestId('planning-accordion-depenses')).getByText('7 300 DH')).toBeTruthy();
 });
+
+// ---------------------------------------------------------------------------
+// Cartes de synthèse = TOUJOURS le mois central (mois sélectionné).
+// Scénario de recette : octobre 2026 ne porte qu'un "Solde" de 1 000 DH ;
+// novembre porte CNSS 600 + Salaire Adil 46 500 + Salaire Lam 29 500 = 76 600.
+// ---------------------------------------------------------------------------
+
+type Line = { label: string; amount: number };
+
+/** Lignes d'un mois (générique, jamais propre à novembre) : montants variant avec le mois. */
+function linesOf(m: string): { revenus: Line[]; depenses: Line[]; epargne: Line[] } {
+  if (m === '2026-10') return { revenus: [{ label: 'Solde', amount: 1000 }], depenses: [], epargne: [] };
+  const k = (Number(m.slice(0, 4)) - 2026) * 12 + Number(m.slice(5, 7)) - 11; // 0 en novembre 2026
+  return {
+    revenus: [
+      { label: 'CNSS', amount: 600 },
+      { label: 'Salaire Adil', amount: 46500 + k * 100 },
+      { label: 'Salaire Lam', amount: 29500 },
+    ],
+    depenses: [{ label: 'Loyer', amount: 8000 + Math.abs(k) * 10 }],
+    epargne: [{ label: 'Épargne Lam', amount: 2000 + Math.abs(k) * 5 }],
+  };
+}
+const sum = (lines: Line[]) => lines.reduce((t, l) => t + l.amount, 0);
+
+/** Faux GET /planning respectant le contrat backend : totaux = somme des lignes de la colonne. */
+function planningWithLines(current = '2026-10') {
+  mockGetPlanning.mockImplementation((n: number, from?: string | null) => {
+    const months = Array.from({ length: n }, (_, i) => shiftMonthKey(from ?? current, i));
+    const rowsFor = (kind: 'revenus' | 'depenses' | 'epargne') => {
+      const labels = Array.from(new Set(months.flatMap((m) => linesOf(m)[kind].map((l) => l.label))));
+      return labels.map((label) => ({
+        key: label,
+        label,
+        categoryId: null,
+        cells: Object.fromEntries(
+          months.map((m) => {
+            const line = linesOf(m)[kind].find((l) => l.label === label);
+            return [m, line ? { ...emptyCell(), displayAmount: line.amount, budgetAmount: line.amount, pendingAmount: line.amount, status: 'PENDING' as const } : emptyCell()];
+          }),
+        ),
+      }));
+    };
+    const synthese: PlanningTableApi['synthese'] = {};
+    for (const m of months) {
+      const l = linesOf(m);
+      const rev = sum(l.revenus);
+      const dep = sum(l.depenses);
+      const ver = sum(l.epargne);
+      synthese[m] = {
+        ...emptySynthese(),
+        totalRevenus: rev,
+        totalDepenses: dep,
+        totalEpargne: ver,
+        resultatPrevu: rev - dep - ver,
+        projectionCumulee: m < current ? null : rev - dep - ver,
+        ...(m === current ? { resteDepenses: 0, resteVersements: 0, couverte: true, aProvisionner: 0 } : {}),
+      };
+    }
+    return Promise.resolve({ months, currentMonth: current, revenus: rowsFor('revenus') as any, depenses: rowsFor('depenses') as any, epargne: rowsFor('epargne') as any, synthese });
+  });
+}
+
+function cardAmount(id: string): string {
+  const card = screen.getByTestId(`planning-summary-card-${id}`);
+  return within(card)
+    .getAllByText(/DH$/)
+    .map((t) => (Array.isArray(t.props.children) ? t.props.children.join('') : String(t.props.children)))[0]
+    .replace(/\s/g, ' ');
+}
+const dh = (n: number) => formatDh(n).replace(/\s/g, ' ');
+
+/**
+ * Le mois central est `month`, et les 4 cartes + les totaux d'accordéon
+ * valent exactement les totaux de SA colonne ; RÉSULTAT = R - D - V et
+ * correspond au résultat affiché sous la même colonne.
+ */
+async function expectCardsFollowCenter(month: string) {
+  await waitFor(() => expect(visibleMonthLabels()[1]).toBe(navLabel(month)));
+  const l = linesOf(month);
+  const rev = sum(l.revenus);
+  const dep = sum(l.depenses);
+  const ver = sum(l.epargne);
+  await waitFor(() => expect(cardAmount('revenus')).toBe(dh(rev)));
+  expect(cardAmount('depenses')).toBe(dh(dep));
+  expect(cardAmount('versements')).toBe(dh(ver));
+  expect(cardAmount('resultat')).toBe(dh(rev - dep - ver));
+  // Même valeur que le résultat affiché sous la colonne centrale.
+  expect(textOf(`planning-resultat-prevu-${month}`)).toBe(dh(rev - dep - ver));
+  // Totaux des accordéons : même mois.
+  expect(within(screen.getByTestId('planning-block-toggle-revenus')).getByText(formatDh(rev))).toBeTruthy();
+  expect(within(screen.getByTestId('planning-block-toggle-depenses')).getByText(formatDh(dep))).toBeTruthy();
+  expect(within(screen.getByTestId('planning-block-toggle-epargne-versements')).getByText(formatDh(ver))).toBeTruthy();
+  // La carte REVENUS = somme des cases REVENUS de la colonne centrale affichée.
+  const shown = l.revenus.map((line) => screen.getByTestId(`planning-cell-${testIdSlug(line.label)}-${month}`));
+  expect(shown).toHaveLength(l.revenus.length);
+}
+it('1. ouverture : mois courant au centre (SEPT. · OCT. · NOV.), cartes = octobre', async () => {
+  planningWithLines();
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByTestId('planning-summary-card-revenus'));
+  expect(visibleMonthLabels()).toEqual(['SEPT. 26', 'OCT. 26', 'NOV. 26']);
+  expect(mockGetPlanning).toHaveBeenCalledTimes(1);
+  expect(mockGetPlanning).toHaveBeenCalledWith(6, '2026-09');
+  await expectCardsFollowCenter('2026-10');
+  expect(cardAmount('revenus')).toBe(dh(1000));
+});
+
+it('2. mois précédent sélectionné (AOÛT · SEPT. · OCT.) : cartes = septembre, jamais octobre encore visible', async () => {
+  planningWithLines();
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByTestId('planning-period-prev'));
+  await fireEvent.press(screen.getByTestId('planning-period-prev'));
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(['AOÛT 26', 'SEPT. 26', 'OCT. 26']));
+  await expectCardsFollowCenter('2026-09');
+});
+
+it('3. mois suivant sélectionné (OCT. · NOV. · DÉC.) : cartes = novembre (76 600), jamais le Solde d’octobre', async () => {
+  planningWithLines();
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByTestId('planning-period-next'));
+  await fireEvent.press(screen.getByTestId('planning-period-next'));
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(['OCT. 26', 'NOV. 26', 'DÉC. 26']));
+  await expectCardsFollowCenter('2026-11');
+  expect(cardAmount('revenus')).toBe(dh(76600));
+  expect(cardAmount('revenus')).not.toBe(dh(1000));
+  // Le reste à exécuter reste celui du vrai mois courant (octobre, visible).
+  expect(screen.getByTestId('planning-reste-section')).toBeTruthy();
+});
+
+it('4. plusieurs mois dans le passé (navigation pas à pas puis sélection directe)', async () => {
+  planningWithLines();
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByTestId('planning-swipe-area'));
+  for (const m of ['2026-09', '2026-08', '2026-07']) {
+    await swipe(120);
+    await expectCardsFollowCenter(m);
+  }
+  await pickPeriod(3, 2026);
+  await expectCardsFollowCenter('2026-03');
+  await pickPeriod(11, 2025);
+  await expectCardsFollowCenter('2025-11');
+  expect(screen.queryByTestId('planning-reste-section')).toBeNull();
+});
+
+it('5. plusieurs mois dans le futur (navigation pas à pas puis sélection directe)', async () => {
+  planningWithLines();
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByTestId('planning-swipe-area'));
+  for (const m of ['2026-11', '2026-12', '2027-01', '2027-02', '2027-03', '2027-04', '2027-05']) {
+    await swipe(-120);
+    await expectCardsFollowCenter(m);
+  }
+  await pickPeriod(6, 2028);
+  await expectCardsFollowCenter('2028-06');
+});
+
+it('6. enchaînement OCT → NOV → DÉC → NOV → OCT : cartes recalculées à chaque étape, aucun état figé', async () => {
+  planningWithLines();
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByTestId('planning-period-next'));
+  await expectCardsFollowCenter('2026-10');
+  const steps: ['next' | 'prev', string][] = [
+    ['next', '2026-11'],
+    ['next', '2026-12'],
+    ['prev', '2026-11'],
+    ['prev', '2026-10'],
+  ];
+  for (const [zone, month] of steps) {
+    await fireEvent.press(screen.getByTestId(`planning-period-${zone}`));
+    await expectCardsFollowCenter(month);
+  }
+  // Retour à OCT : le reste du mois courant est toujours affiché.
+  expect(screen.getByTestId('planning-reste-section')).toBeTruthy();
+});
+
+it('mois courant du backend différent du téléphone (début de mois paramétrable) : la fenêtre se recentre une fois dessus', async () => {
+  planningWithLines('2026-11');
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(['OCT. 26', 'NOV. 26', 'DÉC. 26']));
+  expect(mockGetPlanning).toHaveBeenLastCalledWith(6, '2026-10');
+  await expectCardsFollowCenter('2026-11');
+  expect(mockGetPlanning).toHaveBeenCalledTimes(2);
+});
+

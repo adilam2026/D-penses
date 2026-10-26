@@ -26,6 +26,13 @@ const HORIZON_OPTIONS = [3, 6, 9, 12] as const;
 // l'horizon sélectionné, partagées par tous les accordéons (§3).
 const VISIBLE_COLUMNS = 3;
 const CENTER_COLUMN_INDEX = 1;
+
+/** Mois civil du téléphone ("2026-10") — simple estimation initiale, recalée sur le backend. */
+function todayMonthKey(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
 const TOAST_DURATION_MS = 1800;
 // Grille mensuelle : colonne libellé (flex 1.4, paddingRight xs) + 3 colonnes
 // mois (flex 1), sur la largeur intérieure des cartes (marge lg + padding md).
@@ -179,8 +186,13 @@ export function PlanningScreen() {
   // Quitter la plage chargée la recharge à partir de la nouvelle période au
   // lieu de bloquer. UNE seule barre de navigation (§3), partagée par tous
   // les accordéons.
-  const [rangeFrom, setRangeFrom] = useState<string | null>(null);
-  const [anchor, setAnchor] = useState<string | null>(null);
+  // Ouverture centrée sur le mois courant (colonne centrale = mois
+  // sélectionné) : fenêtre "mois précédent | mois courant | mois suivant",
+  // estimée depuis la date du téléphone puis recalée une fois sur le
+  // currentMonth renvoyé par le backend (début de mois paramétrable).
+  const [rangeFrom, setRangeFrom] = useState<string | null>(() => shiftMonthKey(todayMonthKey(), -CENTER_COLUMN_INDEX));
+  const [anchor, setAnchor] = useState<string | null>(() => shiftMonthKey(todayMonthKey(), -CENTER_COLUMN_INDEX));
+  const centeredOnServerMonth = useRef(false);
   // Largeur réelle d'une colonne mois (mesurée sur la barre de navigation,
   // estimée depuis la fenêtre avant la première mesure) : sert à ajuster la
   // taille des montants pour qu'ils ne soient jamais tronqués.
@@ -211,6 +223,12 @@ export function PlanningScreen() {
       load(months, rangeFrom).finally(() => setLoading(false));
     }, [load, months, rangeFrom]),
   );
+
+  React.useEffect(() => {
+    if (!data?.currentMonth || centeredOnServerMonth.current) return;
+    centeredOnServerMonth.current = true;
+    if (anchor !== shiftMonthKey(data.currentMonth, -CENTER_COLUMN_INDEX)) selectPeriod(data.currentMonth);
+  }, [data]);
 
   // Index du premier mois visible dans la plage chargée. Pendant un
   // rechargement (ancre hors des données encore affichées), on garde la
@@ -301,10 +319,12 @@ export function PlanningScreen() {
   // chaque navigation, jamais figé sur le dernier mois de la plage chargée.
   const lastVisibleMonth = data.months[Math.min(windowStart + VISIBLE_COLUMNS - 1, data.months.length - 1)];
   const visibleMonths = data.months.slice(windowStart, windowStart + VISIBLE_COLUMNS);
-  // Mois des cartes et des totaux d'accordéon (§4) : le mois courant réel tant
-  // qu'il est affiché, sinon le mois central — jamais un mois hors de l'écran.
+  // Mois des cartes et des totaux d'accordéon : TOUJOURS le mois central,
+  // c'est-à-dire le mois sélectionné — passé, courant ou futur. Le reste à
+  // exécuter, la couverture et la projection restent rattachés au vrai mois
+  // courant côté backend.
   const currentMonth = data.currentMonth ?? data.months[0];
-  const referenceMonth = visibleMonths.includes(currentMonth) ? currentMonth : visibleMonths[CENTER_COLUMN_INDEX];
+  const referenceMonth = visibleMonths[CENTER_COLUMN_INDEX] ?? visibleMonths[0];
   const currentSynthese = data.synthese[referenceMonth];
 
   return (
