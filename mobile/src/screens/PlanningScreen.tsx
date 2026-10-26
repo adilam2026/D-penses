@@ -18,6 +18,7 @@ import { estimateTextEm, fitFontSize, fitPaidAmount, fitTwoParts } from '../ui/f
 import { RECURRENCE_FREQUENCY_OPTIONS, RecurrenceOption } from '../ui/recurrenceLabels';
 import { MonthNavigator } from '../ui/MonthNavigator';
 import { useHorizontalSwipe } from '../ui/useHorizontalSwipe';
+import { shiftMonthKey } from '../ui/monthKey';
 
 const HORIZON_OPTIONS = [3, 6, 9, 12] as const;
 // Fenêtre multi-mois compacte — 3 colonnes visibles à la fois sur tout
@@ -25,6 +26,9 @@ const HORIZON_OPTIONS = [3, 6, 9, 12] as const;
 const VISIBLE_COLUMNS = 3;
 const CENTER_COLUMN_INDEX = 1;
 const TOAST_DURATION_MS = 1800;
+// Années proposées par le sélecteur de période, autour de l'année courante.
+const PICKER_YEARS_BEFORE = 1;
+const PICKER_YEARS_AFTER = 1;
 // Grille mensuelle : colonne libellé (flex 1.4, paddingRight xs) + 3 colonnes
 // mois (flex 1), sur la largeur intérieure des cartes (marge lg + padding md).
 const LABEL_COLUMN_FLEX = 1.4;
@@ -170,12 +174,15 @@ export function PlanningScreen() {
     });
   }
 
-  // Fenêtre de 3 mois glissante sur l'horizon chargé (data.months) : windowStart
-  // = index du premier mois visible, déplacé par pas de 1 (mois voisin touché
-  // ou swipe), jamais
-  // par pas de 3 — cf. l'exemple Oct|Nov|Déc → Nov|Déc|Jan. UNE seule barre
-  // de navigation (§3), partagée par tous les accordéons.
-  const [windowStart, setWindowStart] = useState(0);
+  // Période de référence et horizon sont indépendants : `rangeFrom` est le
+  // premier mois de la plage chargée (null = mois courant, côté backend),
+  // `months` sa profondeur. `anchor` est le premier des 3 mois visibles,
+  // déplacé par pas de 1 (mois voisin touché ou swipe) — jamais par pas de 3.
+  // Quitter la plage chargée la recharge à partir de la nouvelle période au
+  // lieu de bloquer. UNE seule barre de navigation (§3), partagée par tous
+  // les accordéons.
+  const [rangeFrom, setRangeFrom] = useState<string | null>(null);
+  const [anchor, setAnchor] = useState<string | null>(null);
   // Largeur réelle d'une colonne mois (mesurée sur la barre de navigation,
   // estimée depuis la fenêtre avant la première mesure) : sert à ajuster la
   // taille des montants pour qu'ils ne soient jamais tronqués.
@@ -184,9 +191,9 @@ export function PlanningScreen() {
   const colWidth = monthColumnWidth(gridWidth ?? windowWidth - 2 * CARD_INNER_INSET);
   const summaryCardWidth = (windowWidth - 2 * spacing.lg) * SUMMARY_CARD_WIDTH_RATIO;
 
-  const load = useCallback(async (h: number) => {
+  const load = useCallback(async (h: number, from: string | null) => {
     const [planning, accountList, categoryList, planList, household] = await Promise.all([
-      api.getPlanning(h),
+      api.getPlanning(h, from),
       api.listAccounts(),
       api.listCategories(),
       api.listFinancialPlans(),
@@ -203,20 +210,46 @@ export function PlanningScreen() {
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
-      load(months).finally(() => setLoading(false));
-    }, [load, months]),
+      load(months, rangeFrom).finally(() => setLoading(false));
+    }, [load, months, rangeFrom]),
   );
 
-  // Revenir au début de la fenêtre uniquement quand l'horizon change (jamais
-  // après un simple refresh de données, pour ne pas sauter la fenêtre affichée).
-  React.useEffect(() => {
-    setWindowStart(0);
-  }, [months]);
+  // Index du premier mois visible dans la plage chargée. Pendant un
+  // rechargement (ancre hors des données encore affichées), on garde la
+  // fenêtre la plus proche plutôt qu'un mois inexistant.
+  const maxWindowStart = data ? Math.max(0, data.months.length - VISIBLE_COLUMNS) : 0;
+  const anchorIndex = data && anchor ? data.months.indexOf(anchor) : -1;
+  const windowStart = !data || !anchor ? 0 : anchorIndex >= 0 ? Math.min(anchorIndex, maxWindowStart) : anchor < data.months[0] ? 0 : maxWindowStart;
+
+  /**
+   * Affiche la fenêtre dont le premier mois est `first`. Si elle sort de la
+   * plage chargée, la plage (même horizon) est rechargée en s'étendant dans le
+   * sens du déplacement, pour que les pas suivants restent sans rechargement.
+   */
+  function showWindowFrom(first: string) {
+    if (!data) return;
+    setAnchor(first);
+    const last = shiftMonthKey(first, VISIBLE_COLUMNS - 1);
+    if (first < data.months[0]) setRangeFrom(shiftMonthKey(last, -(months - 1)));
+    else if (last > data.months[data.months.length - 1]) setRangeFrom(first);
+  }
 
   function goToWindow(idx: number) {
     if (!data) return;
-    const maxStart = Math.max(0, data.months.length - VISIBLE_COLUMNS);
-    setWindowStart(Math.max(0, Math.min(maxStart, idx)));
+    showWindowFrom(shiftMonthKey(data.months[0], idx));
+  }
+
+  /** Sélecteur : le mois choisi devient le mois central, l'horizon se déploie à partir de la fenêtre. */
+  function selectPeriod(month: string) {
+    const first = shiftMonthKey(month, -CENTER_COLUMN_INDEX);
+    setAnchor(first);
+    setRangeFrom(first);
+  }
+
+  /** Horizon changé : même fenêtre visible, plage rechargée à partir d'elle. */
+  function changeHorizon(h: number) {
+    if (data && anchor) setRangeFrom(data.months[windowStart]);
+    setMonths(h);
   }
 
   // Swipe sur toute la zone Planning : même goToWindow que le toucher des mois voisins.
@@ -226,7 +259,7 @@ export function PlanningScreen() {
   );
 
   async function refresh() {
-    return load(months);
+    return load(months, rangeFrom);
   }
 
   function showToast(message: string) {
@@ -266,15 +299,16 @@ export function PlanningScreen() {
     { title: 'ÉPARGNE / VERSEMENTS', rows: data.epargne, totalLabel: 'TOTAL VERSEMENTS', totalKey: 'totalEpargne', emptyText: 'Aucun versement prévu.', accentColor: colors.secondary, uncategorizedLabel: 'AUTRES VERSEMENTS SANS CATÉGORIE' },
   ];
   const blockItemsByTitle = new Map(blocks.map((b) => [b.title, buildBlockItems(b.rows, b.uncategorizedLabel)]));
-  const maxWindowStart = Math.max(0, data.months.length - VISIBLE_COLUMNS);
   // Dernier mois VISIBLE de la fenêtre 3 mois courante (§5) — recalculé à
-  // chaque navigation (windowStart change), jamais figé sur le dernier mois
-  // de tout l'horizon chargé.
+  // chaque navigation, jamais figé sur le dernier mois de la plage chargée.
   const lastVisibleMonth = data.months[Math.min(windowStart + VISIBLE_COLUMNS - 1, data.months.length - 1)];
   const visibleMonths = data.months.slice(windowStart, windowStart + VISIBLE_COLUMNS);
-  // Mois actif (§4) : toujours le premier mois chargé (le mois réel en
-  // cours), indépendant de la fenêtre de navigation.
-  const currentSynthese = data.synthese[data.months[0]];
+  // Mois des cartes et des totaux d'accordéon (§4) : le mois courant réel tant
+  // qu'il est affiché, sinon le mois central — jamais un mois hors de l'écran.
+  const currentMonth = data.currentMonth ?? data.months[0];
+  const referenceMonth = visibleMonths.includes(currentMonth) ? currentMonth : visibleMonths[CENTER_COLUMN_INDEX];
+  const currentSynthese = data.synthese[referenceMonth];
+  const currentYear = Number(currentMonth.slice(0, 4));
 
   return (
     <View style={styles.container}>
@@ -291,7 +325,7 @@ export function PlanningScreen() {
 
       <View style={styles.horizonBar}>
         {HORIZON_OPTIONS.map((h) => (
-          <TouchableOpacity key={h} style={[styles.horizonPill, months === h && styles.horizonPillActive]} onPress={() => setMonths(h)} testID={`planning-horizon-${h}`}>
+          <TouchableOpacity key={h} style={[styles.horizonPill, months === h && styles.horizonPillActive]} onPress={() => changeHorizon(h)} testID={`planning-horizon-${h}`}>
             <Text style={[styles.horizonPillText, months === h && styles.horizonPillTextActive]}>{h} mois</Text>
           </TouchableOpacity>
         ))}
@@ -314,19 +348,20 @@ export function PlanningScreen() {
               previous={{
                 monthKey: visibleMonths[0],
                 label: formatMonthShort(visibleMonths[0]).toUpperCase(),
-                onPress: windowStart > 0 ? () => goToWindow(windowStart - 1) : undefined,
+                onPress: () => goToWindow(windowStart - 1),
               }}
               active={{ monthKey: visibleMonths[CENTER_COLUMN_INDEX], label: formatMonthShort(visibleMonths[CENTER_COLUMN_INDEX]).toUpperCase() }}
               next={{
                 monthKey: visibleMonths[VISIBLE_COLUMNS - 1],
                 label: formatMonthShort(visibleMonths[VISIBLE_COLUMNS - 1]).toUpperCase(),
-                onPress: windowStart < maxWindowStart ? () => goToWindow(windowStart + 1) : undefined,
+                onPress: () => goToWindow(windowStart + 1),
               }}
               picker={{
-                years: [...new Set(data.months.map((m) => Number(m.slice(0, 4))))],
-                isSelectable: (m) => data.months.includes(m),
-                // Le mois choisi devient le mois central quand l'horizon le permet.
-                onSelect: (m) => goToWindow(data.months.indexOf(m) - CENTER_COLUMN_INDEX),
+                // Années relatives au mois courant réel, jamais codées en dur.
+                years: Array.from({ length: PICKER_YEARS_BEFORE + PICKER_YEARS_AFTER + 1 }, (_, i) => currentYear - PICKER_YEARS_BEFORE + i),
+                // Tout mois est sélectionnable, indépendamment de l'horizon :
+                // il devient le mois central de la fenêtre.
+                onSelect: selectPeriod,
               }}
             />
           </View>
@@ -346,7 +381,7 @@ export function PlanningScreen() {
               block={block}
               items={blockItemsByTitle.get(block.title) ?? []}
               visibleMonths={visibleMonths}
-              currentMonth={data.months[0]}
+              currentMonth={referenceMonth}
               synthese={data.synthese}
               isCollapsed={collapsedBlocks.has(block.title)}
               onToggle={() => toggleBlock(block.title)}
@@ -529,6 +564,7 @@ function PlanningFinalSynthese({
   colWidth: number;
 }) {
   const fit = (text: string, maxFontSize: number) => ({ fontSize: fitFontSize(text, colWidth - 2, maxFontSize) });
+  const projection = synthese[lastVisibleMonth].projectionCumulee;
   const hasReste = visibleMonths.some((m) => synthese[m].resteDepenses !== null);
   const resteCell = (m: string, render: (s: api.PlanningMonthSyntheseApi) => React.ReactNode) => (
     <View key={m} style={styles.gridMonthCol}>
@@ -605,25 +641,28 @@ function PlanningFinalSynthese({
         </View>
       )}
 
-      <View style={[styles.finalSection, styles.gridRow]} testID="planning-projection-section">
-        <Text style={[styles.gridLabelCol, styles.finalSectionTitle]} numberOfLines={2}>
-          PROJECTION FIN DE PÉRIODE
-        </Text>
-        {visibleMonths.map((m) =>
-          m === lastVisibleMonth ? (
-            <View key={m} style={[styles.gridMonthCol, styles.projectionCol]} testID="planning-projection-cumulee">
-              <Text style={[styles.finalValueStrong, fit(formatDh(synthese[m].projectionCumulee), 12), synthese[m].projectionCumulee < 0 && styles.negativeText]} numberOfLines={1} adjustsFontSizeToFit>
-                {formatDh(synthese[m].projectionCumulee)}
-              </Text>
-              <Text style={styles.projectionCaption} numberOfLines={2}>
-                Projection fin {formatMonthShortFullYear(m)}
-              </Text>
-            </View>
-          ) : (
-            <View key={m} style={styles.gridMonthCol} />
-          ),
-        )}
-      </View>
+      {/* Pas de projection pour une période entièrement passée (null côté backend). */}
+      {projection !== null && (
+        <View style={[styles.finalSection, styles.gridRow]} testID="planning-projection-section">
+          <Text style={[styles.gridLabelCol, styles.finalSectionTitle]} numberOfLines={2}>
+            PROJECTION FIN DE PÉRIODE
+          </Text>
+          {visibleMonths.map((m) =>
+            m === lastVisibleMonth ? (
+              <View key={m} style={[styles.gridMonthCol, styles.projectionCol]} testID="planning-projection-cumulee">
+                <Text style={[styles.finalValueStrong, fit(formatDh(projection), 12), projection < 0 && styles.negativeText]} numberOfLines={1} adjustsFontSizeToFit>
+                  {formatDh(projection)}
+                </Text>
+                <Text style={styles.projectionCaption} numberOfLines={2}>
+                  Projection fin {formatMonthShortFullYear(m)}
+                </Text>
+              </View>
+            ) : (
+              <View key={m} style={styles.gridMonthCol} />
+            ),
+          )}
+        </View>
+      )}
     </View>
   );
 }

@@ -182,8 +182,12 @@ export interface PlanningMonthSynthese {
   totalEpargne: number;
   /** = totalRevenus - totalDepenses - totalEpargne (ex-balanceMensuelle). */
   resultatPrevu: number;
-  /** Cumul de resultatPrevu depuis le premier mois de l'horizon jusqu'à ce mois inclus (ex-balanceCumulee). */
-  projectionCumulee: number;
+  /**
+   * Cumul de resultatPrevu depuis le mois courant jusqu'à ce mois inclus
+   * (ex-balanceCumulee) — indépendant du premier mois demandé. null pour un
+   * mois antérieur au mois courant (aucune projection sur le passé).
+   */
+  projectionCumulee: number | null;
   /**
    * "Reste à exécuter" (mois COURANT uniquement — premier mois de la table —
    * `null` pour tout autre mois) : somme des RESTES (jamais des prévus) des
@@ -262,7 +266,7 @@ function labelMonthOffset(startDay: number): 0 | 1 {
   return startDay <= 15 ? 0 : 1;
 }
 
-function monthKey(date: Date, startDay = 1): PlanningMonthKey {
+export function monthKey(date: Date, startDay = 1): PlanningMonthKey {
   const day = date.getUTCDate();
   let refMonth = date.getUTCMonth();
   let refYear = date.getUTCFullYear();
@@ -296,6 +300,45 @@ export function monthBounds(key: PlanningMonthKey, startDay = 1): { start: Date;
   const start = new Date(Date.UTC(refYear, refMonth, startDay));
   const end = new Date(Date.UTC(refYear, refMonth + 1, startDay - 1));
   return { start, end };
+}
+
+/** Nombre de mois de `from` à `to` ("2026-10" → "2027-07" = 9). */
+export function monthKeyDiff(from: PlanningMonthKey, to: PlanningMonthKey): number {
+  const [fy, fm] = from.split('-').map(Number);
+  const [ty, tm] = to.split('-').map(Number);
+  return ty * 12 + tm - (fy * 12 + fm);
+}
+
+/** `count` clés mois consécutives à partir de la clé `first` (incluse). */
+export function monthKeysFrom(first: PlanningMonthKey, count: number): PlanningMonthKey[] {
+  const [year, month] = first.split('-').map(Number);
+  return Array.from({ length: count }, (_, i) => {
+    const index = year * 12 + (month - 1) + i;
+    const y = Math.floor(index / 12);
+    return `${y}-${String(index - y * 12 + 1).padStart(2, '0')}`;
+  });
+}
+
+/**
+ * Restreint une table calculée sur une plage plus large aux seuls mois
+ * demandés : cellules, synthèse et occurrences hors fenêtre retirées, lignes
+ * sans aucune case non vide dans la fenêtre retirées. Les valeurs conservées
+ * sont celles du calcul complet (projection cumulée comprise).
+ */
+export function restrictPlanningTable(table: PlanningTable, months: PlanningMonthKey[]): PlanningTable {
+  const keep = new Set(months);
+  const restrictRows = (rows: PlanningRow[]) =>
+    rows
+      .map((row) => ({ ...row, cells: Object.fromEntries(months.map((m) => [m, row.cells[m]])) as Record<PlanningMonthKey, PlanningCell> }))
+      .filter((row) => months.some((m) => row.cells[m] && row.cells[m].status !== 'EMPTY'));
+  return {
+    months,
+    revenus: restrictRows(table.revenus),
+    depenses: restrictRows(table.depenses),
+    epargne: restrictRows(table.epargne),
+    synthese: Object.fromEntries(months.map((m) => [m, table.synthese[m]])),
+    occurrences: table.occurrences.filter((o) => keep.has(o.month)),
+  };
 }
 
 export function monthRange(start: Date, count: number, startDay = 1): PlanningMonthKey[] {
@@ -433,13 +476,17 @@ export function buildPlanningTable(params: {
   subaccountBalances: Map<string, number>;
   /** Jour de début du mois financier (§ Paramètres > début du mois) — 1 par défaut (mois calendaire, inchangé). */
   monthStartDay?: number;
+  /**
+   * Mois courant réel, seul mois portant reste à exécuter / couverture.
+   * Absent : months[0] (appelants dont la plage démarre au mois courant).
+   * Jamais recalculé ici à partir de la date système. S'il n'est pas dans
+   * `months` (plage entièrement passée ou future), aucun mois n'en porte.
+   */
+  currentMonth?: PlanningMonthKey;
 }): PlanningTable {
   const { months, plannedOperations, financialOperations, categories, accountNames, subaccountNames, accountNonAffecte, subaccountBalances, monthStartDay = 1 } = params;
   const monthSet = new Set(months);
-  // Le mois courant est TOUJOURS months[0] (monthRange() part de `now`, cf.
-  // planning.service.ts) — jamais recalculé ici à partir de la date système,
-  // pour rester cohérent avec exactement la fenêtre demandée par l'appelant.
-  const currentMonth = months[0];
+  const currentMonth = params.currentMonth ?? months[0];
 
   // Opération(s) de clôture des échéances liées à un PLAN FINANCIER
   // (financial-plans.service.ts#markDeadlinePaid) — ce chemin ne pose jamais
@@ -770,14 +817,17 @@ export function buildPlanningTable(params: {
     // Dérivé des MÊMES totaux affichés juste au-dessus (TOTAL REVENUS/
     // DÉPENSES/VERSEMENTS) — aucun second calcul, aucune divergence possible.
     const resultatPrevu = totalRevenus - totalDepenses - totalEpargne;
-    cumulative += resultatPrevu;
+    // Projection : cumul à partir du mois courant uniquement (clés AAAA-MM
+    // comparables lexicographiquement) ; rien pour un mois passé.
+    const isPastMonth = m < currentMonth;
+    if (!isPastMonth) cumulative += resultatPrevu;
     const isCurrentMonth = m === currentMonth;
     synthese[m] = {
       totalRevenus,
       totalDepenses,
       totalEpargne,
       resultatPrevu,
-      projectionCumulee: cumulative,
+      projectionCumulee: isPastMonth ? null : cumulative,
       resteDepenses: isCurrentMonth ? resteDepensesMoisCourant : null,
       resteVersements: isCurrentMonth ? resteVersementsMoisCourant : null,
       couverte: isCurrentMonth ? aProvisionnerMoisCourant <= 0 : null,

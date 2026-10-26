@@ -628,8 +628,8 @@ export interface PlanningMonthSyntheseApi {
   totalEpargne: number;
   /** = totalRevenus - totalDepenses - totalEpargne (ex-balanceMensuelle, jamais "balance"). */
   resultatPrevu: number;
-  /** Cumul de resultatPrevu depuis le premier mois de l'horizon jusqu'à ce mois inclus (ex-balanceCumulee). */
-  projectionCumulee: number;
+  /** Cumul de resultatPrevu depuis le mois courant jusqu'à ce mois inclus (ex-balanceCumulee) — null pour un mois passé. */
+  projectionCumulee: number | null;
   /**
    * "Reste à exécuter" (mois COURANT uniquement — premier mois de `months` —
    * `null` pour tout autre mois) : somme des RESTES (jamais des prévus) des
@@ -652,10 +652,17 @@ export interface PlanningTableApi {
   depenses: PlanningRowApi[];
   epargne: PlanningRowApi[];
   synthese: Record<string, PlanningMonthSyntheseApi>;
+  /** Mois courant réel ("AAAA-MM") — absent d'un backend antérieur : months[0]. */
+  currentMonth?: string;
 }
 
-/** Endpoint agrégé unique — jamais 1 requête par ligne/mois/catégorie. */
-export const getPlanning = (months: number): Promise<PlanningTableApi> => apiFetch(`/planning?months=${months}`);
+/**
+ * Endpoint agrégé unique — jamais 1 requête par ligne/mois/catégorie.
+ * `from` ("AAAA-MM") : premier mois de la plage, indépendant de l'horizon ;
+ * absent = mois courant.
+ */
+export const getPlanning = (months: number, from?: string | null): Promise<PlanningTableApi> =>
+  apiFetch(`/planning?months=${months}${from ? `&from=${from}` : ''}`);
 
 // ---------- Plans financiers (Checkpoint 3/4) ----------
 export interface FinancialPlanDeadlineItemApi {

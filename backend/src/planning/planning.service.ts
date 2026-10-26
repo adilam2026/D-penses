@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { ensurePlannedOccurrences } from '../common/ledger/recurrence.util';
 import { computeNonAffecte, computeSubaccountBalance } from '../common/ledger/ledger.util';
-import { buildPlanningTable, monthBounds, monthRange, PlanningMonthKey } from '../common/ledger/planning.util';
+import { buildPlanningTable, monthBounds, monthKey, monthKeyDiff, monthKeysFrom, PlanningMonthKey, restrictPlanningTable } from '../common/ledger/planning.util';
 
 export const PLANNING_MIN_MONTHS = 3;
 export const PLANNING_MAX_MONTHS = 12;
@@ -21,7 +21,12 @@ export class PlanningService {
    * Endpoint agrégé unique (§performance) : une seule requête retourne toute
    * la table groupée — jamais 1 requête par ligne/mois/catégorie.
    */
-  async getPlanning(userId: string, householdId: string, months?: number) {
+  /**
+   * `from` (clé "AAAA-MM", optionnelle) : premier mois de la plage renvoyée —
+   * période de référence indépendante de l'horizon. Absent : mois courant
+   * (comportement historique). La réponse porte toujours `currentMonth`.
+   */
+  async getPlanning(userId: string, householdId: string, months?: number, from?: PlanningMonthKey) {
     return this.rlsContext.run(userId, householdId, async () => {
       const tx = this.rlsContext.getClient();
 
@@ -32,12 +37,19 @@ export class PlanningService {
       const monthStartDay = household.monthStartDay;
 
       const horizonMonths = clampMonths(months);
-      const now = new Date();
-      const monthsList: PlanningMonthKey[] = monthRange(now, horizonMonths, monthStartDay);
+      const currentMonth = monthKey(new Date(), monthStartDay);
+      const firstMonth = from ?? currentMonth;
+      const monthsList: PlanningMonthKey[] = monthKeysFrom(firstMonth, horizonMonths);
+      // La projection cumulée part du mois courant : pour une plage future, le
+      // calcul couvre aussi les mois intermédiaires, puis la réponse est
+      // restreinte aux mois demandés. Plage débutant au mois courant ou avant :
+      // calcul identique à la plage demandée (aucun changement).
+      const computeStart = monthKeyDiff(currentMonth, firstMonth) > 0 ? currentMonth : firstMonth;
+      const computedMonths = monthKeysFrom(computeStart, monthKeyDiff(computeStart, firstMonth) + horizonMonths);
       // Bornes réelles de la fenêtre financière (§ début du mois) — jamais le
       // 1er/dernier jour calendaire naïf quand monthStartDay ≠ 1.
-      const rangeStart = monthBounds(monthsList[0], monthStartDay).start;
-      const rangeEnd = monthBounds(monthsList[monthsList.length - 1], monthStartDay).end;
+      const rangeStart = monthBounds(computedMonths[0], monthStartDay).start;
+      const rangeEnd = monthBounds(computedMonths[computedMonths.length - 1], monthStartDay).end;
 
       const [plannedOperations, categories, accounts, subaccounts] = await Promise.all([
         tx.plannedOperation.findMany({ where: { householdId, expectedDate: { gte: rangeStart, lte: rangeEnd } } }),
@@ -72,8 +84,8 @@ export class PlanningService {
         Promise.all(subaccounts.map(async (s): Promise<[string, number]> => [s.id, (await computeSubaccountBalance(tx, s.id)).toNumber()])),
       ]);
 
-      return buildPlanningTable({
-        months: monthsList,
+      const table = buildPlanningTable({
+        months: computedMonths,
         plannedOperations,
         financialOperations,
         categories,
@@ -82,7 +94,10 @@ export class PlanningService {
         accountNonAffecte: new Map(accountNonAffecteEntries),
         subaccountBalances: new Map(subaccountBalanceEntries),
         monthStartDay,
+        currentMonth,
       });
+      const visible = computedMonths.length === monthsList.length ? table : restrictPlanningTable(table, monthsList);
+      return { ...visible, currentMonth };
     });
   }
 }
