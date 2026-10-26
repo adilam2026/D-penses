@@ -1,10 +1,10 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { ActivityIndicator, Alert, GestureResponderEvent, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { colors, elevation, fontFamily, radius, spacing, typography } from '../ui/theme';
-import { formatDh, formatMonthLabel, formatMonthShort, formatShortDate } from '../ui/formatMoney';
+import { formatDh, formatMonthShort, formatShortDate } from '../ui/formatMoney';
 import { HelpButton } from '../ui/HelpButton';
 import { FormField } from '../ui/FormField';
 import { Select } from '../ui/Select';
@@ -22,6 +22,19 @@ const HORIZON_OPTIONS = [3, 6, 9, 12] as const;
 const VISIBLE_COLUMNS = 3;
 const CENTER_COLUMN_INDEX = 1;
 const TOAST_DURATION_MS = 1800;
+// Balayage horizontal : le geste n'est capté qu'une fois nettement horizontal
+// (CLAIM), et ne change de période qu'au-delà de THRESHOLD — un léger dérapage
+// pendant un scroll vertical ne change jamais de mois.
+const SWIPE_CLAIM_DISTANCE = 16;
+const SWIPE_THRESHOLD = 60;
+const SWIPE_DIRECTION_RATIO = 2;
+
+/** "2026-12" → "Déc. 2026" (libellé discret de la projection de fin de période). */
+function formatMonthShortFullYear(monthKey: string): string {
+  const [year, month] = monthKey.split('-').map(Number);
+  const label = new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('fr-FR', { month: 'short', timeZone: 'UTC' });
+  return `${label.charAt(0).toUpperCase()}${label.slice(1)} ${year}`;
+}
 
 interface BlockDef {
   title: string;
@@ -144,6 +157,7 @@ export function PlanningScreen() {
   // par pas de 3 — cf. l'exemple Oct|Nov|Déc → Nov|Déc|Jan. UNE seule barre
   // de navigation (§3), partagée par tous les accordéons.
   const [windowStart, setWindowStart] = useState(0);
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
 
   const load = useCallback(async (h: number) => {
     const [planning, accountList, categoryList, planList, household] = await Promise.all([
@@ -179,6 +193,43 @@ export function PlanningScreen() {
     const maxStart = Math.max(0, data.months.length - VISIBLE_COLUMNS);
     setWindowStart(Math.max(0, Math.min(maxStart, idx)));
   }
+
+  // onTouchStart reçoit un TouchEvent DOM brut sur le web (coordonnées dans
+  // changedTouches uniquement) : lecture unifiée natif/web.
+  function touchPoint(e: GestureResponderEvent) {
+    const n = e.nativeEvent as GestureResponderEvent['nativeEvent'] & { changedTouches?: { pageX: number; pageY: number }[] };
+    const t = n.changedTouches?.[0] ?? n;
+    return { x: t.pageX, y: t.pageY };
+  }
+
+  function isHorizontalSwipe(e: GestureResponderEvent, minDistance: number) {
+    const start = swipeStart.current;
+    if (!start) return false;
+    const p = touchPoint(e);
+    const dx = p.x - start.x;
+    const dy = p.y - start.y;
+    return Math.abs(dx) >= minDistance && Math.abs(dx) > SWIPE_DIRECTION_RATIO * Math.abs(dy);
+  }
+
+  // Le responder n'est réclamé (phase capture) que pour un geste nettement
+  // horizontal : un scroll vertical reste entièrement géré par le ScrollView,
+  // et une case touchée au début d'un swipe voit son appui annulé.
+  const swipeHandlers = {
+    onTouchStart: (e: GestureResponderEvent) => {
+      swipeStart.current = touchPoint(e);
+    },
+    onMoveShouldSetResponderCapture: (e: GestureResponderEvent) => isHorizontalSwipe(e, SWIPE_CLAIM_DISTANCE),
+    onResponderTerminationRequest: () => false,
+    onResponderRelease: (e: GestureResponderEvent) => {
+      if (swipeStart.current && isHorizontalSwipe(e, SWIPE_THRESHOLD)) {
+        goToWindow(windowStart + (touchPoint(e).x < swipeStart.current.x ? 1 : -1));
+      }
+      swipeStart.current = null;
+    },
+    onResponderTerminate: () => {
+      swipeStart.current = null;
+    },
+  };
 
   async function refresh() {
     return load(months);
@@ -228,8 +279,7 @@ export function PlanningScreen() {
   const lastVisibleMonth = data.months[Math.min(windowStart + VISIBLE_COLUMNS - 1, data.months.length - 1)];
   const visibleMonths = data.months.slice(windowStart, windowStart + VISIBLE_COLUMNS);
   // Mois actif (§4) : toujours le premier mois chargé (le mois réel en
-  // cours), indépendant de la fenêtre de navigation — une référence stable,
-  // jamais "ce sur quoi l'utilisateur a navigué".
+  // cours), indépendant de la fenêtre de navigation.
   const currentSynthese = data.synthese[data.months[0]];
 
   return (
@@ -241,7 +291,7 @@ export function PlanningScreen() {
         </View>
         <HelpButton
           title="Planning"
-          text="Une case grise = prévu, appuyez dessus pour la régler. Une case verte = déjà réalisée. Appui long pour ajuster le montant avant paiement ou annuler un paiement déjà fait."
+          text="Une case grise = prévu, appuyez dessus pour la régler. Une case verte = déjà réalisée. Appui long pour ajuster le montant avant paiement ou annuler un paiement déjà fait. Balayez horizontalement (ou utilisez ‹ ›) pour changer de période."
         />
       </View>
 
@@ -253,126 +303,70 @@ export function PlanningScreen() {
         ))}
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: spacing.xxl }}>
-        {/* Cartes de synthèse (§2) — même langage visuel que l'Accueil
-            (cartes arrondies, respiration, couleurs douces), mois COURANT
-            uniquement (data.months[0]) : une vue d'ensemble immédiate,
-            distincte du détail par mois ci-dessous — jamais mélangée au
-            tableau. Mêmes totaux que les blocs/la synthèse par mois (aucun
-            second calcul). */}
-        <View style={styles.summaryCardsRow} testID="planning-summary-cards">
-          <View style={[styles.summaryCard, { borderTopColor: colors.success }]} testID="planning-summary-card-revenus">
-            <Text style={styles.summaryCardLabel}>REVENUS</Text>
-            <Text style={styles.summaryCardAmount} numberOfLines={1} adjustsFontSizeToFit>
-              {formatDh(data.synthese[data.months[0]].totalRevenus)}
-            </Text>
-          </View>
-          <View style={[styles.summaryCard, { borderTopColor: colors.danger }]} testID="planning-summary-card-depenses">
-            <Text style={styles.summaryCardLabel}>DÉPENSES</Text>
-            <Text style={styles.summaryCardAmount} numberOfLines={1} adjustsFontSizeToFit>
-              {formatDh(data.synthese[data.months[0]].totalDepenses)}
-            </Text>
-          </View>
-          <View style={[styles.summaryCard, { borderTopColor: colors.secondary }]} testID="planning-summary-card-versements">
-            <Text style={styles.summaryCardLabel}>VERSEMENTS</Text>
-            <Text style={styles.summaryCardAmount} numberOfLines={1} adjustsFontSizeToFit>
-              {formatDh(data.synthese[data.months[0]].totalEpargne)}
-            </Text>
-          </View>
-          <View style={[styles.summaryCard, styles.summaryCardAccent]} testID="planning-summary-card-resultat">
-            <Text style={styles.summaryCardLabel}>RÉSULTAT PRÉVU</Text>
-            <Text
-              style={[styles.summaryCardAmount, data.synthese[data.months[0]].resultatPrevu < 0 && styles.negativeText]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }} testID="planning-scroll">
+        <View {...swipeHandlers} style={styles.swipeArea} testID="planning-swipe-area">
+          {/* Navigation des mois — mêmes colonnes que les accordéons et la
+              synthèse finale (gridLabelCol + gridMonthCol), flèches dans les
+              marges latérales. Flèches et swipe appellent goToWindow. */}
+          <View style={styles.monthNavRow} testID="planning-month-nav">
+            <TouchableOpacity
+              style={styles.monthNavArrow}
+              onPress={() => goToWindow(windowStart - 1)}
+              disabled={windowStart === 0}
+              hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+              testID="planning-month-prev"
             >
-              {formatDh(data.synthese[data.months[0]].resultatPrevu)}
-            </Text>
+              <Ionicons name="chevron-back" size={18} color={windowStart === 0 ? colors.textPlaceholder : colors.textPrimary} />
+            </TouchableOpacity>
+            <View style={[styles.gridRow, styles.monthNavGrid]}>
+              <View style={styles.gridLabelCol} />
+              {visibleMonths.map((m, i) => (
+                <Text
+                  key={m}
+                  style={[styles.gridMonthCol, styles.monthNavLabel, i === CENTER_COLUMN_INDEX && styles.monthNavLabelActive]}
+                  numberOfLines={1}
+                  testID={`planning-month-label-${i}`}
+                >
+                  {formatMonthShort(m)}
+                </Text>
+              ))}
+            </View>
+            <TouchableOpacity
+              style={styles.monthNavArrow}
+              onPress={() => goToWindow(windowStart + 1)}
+              disabled={windowStart >= maxWindowStart}
+              hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+              testID="planning-month-next"
+            >
+              <Ionicons name="chevron-forward" size={18} color={windowStart >= maxWindowStart ? colors.textPlaceholder : colors.textPrimary} />
+            </TouchableOpacity>
           </View>
-        </View>
 
-        {/* Navigation temporelle (§3) — UNE SEULE barre de mois, partagée par
-            tous les accordéons ci-dessous (jamais un scroll horizontal par
-            bloc) : les flèches déplacent la fenêtre de 3 mois d'un pas à la
-            fois (ex. Oct|Nov|Déc -> Nov|Déc|Jan). Toujours 3 mois visibles. */}
-        <View style={styles.monthNavRow} testID="planning-month-nav">
-          <TouchableOpacity onPress={() => goToWindow(windowStart - 1)} disabled={windowStart === 0} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} testID="planning-month-prev">
-            <Ionicons name="chevron-back" size={18} color={windowStart === 0 ? colors.textPlaceholder : colors.textPrimary} />
-          </TouchableOpacity>
-          {visibleMonths.map((m, i) => (
-            <Text key={m} style={[styles.monthNavLabel, i === CENTER_COLUMN_INDEX && styles.monthNavLabelActive]} numberOfLines={1}>
-              {formatMonthShort(m)}
-            </Text>
+          {/* Cartes de synthèse compactes (mois actif) : une seule ligne
+              libellé/montant par carte, grille 2×2. */}
+          <View style={styles.summaryCardsRow} testID="planning-summary-cards">
+            <SummaryCard label="REVENUS" amount={currentSynthese.totalRevenus} accentColor={colors.success} testID="planning-summary-card-revenus" />
+            <SummaryCard label="DÉPENSES" amount={currentSynthese.totalDepenses} accentColor={colors.danger} testID="planning-summary-card-depenses" />
+            <SummaryCard label="VERSEMENTS" amount={currentSynthese.totalEpargne} accentColor={colors.secondary} testID="planning-summary-card-versements" />
+            <SummaryCard label="RÉSULTAT" amount={currentSynthese.resultatPrevu} accentColor={colors.primary} testID="planning-summary-card-resultat" highlightNegative />
+          </View>
+
+          {blocks.map((block) => (
+            <PlanningAccordion
+              key={block.title}
+              block={block}
+              items={blockItemsByTitle.get(block.title) ?? []}
+              visibleMonths={visibleMonths}
+              currentMonth={data.months[0]}
+              synthese={data.synthese}
+              isCollapsed={collapsedBlocks.has(block.title)}
+              onToggle={() => toggleBlock(block.title)}
+              onCellPress={onCellPress}
+            />
           ))}
-          <TouchableOpacity
-            onPress={() => goToWindow(windowStart + 1)}
-            disabled={windowStart >= maxWindowStart}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            testID="planning-month-next"
-          >
-            <Ionicons name="chevron-forward" size={18} color={windowStart >= maxWindowStart ? colors.textPlaceholder : colors.textPrimary} />
-          </TouchableOpacity>
+
+          <PlanningFinalSynthese visibleMonths={visibleMonths} synthese={data.synthese} lastVisibleMonth={lastVisibleMonth} />
         </View>
-
-        {/* Carte Projection (§5) — toujours visuellement séparée, jamais une
-            phrase perdue sous un tableau. Cumul jusqu'au DERNIER mois visible
-            de la fenêtre 3 mois, recalculé à chaque navigation. */}
-        <View style={styles.projectionCard} testID="planning-projection-cumulee">
-          <View style={styles.projectionCardIcon}>
-            <Ionicons name="flag" size={18} color={colors.primary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.projectionCardLabel}>Projection à fin {formatMonthLabel(lastVisibleMonth)}</Text>
-            <Text style={[styles.projectionCardAmount, data.synthese[lastVisibleMonth].projectionCumulee < 0 && styles.negativeText]}>
-              {formatDh(data.synthese[lastVisibleMonth].projectionCumulee)}
-            </Text>
-          </View>
-        </View>
-
-        {/* "Reste à exécuter" (§12) — carte compacte, MOIS COURANT uniquement
-            (resteDepenses non-null) : jamais une ligne supplémentaire d'un
-            tableau, jamais une valeur inventée faute de projection fiable. */}
-        {currentSynthese.resteDepenses !== null && (
-          <View style={styles.resteCard} testID="planning-reste-card">
-            <Text style={styles.resteCardTitle}>Reste à exécuter</Text>
-            <View style={styles.resteCardRow}>
-              <Text style={styles.resteCardLabel}>Dépenses</Text>
-              <Text style={styles.resteCardValue}>{formatDh(currentSynthese.resteDepenses)}</Text>
-            </View>
-            <View style={styles.resteCardRow}>
-              <Text style={styles.resteCardLabel}>Versements</Text>
-              <Text style={styles.resteCardValue}>{formatDh(currentSynthese.resteVersements ?? 0)}</Text>
-            </View>
-            <View style={styles.resteCardRow}>
-              {currentSynthese.couverte ? (
-                <Text style={styles.syntheseCouvertureOk} testID="planning-reste-couvert">
-                  ✓ Tout est couvert
-                </Text>
-              ) : (
-                <Text style={styles.syntheseCouvertureWarn} testID="planning-reste-a-provisionner">
-                  À provisionner {formatDh(currentSynthese.aProvisionner ?? 0)}
-                </Text>
-              )}
-            </View>
-          </View>
-        )}
-
-        {/* Structure principale (§6/§7) — 3 cartes/accordéons indépendants,
-            partageant la même fenêtre de 3 mois (visibleMonths) que la
-            navigation ci-dessus — plus aucun grand tableau continu. */}
-        {blocks.map((block) => (
-          <PlanningAccordion
-            key={block.title}
-            block={block}
-            items={blockItemsByTitle.get(block.title) ?? []}
-            visibleMonths={visibleMonths}
-            currentMonth={data.months[0]}
-            synthese={data.synthese}
-            isCollapsed={collapsedBlocks.has(block.title)}
-            onToggle={() => toggleBlock(block.title)}
-            onCellPress={onCellPress}
-          />
-        ))}
 
         <PlansSection plans={plans} onOpen={(id) => navigation.navigate('FinancialPlanDetail', { id })} />
       </ScrollView>
@@ -466,6 +460,146 @@ function PlanningCellView({
   );
 }
 
+function SummaryCard({
+  label,
+  amount,
+  accentColor,
+  testID,
+  highlightNegative = false,
+}: {
+  label: string;
+  amount: number;
+  accentColor: string;
+  testID: string;
+  highlightNegative?: boolean;
+}) {
+  const negative = highlightNegative && amount < 0;
+  return (
+    <View style={[styles.summaryCard, { borderTopColor: accentColor }, highlightNegative && styles.summaryCardAccent, negative && styles.summaryCardNegative]} testID={testID}>
+      <Text style={styles.summaryCardLabel} numberOfLines={1}>
+        {label}
+      </Text>
+      <Text style={[styles.summaryCardAmount, negative && styles.negativeText]} numberOfLines={1} adjustsFontSizeToFit>
+        {formatDh(amount)}
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * Synthèse de fin de Planning — mêmes colonnes mensuelles que les accordéons
+ * (gridLabelCol/gridMonthCol) : résultat prévu par mois, reste à exécuter
+ * (seuls les mois où le backend le calcule, i.e. le mois courant), puis la
+ * projection cumulée sous le dernier mois visible. Aucun calcul local.
+ */
+function PlanningFinalSynthese({
+  visibleMonths,
+  synthese,
+  lastVisibleMonth,
+}: {
+  visibleMonths: string[];
+  synthese: Record<string, api.PlanningMonthSyntheseApi>;
+  lastVisibleMonth: string;
+}) {
+  const hasReste = visibleMonths.some((m) => synthese[m].resteDepenses !== null);
+  const resteCell = (m: string, render: (s: api.PlanningMonthSyntheseApi) => React.ReactNode) => (
+    <View key={m} style={styles.gridMonthCol}>
+      {synthese[m].resteDepenses !== null ? render(synthese[m]) : null}
+    </View>
+  );
+  return (
+    <View style={styles.finalCard} testID="planning-final-synthese">
+      <View style={styles.gridRow}>
+        <View style={styles.gridLabelCol} />
+        {visibleMonths.map((m) => (
+          <Text key={m} style={[styles.gridMonthCol, styles.monthColHeader]} numberOfLines={1}>
+            {formatMonthShort(m)}
+          </Text>
+        ))}
+      </View>
+
+      <View style={[styles.gridRow, styles.finalRow]} testID="planning-resultat-prevu-row">
+        <Text style={[styles.gridLabelCol, styles.finalSectionTitle]} numberOfLines={2}>
+          RÉSULTAT PRÉVU
+        </Text>
+        {visibleMonths.map((m) => (
+          <Text
+            key={m}
+            style={[styles.gridMonthCol, styles.finalValueStrong, synthese[m].resultatPrevu < 0 && styles.negativeText]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            testID={`planning-resultat-prevu-${m}`}
+          >
+            {formatDh(synthese[m].resultatPrevu)}
+          </Text>
+        ))}
+      </View>
+
+      {hasReste && (
+        <View style={styles.finalSection} testID="planning-reste-section">
+          <Text style={styles.finalSectionTitle}>RESTE À EXÉCUTER</Text>
+          <View style={[styles.gridRow, styles.finalRow]}>
+            <Text style={[styles.gridLabelCol, styles.finalRowLabel]}>Dépenses</Text>
+            {visibleMonths.map((m) =>
+              resteCell(m, (s) => (
+                <Text style={styles.finalValue} numberOfLines={1} adjustsFontSizeToFit testID={`planning-reste-depenses-${m}`}>
+                  {formatDh(s.resteDepenses ?? 0)}
+                </Text>
+              )),
+            )}
+          </View>
+          <View style={[styles.gridRow, styles.finalRow]}>
+            <Text style={[styles.gridLabelCol, styles.finalRowLabel]}>Versements</Text>
+            {visibleMonths.map((m) =>
+              resteCell(m, (s) => (
+                <Text style={styles.finalValue} numberOfLines={1} adjustsFontSizeToFit testID={`planning-reste-versements-${m}`}>
+                  {formatDh(s.resteVersements ?? 0)}
+                </Text>
+              )),
+            )}
+          </View>
+          <View style={[styles.gridRow, styles.finalRow]}>
+            <Text style={[styles.gridLabelCol, styles.finalRowLabel]}>À provisionner</Text>
+            {visibleMonths.map((m) =>
+              resteCell(m, (s) =>
+                s.couverte ? (
+                  <Text style={[styles.finalValue, styles.syntheseCouvertureOk]} numberOfLines={1} adjustsFontSizeToFit testID="planning-reste-couvert">
+                    ✓ Couvert
+                  </Text>
+                ) : (
+                  <Text style={[styles.finalValue, styles.syntheseCouvertureWarn]} numberOfLines={1} adjustsFontSizeToFit testID="planning-reste-a-provisionner">
+                    {formatDh(s.aProvisionner ?? 0)}
+                  </Text>
+                ),
+              ),
+            )}
+          </View>
+        </View>
+      )}
+
+      <View style={[styles.finalSection, styles.gridRow]} testID="planning-projection-section">
+        <Text style={[styles.gridLabelCol, styles.finalSectionTitle]} numberOfLines={2}>
+          PROJECTION FIN DE PÉRIODE
+        </Text>
+        {visibleMonths.map((m) =>
+          m === lastVisibleMonth ? (
+            <View key={m} style={[styles.gridMonthCol, styles.projectionCol]} testID="planning-projection-cumulee">
+              <Text style={[styles.finalValueStrong, synthese[m].projectionCumulee < 0 && styles.negativeText]} numberOfLines={1} adjustsFontSizeToFit>
+                {formatDh(synthese[m].projectionCumulee)}
+              </Text>
+              <Text style={styles.projectionCaption} numberOfLines={2}>
+                Projection fin {formatMonthShortFullYear(m)}
+              </Text>
+            </View>
+          ) : (
+            <View key={m} style={styles.gridMonthCol} />
+          ),
+        )}
+      </View>
+    </View>
+  );
+}
+
 const BLOCK_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   REVENUS: 'trending-up-outline',
   DÉPENSES: 'cart-outline',
@@ -519,10 +653,10 @@ function PlanningAccordion({
             <Text style={styles.accordionEmptyText}>{block.emptyText}</Text>
           ) : (
             <>
-              <View style={styles.monthColHeaderRow}>
-                <View style={styles.monthColSpacer} />
+              <View style={[styles.gridRow, styles.monthColHeaderRow]}>
+                <View style={styles.gridLabelCol} />
                 {visibleMonths.map((m) => (
-                  <Text key={m} style={styles.monthColHeader} numberOfLines={1}>
+                  <Text key={m} style={[styles.gridMonthCol, styles.monthColHeader]} numberOfLines={1}>
                     {formatMonthShort(m)}
                   </Text>
                 ))}
@@ -536,21 +670,19 @@ function PlanningAccordion({
                     </Text>
                   </View>
                 ) : (
-                  <View key={item.row.key} style={styles.accordionRow}>
-                    <Text style={styles.accordionRowLabel} numberOfLines={2}>
+                  <View key={item.row.key} style={[styles.gridRow, styles.accordionRow]}>
+                    <Text style={[styles.gridLabelCol, styles.accordionRowLabel]} numberOfLines={2}>
                       {item.row.label}
                     </Text>
-                    <View style={styles.accordionCellsRow}>
-                      {visibleMonths.map((m) => (
-                        <PlanningCellView
-                          key={m}
-                          cell={item.row.cells[m]}
-                          onPress={() => onCellPress(item.row.cells[m], item.row.label)}
-                          onLongPress={() => onCellPress(item.row.cells[m], item.row.label)}
-                          testID={`planning-cell-${testIdSlug(item.row.label)}-${m}`}
-                        />
-                      ))}
-                    </View>
+                    {visibleMonths.map((m) => (
+                      <PlanningCellView
+                        key={m}
+                        cell={item.row.cells[m]}
+                        onPress={() => onCellPress(item.row.cells[m], item.row.label)}
+                        onLongPress={() => onCellPress(item.row.cells[m], item.row.label)}
+                        testID={`planning-cell-${testIdSlug(item.row.label)}-${m}`}
+                      />
+                    ))}
                   </View>
                 ),
               )}
@@ -1399,47 +1531,51 @@ const styles = StyleSheet.create({
   horizonPillActive: { backgroundColor: colors.primary },
   horizonPillText: { fontSize: 11, fontFamily: fontFamily.sansBold, color: colors.textSecondary },
   horizonPillTextActive: { color: colors.textOnPrimary },
-  // Cartes de synthèse (§4) — même langage visuel que l'Accueil : cartes
-  // arrondies, respiration, couleurs douces, hiérarchie claire. Grille 2×2 sur
-  // mobile (jamais 4 cases minuscules serrées) — mois ACTIF uniquement.
+  // Cartes de synthèse compactes (mois actif) — grille 2×2, UNE ligne par
+  // carte (libellé à gauche, montant à droite), même langage visuel que l'Accueil.
   summaryCardsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: spacing.lg, gap: spacing.sm, marginBottom: spacing.md },
   summaryCard: {
-    width: '47%',
+    width: '48.5%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderTopWidth: 3,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     ...elevation.card,
   },
-  summaryCardAccent: { backgroundColor: colors.surfaceActive, borderTopColor: colors.primary },
-  summaryCardLabel: { fontSize: 10.5, fontFamily: fontFamily.sansExtraBold, color: colors.textSecondary, letterSpacing: 0.4, marginBottom: 4 },
-  summaryCardAmount: { fontSize: 16, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
+  summaryCardAccent: { backgroundColor: colors.surfaceActive },
+  summaryCardNegative: { backgroundColor: colors.dangerLight },
+  summaryCardLabel: { fontSize: 10, fontFamily: fontFamily.sansExtraBold, color: colors.textSecondary, letterSpacing: 0.3, marginRight: spacing.xs },
+  summaryCardAmount: { flexShrink: 1, textAlign: 'right', fontSize: 14, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
   emptyRowText: { ...typography.caption, color: colors.textPlaceholder },
-  // Barre de navigation temporelle UNIQUE (§3), partagée par tous les accordéons.
-  monthNavRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.lg, paddingVertical: spacing.sm, marginBottom: spacing.md },
-  monthNavLabel: { ...typography.bodySecondary, fontFamily: fontFamily.sansSemiBold },
-  monthNavLabelActive: { ...typography.body, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary },
-  // Carte Projection (§5) — jamais une phrase perdue sous un tableau.
-  projectionCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-    padding: spacing.md,
-    ...elevation.card,
-  },
-  projectionCardIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surfaceActive, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md },
-  projectionCardLabel: { ...typography.caption, fontWeight: '700', color: colors.textSecondary },
-  projectionCardAmount: { ...typography.sectionTitle, fontFamily: fontFamily.sansExtraBold, marginTop: 2 },
-  // "Reste à exécuter" (§12) — carte compacte, mois courant uniquement.
-  resteCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, marginHorizontal: spacing.lg, marginBottom: spacing.lg, padding: spacing.md },
-  resteCardTitle: { ...typography.caption, fontWeight: '800', color: colors.textSecondary, letterSpacing: 0.4, marginBottom: spacing.xs },
-  resteCardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 2 },
-  resteCardLabel: { ...typography.bodySecondary },
-  resteCardValue: { ...typography.body, fontFamily: fontFamily.sansBold },
+  // Grille mensuelle partagée (navigation, accordéons, synthèse finale) :
+  // mêmes proportions partout pour que Oct./Nov./Déc. restent alignés
+  // verticalement, sans quadrillage.
+  gridRow: { flexDirection: 'row', alignItems: 'center' },
+  gridLabelCol: { flex: 1.4, paddingRight: spacing.xs },
+  gridMonthCol: { flex: 1, alignItems: 'center', textAlign: 'center' },
+  // Les flèches occupent exactement la marge carte + padding interne des
+  // accordéons (lg + md), pour que les mois tombent sur les colonnes.
+  monthNavRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm, marginBottom: spacing.xs },
+  // Toute la hauteur visible reste balayable, même quand le contenu est court.
+  swipeArea: { flexGrow: 1, paddingBottom: spacing.xxl },
+  monthNavGrid: { flex: 1 },
+  monthNavArrow: { width: spacing.lg + spacing.md, alignItems: 'center', justifyContent: 'center' },
+  monthNavLabel: { ...typography.bodySecondary, fontSize: 12.5, fontFamily: fontFamily.sansSemiBold },
+  monthNavLabelActive: { color: colors.textPrimary, fontFamily: fontFamily.sansExtraBold },
+  // Synthèse de fin de Planning (résultat prévu, reste à exécuter, projection).
+  finalCard: { backgroundColor: colors.surface, borderRadius: radius.lg, marginHorizontal: spacing.lg, marginBottom: spacing.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, ...elevation.card },
+  finalRow: { paddingVertical: 3 },
+  finalSection: { marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
+  finalSectionTitle: { fontSize: 10.5, fontFamily: fontFamily.sansExtraBold, color: colors.textSecondary, letterSpacing: 0.4 },
+  finalRowLabel: { fontSize: 12.5, fontFamily: fontFamily.sansMedium, color: colors.textSecondary },
+  finalValue: { fontSize: 11.5, fontFamily: fontFamily.sansBold, color: colors.textPrimary, textAlign: 'center' },
+  finalValueStrong: { fontSize: 12, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary, textAlign: 'center' },
+  projectionCol: { alignItems: 'center' },
+  projectionCaption: { fontSize: 9.5, fontFamily: fontFamily.sansMedium, color: colors.textPlaceholder, textAlign: 'center', marginTop: 1 },
   syntheseCouvertureWarn: { ...typography.caption, fontFamily: fontFamily.sansExtraBold, color: colors.danger },
   syntheseCouvertureOk: { ...typography.caption, fontFamily: fontFamily.sansExtraBold, color: colors.success },
   negativeText: { color: colors.danger },
@@ -1453,15 +1589,13 @@ const styles = StyleSheet.create({
   accordionTitle: { ...typography.body, fontFamily: fontFamily.sansExtraBold, flex: 1 },
   accordionTotal: { ...typography.body, fontFamily: fontFamily.sansExtraBold, marginRight: spacing.sm },
   accordionBody: { paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
-  monthColHeaderRow: { flexDirection: 'row', paddingTop: spacing.sm, paddingBottom: 2 },
-  monthColSpacer: { flex: 1.4 },
-  monthColHeader: { flex: 1, textAlign: 'center', fontSize: 10.5, fontFamily: fontFamily.sansExtraBold, color: colors.textSecondary },
+  monthColHeaderRow: { paddingTop: spacing.sm, paddingBottom: 2 },
+  monthColHeader: { fontSize: 10.5, fontFamily: fontFamily.sansExtraBold, color: colors.textSecondary },
   accordionCategoryHeader: { paddingTop: spacing.sm, paddingBottom: 2 },
   accordionCategoryHeaderText: { fontSize: 10, fontFamily: fontFamily.sansBold, color: colors.textPlaceholder, letterSpacing: 0.4, textTransform: 'uppercase' },
-  accordionRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.xs },
-  accordionRowLabel: { flex: 1.4, fontSize: 13, fontFamily: fontFamily.sansSemiBold, color: colors.textPrimary, paddingRight: spacing.xs },
+  accordionRow: { paddingVertical: spacing.xs },
+  accordionRowLabel: { fontSize: 13, fontFamily: fontFamily.sansSemiBold, color: colors.textPrimary },
   accordionEmptyText: { ...typography.caption, color: colors.textPlaceholder, paddingVertical: spacing.sm },
-  accordionCellsRow: { flex: 3, flexDirection: 'row' },
   // Séparateurs ALLÉGÉS — jamais de grosses lignes verticales/quadrillage complet.
   cell: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 32, borderRadius: radius.sm },
   cellRealized: {},

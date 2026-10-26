@@ -1,10 +1,13 @@
 import React from 'react';
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PlanningScreen } from '../PlanningScreen';
 import { clearCache } from '../../state/cache';
 import * as api from '../../api/client';
 import type { PlanningTableApi } from '../../api/client';
+import { colors } from '../../ui/theme';
+import { formatMonthShort } from '../../ui/formatMoney';
 
 const mockNavigate = jest.fn();
 
@@ -677,51 +680,246 @@ it('plans financiers : la carte affiche la prochaine échéance et navigue vers 
   expect(mockNavigate).toHaveBeenCalledWith('FinancialPlanDetail', { id: 'plan-1' });
 });
 
-it('cartes de synthèse (§4) + projection (§5) + reste à exécuter (§12) : mois actif, aucun second calcul', async () => {
+// ---------------------------------------------------------------------------
+// Correctif Planning compact : ordre, cartes une ligne, navigation flèches +
+// swipe, 3 mois visibles, synthèse finale (résultat / reste / projection).
+// ---------------------------------------------------------------------------
+
+const SIX_MONTHS = ['2026-09', '2026-10', '2026-11', '2026-12', '2027-01', '2027-02'];
+
+function sixMonthPlanning(): PlanningTableApi {
+  const synthese: PlanningTableApi['synthese'] = {};
+  SIX_MONTHS.forEach((m, i) => {
+    synthese[m] = { ...emptySynthese(), resultatPrevu: (i + 1) * 100, projectionCumulee: (i + 1) * 1000 };
+  });
+  synthese['2026-09'] = { ...synthese['2026-09'], resteDepenses: 3600, resteVersements: 0, couverte: false, aProvisionner: 1650 };
+  return { months: SIX_MONTHS, revenus: [], depenses: [], epargne: [], synthese };
+}
+
+type JsonNode = { type: string; props: Record<string, any>; children: (JsonNode | string)[] | null };
+
+/** testIDs des composants hôtes, dans l'ordre d'affichage (parcours en profondeur). */
+function renderedTestIds(): string[] {
+  const out: string[] = [];
+  const walk = (node: JsonNode | JsonNode[] | string | null) => {
+    if (!node || typeof node === 'string') return;
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (typeof node.props?.testID === 'string') out.push(node.props.testID);
+    (node.children ?? []).forEach(walk);
+  };
+  walk(screen.toJSON() as unknown as JsonNode);
+  return out;
+}
+
+function visibleMonthLabels(): string[] {
+  return [0, 1, 2].map((i) => screen.getByTestId(`planning-month-label-${i}`).props.children as string);
+}
+
+async function swipe(dx: number, dy = 0) {
+  const area = screen.getByTestId('planning-swipe-area');
+  await fireEvent(area, 'touchStart', { nativeEvent: { pageX: 200, pageY: 300 } });
+  await fireEvent(area, 'responderRelease', { nativeEvent: { pageX: 200 + dx, pageY: 300 + dy } });
+}
+
+/** Texte rendu par un élément Text porteur du testID. */
+function textOf(testID: string): string {
+  const children = screen.getByTestId(testID).props.children;
+  return (Array.isArray(children) ? children : [children]).join('').replace(/\s/g, ' ');
+}
+
+it("ordre exact : horizon, mois, cartes compactes, Revenus/Dépenses/Versements, puis résultat / reste / projection", async () => {
+  mockGetPlanning.mockResolvedValue(sixMonthPlanning());
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByTestId('planning-final-synthese'));
+
+  const wanted = [
+    'planning-horizon-3',
+    'planning-month-nav',
+    'planning-summary-cards',
+    'planning-accordion-revenus',
+    'planning-accordion-depenses',
+    'planning-accordion-epargne-versements',
+    'planning-final-synthese',
+    'planning-resultat-prevu-row',
+    'planning-reste-section',
+    'planning-projection-section',
+  ];
+  const order = renderedTestIds().filter((id) => wanted.includes(id));
+  expect(order.filter((id, i) => order.indexOf(id) === i)).toEqual(wanted);
+});
+
+it('cartes synthétiques compactes : une seule ligne libellé/montant, "RÉSULTAT", fond corail si négatif, mois actif', async () => {
   mockGetPlanning.mockResolvedValue(
     basePlanning({
       synthese: {
-        '2026-09': { totalRevenus: 2000, totalDepenses: 7300, totalEpargne: 1000, resultatPrevu: -6300, projectionCumulee: -6300, resteDepenses: 6100, resteVersements: 0, couverte: false, aProvisionner: 600 },
+        '2026-09': { totalRevenus: 81400, totalDepenses: 71650, totalEpargne: 11600, resultatPrevu: -1850, projectionCumulee: -1850, resteDepenses: null, resteVersements: null, couverte: null, aProvisionner: null },
         '2026-10': emptySynthese(),
-        '2026-11': { ...emptySynthese(), projectionCumulee: -5000 },
+        '2026-11': emptySynthese(),
       },
     }),
   );
-
   renderWithSafeArea(<PlanningScreen />);
   await waitFor(() => screen.getByTestId('planning-summary-card-revenus'));
 
-  expect(within(screen.getByTestId('planning-summary-card-revenus')).getByText('2 000 DH')).toBeTruthy();
-  expect(within(screen.getByTestId('planning-summary-card-depenses')).getByText('7 300 DH')).toBeTruthy();
-  expect(within(screen.getByTestId('planning-summary-card-versements')).getByText('1 000 DH')).toBeTruthy();
-  expect(within(screen.getByTestId('planning-summary-card-resultat')).getByText('-6 300 DH')).toBeTruthy();
-
-  const projection = screen.getByTestId('planning-projection-cumulee');
-  expect(within(projection).getByText(/Projection à fin Novembre 2026/)).toBeTruthy();
-  expect(within(projection).getByText('-5 000 DH')).toBeTruthy();
-
-  const reste = screen.getByTestId('planning-reste-card');
-  expect(within(reste).getByText('6 100 DH')).toBeTruthy();
-  expect(within(reste).getByTestId('planning-reste-a-provisionner')).toBeTruthy();
-
-  // Accordéon DÉPENSES affiche aussi le total du mois actif dans son header.
-  expect(within(screen.getByTestId('planning-accordion-depenses')).getByText('7 300 DH')).toBeTruthy();
+  const cards: [string, string, string][] = [
+    ['planning-summary-card-revenus', 'REVENUS', '81 400 DH'],
+    ['planning-summary-card-depenses', 'DÉPENSES', '71 650 DH'],
+    ['planning-summary-card-versements', 'VERSEMENTS', '11 600 DH'],
+    ['planning-summary-card-resultat', 'RÉSULTAT', '-1 850 DH'],
+  ];
+  for (const [id, label, amount] of cards) {
+    const card = screen.getByTestId(id);
+    expect(StyleSheet.flatten(card.props.style).flexDirection).toBe('row');
+    expect(within(card).getByText(label)).toBeTruthy();
+    expect(within(card).getByText(amount)).toBeTruthy();
+  }
+  expect(within(screen.getByTestId('planning-summary-cards')).queryByText('RÉSULTAT PRÉVU')).toBeNull();
+  expect(StyleSheet.flatten(screen.getByTestId('planning-summary-card-resultat').props.style).backgroundColor).toBe(colors.dangerLight);
+  expect(StyleSheet.flatten(screen.getByTestId('planning-summary-card-revenus').props.style).backgroundColor).not.toBe(colors.dangerLight);
 });
 
-it('"reste à exécuter" : "✓ Tout est couvert" quand couverte=true, pas de carte si resteDepenses est null', async () => {
+it('navigation par flèches : fenêtre décalée d’un mois, toujours 3 mois visibles, ‹ inactif au début', async () => {
+  mockGetPlanning.mockResolvedValue(sixMonthPlanning());
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByTestId('planning-month-next'));
+
+  expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(0, 3).map(formatMonthShort));
+  await fireEvent.press(screen.getByTestId('planning-month-prev'));
+  expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(0, 3).map(formatMonthShort));
+
+  await fireEvent.press(screen.getByTestId('planning-month-next'));
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(1, 4).map(formatMonthShort)));
+  await fireEvent.press(screen.getByTestId('planning-month-prev'));
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(0, 3).map(formatMonthShort)));
+});
+
+it('swipe gauche -> période suivante, swipe droite -> période précédente (même logique que les flèches)', async () => {
+  mockGetPlanning.mockResolvedValue(sixMonthPlanning());
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByTestId('planning-swipe-area'));
+
+  await swipe(-120);
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(1, 4).map(formatMonthShort)));
+  await swipe(-120);
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(2, 5).map(formatMonthShort)));
+  await swipe(120);
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(1, 4).map(formatMonthShort)));
+
+  // Après un swipe, la flèche part bien de la même fenêtre (état partagé).
+  await fireEvent.press(screen.getByTestId('planning-month-next'));
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(2, 5).map(formatMonthShort)));
+});
+
+it('swipe : un petit mouvement ou un geste surtout vertical ne change jamais de mois, et ne capte pas le scroll vertical', async () => {
+  mockGetPlanning.mockResolvedValue(sixMonthPlanning());
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByTestId('planning-swipe-area'));
+  const initial = SIX_MONTHS.slice(0, 3).map(formatMonthShort);
+
+  await swipe(-30);
+  expect(visibleMonthLabels()).toEqual(initial);
+  await swipe(-90, 120);
+  expect(visibleMonthLabels()).toEqual(initial);
+
+  const area = screen.getByTestId('planning-swipe-area');
+  await fireEvent(area, 'touchStart', { nativeEvent: { pageX: 200, pageY: 300 } });
+  expect(area.props.onMoveShouldSetResponderCapture({ nativeEvent: { pageX: 205, pageY: 360 } })).toBe(false);
+  expect(area.props.onMoveShouldSetResponderCapture({ nativeEvent: { pageX: 170, pageY: 304 } })).toBe(true);
+});
+
+it('3 mois visibles partout : navigation, accordéon ouvert et synthèse finale partagent la même fenêtre', async () => {
+  mockGetPlanning.mockResolvedValue(sixMonthPlanning());
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByTestId('planning-final-synthese'));
+
+  await swipe(-120);
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(1, 4).map(formatMonthShort)));
+  const shown = SIX_MONTHS.slice(1, 4);
+  for (const m of shown) expect(screen.getByTestId(`planning-resultat-prevu-${m}`)).toBeTruthy();
+  expect(screen.queryByTestId('planning-resultat-prevu-2026-09')).toBeNull();
+  expect(screen.queryByTestId('planning-resultat-prevu-2027-01')).toBeNull();
+  const finalHeaders = within(screen.getByTestId('planning-final-synthese')).getAllByText(/^\S+ \d{2}$/);
+  expect(finalHeaders.map((t) => t.props.children)).toEqual(shown.map(formatMonthShort));
+});
+
+it('projection uniquement en bas : sous le dernier mois visible, libellé "Projection fin …", recalculée à la navigation', async () => {
+  mockGetPlanning.mockResolvedValue(sixMonthPlanning());
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByTestId('planning-final-synthese'));
+
+  expect(screen.getAllByTestId('planning-projection-cumulee')).toHaveLength(1);
+  const finalCard = screen.getByTestId('planning-final-synthese');
+  const projection = within(finalCard).getByTestId('planning-projection-cumulee');
+  expect(within(projection).getByText('3 000 DH')).toBeTruthy();
+  expect(within(projection).getByText(/^Projection fin Nov\. 2026$/)).toBeTruthy();
+
+  const ids = renderedTestIds();
+  expect(ids.indexOf('planning-projection-cumulee')).toBeGreaterThan(ids.indexOf('planning-accordion-epargne-versements'));
+  expect(ids.indexOf('planning-projection-cumulee')).toBeGreaterThan(ids.indexOf('planning-summary-cards'));
+
+  // Colonne : la projection est le 3e et dernier mois de la ligne.
+  const row = screen.getByTestId('planning-projection-section');
+  const columns = (row.children as any[]).filter((c) => typeof c !== 'string');
+  expect(columns).toHaveLength(4);
+  expect(within(columns[3]).getByText('3 000 DH')).toBeTruthy();
+
+  await fireEvent.press(screen.getByTestId('planning-month-next'));
+  await waitFor(() => expect(within(screen.getByTestId('planning-projection-cumulee')).getByText('4 000 DH')).toBeTruthy());
+  expect(within(screen.getByTestId('planning-projection-cumulee')).getByText(/^Projection fin Déc\. 2026$/)).toBeTruthy();
+});
+
+it('reste à exécuter uniquement en bas : valeurs dans la colonne du mois courant seulement', async () => {
+  mockGetPlanning.mockResolvedValue(sixMonthPlanning());
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByTestId('planning-reste-section'));
+
+  expect(screen.queryByTestId('planning-reste-card')).toBeNull();
+  const section = within(screen.getByTestId('planning-final-synthese')).getByTestId('planning-reste-section');
+  expect(within(section).getByText('RESTE À EXÉCUTER')).toBeTruthy();
+  expect(textOf('planning-reste-depenses-2026-09')).toBe('3 600 DH');
+  expect(textOf('planning-reste-versements-2026-09')).toBe('0 DH');
+  expect(textOf('planning-reste-a-provisionner')).toBe('1 650 DH');
+  expect(screen.queryByTestId('planning-reste-depenses-2026-10')).toBeNull();
+  expect(screen.queryByTestId('planning-reste-depenses-2026-11')).toBeNull();
+
+  const ids = renderedTestIds();
+  expect(ids.indexOf('planning-reste-section')).toBeGreaterThan(ids.indexOf('planning-accordion-epargne-versements'));
+
+  // Mois courant hors de la fenêtre : aucune valeur placée sous un autre mois.
+  await fireEvent.press(screen.getByTestId('planning-month-next'));
+  await waitFor(() => expect(screen.queryByTestId('planning-reste-section')).toBeNull());
+});
+
+it('reste à exécuter : "✓ Couvert" quand couverte=true, section absente si resteDepenses est null partout', async () => {
   mockGetPlanning.mockResolvedValue(
     basePlanning({ synthese: { '2026-09': { ...emptySynthese(), resteDepenses: 1200, resteVersements: 0, couverte: true, aProvisionner: 0 }, '2026-10': emptySynthese(), '2026-11': emptySynthese() } }),
   );
-
   renderWithSafeArea(<PlanningScreen />);
-  await waitFor(() => screen.getByTestId('planning-reste-card'));
-  expect(within(screen.getByTestId('planning-reste-card')).getByTestId('planning-reste-couvert')).toBeTruthy();
-  expect(within(screen.getByTestId('planning-reste-card')).queryByText(/provisionner/i)).toBeNull();
-});
+  await waitFor(() => screen.getByTestId('planning-reste-section'));
+  expect(within(screen.getByTestId('planning-reste-section')).getByTestId('planning-reste-couvert')).toBeTruthy();
+  expect(screen.queryByTestId('planning-reste-a-provisionner')).toBeNull();
+  screen.unmount();
 
-it('"reste à exécuter" : aucune carte quand resteDepenses est null (mois futur)', async () => {
   mockGetPlanning.mockResolvedValue(basePlanning());
   renderWithSafeArea(<PlanningScreen />);
-  await waitFor(() => screen.getByTestId('planning-summary-card-revenus'));
-  expect(screen.queryByTestId('planning-reste-card')).toBeNull();
+  await waitFor(() => screen.getByTestId('planning-final-synthese'));
+  expect(screen.queryByTestId('planning-reste-section')).toBeNull();
+});
+
+it('résultat prévu par mois en bas + total du mois actif dans le header de l’accordéon (aucun second calcul)', async () => {
+  mockGetPlanning.mockResolvedValue(
+    basePlanning({
+      synthese: {
+        '2026-09': { ...emptySynthese(), totalDepenses: 7300, resultatPrevu: -1850 },
+        '2026-10': { ...emptySynthese(), resultatPrevu: 13800 },
+        '2026-11': { ...emptySynthese(), resultatPrevu: 13700 },
+      },
+    }),
+  );
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByTestId('planning-resultat-prevu-row'));
+  expect(textOf('planning-resultat-prevu-2026-09')).toBe('-1 850 DH');
+  expect(textOf('planning-resultat-prevu-2026-10')).toBe('13 800 DH');
+  expect(textOf('planning-resultat-prevu-2026-11')).toBe('13 700 DH');
+  expect(within(screen.getByTestId('planning-accordion-depenses')).getByText('7 300 DH')).toBeTruthy();
 });
