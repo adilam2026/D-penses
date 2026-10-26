@@ -56,13 +56,6 @@ function monthColumnWidth(gridWidth: number): number {
   return Math.max(0, (gridWidth - spacing.xs) / (LABEL_COLUMN_FLEX + VISIBLE_COLUMNS));
 }
 
-/** "2026-12" → "Déc. 2026" (libellé discret de la projection de fin de période). */
-function formatMonthShortFullYear(monthKey: string): string {
-  const [year, month] = monthKey.split('-').map(Number);
-  const label = new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('fr-FR', { month: 'short', timeZone: 'UTC' });
-  return `${label.charAt(0).toUpperCase()}${label.slice(1)} ${year}`;
-}
-
 interface BlockDef {
   title: string;
   rows: api.PlanningRowApi[];
@@ -315,14 +308,9 @@ export function PlanningScreen() {
     { title: 'ÉPARGNE / VERSEMENTS', rows: data.epargne, totalLabel: 'TOTAL VERSEMENTS', totalKey: 'totalEpargne', emptyText: 'Aucun versement prévu.', accentColor: colors.secondary, uncategorizedLabel: 'AUTRES VERSEMENTS SANS CATÉGORIE' },
   ];
   const blockItemsByTitle = new Map(blocks.map((b) => [b.title, buildBlockItems(b.rows, b.uncategorizedLabel)]));
-  // Dernier mois VISIBLE de la fenêtre 3 mois courante (§5) — recalculé à
-  // chaque navigation, jamais figé sur le dernier mois de la plage chargée.
-  const lastVisibleMonth = data.months[Math.min(windowStart + VISIBLE_COLUMNS - 1, data.months.length - 1)];
   const visibleMonths = data.months.slice(windowStart, windowStart + VISIBLE_COLUMNS);
   // Mois des cartes et des totaux d'accordéon : TOUJOURS le mois central,
-  // c'est-à-dire le mois sélectionné — passé, courant ou futur. Le reste à
-  // exécuter, la couverture et la projection restent rattachés au vrai mois
-  // courant côté backend.
+  // c'est-à-dire le mois sélectionné — passé, courant ou futur.
   const currentMonth = data.currentMonth ?? data.months[0];
   const referenceMonth = visibleMonths[CENTER_COLUMN_INDEX] ?? visibleMonths[0];
   const currentSynthese = data.synthese[referenceMonth];
@@ -406,8 +394,6 @@ export function PlanningScreen() {
               colWidth={colWidth}
             />
           ))}
-
-          <PlanningFinalSynthese visibleMonths={visibleMonths} synthese={data.synthese} lastVisibleMonth={lastVisibleMonth} colWidth={colWidth} />
         </View>
 
         <PlansSection plans={plans} onOpen={(id) => navigation.navigate('FinancialPlanDetail', { id })} />
@@ -559,127 +545,6 @@ function SummaryCard({
       <Text style={[styles.summaryCardAmount, { fontSize: amountFontSize }, negative && styles.negativeText]} numberOfLines={1} adjustsFontSizeToFit>
         {amountText}
       </Text>
-    </View>
-  );
-}
-
-/**
- * Synthèse de fin de Planning — mêmes colonnes mensuelles que les accordéons
- * (gridLabelCol/gridMonthCol) : résultat prévu par mois, reste à exécuter
- * (seuls les mois où le backend le calcule, i.e. le mois courant), puis la
- * projection cumulée sous le dernier mois visible. Aucun calcul local.
- */
-function PlanningFinalSynthese({
-  visibleMonths,
-  synthese,
-  lastVisibleMonth,
-  colWidth,
-}: {
-  visibleMonths: string[];
-  synthese: Record<string, api.PlanningMonthSyntheseApi>;
-  lastVisibleMonth: string;
-  colWidth: number;
-}) {
-  const fit = (text: string, maxFontSize: number) => ({ fontSize: fitFontSize(text, colWidth - 2, maxFontSize) });
-  const projection = synthese[lastVisibleMonth].projectionCumulee;
-  const hasReste = visibleMonths.some((m) => synthese[m].resteDepenses !== null);
-  const resteCell = (m: string, render: (s: api.PlanningMonthSyntheseApi) => React.ReactNode) => (
-    <View key={m} style={styles.gridMonthCol}>
-      {synthese[m].resteDepenses !== null ? render(synthese[m]) : null}
-    </View>
-  );
-  return (
-    <View style={styles.finalCard} testID="planning-final-synthese">
-      <View style={styles.gridRow}>
-        <View style={styles.gridLabelCol} />
-        {visibleMonths.map((m) => (
-          <Text key={m} style={[styles.gridMonthCol, styles.monthColHeader]} numberOfLines={1}>
-            {formatMonthShort(m)}
-          </Text>
-        ))}
-      </View>
-
-      <View style={[styles.gridRow, styles.finalRow]} testID="planning-resultat-prevu-row">
-        <Text style={[styles.gridLabelCol, styles.finalSectionTitle]} numberOfLines={2}>
-          RÉSULTAT PRÉVU
-        </Text>
-        {visibleMonths.map((m) => (
-          <Text
-            key={m}
-            style={[styles.gridMonthCol, styles.finalValueStrong, fit(formatDh(synthese[m].resultatPrevu), 12), synthese[m].resultatPrevu < 0 && styles.negativeText]}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            testID={`planning-resultat-prevu-${m}`}
-          >
-            {formatDh(synthese[m].resultatPrevu)}
-          </Text>
-        ))}
-      </View>
-
-      {hasReste && (
-        <View style={styles.finalSection} testID="planning-reste-section">
-          <Text style={styles.finalSectionTitle}>RESTE À EXÉCUTER</Text>
-          <View style={[styles.gridRow, styles.finalRow]}>
-            <Text style={[styles.gridLabelCol, styles.finalRowLabel]}>Dépenses</Text>
-            {visibleMonths.map((m) =>
-              resteCell(m, (s) => (
-                <Text style={[styles.finalValue, fit(formatDh(s.resteDepenses ?? 0), 11.5)]} numberOfLines={1} adjustsFontSizeToFit testID={`planning-reste-depenses-${m}`}>
-                  {formatDh(s.resteDepenses ?? 0)}
-                </Text>
-              )),
-            )}
-          </View>
-          <View style={[styles.gridRow, styles.finalRow]}>
-            <Text style={[styles.gridLabelCol, styles.finalRowLabel]}>Versements</Text>
-            {visibleMonths.map((m) =>
-              resteCell(m, (s) => (
-                <Text style={[styles.finalValue, fit(formatDh(s.resteVersements ?? 0), 11.5)]} numberOfLines={1} adjustsFontSizeToFit testID={`planning-reste-versements-${m}`}>
-                  {formatDh(s.resteVersements ?? 0)}
-                </Text>
-              )),
-            )}
-          </View>
-          <View style={[styles.gridRow, styles.finalRow]}>
-            <Text style={[styles.gridLabelCol, styles.finalRowLabel]}>À provisionner</Text>
-            {visibleMonths.map((m) =>
-              resteCell(m, (s) =>
-                s.couverte ? (
-                  <Text style={[styles.finalValue, styles.syntheseCouvertureOk, fit('✓ Couvert', 11.5)]} numberOfLines={1} adjustsFontSizeToFit testID="planning-reste-couvert">
-                    ✓ Couvert
-                  </Text>
-                ) : (
-                  <Text style={[styles.finalValue, styles.syntheseCouvertureWarn, fit(formatDh(s.aProvisionner ?? 0), 11.5)]} numberOfLines={1} adjustsFontSizeToFit testID="planning-reste-a-provisionner">
-                    {formatDh(s.aProvisionner ?? 0)}
-                  </Text>
-                ),
-              ),
-            )}
-          </View>
-        </View>
-      )}
-
-      {/* Pas de projection pour une période entièrement passée (null côté backend). */}
-      {projection !== null && (
-        <View style={[styles.finalSection, styles.gridRow]} testID="planning-projection-section">
-          <Text style={[styles.gridLabelCol, styles.finalSectionTitle]} numberOfLines={2}>
-            PROJECTION FIN DE PÉRIODE
-          </Text>
-          {visibleMonths.map((m) =>
-            m === lastVisibleMonth ? (
-              <View key={m} style={[styles.gridMonthCol, styles.projectionCol]} testID="planning-projection-cumulee">
-                <Text style={[styles.finalValueStrong, fit(formatDh(projection), 12), projection < 0 && styles.negativeText]} numberOfLines={1} adjustsFontSizeToFit>
-                  {formatDh(projection)}
-                </Text>
-                <Text style={styles.projectionCaption} numberOfLines={2}>
-                  Projection fin {formatMonthShortFullYear(m)}
-                </Text>
-              </View>
-            ) : (
-              <View key={m} style={styles.gridMonthCol} />
-            ),
-          )}
-        </View>
-      )}
     </View>
   );
 }
@@ -1673,18 +1538,6 @@ const styles = StyleSheet.create({
   periodBar: { marginHorizontal: CARD_INNER_INSET, marginBottom: spacing.xs },
   // Toute la hauteur visible reste balayable, même quand le contenu est court.
   swipeArea: { flexGrow: 1, paddingBottom: spacing.xxl },
-  // Synthèse de fin de Planning (résultat prévu, reste à exécuter, projection).
-  finalCard: { backgroundColor: colors.surface, borderRadius: radius.lg, marginHorizontal: spacing.lg, marginBottom: spacing.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, ...elevation.card },
-  finalRow: { paddingVertical: 3 },
-  finalSection: { marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
-  finalSectionTitle: { fontSize: 10.5, fontFamily: fontFamily.sansExtraBold, color: colors.textSecondary, letterSpacing: 0.4 },
-  finalRowLabel: { fontSize: 12.5, fontFamily: fontFamily.sansMedium, color: colors.textSecondary },
-  finalValue: { fontSize: 11.5, fontFamily: fontFamily.sansBold, color: colors.textPrimary, textAlign: 'center' },
-  finalValueStrong: { fontSize: 12, fontFamily: fontFamily.sansExtraBold, color: colors.textPrimary, textAlign: 'center' },
-  projectionCol: { alignItems: 'center' },
-  projectionCaption: { fontSize: 9.5, fontFamily: fontFamily.sansMedium, color: colors.textPlaceholder, textAlign: 'center', marginTop: 1 },
-  syntheseCouvertureWarn: { ...typography.caption, fontFamily: fontFamily.sansExtraBold, color: colors.danger },
-  syntheseCouvertureOk: { ...typography.caption, fontFamily: fontFamily.sansExtraBold, color: colors.success },
   negativeText: { color: colors.danger },
   // Accordéon (§6/§7) — carte arrondie, header toujours visible (icône +
   // titre + total du mois actif + chevron), contenu replié par défaut sauf
