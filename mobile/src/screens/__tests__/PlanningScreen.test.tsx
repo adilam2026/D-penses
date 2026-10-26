@@ -711,8 +711,14 @@ function renderedTestIds(): string[] {
   return out;
 }
 
+/** Les 3 mois de la barre de navigation (précédent, actif, suivant). */
 function visibleMonthLabels(): string[] {
-  return [0, 1, 2].map((i) => screen.getByTestId(`planning-month-label-${i}`).props.children as string);
+  return ['prev', 'active', 'next'].map((z) => screen.getByTestId(`planning-period-${z}-label`).props.children as string);
+}
+
+/** Libellé d'un mois dans la barre ("2026-10" → "OCT. 26"). */
+function navLabel(monthKey: string): string {
+  return formatMonthShort(monthKey).toUpperCase();
 }
 
 async function swipe(dx: number, dy = 0) {
@@ -778,43 +784,122 @@ it('cartes synthétiques compactes : une seule ligne libellé/montant, "RÉSULTA
   expect(StyleSheet.flatten(screen.getByTestId('planning-summary-card-revenus').props.style).backgroundColor).not.toBe(colors.dangerLight);
 });
 
-it('navigation par flèches : fenêtre décalée d’un mois, toujours 3 mois visibles, ‹ inactif au début', async () => {
+it('barre des mois : 3 mois, actif au centre souligné, aucune ancienne flèche ‹ ›', async () => {
   mockGetPlanning.mockResolvedValue(sixMonthPlanning());
   renderWithSafeArea(<PlanningScreen />);
-  await waitFor(() => screen.getByTestId('planning-month-next'));
+  await waitFor(() => screen.getByTestId('planning-period'));
 
-  expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(0, 3).map(formatMonthShort));
-  await fireEvent.press(screen.getByTestId('planning-month-prev'));
-  expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(0, 3).map(formatMonthShort));
+  expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(0, 3).map(navLabel));
+  expect(screen.queryByTestId('planning-month-prev')).toBeNull();
+  expect(screen.queryByTestId('planning-month-next')).toBeNull();
+  const nav = screen.getByTestId('planning-month-nav');
+  expect(within(nav).queryByText(/[‹›]/)).toBeNull();
 
-  await fireEvent.press(screen.getByTestId('planning-month-next'));
-  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(1, 4).map(formatMonthShort)));
-  await fireEvent.press(screen.getByTestId('planning-month-prev'));
-  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(0, 3).map(formatMonthShort)));
+  // Mois actif : gras + trait corail ; mois voisins : discrets.
+  const active = StyleSheet.flatten(screen.getByTestId('planning-period-active-label').props.style);
+  const side = StyleSheet.flatten(screen.getByTestId('planning-period-next-label').props.style);
+  expect(active.color).toBe(colors.textPrimary);
+  expect(side.color).toBe(colors.textSecondary);
+  expect(active.fontSize).toBeGreaterThan(side.fontSize);
+  const zone = screen.getByTestId('planning-period-active');
+  expect(StyleSheet.flatten(zone.props.style).minHeight).toBeGreaterThanOrEqual(44);
 });
 
-it('swipe gauche -> période suivante, swipe droite -> période précédente (même logique que les flèches)', async () => {
+it('toucher le mois de droite / de gauche déplace la fenêtre d’un mois, toujours 3 colonnes', async () => {
+  mockGetPlanning.mockResolvedValue(sixMonthPlanning());
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByTestId('planning-period-next'));
+
+  // Au début de l'horizon, le mois de gauche n'a nulle part où reculer.
+  await fireEvent.press(screen.getByTestId('planning-period-prev'));
+  expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(0, 3).map(navLabel));
+
+  await fireEvent.press(screen.getByTestId('planning-period-next'));
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(1, 4).map(navLabel)));
+  await fireEvent.press(screen.getByTestId('planning-period-next'));
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(2, 5).map(navLabel)));
+  await fireEvent.press(screen.getByTestId('planning-period-prev'));
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(1, 4).map(navLabel)));
+
+  // Fin de l'horizon : jamais 2 ni 4 mois.
+  for (let i = 0; i < 5; i++) await fireEvent.press(screen.getByTestId('planning-period-next'));
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(3, 6).map(navLabel)));
+});
+
+it('swipe gauche -> période suivante, swipe droite -> période précédente (même logique que le toucher des mois)', async () => {
   mockGetPlanning.mockResolvedValue(sixMonthPlanning());
   renderWithSafeArea(<PlanningScreen />);
   await waitFor(() => screen.getByTestId('planning-swipe-area'));
 
   await swipe(-120);
-  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(1, 4).map(formatMonthShort)));
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(1, 4).map(navLabel)));
   await swipe(-120);
-  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(2, 5).map(formatMonthShort)));
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(2, 5).map(navLabel)));
   await swipe(120);
-  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(1, 4).map(formatMonthShort)));
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(1, 4).map(navLabel)));
 
-  // Après un swipe, la flèche part bien de la même fenêtre (état partagé).
-  await fireEvent.press(screen.getByTestId('planning-month-next'));
-  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(2, 5).map(formatMonthShort)));
+  // Après un swipe, le toucher part bien de la même fenêtre (état partagé).
+  await fireEvent.press(screen.getByTestId('planning-period-next'));
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(2, 5).map(navLabel)));
+});
+
+it('toucher le mois central ouvre "Choisir une période" ; le mois choisi devient le mois central', async () => {
+  mockGetPlanning.mockResolvedValue(sixMonthPlanning());
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByTestId('planning-period-active'));
+
+  await fireEvent.press(screen.getByTestId('planning-period-active'));
+  await waitFor(() => screen.getByTestId('planning-period-picker'));
+  expect(screen.getByText('Choisir une période')).toBeTruthy();
+  // Seules les années de l'horizon sont proposées ; hors horizon = non sélectionnable.
+  expect(screen.getByTestId('planning-period-picker-year-2026')).toBeTruthy();
+  expect(screen.getByTestId('planning-period-picker-year-2027')).toBeTruthy();
+  expect(screen.queryByTestId('planning-period-picker-year-2028')).toBeNull();
+
+  await fireEvent.press(screen.getByTestId('planning-period-picker-year-2027'));
+  await fireEvent.press(screen.getByTestId('planning-period-picker-month-1'));
+  await fireEvent.press(screen.getByTestId('planning-period-picker-confirm'));
+  await waitFor(() => expect(screen.queryByTestId('planning-period-picker')).toBeNull());
+  expect(visibleMonthLabels()).toEqual(['DÉC. 26', 'JANV. 27', 'FÉVR. 27']);
+  expect(within(screen.getByTestId('planning-final-synthese')).getAllByText(/^\S+ \d{2}$/).map((t) => t.props.children)).toEqual(['Déc. 26', 'Janv. 27', 'Févr. 27']);
+
+  // Un mois hors horizon ne peut pas être validé.
+  await fireEvent.press(screen.getByTestId('planning-period-active'));
+  await waitFor(() => screen.getByTestId('planning-period-picker'));
+  await fireEvent.press(screen.getByTestId('planning-period-picker-month-6'));
+  expect(screen.getByTestId('planning-period-picker-month-6').props.accessibilityState).toEqual(expect.objectContaining({ disabled: true }));
+  await fireEvent.press(screen.getByTestId('planning-period-picker-cancel'));
+  await waitFor(() => expect(screen.queryByTestId('planning-period-picker')).toBeNull());
+  expect(visibleMonthLabels()).toEqual(['DÉC. 26', 'JANV. 27', 'FÉVR. 27']);
+});
+
+it('accordéons et synthèse suivent la barre ; horizon 3/6/9/12 inchangé (getPlanning, fenêtre remise au début)', async () => {
+  const planning = sixMonthPlanning();
+  planning.revenus = [{ key: 'sal', label: 'Salaire', categoryId: 'sal', cells: Object.fromEntries(SIX_MONTHS.map((m) => [m, emptyCell()])) }];
+  mockGetPlanning.mockResolvedValue(planning);
+  renderWithSafeArea(<PlanningScreen />);
+  await waitFor(() => screen.getByTestId('planning-accordion-revenus'));
+
+  await fireEvent.press(screen.getByTestId('planning-period-next'));
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(1, 4).map(navLabel)));
+  const shown = SIX_MONTHS.slice(1, 4).map(formatMonthShort);
+  const accordionHeaders = within(screen.getByTestId('planning-accordion-revenus')).getAllByText(/^\S+ \d{2}$/).map((t) => t.props.children);
+  expect(accordionHeaders).toEqual(shown);
+  for (const m of SIX_MONTHS.slice(1, 4)) expect(screen.getByTestId(`planning-cell-salaire-${m}`)).toBeTruthy();
+  expect(screen.queryByTestId('planning-cell-salaire-2026-09')).toBeNull();
+  // Les en-têtes de colonnes ne sont pas des boutons de navigation.
+  expect(within(screen.getByTestId('planning-accordion-revenus')).queryByTestId(/planning-period/)).toBeNull();
+
+  await fireEvent.press(screen.getByTestId('planning-horizon-12'));
+  await waitFor(() => expect(mockGetPlanning).toHaveBeenCalledWith(12));
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(0, 3).map(navLabel)));
 });
 
 it('swipe : un petit mouvement ou un geste surtout vertical ne change jamais de mois, et ne capte pas le scroll vertical', async () => {
   mockGetPlanning.mockResolvedValue(sixMonthPlanning());
   renderWithSafeArea(<PlanningScreen />);
   await waitFor(() => screen.getByTestId('planning-swipe-area'));
-  const initial = SIX_MONTHS.slice(0, 3).map(formatMonthShort);
+  const initial = SIX_MONTHS.slice(0, 3).map(navLabel);
 
   await swipe(-30);
   expect(visibleMonthLabels()).toEqual(initial);
@@ -833,7 +918,7 @@ it('3 mois visibles partout : navigation, accordéon ouvert et synthèse finale 
   await waitFor(() => screen.getByTestId('planning-final-synthese'));
 
   await swipe(-120);
-  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(1, 4).map(formatMonthShort)));
+  await waitFor(() => expect(visibleMonthLabels()).toEqual(SIX_MONTHS.slice(1, 4).map(navLabel)));
   const shown = SIX_MONTHS.slice(1, 4);
   for (const m of shown) expect(screen.getByTestId(`planning-resultat-prevu-${m}`)).toBeTruthy();
   expect(screen.queryByTestId('planning-resultat-prevu-2026-09')).toBeNull();
@@ -863,7 +948,7 @@ it('projection uniquement en bas : sous le dernier mois visible, libellé "Proje
   expect(columns).toHaveLength(4);
   expect(within(columns[3]).getByText('3 000 DH')).toBeTruthy();
 
-  await fireEvent.press(screen.getByTestId('planning-month-next'));
+  await fireEvent.press(screen.getByTestId('planning-period-next'));
   await waitFor(() => expect(within(screen.getByTestId('planning-projection-cumulee')).getByText('4 000 DH')).toBeTruthy());
   expect(within(screen.getByTestId('planning-projection-cumulee')).getByText(/^Projection fin Déc\. 2026$/)).toBeTruthy();
 });
@@ -886,7 +971,7 @@ it('reste à exécuter uniquement en bas : valeurs dans la colonne du mois coura
   expect(ids.indexOf('planning-reste-section')).toBeGreaterThan(ids.indexOf('planning-accordion-epargne-versements'));
 
   // Mois courant hors de la fenêtre : aucune valeur placée sous un autre mois.
-  await fireEvent.press(screen.getByTestId('planning-month-next'));
+  await fireEvent.press(screen.getByTestId('planning-period-next'));
   await waitFor(() => expect(screen.queryByTestId('planning-reste-section')).toBeNull());
 });
 

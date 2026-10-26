@@ -4,7 +4,9 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View
 import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { colors, elevation, radius, spacing, typography } from '../ui/theme';
-import { formatDh, formatMonthLabel } from '../ui/formatMoney';
+import { formatDh, formatMonthLabel, formatMonthShort } from '../ui/formatMoney';
+import { MonthNavigator } from '../ui/MonthNavigator';
+import { monthKeyDiff, shiftMonthKey } from '../ui/monthKey';
 import { useTopInset } from '../ui/useTopInset';
 import { useBottomInset } from '../ui/useBottomInset';
 import { HelpButton } from '../ui/HelpButton';
@@ -14,6 +16,8 @@ import { PlannedOperationActionFlow } from './PlanningScreen';
 const TOAST_DURATION_MS = 1800;
 const UNASSIGNED_KEY = '__unassigned__';
 const DONE_KEY = '__done__';
+const PICKER_YEARS_BEFORE = 1;
+const PICKER_YEARS_AFTER = 3;
 
 /** "2026-10" → "octobre" (minuscule — "✓ Tout est fait pour octobre"). */
 function monthNameLower(monthKey: string): string {
@@ -140,6 +144,8 @@ export function TodoScreen() {
     }
   }
   const doneTotal = data.done.reduce((sum, a) => sum + (a.realizedAmount ?? a.expectedAmount), 0);
+  // Année du mois courant réel (data.month décalé de -monthsOffset), base des années proposées.
+  const currentYear = Number(shiftMonthKey(data.month, -monthsOffset).slice(0, 4));
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -155,17 +161,22 @@ export function TodoScreen() {
           />
         </View>
 
-        <View style={styles.monthNav}>
-          <TouchableOpacity onPress={() => setMonthsOffset((o) => o - 1)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} testID="todo-month-prev">
-            <Ionicons name="chevron-back" size={18} color={colors.textPrimary} />
-          </TouchableOpacity>
-          <Text style={styles.monthLabel} testID="todo-month-label">
-            {formatMonthLabel(data.month)}
-          </Text>
-          <TouchableOpacity onPress={() => setMonthsOffset((o) => o + 1)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} testID="todo-month-next">
-            <Ionicons name="chevron-forward" size={18} color={colors.textPrimary} />
-          </TouchableOpacity>
-        </View>
+        {/* Navigation commune avec Planning : mois voisins tactiles, swipe
+            sur la barre, mois central = sélecteur de période. Tout reste
+            exprimé en monthsOffset (décalage depuis le mois courant envoyé
+            tel quel à /todo). */}
+        <MonthNavigator
+          testIDPrefix="todo-period"
+          style={styles.periodBar}
+          activeFlex={1.8}
+          previous={{ monthKey: shiftMonthKey(data.month, -1), label: formatMonthShort(shiftMonthKey(data.month, -1)).toUpperCase(), onPress: () => setMonthsOffset((o) => o - 1) }}
+          active={{ monthKey: data.month, label: formatMonthLabel(data.month).toUpperCase() }}
+          next={{ monthKey: shiftMonthKey(data.month, 1), label: formatMonthShort(shiftMonthKey(data.month, 1)).toUpperCase(), onPress: () => setMonthsOffset((o) => o + 1) }}
+          picker={{
+            years: Array.from({ length: PICKER_YEARS_BEFORE + PICKER_YEARS_AFTER + 1 }, (_, i) => currentYear - PICKER_YEARS_BEFORE + i),
+            onSelect: (m) => setMonthsOffset(monthsOffset + monthKeyDiff(data.month, m)),
+          }}
+        />
 
         <View style={styles.synthese} testID="todo-synthese">
           <Text style={styles.syntheseCount} testID="todo-synthese-count">
@@ -340,8 +351,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
   title: { ...typography.screenTitle },
   subtitle: { ...typography.bodySecondary, marginTop: 2 },
-  monthNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.sm },
-  monthLabel: { ...typography.sectionTitle, marginHorizontal: spacing.md, minWidth: 140, textAlign: 'center' },
+  periodBar: { paddingHorizontal: spacing.lg },
   synthese: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },
   syntheseCount: { ...typography.body, fontWeight: '700' },
   syntheseAmount: { ...typography.body, fontWeight: '700', color: colors.primaryDark },

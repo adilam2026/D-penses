@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TodoScreen } from '../TodoScreen';
 import { formatDh } from '../../ui/formatMoney';
 import { colors } from '../../ui/theme';
+import { shiftMonthKey } from '../../ui/monthKey';
 
 /**
  * Lot "refonte Planning/À faire" §28-39 — "À faire" structuré en accordéons
@@ -333,27 +334,112 @@ it('paiement partiel depuis À faire : réutilise strictement le même ActionShe
   await waitFor(() => expect(mockListAccounts.mock.calls.length).toBeGreaterThanOrEqual(2));
 });
 
-it('navigation mois ‹ › recharge "À faire" sur le mois demandé', async () => {
+// ---------------------------------------------------------------------------
+// Navigation temporelle : "OCT. 26 | NOVEMBRE 2026 | DÉC. 26".
+// ---------------------------------------------------------------------------
+
+/** /todo renvoie le mois correspondant au décalage demandé (mois courant = octobre 2026). */
+function todoByOffset() {
+  mockGetTodo.mockImplementation((offset = 0) =>
+    Promise.resolve({ month: shiftMonthKey('2026-10', offset), pending: [actionAdil], done: [], pendingCount: 1, totalRemaining: 300 }),
+  );
+}
+
+function periodLabels(): string[] {
+  return ['prev', 'active', 'next'].map((z) => screen.getByTestId(`todo-period-${z}-label`).props.children as string);
+}
+
+async function swipeBar(dx: number, dy = 0) {
+  const bar = screen.getByTestId('todo-period');
+  await fireEvent(bar, 'touchStart', { nativeEvent: { pageX: 200, pageY: 100 } });
+  await fireEvent(bar, 'responderRelease', { nativeEvent: { pageX: 200 + dx, pageY: 100 + dy } });
+}
+
+it('barre des mois : précédent / ACTIF / suivant, actif mis en avant, aucune ancienne flèche', async () => {
+  todoByOffset();
   renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-period'));
 
-  // Chaque pression attend que son propre cycle de chargement se termine
-  // AVANT la suivante — jamais plusieurs presses enchaînées sans laisser le
-  // précédent chargement se stabiliser, qui laisserait une promesse en vol
-  // se résoudre pendant le test suivant.
-  await waitFor(() => expect(mockGetTodo).toHaveBeenCalledWith(0));
-  await waitFor(() => expect(mockListAccounts.mock.calls.length).toBeGreaterThanOrEqual(1));
+  expect(periodLabels()).toEqual(['SEPT. 26', 'OCTOBRE 2026', 'NOV. 26']);
+  expect(screen.queryByTestId('todo-month-prev')).toBeNull();
+  expect(screen.queryByTestId('todo-month-next')).toBeNull();
+  expect(within(screen.getByTestId('todo-period')).queryByText(/[‹›]/)).toBeNull();
 
-  fireEvent.press(screen.getByTestId('todo-month-next'));
-  await waitFor(() => expect(mockGetTodo).toHaveBeenCalledWith(1));
-  await waitFor(() => expect(mockListAccounts.mock.calls.length).toBeGreaterThanOrEqual(2));
+  const active = StyleSheet.flatten(screen.getByTestId('todo-period-active-label').props.style);
+  const side = StyleSheet.flatten(screen.getByTestId('todo-period-prev-label').props.style);
+  expect(active.color).toBe(colors.textPrimary);
+  expect(side.color).toBe(colors.textSecondary);
+  expect(active.fontSize).toBeGreaterThan(side.fontSize);
+  for (const z of ['prev', 'active', 'next']) {
+    expect(StyleSheet.flatten(screen.getByTestId(`todo-period-${z}`).props.style).minHeight).toBeGreaterThanOrEqual(44);
+  }
+});
 
-  fireEvent.press(screen.getByTestId('todo-month-prev'));
-  await waitFor(() => expect(mockGetTodo).toHaveBeenCalledWith(0));
-  await waitFor(() => expect(mockListAccounts.mock.calls.length).toBeGreaterThanOrEqual(3));
+it('toucher le mois précédent / suivant recharge "À faire" sur ce mois', async () => {
+  todoByOffset();
+  renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => expect(periodLabels()[1]).toBe('OCTOBRE 2026'));
 
-  fireEvent.press(screen.getByTestId('todo-month-prev'));
-  await waitFor(() => expect(mockGetTodo).toHaveBeenCalledWith(-1));
-  await waitFor(() => expect(mockListAccounts.mock.calls.length).toBeGreaterThanOrEqual(4));
+  await fireEvent.press(screen.getByTestId('todo-period-next'));
+  await waitFor(() => expect(periodLabels()).toEqual(['OCT. 26', 'NOVEMBRE 2026', 'DÉC. 26']));
+  expect(mockGetTodo).toHaveBeenLastCalledWith(1);
+
+  await fireEvent.press(screen.getByTestId('todo-period-prev'));
+  await waitFor(() => expect(periodLabels()[1]).toBe('OCTOBRE 2026'));
+  await fireEvent.press(screen.getByTestId('todo-period-prev'));
+  await waitFor(() => expect(periodLabels()).toEqual(['AOÛT 26', 'SEPTEMBRE 2026', 'OCT. 26']));
+  expect(mockGetTodo).toHaveBeenLastCalledWith(-1);
+});
+
+it('swipe gauche -> mois suivant, swipe droite -> mois précédent ; geste vertical ou trop court ignoré', async () => {
+  todoByOffset();
+  renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => expect(periodLabels()[1]).toBe('OCTOBRE 2026'));
+
+  await swipeBar(-120);
+  await waitFor(() => expect(periodLabels()[1]).toBe('NOVEMBRE 2026'));
+  await swipeBar(120);
+  await waitFor(() => expect(periodLabels()[1]).toBe('OCTOBRE 2026'));
+  await swipeBar(120);
+  await waitFor(() => expect(periodLabels()).toEqual(['AOÛT 26', 'SEPTEMBRE 2026', 'OCT. 26']));
+
+  const calls = mockGetTodo.mock.calls.length;
+  await swipeBar(-30);
+  await swipeBar(-90, 140);
+  expect(periodLabels()[1]).toBe('SEPTEMBRE 2026');
+  expect(mockGetTodo.mock.calls.length).toBe(calls);
+
+  const bar = screen.getByTestId('todo-period');
+  await fireEvent(bar, 'touchStart', { nativeEvent: { pageX: 200, pageY: 100 } });
+  expect(bar.props.onMoveShouldSetResponderCapture({ nativeEvent: { pageX: 210, pageY: 170 } })).toBe(false);
+  expect(bar.props.onMoveShouldSetResponderCapture({ nativeEvent: { pageX: 170, pageY: 104 } })).toBe(true);
+});
+
+it('toucher le mois central ouvre "Choisir une période" ; juillet 2027 affiche directement juillet 2027', async () => {
+  todoByOffset();
+  renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => expect(periodLabels()[1]).toBe('OCTOBRE 2026'));
+
+  await fireEvent.press(screen.getByTestId('todo-period-active'));
+  await waitFor(() => screen.getByTestId('todo-period-picker'));
+  expect(screen.getByText('Choisir une période')).toBeTruthy();
+
+  // Annuler ne change rien.
+  await fireEvent.press(screen.getByTestId('todo-period-picker-cancel'));
+  await waitFor(() => expect(screen.queryByTestId('todo-period-picker')).toBeNull());
+  expect(periodLabels()[1]).toBe('OCTOBRE 2026');
+
+  await fireEvent.press(screen.getByTestId('todo-period-active'));
+  await waitFor(() => screen.getByTestId('todo-period-picker'));
+  await fireEvent.press(screen.getByTestId('todo-period-picker-month-7'));
+  await fireEvent.press(screen.getByTestId('todo-period-picker-year-2027'));
+  await fireEvent.press(screen.getByTestId('todo-period-picker-confirm'));
+
+  await waitFor(() => expect(periodLabels()).toEqual(['JUIN 27', 'JUILLET 2027', 'AOÛT 27']));
+  expect(mockGetTodo).toHaveBeenLastCalledWith(9);
+  // Depuis juillet 2027, le mois suivant reste relatif au mois courant réel.
+  await fireEvent.press(screen.getByTestId('todo-period-next'));
+  await waitFor(() => expect(mockGetTodo).toHaveBeenLastCalledWith(10));
 });
 
 it('section Effectué (§34) : repliée par défaut, affiche nombre + montant total, dépliable sur demande', async () => {

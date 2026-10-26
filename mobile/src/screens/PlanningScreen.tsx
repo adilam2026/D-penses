@@ -1,6 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { ActivityIndicator, Alert, GestureResponderEvent, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as api from '../api/client';
 import { colors, elevation, fontFamily, radius, spacing, typography } from '../ui/theme';
@@ -16,19 +16,15 @@ import { useKeyboardAwareScroll } from '../ui/useKeyboardAwareScroll';
 import { accountSelectOptions, decodeAccountOption, encodeAccountOption } from '../ui/accountOptions';
 import { estimateTextEm, fitFontSize, fitPaidAmount, fitTwoParts } from '../ui/fitAmount';
 import { RECURRENCE_FREQUENCY_OPTIONS, RecurrenceOption } from '../ui/recurrenceLabels';
+import { MonthNavigator } from '../ui/MonthNavigator';
+import { useHorizontalSwipe } from '../ui/useHorizontalSwipe';
 
 const HORIZON_OPTIONS = [3, 6, 9, 12] as const;
-// Fenêtre multi-mois compacte — 3 colonnes visibles à la fois (flèches ‹ ›)
-// sur tout l'horizon sélectionné, partagées par tous les accordéons (§3).
+// Fenêtre multi-mois compacte — 3 colonnes visibles à la fois sur tout
+// l'horizon sélectionné, partagées par tous les accordéons (§3).
 const VISIBLE_COLUMNS = 3;
 const CENTER_COLUMN_INDEX = 1;
 const TOAST_DURATION_MS = 1800;
-// Balayage horizontal : le geste n'est capté qu'une fois nettement horizontal
-// (CLAIM), et ne change de période qu'au-delà de THRESHOLD — un léger dérapage
-// pendant un scroll vertical ne change jamais de mois.
-const SWIPE_CLAIM_DISTANCE = 16;
-const SWIPE_THRESHOLD = 60;
-const SWIPE_DIRECTION_RATIO = 2;
 // Grille mensuelle : colonne libellé (flex 1.4, paddingRight xs) + 3 colonnes
 // mois (flex 1), sur la largeur intérieure des cartes (marge lg + padding md).
 const LABEL_COLUMN_FLEX = 1.4;
@@ -135,7 +131,7 @@ function occurrenceFromItem(item: api.PlanningCellItemApi): api.PlanningSingleOc
  * Planning multi-mois (Checkpoint 3, correctif fenêtre compacte) — 4 blocs
  * (Revenus/Dépenses/Épargne/Synthèse), horizon 3-12 mois, colonne de
  * libellés figée + 3 colonnes de mois visibles simultanément, balayables
- * horizontalement (swipe à snap ou flèches ‹ ›) sur tout l'horizon chargé.
+ * horizontalement (swipe ou mois voisin touché) sur tout l'horizon chargé.
  * Tap = réaliser, appui long = ajuster ou annuler, détail catégorie sur case
  * agrégée.
  */
@@ -175,11 +171,11 @@ export function PlanningScreen() {
   }
 
   // Fenêtre de 3 mois glissante sur l'horizon chargé (data.months) : windowStart
-  // = index du premier mois visible, déplacé par pas de 1 (flèches), jamais
+  // = index du premier mois visible, déplacé par pas de 1 (mois voisin touché
+  // ou swipe), jamais
   // par pas de 3 — cf. l'exemple Oct|Nov|Déc → Nov|Déc|Jan. UNE seule barre
   // de navigation (§3), partagée par tous les accordéons.
   const [windowStart, setWindowStart] = useState(0);
-  const swipeStart = useRef<{ x: number; y: number } | null>(null);
   // Largeur réelle d'une colonne mois (mesurée sur la barre de navigation,
   // estimée depuis la fenêtre avant la première mesure) : sert à ajuster la
   // taille des montants pour qu'ils ne soient jamais tronqués.
@@ -223,42 +219,11 @@ export function PlanningScreen() {
     setWindowStart(Math.max(0, Math.min(maxStart, idx)));
   }
 
-  // onTouchStart reçoit un TouchEvent DOM brut sur le web (coordonnées dans
-  // changedTouches uniquement) : lecture unifiée natif/web.
-  function touchPoint(e: GestureResponderEvent) {
-    const n = e.nativeEvent as GestureResponderEvent['nativeEvent'] & { changedTouches?: { pageX: number; pageY: number }[] };
-    const t = n.changedTouches?.[0] ?? n;
-    return { x: t.pageX, y: t.pageY };
-  }
-
-  function isHorizontalSwipe(e: GestureResponderEvent, minDistance: number) {
-    const start = swipeStart.current;
-    if (!start) return false;
-    const p = touchPoint(e);
-    const dx = p.x - start.x;
-    const dy = p.y - start.y;
-    return Math.abs(dx) >= minDistance && Math.abs(dx) > SWIPE_DIRECTION_RATIO * Math.abs(dy);
-  }
-
-  // Le responder n'est réclamé (phase capture) que pour un geste nettement
-  // horizontal : un scroll vertical reste entièrement géré par le ScrollView,
-  // et une case touchée au début d'un swipe voit son appui annulé.
-  const swipeHandlers = {
-    onTouchStart: (e: GestureResponderEvent) => {
-      swipeStart.current = touchPoint(e);
-    },
-    onMoveShouldSetResponderCapture: (e: GestureResponderEvent) => isHorizontalSwipe(e, SWIPE_CLAIM_DISTANCE),
-    onResponderTerminationRequest: () => false,
-    onResponderRelease: (e: GestureResponderEvent) => {
-      if (swipeStart.current && isHorizontalSwipe(e, SWIPE_THRESHOLD)) {
-        goToWindow(windowStart + (touchPoint(e).x < swipeStart.current.x ? 1 : -1));
-      }
-      swipeStart.current = null;
-    },
-    onResponderTerminate: () => {
-      swipeStart.current = null;
-    },
-  };
+  // Swipe sur toute la zone Planning : même goToWindow que le toucher des mois voisins.
+  const swipeHandlers = useHorizontalSwipe(
+    () => goToWindow(windowStart + 1),
+    () => goToWindow(windowStart - 1),
+  );
 
   async function refresh() {
     return load(months);
@@ -320,7 +285,7 @@ export function PlanningScreen() {
         </View>
         <HelpButton
           title="Planning"
-          text="Une case grise = prévu, appuyez dessus pour la régler. Une case verte = déjà réalisée. Appui long pour ajuster le montant avant paiement ou annuler un paiement déjà fait. Balayez horizontalement (ou utilisez ‹ ›) pour changer de période."
+          text="Une case grise = prévu, appuyez dessus pour la régler. Une case verte = déjà réalisée. Appui long pour ajuster le montant avant paiement ou annuler un paiement déjà fait. Balayez horizontalement ou touchez un mois voisin pour changer de période ; touchez le mois central pour choisir une période."
         />
       </View>
 
@@ -334,41 +299,36 @@ export function PlanningScreen() {
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }} testID="planning-scroll">
         <View {...swipeHandlers} style={styles.swipeArea} testID="planning-swipe-area">
-          {/* Navigation des mois — mêmes colonnes que les accordéons et la
-              synthèse finale (gridLabelCol + gridMonthCol), flèches dans les
-              marges latérales. Flèches et swipe appellent goToWindow. */}
-          <View style={styles.monthNavRow} testID="planning-month-nav">
-            <TouchableOpacity
-              style={styles.monthNavArrow}
-              onPress={() => goToWindow(windowStart - 1)}
-              disabled={windowStart === 0}
-              hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
-              testID="planning-month-prev"
-            >
-              <Ionicons name="chevron-back" size={18} color={windowStart === 0 ? colors.textPlaceholder : colors.textPrimary} />
-            </TouchableOpacity>
-            <View style={[styles.gridRow, styles.monthNavGrid]} onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}>
-              <View style={styles.gridLabelCol} />
-              {visibleMonths.map((m, i) => (
-                <Text
-                  key={m}
-                  style={[styles.gridMonthCol, styles.monthNavLabel, i === CENTER_COLUMN_INDEX && styles.monthNavLabelActive]}
-                  numberOfLines={1}
-                  testID={`planning-month-label-${i}`}
-                >
-                  {formatMonthShort(m)}
-                </Text>
-              ))}
-            </View>
-            <TouchableOpacity
-              style={styles.monthNavArrow}
-              onPress={() => goToWindow(windowStart + 1)}
-              disabled={windowStart >= maxWindowStart}
-              hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
-              testID="planning-month-next"
-            >
-              <Ionicons name="chevron-forward" size={18} color={windowStart >= maxWindowStart ? colors.textPlaceholder : colors.textPrimary} />
-            </TouchableOpacity>
+          {/* Navigation des mois (composant commun avec À faire) — mêmes
+              colonnes que les accordéons et la synthèse finale. Les mois
+              voisins et le swipe appellent goToWindow ; le mois central
+              ouvre le sélecteur de période. Seule barre interactive : les
+              en-têtes des accordéons et de la synthèse suivent visibleMonths. */}
+          <View testID="planning-month-nav">
+            <MonthNavigator
+              testIDPrefix="planning-period"
+              swipe={false}
+              style={styles.periodBar}
+              onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
+              leading={<View style={styles.gridLabelCol} />}
+              previous={{
+                monthKey: visibleMonths[0],
+                label: formatMonthShort(visibleMonths[0]).toUpperCase(),
+                onPress: windowStart > 0 ? () => goToWindow(windowStart - 1) : undefined,
+              }}
+              active={{ monthKey: visibleMonths[CENTER_COLUMN_INDEX], label: formatMonthShort(visibleMonths[CENTER_COLUMN_INDEX]).toUpperCase() }}
+              next={{
+                monthKey: visibleMonths[VISIBLE_COLUMNS - 1],
+                label: formatMonthShort(visibleMonths[VISIBLE_COLUMNS - 1]).toUpperCase(),
+                onPress: windowStart < maxWindowStart ? () => goToWindow(windowStart + 1) : undefined,
+              }}
+              picker={{
+                years: [...new Set(data.months.map((m) => Number(m.slice(0, 4))))],
+                isSelectable: (m) => data.months.includes(m),
+                // Le mois choisi devient le mois central quand l'horizon le permet.
+                onSelect: (m) => goToWindow(data.months.indexOf(m) - CENTER_COLUMN_INDEX),
+              }}
+            />
           </View>
 
           {/* Cartes de synthèse compactes (mois actif) : une seule ligne
@@ -1628,15 +1588,11 @@ const styles = StyleSheet.create({
   gridRow: { flexDirection: 'row', alignItems: 'center' },
   gridLabelCol: { flex: 1.4, paddingRight: spacing.xs },
   gridMonthCol: { flex: 1, alignItems: 'center', textAlign: 'center' },
-  // Les flèches occupent exactement la marge carte + padding interne des
-  // accordéons (lg + md), pour que les mois tombent sur les colonnes.
-  monthNavRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm, marginBottom: spacing.xs },
+  // Barre des mois : même largeur que l'intérieur des cartes (marge lg +
+  // padding md), pour que les mois tombent sur les colonnes.
+  periodBar: { marginHorizontal: CARD_INNER_INSET, marginBottom: spacing.xs },
   // Toute la hauteur visible reste balayable, même quand le contenu est court.
   swipeArea: { flexGrow: 1, paddingBottom: spacing.xxl },
-  monthNavGrid: { flex: 1 },
-  monthNavArrow: { width: spacing.lg + spacing.md, alignItems: 'center', justifyContent: 'center' },
-  monthNavLabel: { ...typography.bodySecondary, fontSize: 12.5, fontFamily: fontFamily.sansSemiBold },
-  monthNavLabelActive: { color: colors.textPrimary, fontFamily: fontFamily.sansExtraBold },
   // Synthèse de fin de Planning (résultat prévu, reste à exécuter, projection).
   finalCard: { backgroundColor: colors.surface, borderRadius: radius.lg, marginHorizontal: spacing.lg, marginBottom: spacing.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, ...elevation.card },
   finalRow: { paddingVertical: 3 },
@@ -1653,7 +1609,7 @@ const styles = StyleSheet.create({
   // Accordéon (§6/§7) — carte arrondie, header toujours visible (icône +
   // titre + total du mois actif + chevron), contenu replié par défaut sauf
   // Revenus. Trois colonnes mensuelles FIXES quand ouvert (jamais de scroll
-  // horizontal par bloc — la navigation se fait via monthNavRow, partagée).
+  // horizontal par bloc — la navigation se fait via la barre des mois, partagée).
   accordionCard: { backgroundColor: colors.surface, borderRadius: radius.lg, marginHorizontal: spacing.lg, marginBottom: spacing.md, overflow: 'hidden', ...elevation.card },
   accordionHeader: { flexDirection: 'row', alignItems: 'center', padding: spacing.md },
   accordionIconCircle: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginRight: spacing.sm },
