@@ -92,6 +92,124 @@ jobs:
 
           ! grep -io "does not exist\|internal server error\|column.*responsible" planning.json todo.json
 
+      - name: "Smoke test fonctionnel : échéance payée/partielle/modifiée (lot refonte Planning/À faire)"
+        # Couvre exactement §20/§40 du lot : créer une échéance, la payer
+        # partiellement PUIS totalement, puis la MODIFIER (augmenter le
+        # prévu au-delà du déjà-payé) SANS jamais appeler unrealize — le
+        # backend doit accepter directement l'édition d'une occurrence
+        # REALIZED et la rebasculer en PENDING en conservant le paiement
+        # déjà enregistré. Données créées/nettoyées exclusivement dans le
+        # foyer de démonstration (jamais les données réelles de l'utilisateur).
+        run: |
+          set -o pipefail
+          TOKEN=$(node -e "console.log(JSON.parse(require('fs').readFileSync('login.json','utf8')).accessToken)")
+          AUTH=(-H "Authorization: Bearer $TOKEN")
+          TODAY=$(date +%F)
+
+          echo "--- GET /accounts (choisir un compte du foyer démo) ---"
+          code=$(curl -sS -o accounts.json -w "%{http_code}" "${{ github.event.inputs.api_url }}/accounts" "${AUTH[@]}")
+          echo "HTTP $code"
+          test "$code" = "200"
+          ACC=$(node -e "const a=JSON.parse(require('fs').readFileSync('accounts.json','utf8')); if(!a.length) throw new Error('aucun compte dans le foyer démo'); console.log(a[0].id)")
+          echo "Compte utilisé : $ACC"
+
+          echo "--- POST /planned-operations (échéance non payée, PENDING) ---"
+          code=$(curl -sS -o created.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/planned-operations" "${AUTH[@]}" \
+            -H "Content-Type: application/json" \
+            -d "{\"kind\":\"EXPENSE\",\"label\":\"CI Smoke Test\",\"expectedDate\":\"$TODAY\",\"expectedAmount\":\"1000\",\"sourceAccountId\":\"$ACC\"}")
+          echo "HTTP $code"
+          cat created.json; echo
+          test "$code" = "201"
+          grep -q '"status":"PENDING"' created.json
+          PID=$(node -e "console.log(JSON.parse(require('fs').readFileSync('created.json','utf8')).id)")
+          echo "Échéance de test : $PID"
+
+          echo "--- POST /planned-operations/$PID/partial-realize (paiement partiel 400/1000) ---"
+          code=$(curl -sS -o partial.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/planned-operations/$PID/partial-realize" "${AUTH[@]}" \
+            -H "Content-Type: application/json" -d '{"actualAmount":"400"}')
+          echo "HTTP $code"
+          test "$code" = "201"
+
+          echo "--- GET /planning : vérifie le reste 600 DH (paiement partiel conservé) ---"
+          code=$(curl -sS -o planning2.json -w "%{http_code}" "${{ github.event.inputs.api_url }}/planning?months=1" "${AUTH[@]}")
+          test "$code" = "200"
+          node -e "
+            const d=JSON.parse(require('fs').readFileSync('planning2.json','utf8'));
+            const row=d.depenses.find(r=>Object.values(r.cells).some(c=>c.singleOccurrence && c.singleOccurrence.plannedOperationId==='$PID'));
+            if (!row) throw new Error('échéance de test introuvable dans /planning après paiement partiel');
+            const cell=Object.values(row.cells).find(c=>c.singleOccurrence && c.singleOccurrence.plannedOperationId==='$PID');
+            const occ=cell.singleOccurrence;
+            if (occ.status!=='PENDING' || occ.realizedAmount!==400) throw new Error('état inattendu après paiement partiel: '+JSON.stringify(occ));
+            console.log('OK — paiement partiel reflété : status=PENDING, déjà payé=400');
+          "
+
+          echo "--- POST /planned-operations/$PID/realize (solde le reste, 600, échéance ENTIÈREMENT payée) ---"
+          code=$(curl -sS -o realized.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/planned-operations/$PID/realize" "${AUTH[@]}" \
+            -H "Content-Type: application/json" -d '{"actualAmount":"600"}')
+          echo "HTTP $code"
+          test "$code" = "201"
+
+          echo "--- GET /planning : vérifie REALIZED, aucune erreur liée à REALIZED ---"
+          code=$(curl -sS -o planning3.json -w "%{http_code}" "${{ github.event.inputs.api_url }}/planning?months=1" "${AUTH[@]}")
+          test "$code" = "200"
+          node -e "
+            const d=JSON.parse(require('fs').readFileSync('planning3.json','utf8'));
+            const row=d.depenses.find(r=>Object.values(r.cells).some(c=>c.singleOccurrence && c.singleOccurrence.plannedOperationId==='$PID'));
+            const cell=Object.values(row.cells).find(c=>c.singleOccurrence && c.singleOccurrence.plannedOperationId==='$PID');
+            const occ=cell.singleOccurrence;
+            if (occ.status!=='REALIZED' || occ.realizedAmount!==1000) throw new Error('état inattendu après paiement total: '+JSON.stringify(occ));
+            console.log('OK — échéance ENTIÈREMENT payée : status=REALIZED, réalisé=1000');
+          "
+
+          echo "--- PATCH /planned-operations/$PID (modifier une échéance PAYÉE, SANS unrealize préalable — §20/§40) ---"
+          code=$(curl -sS -o modified.json -w "%{http_code}" -X PATCH "${{ github.event.inputs.api_url }}/planned-operations/$PID" "${AUTH[@]}" \
+            -H "Content-Type: application/json" -d '{"expectedAmount":"1500"}')
+          echo "HTTP $code"
+          cat modified.json; echo
+          test "$code" = "200"
+          node -e "
+            const d=JSON.parse(require('fs').readFileSync('modified.json','utf8'));
+            if (d.status!=='PENDING') throw new Error('la modification aurait dû rebasculer en PENDING (reste à exécuter), reçu: '+JSON.stringify(d));
+            if (d.realizedOperationId!==null) throw new Error('realizedOperationId aurait dû être remis à null, reçu: '+d.realizedOperationId);
+            console.log('OK — modification directe acceptée (aucun unrealize nécessaire), rebascule en PENDING, reste à exécuter');
+          "
+
+          echo "--- GET /planning : vérifie que le paiement de 1000 DH déjà effectué est CONSERVÉ (jamais renversé) ---"
+          code=$(curl -sS -o planning4.json -w "%{http_code}" "${{ github.event.inputs.api_url }}/planning?months=1" "${AUTH[@]}")
+          test "$code" = "200"
+          node -e "
+            const d=JSON.parse(require('fs').readFileSync('planning4.json','utf8'));
+            const row=d.depenses.find(r=>Object.values(r.cells).some(c=>c.singleOccurrence && c.singleOccurrence.plannedOperationId==='$PID'));
+            const cell=Object.values(row.cells).find(c=>c.singleOccurrence && c.singleOccurrence.plannedOperationId==='$PID');
+            const occ=cell.singleOccurrence;
+            if (occ.status!=='PENDING' || occ.realizedAmount!==1000 || occ.expectedAmount!==1500) throw new Error('paiement existant NON conservé après modification: '+JSON.stringify(occ));
+            console.log('OK — paiement de 1000 DH conservé intact, reste à payer = 500 DH');
+          "
+
+          echo "--- Nettoyage : annule l'échéance de test (foyer démo uniquement) ---"
+          code=$(curl -sS -o /dev/null -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/planned-operations/$PID/cancel" "${AUTH[@]}")
+          echo "cancel HTTP $code"
+          test "$code" = "201"
+
+          echo "--- Récurrence : création + vérification responsibleSource (aucune erreur liée aux récurrences) ---"
+          code=$(curl -sS -o rule.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/recurrence-rules" "${AUTH[@]}" \
+            -H "Content-Type: application/json" \
+            -d "{\"frequency\":\"MONTHLY\",\"anchorDate\":\"$TODAY\",\"kind\":\"EXPENSE\",\"label\":\"CI Smoke Recurrence\",\"expectedAmount\":\"50\",\"sourceAccountId\":\"$ACC\"}")
+          echo "HTTP $code"
+          cat rule.json; echo
+          test "$code" = "201"
+          grep -q '"responsibleSource"' rule.json
+          RULE_ID=$(node -e "console.log(JSON.parse(require('fs').readFileSync('rule.json','utf8')).id)")
+          echo "Règle de test : $RULE_ID"
+
+          echo "--- Nettoyage : désactive la règle de récurrence de test ---"
+          code=$(curl -sS -o /dev/null -w "%{http_code}" -X PATCH "${{ github.event.inputs.api_url }}/recurrence-rules/$RULE_ID" "${AUTH[@]}" \
+            -H "Content-Type: application/json" -d "{\"applyFrom\":\"THIS_OCCURRENCE\",\"fromDate\":\"$TODAY\",\"active\":false}")
+          echo "deactivate HTTP $code"
+          test "$code" = "200"
+
+          ! grep -io "does not exist\|internal server error\|500 " created.json partial.json realized.json modified.json rule.json planning2.json planning3.json planning4.json
+
       - name: Aucune référence à localhost dans les réponses publiques
         run: |
           ! grep -io "localhost" signup.json verify.json body.json login.json planning.json todo.json
