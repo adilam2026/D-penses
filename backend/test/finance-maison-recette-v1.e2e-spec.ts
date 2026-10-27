@@ -86,15 +86,15 @@ describe('Finance Maison — Recette v1 (avant APK)', () => {
     d.setUTCDate(d.getUTCDate() + days);
     return d.toISOString().slice(0, 10);
   }
-  /** Comme isoPlusDays, mais borné au dernier jour du mois COURANT — pour les
-   * assertions "même mois" (ex. findCell sans index explicite -> months[0]),
-   * jamais affecté par la date du run (+N jours bruts pourrait franchir la
-   * fin du mois selon le jour où le test s'exécute). */
-  function isoPlusDaysSameMonth(days: number): string {
-    const d = new Date();
-    const lastDayOfMonth = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
-    d.setUTCDate(Math.min(d.getUTCDate() + days, lastDayOfMonth));
-    return d.toISOString().slice(0, 10);
+
+  /**
+   * Jour N du mois COURANT (UTC, même référence que le backend), jamais
+   * calculé depuis la date du run : l'échéance appartient toujours au mois
+   * interrogé, qu'on soit le 1er, le 15 ou le 31.
+   */
+  function dayOfCurrentMonth(day: number): string {
+    const now = new Date();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), day)).toISOString().slice(0, 10);
   }
 
   // ===================================================================
@@ -110,7 +110,7 @@ describe('Finance Maison — Recette v1 (avant APK)', () => {
     const created = await http
       .post('/planned-operations')
       .set('Authorization', `Bearer ${token}`)
-      .send({ kind: 'EXPENSE', label: 'Internet', expectedDate: isoPlusDays(5), expectedAmount: '350', categoryId: maison.id, sourceAccountId: lamiaa.id })
+      .send({ kind: 'EXPENSE', label: 'Internet', expectedDate: dayOfCurrentMonth(10), expectedAmount: '350', categoryId: maison.id, sourceAccountId: lamiaa.id })
       .expect(201);
     expect(created.body.status).toBe('PENDING');
 
@@ -130,7 +130,7 @@ describe('Finance Maison — Recette v1 (avant APK)', () => {
     expect(cell.displayAmount).toBe(400);
 
     // 4. Modifier la DATE prévue (même mois) — Planning reste cohérent, même ligne/id.
-    const movedDate = isoPlusDaysSameMonth(10);
+    const movedDate = dayOfCurrentMonth(20);
     const afterDate = await http.patch(`/planned-operations/${created.body.id}`).set('Authorization', `Bearer ${token}`).send({ expectedDate: movedDate }).expect(200);
     expect(afterDate.body.id).toBe(created.body.id); // ponctuelle : jamais recréée
     expect(afterDate.body.expectedDate.slice(0, 10)).toBe(movedDate);

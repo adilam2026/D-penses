@@ -94,11 +94,6 @@ describe('Finance Maison — "À faire" (vue opérationnelle du Planning)', () =
   function todayIso(): string {
     return new Date().toISOString().slice(0, 10);
   }
-  function isoPlusDays(days: number): string {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() + days);
-    return d.toISOString().slice(0, 10);
-  }
 
   // -----------------------------------------------------------------
   // 1/3/4. Visibilité par défaut selon la nature.
@@ -420,19 +415,34 @@ describe('Finance Maison — "À faire" (vue opérationnelle du Planning)', () =
   // 23. Action en retard — tri retard < aujourd'hui < à venir.
   // -----------------------------------------------------------------
   it('23. action en retard identifiée (late=true) et triée AVANT les actions du jour et à venir', async () => {
-    const { token } = await freshHousehold();
-    const compte = await createAccount(token, 'Compte', 10000);
-    const divers = await createCategory(token, 'Divers');
+    // Le scénario exige une date avant ET une date après "aujourd'hui" dans
+    // le même mois : impossible le 1er ou le dernier jour avec l'horloge
+    // réelle. Seule l'horloge (Date) est donc fixée au 15 du mois courant le
+    // temps de ce test — minuteries réelles, aucune règle métier touchée —
+    // et les trois échéances sont posées à des jours fixes de ce mois.
+    const realNow = new Date();
+    const dayOfMonth = (day: number) => new Date(Date.UTC(realNow.getUTCFullYear(), realNow.getUTCMonth(), day, 12)).toISOString();
+    jest.useFakeTimers({
+      now: new Date(dayOfMonth(15)),
+      doNotFake: ['nextTick', 'setImmediate', 'clearImmediate', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'queueMicrotask', 'hrtime', 'performance'],
+    });
+    try {
+      const { token } = await freshHousehold();
+      const compte = await createAccount(token, 'Compte', 10000);
+      const divers = await createCategory(token, 'Divers');
 
-    const future = await createPlanned(token, { kind: 'EXPENSE', label: 'Future', expectedDate: isoPlusDays(5), expectedAmount: '100', categoryId: divers.id, sourceAccountId: compte.id, includeInTodo: true });
-    const today = await createPlanned(token, { kind: 'EXPENSE', label: "Aujourd'hui", expectedDate: todayIso(), expectedAmount: '100', categoryId: divers.id, sourceAccountId: compte.id, includeInTodo: true });
-    const late = await createPlanned(token, { kind: 'EXPENSE', label: 'En retard', expectedDate: isoPlusDays(-3), expectedAmount: '100', categoryId: divers.id, sourceAccountId: compte.id, includeInTodo: true });
+      const future = await createPlanned(token, { kind: 'EXPENSE', label: 'Future', expectedDate: dayOfMonth(20).slice(0, 10), expectedAmount: '100', categoryId: divers.id, sourceAccountId: compte.id, includeInTodo: true });
+      const today = await createPlanned(token, { kind: 'EXPENSE', label: "Aujourd'hui", expectedDate: dayOfMonth(15).slice(0, 10), expectedAmount: '100', categoryId: divers.id, sourceAccountId: compte.id, includeInTodo: true });
+      const late = await createPlanned(token, { kind: 'EXPENSE', label: 'En retard', expectedDate: dayOfMonth(12).slice(0, 10), expectedAmount: '100', categoryId: divers.id, sourceAccountId: compte.id, includeInTodo: true });
 
-    const todo = await getTodo(token);
-    expect(todo.pending.map((a: any) => a.plannedOperationId)).toEqual([late.id, today.id, future.id]);
-    expect(todo.pending.find((a: any) => a.plannedOperationId === late.id).late).toBe(true);
-    expect(todo.pending.find((a: any) => a.plannedOperationId === today.id).late).toBe(false);
-    expect(todo.pending.find((a: any) => a.plannedOperationId === future.id).late).toBe(false);
+      const todo = await getTodo(token);
+      expect(todo.pending.map((a: any) => a.plannedOperationId)).toEqual([late.id, today.id, future.id]);
+      expect(todo.pending.find((a: any) => a.plannedOperationId === late.id).late).toBe(true);
+      expect(todo.pending.find((a: any) => a.plannedOperationId === today.id).late).toBe(false);
+      expect(todo.pending.find((a: any) => a.plannedOperationId === future.id).late).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   // -----------------------------------------------------------------
