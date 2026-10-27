@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
-import { ensureOccurrencesForPeriod, occurrenceKey, virtualPlannedOccurrences } from '../common/ledger/recurrence.util';
+import { ensureOccurrencesForPeriod, virtualPlannedOccurrences } from '../common/ledger/recurrence.util';
 import { computeNonAffecte, computeSubaccountBalance } from '../common/ledger/ledger.util';
 import { buildPlanningTable, monthBounds, monthKey, monthKeyDiff, monthKeysFrom, PlanningMonthKey, restrictPlanningTable } from '../common/ledger/planning.util';
 
@@ -78,13 +78,7 @@ export class PlanningService {
       // calculées en mémoire, sans aucune écriture.
       const virtualOccurrences =
         computedMonths.length > monthsList.length
-          ? await virtualPlannedOccurrences(
-              tx,
-              householdId,
-              rangeStart,
-              new Date(displayedStart.getTime() - DAY_MS),
-              new Set(storedPlannedOperations.filter((p) => p.recurrenceRuleId).map((p) => occurrenceKey(p.recurrenceRuleId!, p.expectedDate))),
-            )
+          ? await virtualPlannedOccurrences(tx, householdId, rangeStart, new Date(displayedStart.getTime() - DAY_MS))
           : [];
       const plannedOperations = [...storedPlannedOperations, ...virtualOccurrences];
       const financialOperations = await tx.financialOperation.findMany({
