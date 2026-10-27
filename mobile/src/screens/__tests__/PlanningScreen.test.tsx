@@ -1232,3 +1232,107 @@ it('mois courant du backend différent du téléphone (début de mois paramétra
   expect(mockGetPlanning).toHaveBeenCalledTimes(2);
 });
 
+
+// ---------------------------------------------------------------------------
+// Identification Adil (bleu) / Lamiaa (rose) : couleur du montant À VENIR,
+// lue sur le responsibleMemberId réel — jamais sur le libellé ; les états
+// payé / partiel gardent leur couleur fonctionnelle.
+// ---------------------------------------------------------------------------
+
+type Item = PlanningTableApi['depenses'][number]['cells'][string]['items'][number];
+
+function itemOf(type: Item['type'], responsibleMemberId: string | null, amount = 100): Item {
+  return { type, plannedOperationId: type === 'REAL_UNPLANNED' ? undefined : `po-${Math.random()}`, financialOperationId: type === 'PLANNED_PENDING' ? undefined : 'op', label: 'x', amount, date: '2026-10-05', sourceAccountId: 'cih', sourceSubaccountId: null, destinationAccountId: null, destinationSubaccountId: null, responsibleMemberId };
+}
+
+function cellOf(status: 'PENDING' | 'REALIZED' | 'MIXED', items: Item[]) {
+  const pending = items.filter((i) => i.type === 'PLANNED_PENDING').reduce((t, i) => t + i.amount, 0);
+  const realized = items.filter((i) => i.type !== 'PLANNED_PENDING').reduce((t, i) => t + i.amount, 0);
+  return { displayAmount: pending + realized, budgetAmount: pending + realized, pendingAmount: pending, realizedAmount: realized, status, singleOccurrence: null, items };
+}
+
+function rowOf(label: string, octCell: ReturnType<typeof cellOf>) {
+  return { key: label, label, categoryId: undefined, cells: { '2026-09': emptyCell(), '2026-10': octCell, '2026-11': emptyCell() } };
+}
+
+function coloredPlanning(): PlanningTableApi {
+  return basePlanning({
+    revenus: [
+      rowOf('Salaire Adil', cellOf('PENDING', [itemOf('PLANNED_PENDING', 'm-adil', 46500)])),
+      rowOf('Salaire Lam', cellOf('PENDING', [itemOf('PLANNED_PENDING', 'm-lamiaa', 29500)])),
+      rowOf('CNSS', cellOf('PENDING', [itemOf('PLANNED_PENDING', null, 600)])),
+    ],
+    depenses: [
+      // Libellé "Adil" mais responsable Lamiaa : la couleur suit le responsable.
+      rowOf('Appli Adil', cellOf('PENDING', [itemOf('PLANNED_PENDING', 'm-lamiaa', 900)])),
+      rowOf('GSM Adil', cellOf('REALIZED', [itemOf('PLANNED_REALIZED', 'm-adil', 350)])),
+      rowOf('Courses', cellOf('MIXED', [itemOf('PLANNED_REALIZED', 'm-lamiaa', 200), itemOf('PLANNED_PENDING', 'm-lamiaa', 300)])),
+      rowOf('Partagé', cellOf('PENDING', [itemOf('PLANNED_PENDING', 'm-adil'), itemOf('PLANNED_PENDING', 'm-lamiaa')])),
+      rowOf('Imprévu', cellOf('MIXED', [itemOf('PLANNED_PENDING', 'm-adil'), itemOf('REAL_UNPLANNED', null)])),
+    ],
+    epargne: [
+      rowOf('Voyage', cellOf('PENDING', [itemOf('PLANNED_PENDING', 'm-adil', 2000)])),
+      rowOf('Santé', cellOf('PENDING', [itemOf('PLANNED_PENDING', 'm-lamiaa', 500)])),
+    ],
+  });
+}
+
+function amountColor(label: string): string {
+  return StyleSheet.flatten(screen.getByTestId(`planning-cell-${testIdSlug(label)}-2026-10-text`).props.style).color;
+}
+
+async function openAllAccordions() {
+  await waitFor(() => screen.getByTestId('planning-block-toggle-depenses'));
+  await fireEvent.press(screen.getByTestId('planning-block-toggle-depenses'));
+  await fireEvent.press(screen.getByTestId('planning-block-toggle-epargne-versements'));
+  await waitFor(() => screen.getByTestId('planning-cell-voyage-2026-10'));
+}
+
+it('REVENUS / DÉPENSES / VERSEMENTS : montant à venir bleu pour Adil, rose pour Lamiaa, neutre sans responsable', async () => {
+  mockGetPlanning.mockResolvedValue(coloredPlanning());
+  renderWithSafeArea(<PlanningScreen />);
+  await openAllAccordions();
+
+  expect(amountColor('Salaire Adil')).toBe(colors.memberBlue);
+  expect(amountColor('Salaire Lam')).toBe(colors.memberPink);
+  expect(amountColor('CNSS')).toBe(colors.textSecondary);
+  expect(amountColor('Voyage')).toBe(colors.memberBlue);
+  expect(amountColor('Santé')).toBe(colors.memberPink);
+});
+
+it('la couleur vient du responsibleMemberId, jamais du libellé ("Appli Adil" attribuée à Lamiaa → rose)', async () => {
+  mockGetPlanning.mockResolvedValue(coloredPlanning());
+  renderWithSafeArea(<PlanningScreen />);
+  await openAllAccordions();
+  expect(amountColor('Appli Adil')).toBe(colors.memberPink);
+});
+
+it('responsables mélangés ou opération réelle non planifiée : couleur neutre conservée', async () => {
+  mockGetPlanning.mockResolvedValue(coloredPlanning());
+  renderWithSafeArea(<PlanningScreen />);
+  await openAllAccordions();
+  expect(amountColor('Partagé')).toBe(colors.textSecondary);
+  // "Imprévu" est MIXTE : couleur fonctionnelle (orange), jamais celle d'Adil.
+  expect(amountColor('Imprévu')).toBe(colors.warning);
+});
+
+it('états fonctionnels prioritaires : payé reste vert, partiel reste orange, même avec un responsable', async () => {
+  mockGetPlanning.mockResolvedValue(coloredPlanning());
+  renderWithSafeArea(<PlanningScreen />);
+  await openAllAccordions();
+  expect(amountColor('GSM Adil')).toBe(colors.success);
+  expect(amountColor('Courses')).toBe(colors.warning);
+  for (const label of ['GSM Adil', 'Courses']) {
+    expect([colors.memberBlue, colors.memberPink]).not.toContain(amountColor(label));
+  }
+});
+
+it('rien d’autre ne change : fond des cases, cartes de synthèse et totaux des accordéons sans couleur de membre', async () => {
+  mockGetPlanning.mockResolvedValue(coloredPlanning());
+  renderWithSafeArea(<PlanningScreen />);
+  await openAllAccordions();
+  const cellStyle = StyleSheet.flatten(screen.getByTestId('planning-cell-salaire-lam-2026-10').props.style);
+  expect([colors.memberBlue, colors.memberPink]).not.toContain(cellStyle.backgroundColor);
+  const memberColorsUsed = (id: string) => JSON.stringify(screen.getByTestId(id).props.style ?? {}).match(/#2F67A8|#B8457E/);
+  for (const id of ['planning-summary-card-revenus', 'planning-block-toggle-revenus', 'planning-block-toggle-depenses']) expect(memberColorsUsed(id)).toBeNull();
+});

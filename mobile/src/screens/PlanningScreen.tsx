@@ -18,6 +18,7 @@ import { estimateTextEm, fitFontSize, fitPaidAmount, fitTwoParts } from '../ui/f
 import { RECURRENCE_FREQUENCY_OPTIONS, RecurrenceOption } from '../ui/recurrenceLabels';
 import { MonthNavigator } from '../ui/MonthNavigator';
 import { transferEndpointLabel } from '../ui/accountLabel';
+import { cellResponsibleMemberId, memberColorMap } from '../ui/memberColors';
 import { useHorizontalSwipe } from '../ui/useHorizontalSwipe';
 import { shiftMonthKey } from '../ui/monthKey';
 
@@ -309,6 +310,7 @@ export function PlanningScreen() {
   ];
   const blockItemsByTitle = new Map(blocks.map((b) => [b.title, buildBlockItems(b.rows, b.uncategorizedLabel)]));
   const visibleMonths = data.months.slice(windowStart, windowStart + VISIBLE_COLUMNS);
+  const memberColors = memberColorMap(members);
   // Mois des cartes et des totaux d'accordéon : TOUJOURS le mois central,
   // c'est-à-dire le mois sélectionné — passé, courant ou futur.
   const currentMonth = data.currentMonth ?? data.months[0];
@@ -392,6 +394,7 @@ export function PlanningScreen() {
               onToggle={() => toggleBlock(block.title)}
               onCellPress={onCellPress}
               colWidth={colWidth}
+              memberColors={memberColors}
             />
           ))}
         </View>
@@ -431,18 +434,27 @@ export function PlanningScreen() {
   );
 }
 
+function memberColorForCell(memberColors: Map<string, string>, cell: api.PlanningCellApi | undefined): string | undefined {
+  if (!cell) return undefined;
+  const memberId = cellResponsibleMemberId(cell);
+  return memberId ? memberColors.get(memberId) : undefined;
+}
+
 function PlanningCellView({
   cell,
   onPress,
   onLongPress,
   testID,
   colWidth,
+  memberColor,
 }: {
   cell: api.PlanningCellApi;
   onPress: () => void;
   onLongPress: () => void;
   testID: string;
   colWidth: number;
+  /** Couleur du responsable unique de la case — appliquée au seul montant À VENIR (les états payé/partiel restent prioritaires). */
+  memberColor?: string;
 }) {
   const isRealized = cell.status === 'REALIZED';
   const isPending = cell.status === 'PENDING';
@@ -485,7 +497,7 @@ function PlanningCellView({
       ) : isPending ? (
         // À VENIR : affichage NEUTRE, texte discret sans fond.
         <Text
-          style={[styles.cellAmountPending, { fontSize: fitFontSize(amountText, colWidth - CELL_TEXT_INSET, 11) }]}
+          style={[styles.cellAmountPending, memberColor ? { color: memberColor, fontFamily: fontFamily.sansSemiBold } : null, { fontSize: fitFontSize(amountText, colWidth - CELL_TEXT_INSET, 11) }]}
           numberOfLines={1}
           adjustsFontSizeToFit
           testID={`${testID}-text`}
@@ -573,6 +585,7 @@ function PlanningAccordion({
   onToggle,
   onCellPress,
   colWidth,
+  memberColors,
 }: {
   block: BlockDef;
   items: BlockItem[];
@@ -583,6 +596,7 @@ function PlanningAccordion({
   onToggle: () => void;
   onCellPress: (cell: api.PlanningCellApi, rowLabel: string) => void;
   colWidth: number;
+  memberColors: Map<string, string>;
 }) {
   const total = synthese[currentMonth][block.totalKey];
   return (
@@ -633,6 +647,7 @@ function PlanningAccordion({
                         onLongPress={() => onCellPress(item.row.cells[m], item.row.label)}
                         testID={`planning-cell-${testIdSlug(item.row.label)}-${m}`}
                         colWidth={colWidth}
+                        memberColor={memberColorForCell(memberColors, item.row.cells[m])}
                       />
                     ))}
                   </View>

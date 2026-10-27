@@ -132,6 +132,8 @@ export const createHousehold = (name: string) => apiFetch('/households', { metho
 export interface HouseholdMembershipApi {
   id: string;
   role: 'admin' | 'member' | 'read_only';
+  /** Date d'arrivée dans le foyer (déjà renvoyée par le backend) — ordre stable des membres. */
+  joinedAt?: string;
   user: { id: string; firstName: string; lastName: string; email: string; color: string | null };
 }
 
