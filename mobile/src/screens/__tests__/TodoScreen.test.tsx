@@ -591,3 +591,77 @@ it('tout est fait : section vide affiche "✓ Tout est fait pour octobre", Effec
   expect(screen.getByText('✓ Tout est fait pour octobre')).toBeTruthy();
   expect(within(screen.getByTestId('todo-section-done')).getByText(/1 échéance/)).toBeTruthy();
 });
+
+// ---------------------------------------------------------------------------
+// Dans chaque responsable : DÉPENSES puis VERSEMENTS, séparés discrètement.
+// ---------------------------------------------------------------------------
+
+const versementAdil = { ...actionVersementSansResponsable, plannedOperationId: 'po-voyage', label: 'Voyage', remaining: 1500, expectedAmount: 1500, responsibleMemberId: 'm-adil' };
+const versementAdil2 = { ...actionVersementSansResponsable, plannedOperationId: 'po-voiture', label: 'Voiture', remaining: 400, expectedAmount: 400, responsibleMemberId: 'm-adil' };
+const depenseAdil2 = { ...actionAdil, plannedOperationId: 'po-gsm', label: 'GSM Adil', remaining: 350, expectedAmount: 350 };
+
+function groupLabels(sectionKey: string): string[] {
+  return within(screen.getByTestId(`todo-section-${sectionKey}`))
+    .queryAllByText(/^(DÉPENSES|VERSEMENTS)$/)
+    .map((t) => t.props.children as string);
+}
+
+function rowIdsIn(testID: string): string[] {
+  return within(screen.getByTestId(testID))
+    .getAllByTestId(/^todo-row-po-[a-z-]+$/)
+    .filter((r) => !/-(label|amount)$/.test(r.props.testID))
+    .map((r) => r.props.testID.replace('todo-row-', ''));
+}
+
+it('par responsable : DÉPENSES puis VERSEMENTS, chaque échéance dans son groupe, totaux inchangés', async () => {
+  // Ordre d'arrivée volontairement mélangé.
+  mockGetTodo.mockResolvedValue({ month: '2026-10', pending: [versementAdil, actionAdil, versementAdil2, depenseAdil2], done: [], pendingCount: 4, totalRemaining: 2550 });
+  renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-section-m-adil'));
+
+  expect(groupLabels('m-adil')).toEqual(['DÉPENSES', 'VERSEMENTS']);
+  expect(rowIdsIn('todo-section-m-adil-group-depenses')).toEqual(['po-courses', 'po-gsm']);
+  expect(rowIdsIn('todo-section-m-adil-group-versements')).toEqual(['po-voyage', 'po-voiture']);
+  // Totaux de l'accordéon et total général : identiques à avant (somme des restes).
+  expect(within(screen.getByTestId('todo-section-m-adil')).getByText(/4 échéances · 2 550 DH/)).toBeTruthy();
+  // Lignes compactes inchangées : libellé + montant.
+  expect(rowText('po-voyage', 'label')).toBe('Voyage');
+  expect(rowText('po-voyage', 'amount')).toBe(formatDh(1500).replace(/\s+/g, ' '));
+});
+
+it('aucun groupe vide : un responsable sans versement n’affiche que DÉPENSES, et inversement', async () => {
+  mockGetTodo.mockResolvedValue({ month: '2026-10', pending: [actionAdil, depenseAdil2, actionDepensePartielleRetard, { ...versementAdil, responsibleMemberId: 'm-lamiaa' }].filter((a) => a.responsibleMemberId !== 'm-lamiaa' || a.kind === 'SAVINGS_CONTRIBUTION'), done: [], pendingCount: 3, totalRemaining: 2150 });
+  renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-section-m-adil'));
+  expect(groupLabels('m-adil')).toEqual(['DÉPENSES']);
+  expect(screen.queryByTestId('todo-section-m-adil-group-versements')).toBeNull();
+  expect(groupLabels('m-lamiaa')).toEqual(['VERSEMENTS']);
+  expect(screen.queryByTestId('todo-section-m-lamiaa-group-depenses')).toBeNull();
+});
+
+it('séparateur discret : petit libellé + trait fin, jamais une carte ni un fond coloré', async () => {
+  mockGetTodo.mockResolvedValue({ month: '2026-10', pending: [actionAdil, versementAdil], done: [], pendingCount: 2, totalRemaining: 1800 });
+  renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-section-m-adil'));
+  const [dep, ver] = within(screen.getByTestId('todo-section-m-adil')).getAllByText(/^(DÉPENSES|VERSEMENTS)$/);
+  const depStyle = StyleSheet.flatten(dep.props.style);
+  const verStyle = StyleSheet.flatten(ver.props.style);
+  expect(depStyle.fontSize).toBeLessThan(12);
+  expect(depStyle.backgroundColor).toBeUndefined();
+  expect(depStyle.borderTopWidth).toBeUndefined();
+  expect(verStyle.borderTopWidth).toBe(StyleSheet.hairlineWidth);
+  for (const id of ['todo-section-m-adil-group-depenses', 'todo-section-m-adil-group-versements']) {
+    const style = StyleSheet.flatten(screen.getByTestId(id).props.style) ?? {};
+    expect(style.backgroundColor).toBeUndefined();
+    expect(style.elevation).toBeUndefined();
+  }
+});
+
+it('tap sur une ligne d’un groupe : même ActionSheet qu’avant (versement → « Virer »)', async () => {
+  mockGetTodo.mockResolvedValue({ month: '2026-10', pending: [actionAdil, versementAdil], done: [], pendingCount: 2, totalRemaining: 1800 });
+  renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-row-po-voyage'));
+  await fireEvent.press(screen.getByTestId('todo-row-po-voyage'));
+  await waitFor(() => screen.getByTestId('action-sheet-pay'));
+  expect(textContent(screen.getByTestId('action-sheet-pay') as unknown as HostNode)).toBe(`Virer ${formatDh(1500)}`.replace(/\s+/g, ' '));
+});

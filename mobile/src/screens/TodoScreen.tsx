@@ -305,6 +305,10 @@ function TodoSection({
   neutral?: boolean;
 }) {
   const total = actions.reduce((sum, a) => sum + a.remaining, 0);
+  const groups = [
+    { key: 'depenses', title: 'DÉPENSES', actions: actions.filter((a) => a.kind !== 'SAVINGS_CONTRIBUTION') },
+    { key: 'versements', title: 'VERSEMENTS', actions: actions.filter((a) => a.kind === 'SAVINGS_CONTRIBUTION') },
+  ].filter((g) => g.actions.length > 0);
   return (
     <View style={styles.sectionCard} testID={`todo-section-${sectionKey}`}>
       <TouchableOpacity style={styles.sectionHeader} onPress={onToggle} testID={`todo-section-${sectionKey}-toggle`}>
@@ -321,21 +325,26 @@ function TodoSection({
       </TouchableOpacity>
       {!isCollapsed && (
         <View style={styles.sectionBody}>
-          {actions.map((action) => {
-            // Vue synthétique : libellé + montant restant uniquement. Le
-            // détail (prévu, déjà payé, source, destination…) reste dans
-            // l'ActionSheet ouvert au tap.
-            return (
-              <TouchableOpacity key={action.plannedOperationId} style={styles.row} onPress={() => onPressAction(action)} testID={`todo-row-${action.plannedOperationId}`}>
-                <Text style={styles.rowLabel} numberOfLines={2} testID={`todo-row-${action.plannedOperationId}-label`}>
-                  {action.label}
-                </Text>
-                <Text style={styles.rowAmount} testID={`todo-row-${action.plannedOperationId}-amount`}>
-                  {formatDh(action.remaining)}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+          {/* Dépenses puis versements, séparés par un simple petit libellé —
+              un groupe vide n'est jamais affiché. */}
+          {groups.map((group, idx) => (
+            <View key={group.key} testID={`todo-section-${sectionKey}-group-${group.key}`}>
+              <Text style={[styles.groupLabel, idx > 0 && styles.groupLabelSeparated]}>{group.title}</Text>
+              {group.actions.map((action) => (
+                // Vue synthétique : libellé + montant restant uniquement. Le
+                // détail (prévu, déjà payé, source, destination…) reste dans
+                // l'ActionSheet ouvert au tap.
+                <TouchableOpacity key={action.plannedOperationId} style={styles.row} onPress={() => onPressAction(action)} testID={`todo-row-${action.plannedOperationId}`}>
+                  <Text style={styles.rowLabel} numberOfLines={2} testID={`todo-row-${action.plannedOperationId}-label`}>
+                    {action.label}
+                  </Text>
+                  <Text style={styles.rowAmount} testID={`todo-row-${action.plannedOperationId}-amount`}>
+                    {formatDh(action.remaining)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ))}
         </View>
       )}
     </View>
@@ -359,6 +368,9 @@ const styles = StyleSheet.create({
   sectionTitle: { ...typography.body, fontWeight: '800', flex: 1 },
   sectionMeta: { ...typography.caption, fontWeight: '700', color: colors.textSecondary, marginRight: spacing.sm },
   sectionBody: { paddingHorizontal: spacing.sm, paddingBottom: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
+  // Petit libellé de groupe (DÉPENSES / VERSEMENTS) — jamais une carte ni un bloc coloré.
+  groupLabel: { fontSize: 10.5, fontWeight: '800', letterSpacing: 0.5, color: colors.textSecondary, paddingHorizontal: spacing.xs, paddingTop: spacing.sm, paddingBottom: 2 },
+  groupLabelSeparated: { marginTop: spacing.xs, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   // Une échéance = une ligne : libellé à gauche (2 lignes max si très long),
   // montant en gras à droite, jamais rétréci. Pas d'alignItems 'flex-start'
   // sur le conteneur : Android donnerait une largeur nulle au libellé.
