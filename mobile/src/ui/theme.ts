@@ -20,12 +20,6 @@ export const colors = {
   secondary: '#1B6E6E',
   secondaryLight: '#DEEEEC',
 
-  // Identification des membres du foyer dans le Planning (montants à venir
-  // uniquement) — bleu / rose bien distincts du rouge "danger" et du
-  // terracotta, pour ne jamais être lus comme un état comptable.
-  memberBlue: '#2F67A8',
-  memberPink: '#B8457E',
-
   success: '#5C8A3A',
   successLight: '#E9F1DF',
   danger: '#C14343',

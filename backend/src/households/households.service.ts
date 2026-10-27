@@ -58,6 +58,30 @@ export class HouseholdsService {
     });
   }
 
+  /**
+   * Couleur d'une personne (User.color), choisie depuis « Membres » — même
+   * règle que les autres réglages du foyer (paramètres, invitations,
+   * réinitialisation) : réservé à un admin du foyer actif, et uniquement
+   * pour un membre de CE foyer. La couleur appartient à la personne (userId) :
+   * elle la suit dans tous ses foyers.
+   */
+  async updateMemberColor(userId: string, householdId: string, memberId: string, color: string | null) {
+    return this.rlsContext.run(userId, householdId, async () => {
+      const tx = this.rlsContext.getClient();
+      const me = await tx.householdMembership.findUnique({ where: { householdId_userId: { householdId, userId } } });
+      if (!me || me.role !== 'admin') {
+        throw new ForbiddenException('Seul un administrateur du foyer peut modifier la couleur des membres');
+      }
+      const target = await tx.householdMembership.findFirst({ where: { id: memberId, householdId } });
+      if (!target) throw new NotFoundException('Membre introuvable dans ce foyer');
+      await tx.user.update({ where: { id: target.userId }, data: { color } });
+      return tx.householdMembership.findUnique({
+        where: { id: target.id },
+        include: { user: { select: { id: true, email: true, firstName: true, lastName: true, color: true } } },
+      });
+    });
+  }
+
   /** Seul un admin peut inviter (droit non financier mais structurant). */
   async createInvite(userId: string, householdId: string, role: 'admin' | 'member' | 'read_only' = 'admin') {
     return this.rlsContext.run(userId, householdId, async () => {

@@ -1,8 +1,10 @@
 import { cellResponsibleMemberId, memberColorMap } from '../memberColors';
+import { PERSON_COLOR_OPTIONS, personColor } from '../personPalette';
+import { ACCOUNT_COLOR_OPTIONS } from '../accountPalette';
 import { colors } from '../theme';
 import type { HouseholdMembershipApi, PlanningCellApi } from '../../api/client';
 
-const member = (id: string, joinedAt?: string, firstName = 'X'): HouseholdMembershipApi => ({ id, role: 'member', joinedAt, user: { id: `u-${id}`, firstName, lastName: 'L', email: `${id}@t.local`, color: null } });
+const member = (id: string, color: string | null, firstName = 'X'): HouseholdMembershipApi => ({ id, role: 'member', user: { id: `u-${id}`, firstName, lastName: 'L', email: `${id}@t.local`, color } });
 
 function cell(items: Partial<PlanningCellApi['items'][number]>[]): PlanningCellApi {
   return {
@@ -16,17 +18,33 @@ function cell(items: Partial<PlanningCellApi['items'][number]>[]): PlanningCellA
   };
 }
 
-describe('memberColorMap', () => {
-  it('1er membre arrivé = bleu, 2e = rose (joinedAt), indépendamment du prénom et de l’ordre de la liste', () => {
-    const map = memberColorMap([member('b', '2026-02-01', 'Adil'), member('a', '2026-01-01', 'Lamiaa')]);
-    expect(map.get('a')).toBe(colors.memberBlue);
-    expect(map.get('b')).toBe(colors.memberPink);
+describe('palette des personnes', () => {
+  it('mêmes clés que le backend, teintes reprises de la palette des comptes', () => {
+    expect(PERSON_COLOR_OPTIONS.map((o) => o.key)).toEqual(['bleu', 'rose', 'violet', 'turquoise', 'azur', 'mauve']);
+    const accountHexes = ACCOUNT_COLOR_OPTIONS.map((o) => o.bg);
+    for (const o of PERSON_COLOR_OPTIONS) expect(accountHexes).toContain(o.bg);
   });
-  it('sans joinedAt : ordre du foyer conservé ; au-delà de 2 membres, aucune couleur dédiée', () => {
-    const map = memberColorMap([member('a'), member('b'), member('c')]);
-    expect(map.get('a')).toBe(colors.memberBlue);
-    expect(map.get('b')).toBe(colors.memberPink);
-    expect(map.has('c')).toBe(false);
+  it('aucune teinte d’état (vert payé, orange partiel, rouge négatif)', () => {
+    const hexes = PERSON_COLOR_OPTIONS.map((o) => o.bg);
+    for (const state of [colors.success, colors.warning, colors.danger]) expect(hexes).not.toContain(state);
+  });
+  it('clé absente ou inconnue : aucune couleur', () => {
+    expect(personColor(null)).toBeUndefined();
+    expect(personColor('jaune')).toBeUndefined();
+    expect(personColor('bleu')).toBe(ACCOUNT_COLOR_OPTIONS.find((o) => o.key === 'bleu_electrique')!.bg);
+  });
+});
+
+describe('memberColorMap', () => {
+  it('lit User.color de chaque membre, jamais son prénom ni sa position', () => {
+    const map = memberColorMap([member('a', 'rose', 'Adil'), member('b', 'bleu', 'Lamiaa')]);
+    expect(map.get('a')).toBe(personColor('rose'));
+    expect(map.get('b')).toBe(personColor('bleu'));
+  });
+  it('sans couleur : absent de la table (neutre) ; deux personnes peuvent partager une couleur', () => {
+    const map = memberColorMap([member('a', null), member('b', 'violet'), member('c', 'violet')]);
+    expect(map.has('a')).toBe(false);
+    expect(map.get('b')).toBe(map.get('c'));
   });
 });
 

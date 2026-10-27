@@ -1,24 +1,35 @@
 import React from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { ACCOUNT_COLOR_OPTIONS } from './accountPalette';
+import { ACCOUNT_COLOR_OPTIONS, AccountColorOption } from './accountPalette';
 import { colors, radius, spacing } from './theme';
 
 /**
  * Palette compacte de couleur de carte (Lot ciblé §1) — ~10 teintes prédéfinies,
  * jamais un color picker libre. Réutilisé à la création ET à l'édition d'un compte.
  */
-export function AccountColorSwatchGrid({ selected, onSelect }: { selected: string | null; onSelect: (key: string) => void }) {
+export function AccountColorSwatchGrid({
+  selected,
+  onSelect,
+  options = ACCOUNT_COLOR_OPTIONS,
+  testIDPrefix = 'account-color',
+}: {
+  selected: string | null;
+  onSelect: (key: string) => void;
+  /** Palette proposée — celle des comptes par défaut, celle des personnes pour « Membres ». */
+  options?: AccountColorOption[];
+  testIDPrefix?: string;
+}) {
   return (
     <View style={styles.grid}>
-      {ACCOUNT_COLOR_OPTIONS.map((option) => {
+      {options.map((option) => {
         const isSelected = option.key === selected;
         return (
           <TouchableOpacity
             key={option.key}
             style={[styles.swatch, { backgroundColor: option.bg }, isSelected && styles.swatchSelected]}
             onPress={() => onSelect(option.key)}
-            testID={`account-color-${option.key}`}
+            testID={`${testIDPrefix}-${option.key}`}
             accessibilityLabel={option.label}
           >
             {isSelected ? <Ionicons name="checkmark" size={18} color="#FFFFFF" /> : null}

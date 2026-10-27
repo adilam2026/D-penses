@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { AccountColorSwatchGrid } from './AccountColorPicker';
+import type { AccountColorOption } from './accountPalette';
 import { colors, radius, spacing, typography } from './theme';
 import { useBottomInset } from './useBottomInset';
 
@@ -11,12 +12,16 @@ export function ColorPickerModal({
   initialColorKey,
   onClose,
   onSubmit,
+  options,
+  testIDPrefix,
 }: {
   visible: boolean;
   title: string;
   initialColorKey: string | null;
   onClose: () => void;
   onSubmit: (colorKey: string) => Promise<void>;
+  options?: AccountColorOption[];
+  testIDPrefix?: string;
 }) {
   const [selected, setSelected] = useState<string | null>(initialColorKey);
   const [saving, setSaving] = useState(false);
@@ -42,7 +47,7 @@ export function ColorPickerModal({
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
       <View style={[styles.sheet, { paddingBottom: bottomInset }]}>
         <Text style={styles.title}>{title}</Text>
-        <AccountColorSwatchGrid selected={selected} onSelect={setSelected} />
+        <AccountColorSwatchGrid selected={selected} onSelect={setSelected} options={options} testIDPrefix={testIDPrefix} />
         <TouchableOpacity
           style={[styles.button, (!selected || saving) && styles.buttonDisabled]}
           onPress={submit}

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { HouseholdsService } from './households.service';
 import { AuthService } from '../auth/auth.service';
@@ -7,6 +7,7 @@ import { CreateInviteDto } from './dto/create-invite.dto';
 import { JoinHouseholdDto } from './dto/join-household.dto';
 import { SwitchActiveHouseholdDto } from './dto/switch-active-household.dto';
 import { UpdateHouseholdSettingsDto } from './dto/update-household-settings.dto';
+import { UpdateMemberColorDto } from './dto/update-member-color.dto';
 import { CurrentUser, AuthenticatedUser } from '../common/decorators/current-user.decorator';
 import { HouseholdRequiredGuard } from '../common/guards/household-required.guard';
 
@@ -35,6 +36,13 @@ export class HouseholdsController {
   @UseGuards(HouseholdRequiredGuard)
   updateSettings(@Body() dto: UpdateHouseholdSettingsDto, @CurrentUser() user: AuthenticatedUser) {
     return this.households.updateSettings(user.sub, user.householdId!, dto);
+  }
+
+  /** Couleur d'une personne du foyer (User.color) — réservé aux admins, comme les autres réglages du foyer. */
+  @Patch('members/:memberId/color')
+  @UseGuards(HouseholdRequiredGuard)
+  updateMemberColor(@Param('memberId', ParseUUIDPipe) memberId: string, @Body() dto: UpdateMemberColorDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.households.updateMemberColor(user.sub, user.householdId!, memberId, dto.color);
   }
 
   @Post('invites')

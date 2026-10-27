@@ -10,6 +10,7 @@ import { colors } from '../../ui/theme';
 import { formatDh, formatMonthShort } from '../../ui/formatMoney';
 import { shiftMonthKey } from '../../ui/monthKey';
 import { testIdSlug } from '../../ui/testIdSlug';
+import { personColor } from '../../ui/personPalette';
 
 // Date du téléphone figée : aujourd'hui = 15 octobre 2026 (mois courant OCT. 26).
 // Seule l'horloge est simulée ; les minuteries restent réelles pour waitFor.
@@ -1234,9 +1235,9 @@ it('mois courant du backend différent du téléphone (début de mois paramétra
 
 
 // ---------------------------------------------------------------------------
-// Identification Adil (bleu) / Lamiaa (rose) : couleur du montant À VENIR,
-// lue sur le responsibleMemberId réel — jamais sur le libellé ; les états
-// payé / partiel gardent leur couleur fonctionnelle.
+// Couleur de la personne responsable (User.color) sur le montant À VENIR,
+// lue via le responsibleMemberId réel — jamais sur le libellé, le prénom ou
+// l'ordre des membres ; les états payé / partiel gardent leur couleur.
 // ---------------------------------------------------------------------------
 
 type Item = PlanningTableApi['depenses'][number]['cells'][string]['items'][number];
@@ -1281,6 +1282,23 @@ function amountColor(label: string): string {
   return StyleSheet.flatten(screen.getByTestId(`planning-cell-${testIdSlug(label)}-2026-10-text`).props.style).color;
 }
 
+const BLEU = personColor('bleu')!;
+const ROSE = personColor('rose')!;
+
+/** Foyer de recette : Adil a choisi « bleu », Lamiaa « rose » (User.color). */
+function householdWithColors(adil: string | null, lamiaa: string | null) {
+  mockGetMyHousehold.mockResolvedValue({
+    id: 'h1',
+    name: 'Foyer',
+    currency: 'MAD',
+    monthStartDay: 1,
+    memberships: [
+      { id: 'm-adil', role: 'admin', user: { id: 'u-adil', firstName: 'Adil', lastName: 'A', email: 'adil@test.local', color: adil } },
+      { id: 'm-lamiaa', role: 'member', user: { id: 'u-lamiaa', firstName: 'Lamiaa', lastName: 'L', email: 'lamiaa@test.local', color: lamiaa } },
+    ],
+  });
+}
+
 async function openAllAccordions() {
   await waitFor(() => screen.getByTestId('planning-block-toggle-depenses'));
   await fireEvent.press(screen.getByTestId('planning-block-toggle-depenses'));
@@ -1289,25 +1307,28 @@ async function openAllAccordions() {
 }
 
 it('REVENUS / DÉPENSES / VERSEMENTS : montant à venir bleu pour Adil, rose pour Lamiaa, neutre sans responsable', async () => {
+  householdWithColors('bleu', 'rose');
   mockGetPlanning.mockResolvedValue(coloredPlanning());
   renderWithSafeArea(<PlanningScreen />);
   await openAllAccordions();
 
-  expect(amountColor('Salaire Adil')).toBe(colors.memberBlue);
-  expect(amountColor('Salaire Lam')).toBe(colors.memberPink);
+  expect(amountColor('Salaire Adil')).toBe(BLEU);
+  expect(amountColor('Salaire Lam')).toBe(ROSE);
   expect(amountColor('CNSS')).toBe(colors.textSecondary);
-  expect(amountColor('Voyage')).toBe(colors.memberBlue);
-  expect(amountColor('Santé')).toBe(colors.memberPink);
+  expect(amountColor('Voyage')).toBe(BLEU);
+  expect(amountColor('Santé')).toBe(ROSE);
 });
 
 it('la couleur vient du responsibleMemberId, jamais du libellé ("Appli Adil" attribuée à Lamiaa → rose)', async () => {
+  householdWithColors('bleu', 'rose');
   mockGetPlanning.mockResolvedValue(coloredPlanning());
   renderWithSafeArea(<PlanningScreen />);
   await openAllAccordions();
-  expect(amountColor('Appli Adil')).toBe(colors.memberPink);
+  expect(amountColor('Appli Adil')).toBe(ROSE);
 });
 
 it('responsables mélangés ou opération réelle non planifiée : couleur neutre conservée', async () => {
+  householdWithColors('bleu', 'rose');
   mockGetPlanning.mockResolvedValue(coloredPlanning());
   renderWithSafeArea(<PlanningScreen />);
   await openAllAccordions();
@@ -1317,22 +1338,50 @@ it('responsables mélangés ou opération réelle non planifiée : couleur neutr
 });
 
 it('états fonctionnels prioritaires : payé reste vert, partiel reste orange, même avec un responsable', async () => {
+  householdWithColors('bleu', 'rose');
   mockGetPlanning.mockResolvedValue(coloredPlanning());
   renderWithSafeArea(<PlanningScreen />);
   await openAllAccordions();
   expect(amountColor('GSM Adil')).toBe(colors.success);
   expect(amountColor('Courses')).toBe(colors.warning);
   for (const label of ['GSM Adil', 'Courses']) {
-    expect([colors.memberBlue, colors.memberPink]).not.toContain(amountColor(label));
+    expect([BLEU, ROSE]).not.toContain(amountColor(label));
   }
 });
 
 it('rien d’autre ne change : fond des cases, cartes de synthèse et totaux des accordéons sans couleur de membre', async () => {
+  householdWithColors('bleu', 'rose');
   mockGetPlanning.mockResolvedValue(coloredPlanning());
   renderWithSafeArea(<PlanningScreen />);
   await openAllAccordions();
   const cellStyle = StyleSheet.flatten(screen.getByTestId('planning-cell-salaire-lam-2026-10').props.style);
-  expect([colors.memberBlue, colors.memberPink]).not.toContain(cellStyle.backgroundColor);
-  const memberColorsUsed = (id: string) => JSON.stringify(screen.getByTestId(id).props.style ?? {}).match(/#2F67A8|#B8457E/);
+  expect([BLEU, ROSE]).not.toContain(cellStyle.backgroundColor);
+  const memberColorsUsed = (id: string) => JSON.stringify(screen.getByTestId(id).props.style ?? {}).match(new RegExp(`${BLEU}|${ROSE}`));
   for (const id of ['planning-summary-card-revenus', 'planning-block-toggle-revenus', 'planning-block-toggle-depenses']) expect(memberColorsUsed(id)).toBeNull();
+});
+
+it('aucune couleur renseignée (User.color null) : montants neutres, même avec un responsable', async () => {
+  householdWithColors(null, null);
+  mockGetPlanning.mockResolvedValue(coloredPlanning());
+  renderWithSafeArea(<PlanningScreen />);
+  await openAllAccordions();
+  for (const label of ['Salaire Adil', 'Salaire Lam', 'Voyage', 'Santé', 'Appli Adil']) expect(amountColor(label)).toBe(colors.textSecondary);
+});
+
+it('la couleur suit le choix de la personne, jamais son prénom ni sa position : couleurs inversées si choisies ainsi', async () => {
+  householdWithColors('rose', 'bleu');
+  mockGetPlanning.mockResolvedValue(coloredPlanning());
+  renderWithSafeArea(<PlanningScreen />);
+  await openAllAccordions();
+  expect(amountColor('Salaire Adil')).toBe(ROSE);
+  expect(amountColor('Salaire Lam')).toBe(BLEU);
+});
+
+it('une seule personne colorée : l’autre reste neutre ; clé inconnue en base -> neutre', async () => {
+  householdWithColors('bleu', 'couleur-inconnue');
+  mockGetPlanning.mockResolvedValue(coloredPlanning());
+  renderWithSafeArea(<PlanningScreen />);
+  await openAllAccordions();
+  expect(amountColor('Salaire Adil')).toBe(BLEU);
+  expect(amountColor('Salaire Lam')).toBe(colors.textSecondary);
 });

@@ -132,8 +132,6 @@ export const createHousehold = (name: string) => apiFetch('/households', { metho
 export interface HouseholdMembershipApi {
   id: string;
   role: 'admin' | 'member' | 'read_only';
-  /** Date d'arrivée dans le foyer (déjà renvoyée par le backend) — ordre stable des membres. */
-  joinedAt?: string;
   user: { id: string; firstName: string; lastName: string; email: string; color: string | null };
 }
 
@@ -146,6 +144,10 @@ export interface HouseholdApi {
 }
 
 export const getMyHousehold = (): Promise<HouseholdApi> => apiFetch('/households/me');
+
+/** Couleur d'une personne (User.color, clé de PERSON_COLOR_OPTIONS ou null = neutre) — réservé aux admins du foyer. */
+export const updateMemberColor = (memberId: string, color: string | null): Promise<HouseholdMembershipApi> =>
+  apiFetch(`/households/members/${memberId}/color`, { method: 'PATCH', body: { color } });
 
 /** Début du mois financier (§ Paramètres) — 1 à 28, réservé aux admins du foyer. */
 export const updateHouseholdSettings = (data: { monthStartDay: number }) => apiFetch('/households/settings', { method: 'PATCH', body: data });

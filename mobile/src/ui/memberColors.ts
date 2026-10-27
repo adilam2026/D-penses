@@ -1,19 +1,18 @@
 import type { HouseholdMembershipApi, PlanningCellApi } from '../api/client';
-import { colors } from './theme';
+import { personColor } from './personPalette';
 
 /**
- * Couleur d'identification par membre du foyer (Planning) — attribuée par
- * ordre d'arrivée dans le foyer (joinedAt), jamais d'après un prénom ou un
- * libellé : 1er membre = bleu, 2e = rose ; au-delà, aucune couleur dédiée.
+ * memberId -> couleur de la personne (User.color), choisie dans « Membres ».
+ * Jamais déduite d'un prénom, d'un libellé ni de l'ordre des membres : une
+ * personne sans couleur n'apparaît pas dans la table (affichage neutre).
  */
-const MEMBER_PALETTE = [colors.memberBlue, colors.memberPink];
-
 export function memberColorMap(members: HouseholdMembershipApi[]): Map<string, string> {
-  const ordered = members
-    .map((m, idx) => ({ m, idx }))
-    .sort((a, b) => (a.m.joinedAt ?? '').localeCompare(b.m.joinedAt ?? '') || a.idx - b.idx)
-    .map(({ m }) => m);
-  return new Map(ordered.slice(0, MEMBER_PALETTE.length).map((m, i) => [m.id, MEMBER_PALETTE[i]]));
+  const map = new Map<string, string>();
+  for (const m of members) {
+    const color = personColor(m.user.color);
+    if (color) map.set(m.id, color);
+  }
+  return map;
 }
 
 /**
