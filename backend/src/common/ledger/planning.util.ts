@@ -309,6 +309,14 @@ export function monthKeyDiff(from: PlanningMonthKey, to: PlanningMonthKey): numb
   return ty * 12 + tm - (fy * 12 + fm);
 }
 
+/** Clé mois décalée de `n` mois ("2026-10" + 1 → "2026-11", n négatif autorisé) — arithmétique de mois pure, jamais via un jour du mois. */
+export function shiftMonthKey(key: PlanningMonthKey, n: number): PlanningMonthKey {
+  const [year, month] = key.split('-').map(Number);
+  const index = year * 12 + (month - 1) + n;
+  const y = Math.floor(index / 12);
+  return `${y}-${String(index - y * 12 + 1).padStart(2, '0')}`;
+}
+
 /** `count` clés mois consécutives à partir de la clé `first` (incluse). */
 export function monthKeysFrom(first: PlanningMonthKey, count: number): PlanningMonthKey[] {
   const [year, month] = first.split('-').map(Number);

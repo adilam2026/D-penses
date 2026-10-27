@@ -17,6 +17,14 @@ export function pinClockToMidMonth(): { year: number; month: number; date: (mont
   return { year, month, date };
 }
 
+/** Fixe l'horloge (Date uniquement) à un instant précis — ex. un 31 à 23:30 UTC. */
+export function pinClockAt(iso: string): void {
+  jest.useFakeTimers({
+    now: new Date(iso),
+    doNotFake: ['nextTick', 'setImmediate', 'clearImmediate', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'queueMicrotask', 'hrtime', 'performance'],
+  });
+}
+
 export function restoreClock(): void {
   jest.useRealTimers();
 }

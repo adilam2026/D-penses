@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { ensureOccurrencesForPeriod } from '../common/ledger/recurrence.util';
-import { buildPlanningTable, monthBounds, monthRange } from '../common/ledger/planning.util';
+import { buildPlanningTable, monthBounds, monthKey, PlanningMonthKey, shiftMonthKey } from '../common/ledger/planning.util';
 import { buildTodoList, TodoList } from '../common/ledger/todo.util';
 
 /**
@@ -11,6 +11,15 @@ import { buildTodoList, TodoList } from '../common/ledger/todo.util';
  * requêtes, même calcul prévu/déjà payé/reste que /planning) — zéro second
  * calcul, zéro risque de divergence entre les deux écrans.
  */
+/**
+ * Mois financier consulté par À faire : mois financier courant décalé de
+ * `monthsOffset` MOIS. Raisonne uniquement sur les clés de mois : le 31/10,
+ * +1 donne novembre (jamais un "31 novembre" normalisé en décembre).
+ */
+export function todoTargetMonth(now: Date, monthsOffset: number, monthStartDay: number): PlanningMonthKey {
+  return shiftMonthKey(monthKey(now, monthStartDay), monthsOffset);
+}
+
 @Injectable()
 export class TodoService {
   constructor(private readonly rlsContext: RlsContextService) {}
@@ -22,11 +31,10 @@ export class TodoService {
       const household = await tx.household.findUniqueOrThrow({ where: { id: householdId }, select: { monthStartDay: true } });
       const monthStartDay = household.monthStartDay;
 
-      const now = new Date();
-      // Même notion de "mois financier" que Planning (monthRange/monthBounds) —
+      // Même notion de "mois financier" que Planning (monthKey/monthBounds) —
       // jamais un décalage calendaire naïf quand monthStartDay ≠ 1.
-      const shifted = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + monthsOffset, now.getUTCDate()));
-      const targetMonth = monthRange(shifted, 1, monthStartDay)[0];
+      const now = new Date();
+      const targetMonth = todoTargetMonth(now, monthsOffset, monthStartDay);
       const { start: rangeStart, end: rangeEnd } = monthBounds(targetMonth, monthStartDay);
       // Même matérialisation que le Planning : un mois consulté directement
       // dans À faire, même au-delà de 12 mois, contient ses récurrences.
