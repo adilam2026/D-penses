@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, PlannedOperationKind, RecurrenceFrequency, ResponsibleSource } from '@prisma/client';
 import { RlsContextService } from '../common/prisma/rls-context.service';
-import { ensurePlannedOccurrences } from '../common/ledger/recurrence.util';
+import { createVersionPivot, ensurePlannedOccurrences } from '../common/ledger/recurrence.util';
 import { formatMontant, computePlannedOperationAlreadyPaid } from '../common/ledger/ledger.util';
 import { resolveFallbackCategoryId } from '../categories/categories.service';
 import { RecurrenceRuleApplyFrom } from './dto/update-recurrence-rule.dto';
@@ -63,6 +63,9 @@ export class RecurrenceRulesService {
           householdId,
           frequency: dto.frequency,
           anchorDate: new Date(dto.anchorDate),
+          // Jour métier d'origine de la série, conservé même quand une
+          // occurrence tombe le dernier jour d'un mois plus court.
+          anchorDay: new Date(dto.anchorDate).getUTCDate(),
           label: dto.label,
           kind: dto.kind,
           expectedAmount: new Prisma.Decimal(dto.expectedAmount),
@@ -171,8 +174,13 @@ export class RecurrenceRulesService {
       if (responsibleSourcePatch !== undefined) templatePatch.responsibleSource = responsibleSourcePatch;
       if (dto.includeInTodo !== undefined) templatePatch.includeInTodo = dto.includeInTodo;
       if (cadenceChanges) {
+        // Nouvelle version de série à partir du pivot : nouveau point de
+        // départ, jour d'origine conservé sauf nouveau jour explicitement
+        // choisi (ex. une série du 31 repartie d'un pivot au 28/02 reste au 31).
         if (dto.frequency !== undefined) templatePatch.frequency = dto.frequency;
         templatePatch.anchorDate = newAnchorDate;
+        templatePatch.anchorDay = dto.anchorDate !== undefined ? newAnchorDate.getUTCDate() : (rule.anchorDay ?? rule.anchorDate.getUTCDate());
+        templatePatch.seriesVersion = rule.seriesVersion + 1;
       }
 
       if (dto.applyFrom === 'THIS_OCCURRENCE') {
@@ -187,35 +195,25 @@ export class RecurrenceRulesService {
       const updated = await tx.recurrenceRule.update({ where: { id }, data: templatePatch });
 
       if (cadenceChanges) {
-        // Supprime les occurrences PENDING déjà générées sous l'ANCIENNE
-        // cadence à partir du pivot (jamais REALIZED/CANCELLED — protégées).
-        await tx.plannedOperation.deleteMany({
-          where: { recurrenceRuleId: id, status: 'PENDING', expectedDate: { gte: fromDate } },
+        // Seules les occurrences encore INTACTES de l'ancienne version à
+        // partir du pivot sont retirées (en attente, jamais modifiées à la
+        // main, sans aucun paiement). Payées, partiellement payées,
+        // modifiées/déplacées et annulées restent dans l'ancienne version :
+        // ni supprimées, ni déplacées, ni recréées dans la nouvelle.
+        const candidates = await tx.plannedOperation.findMany({
+          where: { recurrenceRuleId: id, status: 'PENDING', manuallyEdited: false, expectedDate: { gte: fromDate } },
+          select: { id: true },
         });
-        // Recrée immédiatement le pivot à sa nouvelle date — ne dépend jamais
-        // de la génération paresseuse (qui ignore toute date déjà passée par
-        // rapport à "aujourd'hui", ex. modification d'une échéance en retard).
-        await tx.plannedOperation.create({
-          data: {
-            householdId,
-            kind: updated.kind,
-            recurrenceRuleId: id,
-            categoryId: updated.categoryId,
-            financialPlanItemId: updated.financialPlanItemId,
-            financialPlanDeadlineId: updated.financialPlanDeadlineId,
-            sourceAccountId: updated.sourceAccountId,
-            sourceSubaccountId: updated.sourceSubaccountId,
-            destinationAccountId: updated.destinationAccountId,
-            destinationSubaccountId: updated.destinationSubaccountId,
-            expectedAmount: updated.expectedAmount,
-            expectedDate: newAnchorDate,
-            label: updated.label ?? 'Récurrence',
-            status: 'PENDING',
-            responsibleMemberId: updated.responsibleMemberId,
-            responsibleSource: updated.responsibleSource,
-            includeInTodo: updated.includeInTodo,
-          },
+        const withPayment = await tx.financialOperation.findMany({
+          where: { plannedOperationId: { in: candidates.map((c) => c.id) } },
+          select: { plannedOperationId: true },
         });
+        const paidIds = new Set(withPayment.map((f) => f.plannedOperationId));
+        await tx.plannedOperation.deleteMany({ where: { id: { in: candidates.filter((c) => !paidIds.has(c.id)).map((c) => c.id) } } });
+        // Pivot (n°0 de la nouvelle version) créé immédiatement, même si sa
+        // date est passée (ex. modification d'une échéance en retard) — sauf
+        // si une occurrence protégée de l'ancienne version couvre déjà ce mois.
+        await createVersionPivot(tx, householdId, updated);
         // Complète le reste de l'horizon sous la nouvelle cadence (idempotent).
         await ensurePlannedOccurrences(tx, householdId);
       } else {

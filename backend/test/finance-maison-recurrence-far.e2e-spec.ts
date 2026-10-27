@@ -130,8 +130,9 @@ describe('Finance Maison — récurrences au-delà de 12 mois (Planning from=…
     expect(salaryCell(p, shift(14)).status).toBe('EMPTY');
     expect(salaryCell(p, shift(15)).displayAmount).toBe(46500);
     expect(await occurrenceOn(token, 'Salaire Adil', day(14))).toEqual([expect.objectContaining({ status: 'CANCELLED' })]);
-    expect(await occurrenceOn(token, 'Salaire Adil', day(15))).toEqual([expect.objectContaining({ status: 'CANCELLED' })]);
-    expect(await occurrenceOn(token, 'Salaire Adil', `${shift(15)}-20`)).toHaveLength(1);
+    // Déplacée sur place : plus rien à sa date d'origine, une seule ligne à la nouvelle date.
+    expect(await occurrenceOn(token, 'Salaire Adil', day(15))).toEqual([]);
+    expect(await occurrenceOn(token, 'Salaire Adil', `${shift(15)}-20`)).toEqual([expect.objectContaining({ id: moved.id, manuallyEdited: true })]);
   });
 
   it('5. occurrence lointaine partiellement payée conservée (déjà payé / reste)', async () => {

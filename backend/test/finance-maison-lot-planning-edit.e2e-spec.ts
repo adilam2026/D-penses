@@ -171,7 +171,7 @@ describe('Finance Maison — Planning : source au paiement + modification des é
     expect(ruleAfter.body.find((r: any) => r.id === rule.body.id).expectedAmount).toBe(350);
   });
 
-  it('"cette échéance uniquement" avec changement de DATE détache l\'occurrence sans créer de fantôme ni perturber la série', async () => {
+  it('"cette échéance uniquement" avec changement de DATE : déplacée sur place, jamais recréée à sa date théorique', async () => {
     const token = await freshHousehold();
     const cih = await createAccount(token, 'CIH', 20000);
 
@@ -188,20 +188,25 @@ describe('Finance Maison — Planning : source au paiement + modification des é
     const movedDate = isoPlusDays(45);
 
     const moved = await http.patch(`/planned-operations/${novembre.id}`).set('Authorization', `Bearer ${token}`).send({ expectedDate: movedDate }).expect(200);
-    expect(moved.body.id).not.toBe(novembre.id); // détachée : nouvelle ligne autonome
-    expect(moved.body.recurrenceRuleId).toBeNull();
+    // Déplacée SUR PLACE : même ligne, même règle, même n° et même version,
+    // marquée modifiée manuellement.
+    expect(moved.body.id).toBe(novembre.id);
+    expect(moved.body.recurrenceRuleId).toBe(rule.body.id);
+    expect(moved.body.occurrenceIndex).toBe(novembre.occurrenceIndex);
+    expect(moved.body.seriesVersion).toBe(novembre.seriesVersion);
+    expect(moved.body.manuallyEdited).toBe(true);
     expect(moved.body.expectedDate.slice(0, 10)).toBe(movedDate);
     expect(moved.body.expectedAmount).toBe(350);
 
-    // Régénère/relit la fenêtre : la ligne d'origine à l'ancienne date reste
-    // présente mais CANCELLED (c'est elle qui bloque toute régénération
-    // fantôme à cette date) — jamais une seconde ligne PENDING à cette même
-    // date, et les autres occurrences de la règle restent intactes (350).
+    // Régénère/relit la fenêtre : RIEN à l'ancienne date (ni fantôme, ni
+    // annulation technique), une seule ligne par n°, autres occurrences
+    // intactes (350).
     await getPlanning(token, 12);
     const stillThere = (await listPlanned(token)).filter((p) => p.recurrenceRuleId === rule.body.id);
-    const atOldDate = stillThere.filter((o) => o.expectedDate.slice(0, 10) === novembreOldDate);
-    expect(atOldDate).toHaveLength(1);
-    expect(atOldDate[0].status).toBe('CANCELLED');
+    expect(stillThere.filter((o) => o.expectedDate.slice(0, 10) === novembreOldDate)).toHaveLength(0);
+    expect(stillThere.filter((o) => o.status === 'CANCELLED')).toHaveLength(0);
+    const indexes = stillThere.map((o) => o.occurrenceIndex);
+    expect(new Set(indexes).size).toBe(indexes.length);
     expect(stillThere.filter((o) => o.status === 'PENDING').every((o) => o.expectedAmount === 350)).toBe(true);
   });
 

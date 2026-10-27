@@ -661,7 +661,6 @@ model PlannedOperation {
   // opération de clôture (realizedOperationId/realizedOperation ci-dessus).
   realizations FinancialOperation[] @relation("PlannedOperationRealizations")
 
-  @@unique([recurrenceRuleId, expectedDate])
   @@unique([recurrenceRuleId, seriesVersion, occurrenceIndex], map: "planned_operation_rule_version_index_key")
   @@index([householdId])
   @@map("planned_operation")

@@ -315,3 +315,37 @@ export async function virtualPlannedOccurrences(tx: TxClient, householdId: strin
     })),
   );
 }
+
+/**
+ * Identité logique (n°, version) d'une ligne récurrente. Une ligne antérieure
+ * à ce lot (n° NULL) est rattachée à son n° via l'ancien calcul de dates —
+ * à faire AVANT de changer sa date, sinon son emplacement logique ne serait
+ * plus reconnu et le moteur le recréerait à sa date théorique.
+ */
+export async function resolveOccurrenceIdentity(
+  tx: TxClient,
+  row: { recurrenceRuleId: string | null; occurrenceIndex: number | null; seriesVersion: number | null; expectedDate: Date },
+): Promise<{ occurrenceIndex: number | null; seriesVersion: number | null }> {
+  if (!row.recurrenceRuleId || row.occurrenceIndex !== null) return { occurrenceIndex: row.occurrenceIndex, seriesVersion: row.seriesVersion };
+  const rule = await tx.recurrenceRule.findUnique({ where: { id: row.recurrenceRuleId } });
+  if (!rule || rule.seriesVersion !== 0) return { occurrenceIndex: null, seriesVersion: null };
+  const target = startOfUtcDay(row.expectedDate).getTime();
+  const k = legacyOccurrenceDates(rule.anchorDate, rule.frequency, row.expectedDate).findIndex((date) => date.getTime() === target);
+  return k >= 0 ? { occurrenceIndex: k, seriesVersion: 0 } : { occurrenceIndex: null, seriesVersion: null };
+}
+
+/**
+ * Crée l'occurrence n°0 de la version courante de la règle (pivot d'un
+ * changement de cadence), même si sa date est passée — sauf si ce n° est
+ * déjà occupé, par exemple par une occurrence de l'ancienne version payée,
+ * modifiée ou annulée dans le même mois : jamais de doublon logique.
+ */
+export async function createVersionPivot(tx: TxClient, householdId: string, rule: RuleRow): Promise<void> {
+  const rows = await tx.plannedOperation.findMany({
+    where: { recurrenceRuleId: rule.id },
+    select: { recurrenceRuleId: true, occurrenceIndex: true, seriesVersion: true, expectedDate: true },
+  });
+  if (occupiedIndexes(rule, rows).has(0)) return;
+  const pivot = { index: 0, date: occurrenceDate(seriesSpecOf(rule), 0) };
+  await tx.plannedOperation.createMany({ data: [occurrenceFromRule(householdId, rule, pivot)], skipDuplicates: true });
+}
