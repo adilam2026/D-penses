@@ -81,11 +81,6 @@ describe('Finance Maison — Recette v1 (avant APK)', () => {
   function todayIso(): string {
     return new Date().toISOString().slice(0, 10);
   }
-  function isoPlusDays(days: number): string {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() + days);
-    return d.toISOString().slice(0, 10);
-  }
 
   /**
    * Jour N du mois COURANT (UTC, même référence que le backend), jamais
@@ -191,7 +186,7 @@ describe('Finance Maison — Recette v1 (avant APK)', () => {
     const created = await http
       .post('/planned-operations')
       .set('Authorization', `Bearer ${token}`)
-      .send({ kind: 'EXPENSE', label: 'Facture ponctuelle', expectedDate: isoPlusDays(3), expectedAmount: '500', categoryId: maison.id, sourceAccountId: lamiaa.id })
+      .send({ kind: 'EXPENSE', label: 'Facture ponctuelle', expectedDate: dayOfCurrentMonth(15), expectedAmount: '500', categoryId: maison.id, sourceAccountId: lamiaa.id })
       .expect(201);
 
     let planning = await getPlanning(token, 3);
