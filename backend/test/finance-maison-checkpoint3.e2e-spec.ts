@@ -2,6 +2,7 @@ import request from 'supertest';
 import { INestApplication } from '@nestjs/common';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { createTestApp } from './setup-app';
+import { pinClockToMidMonth, restoreClock } from './support/clock';
 import { FakeMailer } from './support/fake-mailer';
 import { signupVerified } from './support/signup';
 import { MailerService } from '../src/auth/mailer.service';
@@ -323,12 +324,14 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
       .send({ kind: 'INCOME', label: 'Salaire', expectedDate: todayIso(), expectedAmount: '1000', destinationAccountId: bp.id })
       .expect(201);
 
-    const nextMonthDate = new Date();
-    nextMonthDate.setUTCMonth(nextMonthDate.getUTCMonth() + 1);
+    // Mois suivant construit depuis son 1er jour, puis jour fixe (15) :
+    // jamais un setUTCMonth(+1) qui, un 31, sauterait au mois d'après.
+    const now = new Date();
+    const nextMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 15)).toISOString().slice(0, 10);
     await http
       .post('/planned-operations')
       .set('Authorization', `Bearer ${token}`)
-      .send({ kind: 'INCOME', label: 'Salaire', expectedDate: nextMonthDate.toISOString().slice(0, 10), expectedAmount: '2000', destinationAccountId: bp.id })
+      .send({ kind: 'INCOME', label: 'Salaire', expectedDate: nextMonthDate, expectedAmount: '2000', destinationAccountId: bp.id })
       .expect(201);
 
     const after = await getPlanning(token, 3);
@@ -400,16 +403,17 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
   });
 
   it('M. recommandation recalculée à partir du disponible réellement réalisé', async () => {
+    // "Mois restants" dépend du jour du mois (arrondi au supérieur) : horloge
+    // fixée au 15 du mois courant, échéance au 15 du 3e mois suivant.
+    const clock = pinClockToMidMonth();
+    try {
     const token = await freshHousehold();
     const bp = await createAccount(token, 'BP Lamiaa', 25000);
-
-    const dueDate = new Date();
-    dueDate.setUTCMonth(dueDate.getUTCMonth() + 3);
 
     const plan = await http
       .post('/financial-plans')
       .set('Authorization', `Bearer ${token}`)
-      .send({ label: 'Scolarité', deadlines: [{ label: 'Janvier', dueDate: dueDate.toISOString().slice(0, 10) }] })
+      .send({ label: 'Scolarité', deadlines: [{ label: 'Janvier', dueDate: clock.date(3, 15) }] })
       .expect(201);
     const deadlineId = plan.body.deadlines[0].id;
 
@@ -434,6 +438,9 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
     expect(scolarite.deadlines[0].reste).toBe(18000);
     expect(scolarite.deadlines[0].monthsRemaining).toBe(3);
     expect(scolarite.deadlines[0].recommendedMonthly).toBe(6000);
+    } finally {
+      restoreClock();
+    }
   });
 
   it('N. paiement partiel (§correction "paiements partiels successifs") : 400 payés sur 1000 prévus -> case MIXTE 400/1000, reste 600, échéance TOUJOURS interactive (singleOccurrence non null) ; puis le reste payé -> entièrement réalisée', async () => {
@@ -683,24 +690,34 @@ describe('Finance Maison — Checkpoint 3 — Planning + automates', () => {
   });
 
   it('P. début du mois paramétrable (§ Paramètres) : jour 28 -> le mois "octobre" couvre 28/09 → 27/10', async () => {
+    // Exemple de la spec transposé au mois courant M (horloge fixée au 15 de
+    // M) : la période financière "M" couvre 28/(M-1) → 27/M ; une dépense du
+    // 30/(M-1) — ou du dernier jour si (M-1) est février — tombe dans "M".
+    const clock = pinClockToMidMonth();
+    try {
     const token = await freshHousehold();
     const cih = await createAccount(token, 'CIH', 20000);
 
     await http.patch('/households/settings').set('Authorization', `Bearer ${token}`).send({ monthStartDay: 28 }).expect(200);
 
-    // 30 septembre -> doit tomber dans la période financière "octobre" (28/09 → 27/10), jamais "septembre".
+    const lastDayOfPreviousMonth = Number(clock.date(0, 0).slice(8, 10));
+    const expenseDate = clock.date(-1, Math.min(30, lastDayOfPreviousMonth));
+    const expectedMonth = clock.date(0, 1).slice(0, 7);
     await http
       .post('/financial-operations')
       .set('Authorization', `Bearer ${token}`)
-      .send({ kind: 'EXPENSE', label: 'Aspirateur', date: '2026-09-30', amount: '500', sourceAccountId: cih.id })
+      .send({ kind: 'EXPENSE', label: 'Aspirateur', date: expenseDate, amount: '500', sourceAccountId: cih.id })
       .expect(201);
 
     const planning = await getPlanning(token, 3);
-    expect(planning.months[0]).toBe('2026-10');
+    expect(planning.months[0]).toBe(expectedMonth);
     const categories = await http.get('/categories').set('Authorization', `Bearer ${token}`).expect(200);
     const autres = categories.body.find((c: any) => c.isDefaultFallback);
     const cell = findCell(planning, 'depenses', autres.id, 0);
     expect(cell.status).toBe('REALIZED');
     expect(cell.displayAmount).toBe(500);
+    } finally {
+      restoreClock();
+    }
   });
 });

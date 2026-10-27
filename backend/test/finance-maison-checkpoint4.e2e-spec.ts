@@ -2,6 +2,7 @@ import request from 'supertest';
 import { INestApplication } from '@nestjs/common';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { createTestApp } from './setup-app';
+import { pinClockToMidMonth, restoreClock } from './support/clock';
 import { FakeMailer } from './support/fake-mailer';
 import { signupVerified } from './support/signup';
 import { MailerService } from '../src/auth/mailer.service';
@@ -198,16 +199,17 @@ describe('Finance Maison — Checkpoint 4 — Santé, Plans financiers, Objectif
 
   // G. recommandation basée sur disponible réel.
   it('G. la recommandation mensuelle se base uniquement sur les versements réellement disponibles', async () => {
+    // "Mois restants" dépend du jour du mois (arrondi au supérieur) : horloge
+    // fixée au 15 du mois courant, échéance au 15 du 3e mois suivant.
+    const clock = pinClockToMidMonth();
+    try {
     const token = await freshHousehold();
     const bp = await createAccount(token, 'BP Épargne-Scolarité', 0);
-
-    const dueDate = new Date();
-    dueDate.setUTCMonth(dueDate.getUTCMonth() + 3);
 
     const plan = await http
       .post('/financial-plans')
       .set('Authorization', `Bearer ${token}`)
-      .send({ label: 'Scolarité', accountId: bp.id, deadlines: [{ label: 'Janvier', dueDate: dueDate.toISOString().slice(0, 10) }] })
+      .send({ label: 'Scolarité', accountId: bp.id, deadlines: [{ label: 'Janvier', dueDate: clock.date(3, 15) }] })
       .expect(201);
     const deadlineId = plan.body.deadlines[0].id;
     const item = await http.post(`/financial-plans/${plan.body.id}/items`).set('Authorization', `Bearer ${token}`).send({ label: 'Frais école' }).expect(201);
@@ -218,6 +220,9 @@ describe('Finance Maison — Checkpoint 4 — Santé, Plans financiers, Objectif
     expect(scolarite.deadlines[0].totalPrevu).toBe(30000);
     expect(scolarite.deadlines[0].disponible).toBe(0); // rien de réellement versé -> pas de recommandation basée sur du "juste prévu"
     expect(scolarite.deadlines[0].recommendedMonthly).toBe(10000); // 30000 / 3 mois
+    } finally {
+      restoreClock();
+    }
   });
 
   // H. versement réel → recommandation recalculée.
