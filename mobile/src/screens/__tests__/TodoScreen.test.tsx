@@ -665,3 +665,28 @@ it('tap sur une ligne d’un groupe : même ActionSheet qu’avant (versement �
   await waitFor(() => screen.getByTestId('action-sheet-pay'));
   expect(textContent(screen.getByTestId('action-sheet-pay') as unknown as HostNode)).toBe(`Virer ${formatDh(1500)}`.replace(/\s+/g, ' '));
 });
+
+it('titres de groupe colorés dans TOUS les accordéons : DÉPENSES = identité Dépenses, VERSEMENTS = identité Épargne/Versements', async () => {
+  const depenseLamiaa = { ...depenseAdil2, plannedOperationId: 'po-pharma', label: 'Pharmacie', responsibleMemberId: 'm-lamiaa' };
+  const versementLamiaa = { ...versementAdil, plannedOperationId: 'po-epargne-l', label: 'Épargne L', responsibleMemberId: 'm-lamiaa' };
+  mockGetTodo.mockResolvedValue({
+    month: '2026-10',
+    pending: [actionAdil, versementAdil, depenseLamiaa, versementLamiaa, actionVersementSansResponsable],
+    done: [],
+    pendingCount: 5,
+    totalRemaining: 0,
+  });
+  renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-section-m-lamiaa'));
+  const labelColor = (id: string) => StyleSheet.flatten(screen.getByTestId(id).props.style).color;
+  for (const section of ['m-adil', 'm-lamiaa']) {
+    expect(labelColor(`todo-section-${section}-group-depenses-label`)).toBe(colors.danger);
+    expect(labelColor(`todo-section-${section}-group-versements-label`)).toBe(colors.secondary);
+  }
+  // Accordéon « Non attribué » : même règle.
+  const unassignedVersement = screen.getAllByTestId(/-group-versements-label$/).filter((n) => !/m-(adil|lamiaa)/.test(n.props.testID));
+  expect(unassignedVersement).toHaveLength(1);
+  expect(StyleSheet.flatten(unassignedVersement[0].props.style).color).toBe(colors.secondary);
+  // Présentation inchangée : ni fond, ni icône ajoutée.
+  expect(StyleSheet.flatten(screen.getByTestId('todo-section-m-adil-group-depenses-label').props.style).backgroundColor).toBeUndefined();
+});
