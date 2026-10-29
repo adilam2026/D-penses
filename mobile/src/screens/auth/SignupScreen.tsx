@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../auth/AuthContext';
 import { ApiError } from '../../api/client';
+import { CreatePinSteps } from './CreatePinSteps';
 
 /**
  * Corrections UI/UX finales §17 (bug bloquant) — jamais "Erreur interne du
@@ -26,23 +27,40 @@ export function SignupScreen() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  // Plus de mot de passe : l'inscription crée directement le code personnel à 6 chiffres.
+  const [step, setStep] = useState<'info' | 'pin'>('info');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function onSubmit() {
+  async function onPin(pin: string) {
     setError(null);
     setLoading(true);
     try {
       const trimmedEmail = email.trim();
-      await signUp(trimmedEmail, password, firstName.trim(), lastName.trim());
+      await signUp(trimmedEmail, pin, firstName.trim(), lastName.trim());
       navigation.navigate('VerifyEmail', { email: trimmedEmail });
     } catch (err) {
       setError(mapSignupError(err));
+      setStep('info');
     } finally {
       setLoading(false);
     }
   }
+
+  if (step === 'pin') {
+    return (
+      <ScrollView contentContainerStyle={styles.container}>
+        <Text style={styles.brand}>Finance Maison</Text>
+        <Text style={styles.title}>Votre code personnel</Text>
+        {loading ? <ActivityIndicator /> : <CreatePinSteps onDone={onPin} />}
+        <TouchableOpacity onPress={() => setStep('info')} testID="signup-back">
+          <Text style={styles.link}>Retour</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    );
+  }
+
+  const canContinue = firstName.trim().length > 0 && lastName.trim().length > 0 && email.trim().length > 0;
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -59,18 +77,18 @@ export function SignupScreen() {
         value={email}
         onChangeText={setEmail}
       />
-      <TextInput
-        style={styles.input}
-        placeholder="Mot de passe (8 caractères min.)"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
-
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <TouchableOpacity style={styles.button} onPress={onSubmit} disabled={loading}>
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Créer mon compte</Text>}
+      <TouchableOpacity
+        style={[styles.button, !canContinue && { opacity: 0.4 }]}
+        onPress={() => {
+          setError(null);
+          setStep('pin');
+        }}
+        disabled={!canContinue}
+        testID="signup-continue"
+      >
+        <Text style={styles.buttonText}>Continuer</Text>
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => navigation.navigate('Login')}>
@@ -81,7 +99,7 @@ export function SignupScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#F6F5F2' },
+  container: { flexGrow: 1, justifyContent: 'center', padding: 24, backgroundColor: '#F6F5F2' },
   brand: { fontSize: 14, fontWeight: '700', color: '#03155C', textAlign: 'center', marginBottom: 8 },
   title: { fontSize: 22, fontWeight: '700', color: '#172436', textAlign: 'center', marginBottom: 24 },
   input: {

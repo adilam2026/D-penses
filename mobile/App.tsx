@@ -13,6 +13,7 @@ import {
   PlusJakartaSans_800ExtraBold,
 } from '@expo-google-fonts/plus-jakarta-sans';
 import { AuthProvider } from './src/auth/AuthContext';
+import { LockGate } from './src/auth/LockGate';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { AppShell } from './src/web/AppShell';
 import { colors } from './src/ui/theme';
@@ -72,6 +73,8 @@ export default function App() {
           </AppShell>
           <StatusBar style="auto" />
         </NavigationContainer>
+        {/* Au-dessus de toute la navigation : écran verrouillé + masque d'arrière-plan. */}
+        <LockGate />
       </AuthProvider>
     </SafeAreaProvider>
   );

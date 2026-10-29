@@ -23,14 +23,53 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
-async function fillAndSubmit() {
+async function typeDigits(digits: string) {
+  for (const d of digits) await fireEvent.press(screen.getByTestId(`pin-key-${d}`));
+}
+
+async function fillAndSubmit(pin = '482913', confirm = pin) {
   await render(<SignupScreen />);
   await fireEvent.changeText(screen.getByPlaceholderText('Prénom'), 'Test');
   await fireEvent.changeText(screen.getByPlaceholderText('Nom'), 'User');
   await fireEvent.changeText(screen.getByPlaceholderText('Email'), 'test.user@example.com');
-  await fireEvent.changeText(screen.getByPlaceholderText('Mot de passe (8 caractères min.)'), 'password123');
-  await fireEvent.press(screen.getByText('Créer mon compte'));
+  await fireEvent.press(screen.getByTestId('signup-continue'));
+  await typeDigits(pin);
+  await typeDigits(confirm);
 }
+
+it('plus de mot de passe : champ absent, le code à 6 chiffres est créé puis confirmé sur le pavé numérique', async () => {
+  mockSignUp.mockResolvedValue(undefined);
+  await render(<SignupScreen />);
+  expect(screen.queryByPlaceholderText(/Mot de passe/)).toBeNull();
+  await fireEvent.changeText(screen.getByPlaceholderText('Prénom'), 'Test');
+  await fireEvent.changeText(screen.getByPlaceholderText('Nom'), 'User');
+  await fireEvent.changeText(screen.getByPlaceholderText('Email'), 'test.user@example.com');
+  await fireEvent.press(screen.getByTestId('signup-continue'));
+  expect(screen.getByText('Créez votre code à 6 chiffres')).toBeTruthy();
+  await typeDigits('482913');
+  expect(screen.getByText('Confirmez votre code')).toBeTruthy();
+  await typeDigits('482913');
+  await waitFor(() => expect(mockSignUp).toHaveBeenCalledWith('test.user@example.com', '482913', 'Test', 'User'));
+});
+
+it('codes différents : rien n’est envoyé, on recommence la création', async () => {
+  await fillAndSubmit('482913', '482914');
+  expect(mockSignUp).not.toHaveBeenCalled();
+  expect(screen.getByText('Les deux codes ne correspondent pas. Recommencez.')).toBeTruthy();
+  expect(screen.getByText('Créez votre code à 6 chiffres')).toBeTruthy();
+});
+
+it('code trivial refusé immédiatement (123456)', async () => {
+  await render(<SignupScreen />);
+  await fireEvent.changeText(screen.getByPlaceholderText('Prénom'), 'Test');
+  await fireEvent.changeText(screen.getByPlaceholderText('Nom'), 'User');
+  await fireEvent.changeText(screen.getByPlaceholderText('Email'), 'test.user@example.com');
+  await fireEvent.press(screen.getByTestId('signup-continue'));
+  await typeDigits('123456');
+  expect(screen.getByTestId('create-pin-error')).toBeTruthy();
+  expect(screen.getByText('Créez votre code à 6 chiffres')).toBeTruthy();
+  expect(mockSignUp).not.toHaveBeenCalled();
+});
 
 it('inscription réussie → navigue vers VerifyEmail avec l\'email saisi', async () => {
   mockSignUp.mockResolvedValue(undefined);
@@ -53,11 +92,11 @@ it('email invalide (400) → message backend affiché tel quel', async () => {
   await waitFor(() => expect(screen.getByText('Adresse email invalide')).toBeTruthy());
 });
 
-it('mot de passe trop court (400) → message backend affiché tel quel', async () => {
-  mockSignUp.mockRejectedValue(new ApiError(400, 'Le mot de passe doit contenir au moins 8 caractères'));
+it('code refusé par le serveur (400) → message backend affiché tel quel', async () => {
+  mockSignUp.mockRejectedValue(new ApiError(400, 'Ce code est trop simple — évitez les chiffres identiques ou qui se suivent'));
   await fillAndSubmit();
 
-  await waitFor(() => expect(screen.getByText('Le mot de passe doit contenir au moins 8 caractères')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('Ce code est trop simple — évitez les chiffres identiques ou qui se suivent')).toBeTruthy());
 });
 
 it('erreur serveur réelle (500) → jamais "Erreur interne du serveur", message générique dédié', async () => {

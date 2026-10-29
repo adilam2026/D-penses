@@ -6,6 +6,8 @@ import { useAuth } from '../auth/AuthContext';
 import { LoginScreen } from '../screens/auth/LoginScreen';
 import { SignupScreen } from '../screens/auth/SignupScreen';
 import { VerifyEmailScreen } from '../screens/auth/VerifyEmailScreen';
+import { ForgotPinScreen } from '../screens/auth/ForgotPinScreen';
+import { PinSetupScreen } from '../screens/auth/PinSetupScreen';
 import { HouseholdSetupScreen } from '../screens/household/HouseholdSetupScreen';
 import { HouseholdMembersScreen } from '../screens/household/HouseholdMembersScreen';
 import { JoinHouseholdScreen } from '../screens/household/JoinHouseholdScreen';
@@ -52,12 +54,24 @@ export function RootNavigator() {
     );
   }
 
+  // Démarrage verrouillé : rien de l'application n'est monté (ni écran, ni
+  // donnée chargée) tant que le code n'a pas été vérifié — LockGate affiche
+  // l'écran verrouillé au-dessus.
+  if (status === 'locked') {
+    return <View style={{ flex: 1, backgroundColor: colors.background }} testID="locked-placeholder" />;
+  }
+
+  if (status === 'mustSetPin') {
+    return <PinSetupScreen />;
+  }
+
   if (status === 'signedOut') {
     return (
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Signup" component={SignupScreen} />
         <Stack.Screen name="VerifyEmail" component={VerifyEmailScreen} />
+        <Stack.Screen name="ForgotPin" component={ForgotPinScreen} />
       </Stack.Navigator>
     );
   }

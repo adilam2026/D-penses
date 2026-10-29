@@ -30,6 +30,10 @@ function listScreenFiles(dir: string): string[] {
 const JUSTIFIED_EXCEPTIONS: Record<string, string> = {
   'household/HouseholdSetupScreen.tsx':
     'Un seul TextInput visible à la fois (nom OU code selon le mode), pied de page minimal (erreur, bouton, lien) — rien à faire défiler.',
+  'auth/LoginScreen.tsx':
+    "Un seul TextInput (email), en haut de l'écran, sur une étape distincte du pavé numérique — rien à faire défiler sous le clavier.",
+  'auth/SignupScreen.tsx':
+    "Le ScrollView n'existe qu'à l'étape du code personnel (pavé numérique, aucun TextInput) ; l'étape des champs reste l'écran d'origine sans défilement.",
 };
 
 describe('Couverture useKeyboardAwareScroll (garde-fou Round 3 §1/§3)', () => {

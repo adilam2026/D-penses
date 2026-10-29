@@ -1,43 +1,50 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { clearCache } from '../state/cache';
+import { deleteTokens, migrateLegacyTokens, readTokens, writeTokens } from '../auth/secureStorage';
 
 export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000';
-
-const ACCESS_TOKEN_KEY = 'depenses.accessToken';
-const REFRESH_TOKEN_KEY = 'depenses.refreshToken';
 
 let accessToken: string | null = null;
 let refreshToken: string | null = null;
 
+/** Jetons du stockage sécurisé (ceux d'une ancienne version, en AsyncStorage, y sont d'abord déplacés). */
 export async function loadStoredTokens(): Promise<{ accessToken: string | null; refreshToken: string | null }> {
-  const [storedAccess, storedRefresh] = await Promise.all([
-    AsyncStorage.getItem(ACCESS_TOKEN_KEY),
-    AsyncStorage.getItem(REFRESH_TOKEN_KEY),
-  ]);
-  accessToken = storedAccess;
-  refreshToken = storedRefresh;
+  await migrateLegacyTokens();
+  const stored = await readTokens();
+  accessToken = stored.accessToken;
+  refreshToken = stored.refreshToken;
   return { accessToken, refreshToken };
 }
 
 export async function setTokens(tokens: { accessToken: string; refreshToken: string }): Promise<void> {
   accessToken = tokens.accessToken;
   refreshToken = tokens.refreshToken;
-  await Promise.all([
-    AsyncStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken),
-    AsyncStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken),
-  ]);
+  await writeTokens(tokens);
 }
 
 export async function clearTokens(): Promise<void> {
   accessToken = null;
   refreshToken = null;
-  await Promise.all([AsyncStorage.removeItem(ACCESS_TOKEN_KEY), AsyncStorage.removeItem(REFRESH_TOKEN_KEY)]);
+  await deleteTokens();
+}
+
+export function currentRefreshToken(): string | null {
+  return refreshToken;
 }
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  /** Code métier renvoyé par le backend (PIN_SETUP_REQUIRED, INVALID_PIN, SESSION_INVALID, TOO_MANY_ATTEMPTS…). */
+  constructor(public status: number, message: string, public code?: string) {
     super(message);
   }
+}
+
+/**
+ * Le serveur exige la création du code à 6 chiffres (403 PIN_SETUP_REQUIRED) :
+ * l'AuthProvider s'y abonne pour basculer immédiatement sur cet écran.
+ */
+let pinSetupRequiredHandler: (() => void) | null = null;
+export function onPinSetupRequired(handler: (() => void) | null): void {
+  pinSetupRequiredHandler = handler;
 }
 
 async function rawFetch(path: string, options: { method?: string; body?: unknown; withAuth?: boolean } = {}) {
@@ -58,7 +65,9 @@ async function rawFetch(path: string, options: { method?: string; body?: unknown
     // toujours un message unique et lisible ici, jamais un tableau brut affiché tel quel.
     const raw = data && (data.message ?? data.error);
     const message = Array.isArray(raw) ? raw[0] : raw;
-    throw new ApiError(res.status, message ?? `Erreur ${res.status}`);
+    const code = data && typeof data.code === 'string' ? data.code : undefined;
+    if (res.status === 403 && code === 'PIN_SETUP_REQUIRED') pinSetupRequiredHandler?.();
+    throw new ApiError(res.status, message ?? `Erreur ${res.status}`, code);
   }
   // N'importe quelle mutation qui réussit (POST/PATCH/PUT/DELETE, hors /auth/*)
   // invalide TOUT le cache mémoire, jamais une invalidation ciblée par écran à
@@ -96,7 +105,9 @@ async function apiFetch(path: string, options: { method?: string; body?: unknown
   try {
     return await rawFetch(path, options);
   } catch (err) {
-    if (err instanceof ApiError && err.status === 401 && options.withAuth !== false && refreshToken) {
+    // Seul un 401 SANS code métier signifie « jeton d'accès expiré » : un mauvais
+    // code (INVALID_CREDENTIAL…) n'est jamais rejoué, ce qui compterait deux échecs.
+    if (err instanceof ApiError && err.status === 401 && !err.code && options.withAuth !== false && refreshToken) {
       await refreshTokens();
       return rawFetch(path, options);
     }
@@ -113,16 +124,51 @@ export function checkHealth() {
 export const signup = (email: string, password: string, firstName: string, lastName: string) =>
   apiFetch('/auth/signup', { method: 'POST', body: { email, password, firstName, lastName }, withAuth: false });
 
-export const verifyEmailOtp = (email: string, code: string) =>
+export const verifyEmailOtp = (email: string, code: string): Promise<AuthResultApi> =>
   apiFetch('/auth/verify-email-otp', { method: 'POST', body: { email, code }, withAuth: false });
 
 export const resendEmailOtp = (email: string) =>
   apiFetch('/auth/resend-email-otp', { method: 'POST', body: { email }, withAuth: false });
 
-export const login = (email: string, password: string) =>
+/** Résultat d'une authentification réussie (login, déverrouillage, code créé, code réinitialisé). */
+export interface AuthResultApi {
+  accessToken: string;
+  refreshToken: string;
+  /** true = ancien mot de passe : création du code à 6 chiffres obligatoire. */
+  mustSetPin: boolean;
+  user: { id: string; firstName: string };
+}
+
+export interface AuthSessionApi {
+  userId: string;
+  firstName: string;
+  /** Conservé dans le stockage sécurisé, jamais affiché. */
+  email: string;
+  mustSetPin: boolean;
+}
+
+export const login = (email: string, password: string): Promise<AuthResultApi> =>
   apiFetch('/auth/login', { method: 'POST', body: { email, password }, withAuth: false });
 
 export const logout = (token: string) => apiFetch('/auth/logout', { method: 'POST', body: { refreshToken: token }, withAuth: false });
+
+/** Déverrouillage : code vérifié par le serveur pour l'utilisateur de la session. */
+export const unlock = (token: string, pin: string): Promise<AuthResultApi> =>
+  apiFetch('/auth/unlock', { method: 'POST', body: { refreshToken: token, pin }, withAuth: false });
+
+export const getAuthSession = (): Promise<AuthSessionApi> => apiFetch('/auth/session');
+
+export const setPin = (currentCredential: string, newPin: string): Promise<AuthResultApi> =>
+  apiFetch('/auth/pin', { method: 'POST', body: { currentCredential, newPin } });
+
+export const requestPinReset = (email: string): Promise<{ sent: true }> =>
+  apiFetch('/auth/pin-reset/request', { method: 'POST', body: { email }, withAuth: false });
+
+export const verifyPinReset = (email: string, code: string): Promise<{ resetToken: string }> =>
+  apiFetch('/auth/pin-reset/verify', { method: 'POST', body: { email, code }, withAuth: false });
+
+export const completePinReset = (resetToken: string, newPin: string): Promise<AuthResultApi> =>
+  apiFetch('/auth/pin-reset/complete', { method: 'POST', body: { resetToken, newPin }, withAuth: false });
 
 export const getMe = () => apiFetch('/me');
 
