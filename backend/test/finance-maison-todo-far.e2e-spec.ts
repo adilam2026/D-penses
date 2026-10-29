@@ -38,7 +38,7 @@ describe('Finance Maison — À faire : récurrences au-delà de 12 mois, sans d
   /** Foyer avec "Internet" mensuel de 350 DH (dans À faire), sans fin, à partir du 10 du mois prochain. */
   async function withMonthlyInternet() {
     counter += 1;
-    const signup = await signupVerified(http, mailer, `todo-far-${counter}-${Date.now()}@test.local`, 'Password123!', 'Test', `User${counter}`);
+    const signup = await signupVerified(http, mailer, `todo-far-${counter}-${Date.now()}@test.local`, '482913', 'Test', `User${counter}`);
     const token = (await http.post('/households').set(auth(signup)).send({ name: `Foyer ${counter}` }).expect(201)).body.accessToken as string;
     const compte = (await http.post('/accounts').set(auth(token)).send({ name: 'CIH', openingBalance: '1000' }).expect(201)).body;
     const rule = (

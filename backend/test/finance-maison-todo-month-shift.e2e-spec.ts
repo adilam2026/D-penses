@@ -32,7 +32,7 @@ describe('Finance Maison — À faire : changement de mois en fin de mois', () =
 
   async function householdWith(actionDates: string[]) {
     counter += 1;
-    const signup = await signupVerified(http, mailer, `todo-shift-${counter}-${Date.now()}@test.local`, 'Password123!', 'Test', `User${counter}`);
+    const signup = await signupVerified(http, mailer, `todo-shift-${counter}-${Date.now()}@test.local`, '482913', 'Test', `User${counter}`);
     const token = (await http.post('/households').set(auth(signup)).send({ name: `Foyer ${counter}` }).expect(201)).body.accessToken as string;
     const compte = (await http.post('/accounts').set(auth(token)).send({ name: 'CIH', openingBalance: '1000' }).expect(201)).body;
     const ids: Record<string, string> = {};

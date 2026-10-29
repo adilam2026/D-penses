@@ -33,7 +33,7 @@ describe('Finance Maison — Planning : période de référence (from) indépend
 
   async function freshHousehold(): Promise<string> {
     counter += 1;
-    const token = await signupVerified(http, mailer, `planning-from-${counter}-${Date.now()}@test.local`, 'Password123!', 'Test', `User${counter}`);
+    const token = await signupVerified(http, mailer, `planning-from-${counter}-${Date.now()}@test.local`, '482913', 'Test', `User${counter}`);
     const res = await http.post('/households').set('Authorization', `Bearer ${token}`).send({ name: `Foyer ${counter}` }).expect(201);
     return res.body.accessToken as string;
   }

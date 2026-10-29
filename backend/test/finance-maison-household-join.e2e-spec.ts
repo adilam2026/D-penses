@@ -34,7 +34,7 @@ describe('Finance Maison — Rejoindre un foyer (join via code d\'invitation)', 
   async function freshUserWithHousehold(): Promise<{ token: string; householdId: string }> {
     counter += 1;
     const email = `hh-join-${counter}-${Date.now()}@test.local`;
-    const token = await signupVerified(http, mailer, email, 'Password123!', 'Test', `User${counter}`);
+    const token = await signupVerified(http, mailer, email, '482913', 'Test', `User${counter}`);
     const res = await http.post('/households').set('Authorization', `Bearer ${token}`).send({ name: `Foyer ${counter}` }).expect(201);
     return { token: res.body.accessToken as string, householdId: res.body.household.id as string };
   }
@@ -55,7 +55,7 @@ describe('Finance Maison — Rejoindre un foyer (join via code d\'invitation)', 
   async function freshUserWithoutHousehold(): Promise<string> {
     counter += 1;
     const email = `hh-joiner-${counter}-${Date.now()}@test.local`;
-    return signupVerified(http, mailer, email, 'Password123!', 'Joiner', `User${counter}`);
+    return signupVerified(http, mailer, email, '482913', 'Joiner', `User${counter}`);
   }
 
   it('rejoint un foyer avec un code valide — ajoute le membership et bascule le foyer actif', async () => {

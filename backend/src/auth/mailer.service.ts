@@ -1,3 +1,4 @@
+import { OtpPurpose } from '@prisma/client';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
@@ -24,12 +25,29 @@ export class MailerService {
 
   constructor(private readonly config: ConfigService) {}
 
-  async sendOtpEmail(email: string, code: string): Promise<void> {
+  async sendOtpEmail(email: string, code: string, purpose: OtpPurpose = 'EMAIL_VERIFICATION'): Promise<void> {
     const apiKey = this.config.get<string>('RESEND_API_KEY');
     if (!apiKey) {
-      this.logger.warn(`RESEND_API_KEY non configuré — code OTP pour ${email} (journalisé, non envoyé) : ${code}`);
+      // Un code de réinitialisation du code personnel n'est JAMAIS journalisé.
+      this.logger.warn(
+        purpose === 'PIN_RESET'
+          ? `RESEND_API_KEY non configuré — code de réinitialisation pour ${email} non envoyé`
+          : `RESEND_API_KEY non configuré — code OTP pour ${email} (journalisé, non envoyé) : ${code}`,
+      );
       return;
     }
+    const content =
+      purpose === 'PIN_RESET'
+        ? {
+            subject: 'Réinitialisation de votre code Finance Maison',
+            intro: 'Votre code de réinitialisation est :',
+            usage: "Saisissez ce code dans l'application pour définir un nouveau code personnel à 6 chiffres. Ce code expire dans 15 minutes.",
+          }
+        : {
+            subject: 'Votre code de vérification',
+            intro: 'Votre code de vérification est :',
+            usage: "Saisissez ce code dans l'application pour confirmer votre adresse email. Ce code expire dans 15 minutes.",
+          };
 
     let res: Response;
     try {
@@ -42,9 +60,9 @@ export class MailerService {
         body: JSON.stringify({
           from: this.config.get('EMAIL_FROM', 'onboarding@resend.dev'),
           to: email,
-          subject: 'Votre code de vérification',
-          text: `Bonjour,\n\nVotre code de vérification est : ${code}\n\nSaisissez ce code dans l'application pour confirmer votre adresse email. Ce code expire dans 15 minutes.\n\nSi vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email.`,
-          html: `<p>Bonjour,</p><p>Votre code de vérification est :</p><p style="font-size:28px;font-weight:700;letter-spacing:4px;">${code}</p><p>Saisissez ce code dans l'application pour confirmer votre adresse email. Ce code expire dans 15 minutes.</p><p>Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email.</p>`,
+          subject: content.subject,
+          text: `Bonjour,\n\n${content.intro} ${code}\n\n${content.usage}\n\nSi vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email.`,
+          html: `<p>Bonjour,</p><p>${content.intro}</p><p style="font-size:28px;font-weight:700;letter-spacing:4px;">${code}</p><p>${content.usage}</p><p>Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email.</p>`,
         }),
       });
     } catch (err) {

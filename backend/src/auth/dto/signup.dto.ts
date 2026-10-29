@@ -1,4 +1,5 @@
-import { IsEmail, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsString, Matches, MinLength } from 'class-validator';
+import { PIN_PATTERN } from '../pin.util';
 
 // Corrections UI/UX finales §17 — messages explicites en français pour
 // chaque cas de validation (jamais le message par défaut class-validator en
@@ -7,8 +8,8 @@ export class SignupDto {
   @IsEmail({}, { message: 'Adresse email invalide' })
   email!: string;
 
-  @IsString({ message: 'Le mot de passe doit contenir au moins 8 caractères' })
-  @MinLength(8, { message: 'Le mot de passe doit contenir au moins 8 caractères' })
+  /** Code personnel : exactement 6 chiffres (plus de mot de passe à l'inscription). */
+  @Matches(PIN_PATTERN, { message: 'Le code doit contenir exactement 6 chiffres' })
   password!: string;
 
   @IsString({ message: 'Le prénom est obligatoire' })

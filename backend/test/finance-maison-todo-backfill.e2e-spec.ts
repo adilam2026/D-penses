@@ -39,7 +39,7 @@ describe('Finance Maison — backfill "À faire" des échéances/règles de vers
   async function freshHousehold(): Promise<{ token: string; householdId: string }> {
     counter += 1;
     const email = `backfill-${counter}-${Date.now()}@test.local`;
-    const token = await signupVerified(http, mailer, email, 'Password123!', 'Adil', `User${counter}`);
+    const token = await signupVerified(http, mailer, email, '482913', 'Adil', `User${counter}`);
     const res = await http.post('/households').set('Authorization', `Bearer ${token}`).send({ name: `Foyer ${counter}` }).expect(201);
     return { token: res.body.accessToken as string, householdId: res.body.household.id as string };
   }
@@ -48,7 +48,7 @@ describe('Finance Maison — backfill "À faire" des échéances/règles de vers
     const invite = await http.post('/households/invites').set('Authorization', `Bearer ${adminToken}`).send({}).expect(201);
     counter += 1;
     const email = `backfill-lamiaa-${counter}-${Date.now()}@test.local`;
-    const token = await signupVerified(http, mailer, email, 'Password123!', 'Lamiaa', `User${counter}`);
+    const token = await signupVerified(http, mailer, email, '482913', 'Lamiaa', `User${counter}`);
     const joined = await http.post('/households/join').set('Authorization', `Bearer ${token}`).send({ code: invite.body.code }).expect(201);
     const me = await http.get('/households/me').set('Authorization', `Bearer ${joined.body.accessToken}`).expect(200);
     const membership = me.body.memberships.find((m: any) => m.user.email === email);

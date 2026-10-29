@@ -30,7 +30,7 @@ describe('Finance Maison — couleur des membres (User.color)', () => {
 
   async function signup(prefix: string): Promise<string> {
     counter += 1;
-    return signupVerified(http, mailer, `${prefix}-${counter}-${Date.now()}@test.local`, 'Password123!', 'Test', `User${counter}`);
+    return signupVerified(http, mailer, `${prefix}-${counter}-${Date.now()}@test.local`, '482913', 'Test', `User${counter}`);
   }
 
   /** Admin + un 2e membre (rôle choisi) dans le même foyer. */

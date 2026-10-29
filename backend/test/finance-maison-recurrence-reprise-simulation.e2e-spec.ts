@@ -46,7 +46,7 @@ describe('Finance Maison — reprise des récurrences (simulation)', () => {
   }
 
   async function legacyState() {
-    const signup = await signupVerified(http, mailer, `reprise-${Date.now()}@test.local`, 'Password123!', 'Test', 'Reprise');
+    const signup = await signupVerified(http, mailer, `reprise-${Date.now()}@test.local`, '482913', 'Test', 'Reprise');
     const created = (await http.post('/households').set(auth(signup)).send({ name: 'Foyer reprise' }).expect(201)).body;
     const token = created.accessToken as string;
     const householdId = created.household.id as string;

@@ -67,7 +67,7 @@ describe('Finance Maison — E2E reset (recette Maestro)', () => {
     process.env.E2E_TEST_MODE = 'true';
     process.env.E2E_RESET_TOKEN = 'the-real-token';
 
-    const token = await signupVerified(http, mailer, E2E_EMAIL, 'DemoFinanceMaison2026!', 'Lamiaa', 'Demo');
+    const token = await signupVerified(http, mailer, E2E_EMAIL, '482913', 'Lamiaa', 'Demo');
     const household = await http.post('/households').set('Authorization', `Bearer ${token}`).send({ name: 'Foyer Demo' }).expect(201);
     const householdId = household.body.household.id as string;
     const adminToken = household.body.accessToken as string;

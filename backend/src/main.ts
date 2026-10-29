@@ -10,6 +10,9 @@ async function bootstrap() {
   });
 
   app.use(helmet());
+  // Derrière le proxy Railway : req.ip = adresse réelle du client (limitation
+  // des tentatives par IP sur les routes d'authentification).
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
 
   // W1.5 (Web/PWA) : origines explicites en production (jamais de wildcard) ;
   // comportement permissif conservé hors production tant que CORS_ORIGINS

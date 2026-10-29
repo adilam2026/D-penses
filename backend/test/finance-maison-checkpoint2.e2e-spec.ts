@@ -30,7 +30,7 @@ describe('Finance Maison — Checkpoint 2 — nouveaux endpoints', () => {
   async function freshHousehold(): Promise<string> {
     counter += 1;
     const email = `checkpoint2-${counter}-${Date.now()}@test.local`;
-    const token = await signupVerified(http, mailer, email, 'Password123!', 'Test', `User${counter}`);
+    const token = await signupVerified(http, mailer, email, '482913', 'Test', `User${counter}`);
     const res = await http.post('/households').set('Authorization', `Bearer ${token}`).send({ name: `Foyer ${counter}` }).expect(201);
     return res.body.accessToken as string; // le token ré-émis porte le householdId (cf. HouseholdRequiredGuard)
   }

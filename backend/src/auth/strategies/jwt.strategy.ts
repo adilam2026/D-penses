@@ -15,7 +15,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   // Le retour de validate() devient request.user
-  validate(payload: { sub: string; householdId: string | null }): AuthenticatedUser {
-    return { sub: payload.sub, householdId: payload.householdId ?? null };
+  validate(payload: { sub: string; householdId: string | null; pinRequired?: boolean }): AuthenticatedUser {
+    return { sub: payload.sub, householdId: payload.householdId ?? null, pinRequired: payload.pinRequired === true };
   }
 }

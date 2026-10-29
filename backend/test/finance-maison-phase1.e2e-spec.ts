@@ -41,7 +41,7 @@ describe('Finance Maison — Phase 1 — scénarios métier A-J', () => {
   async function freshHouseholdWithId(): Promise<{ token: string; householdId: string }> {
     counter += 1;
     const email = `phase1-${counter}-${Date.now()}@test.local`;
-    const token = await signupVerified(http, mailer, email, 'Password123!', 'Test', `User${counter}`);
+    const token = await signupVerified(http, mailer, email, '482913', 'Test', `User${counter}`);
     const res = await http.post('/households').set('Authorization', `Bearer ${token}`).send({ name: `Foyer ${counter}` }).expect(201);
     return { token: res.body.accessToken as string, householdId: res.body.household.id as string };
   }

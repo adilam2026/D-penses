@@ -9,6 +9,10 @@ import { AllExceptionsFilter } from '../src/common/filters/http-exception.filter
  * provider avant compilation, sans jamais toucher au reste de l'app —
  * paramètre optionnel, tous les appels existants restent inchangés.
  */
+// Toutes les requêtes e2e viennent de la même IP : la limite par IP des routes
+// d'authentification est relevée ici (testée à part, cf. src/auth/auth-pin.spec.ts).
+process.env.AUTH_IP_RATE_LIMIT ??= '10000';
+
 export async function createTestApp(configureModule?: (builder: TestingModuleBuilder) => TestingModuleBuilder): Promise<INestApplication> {
   let builder = Test.createTestingModule({ imports: [AppModule] });
   if (configureModule) builder = configureModule(builder);

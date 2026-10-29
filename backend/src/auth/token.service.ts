@@ -6,6 +6,8 @@ import * as crypto from 'node:crypto';
 export interface AccessTokenPayload {
   sub: string;
   householdId: string | null;
+  /** true tant que l'utilisateur n'a pas défini son code à 6 chiffres. */
+  pinRequired: boolean;
 }
 
 /** Parse une durée simple "15m" | "30d" | "1h" en millisecondes. */

@@ -31,7 +31,7 @@ describe('Finance Maison — Administration, première utilisation et finitions'
   async function freshUser(): Promise<{ token: string; email: string }> {
     counter += 1;
     const email = `admin-lot-${counter}-${Date.now()}@test.local`;
-    const token = await signupVerified(http, mailer, email, 'Password123!', 'Test', `User${counter}`);
+    const token = await signupVerified(http, mailer, email, '482913', 'Test', `User${counter}`);
     return { token, email };
   }
 
@@ -180,7 +180,7 @@ describe('Finance Maison — Administration, première utilisation et finitions'
     const me = await http.get('/me').set('Authorization', `Bearer ${token}`).expect(200);
     expect(me.body.householdId).toBeDefined();
 
-    const login = await http.post('/auth/login').send({ email, password: 'Password123!' }).expect(200);
+    const login = await http.post('/auth/login').send({ email, password: '482913' }).expect(200);
     expect(login.body.accessToken).toBeDefined();
 
     const household = await http.get('/households/me').set('Authorization', `Bearer ${token}`).expect(200);

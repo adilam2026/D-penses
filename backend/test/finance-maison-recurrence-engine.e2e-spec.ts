@@ -36,7 +36,7 @@ describe('Finance Maison — moteur de récurrence (n° d’occurrence, jour d�
 
   async function householdWithRule(anchorDate: string, frequency = 'MONTHLY', label = 'Loyer') {
     counter += 1;
-    const signup = await signupVerified(http, mailer, `rec-engine-${counter}-${Date.now()}@test.local`, 'Password123!', 'Test', `User${counter}`);
+    const signup = await signupVerified(http, mailer, `rec-engine-${counter}-${Date.now()}@test.local`, '482913', 'Test', `User${counter}`);
     const created = (await http.post('/households').set(auth(signup)).send({ name: `Foyer ${counter}` }).expect(201)).body;
     const token = created.accessToken as string;
     const compte = (await http.post('/accounts').set(auth(token)).send({ name: 'CIH', openingBalance: '100000' }).expect(201)).body;

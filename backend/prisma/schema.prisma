@@ -33,6 +33,14 @@ model User {
   avatarUrl         String?    @map("avatar_url")
   color             String?    @map("color")
   emailVerifiedAt   DateTime?  @map("email_verified_at")
+  /// Code personnel à 6 chiffres défini (password_hash le contient). NULL =
+  /// ancien mot de passe : passage au code obligatoire avant tout usage.
+  pinSetAt          DateTime?  @map("pin_set_at")
+  /// Échecs consécutifs de la série en cours (login/unlock/changement de code).
+  failedLoginCount  Int        @default(0) @map("failed_login_count")
+  /// Nombre de blocages déjà subis depuis le dernier succès (1, 5, 15 puis 30 min).
+  lockLevel         Int        @default(0) @map("lock_level")
+  lockedUntil       DateTime?  @map("locked_until")
   activeHouseholdId String?    @map("active_household_id")
   activeHousehold   Household? @relation(fields: [activeHouseholdId], references: [id], onDelete: SetNull)
   createdAt         DateTime   @default(now()) @map("created_at")
@@ -129,14 +137,26 @@ model Session {
   @@map("session")
 }
 
+/// Usage d'un code envoyé par email : un code de confirmation d'inscription
+/// ne peut jamais servir à réinitialiser un code personnel, et inversement.
+enum OtpPurpose {
+  EMAIL_VERIFICATION
+  PIN_RESET
+}
+
 model EmailOtp {
-  id         String    @id @default(uuid())
-  userId     String    @map("user_id")
-  codeHash   String    @map("code_hash")
-  expiresAt  DateTime  @map("expires_at")
-  consumedAt DateTime? @map("consumed_at")
-  attempts   Int       @default(0)
-  createdAt  DateTime  @default(now()) @map("created_at")
+  id             String     @id @default(uuid())
+  userId         String     @map("user_id")
+  purpose        OtpPurpose @default(EMAIL_VERIFICATION)
+  codeHash       String     @map("code_hash")
+  expiresAt      DateTime   @map("expires_at")
+  consumedAt     DateTime?  @map("consumed_at")
+  attempts       Int        @default(0)
+  /// PIN_RESET : code email vérifié — reste à définir le nouveau code personnel.
+  verifiedAt     DateTime?  @map("verified_at")
+  /// PIN_RESET : SHA-256 du jeton à usage unique remis après vérification.
+  resetTokenHash String?    @unique @map("reset_token_hash")
+  createdAt      DateTime   @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

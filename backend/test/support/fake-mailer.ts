@@ -10,9 +10,12 @@ import { MailerService, EmailDeliveryError } from '../../src/auth/mailer.service
  */
 export class FakeMailer {
   readonly sentCodes = new Map<string, string>();
+  /** Usage du dernier code envoyé à chaque email (EMAIL_VERIFICATION / PIN_RESET). */
+  readonly sentPurposes = new Map<string, string>();
 
-  async sendOtpEmail(email: string, code: string): Promise<void> {
+  async sendOtpEmail(email: string, code: string, purpose = 'EMAIL_VERIFICATION'): Promise<void> {
     this.sentCodes.set(email, code);
+    this.sentPurposes.set(email, purpose);
   }
 
   /** Dernier code envoyé pour cet email — lève si signup/resend n'a pas encore été appelé. */

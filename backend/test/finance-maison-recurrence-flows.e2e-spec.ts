@@ -36,7 +36,7 @@ describe('Finance Maison — flux d’une série récurrente (n° d’occurrence
 
   async function loyerDu31() {
     counter += 1;
-    const signup = await signupVerified(http, mailer, `rec-flows-${counter}-${Date.now()}@test.local`, 'Password123!', 'Test', `User${counter}`);
+    const signup = await signupVerified(http, mailer, `rec-flows-${counter}-${Date.now()}@test.local`, '482913', 'Test', `User${counter}`);
     const token = (await http.post('/households').set(auth(signup)).send({ name: `Foyer ${counter}` }).expect(201)).body.accessToken as string;
     const compte = (await http.post('/accounts').set(auth(token)).send({ name: 'CIH', openingBalance: '100000' }).expect(201)).body;
     const rule = (
