@@ -6,11 +6,11 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import * as crypto from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
 import { seedBaselineHouseholdData } from '../src/e2e/e2e-seed-data.util';
+import { isTrivialPin, PIN_PATTERN } from '../src/auth/pin.util';
 
 const prisma = new PrismaClient();
 
 const DEMO_EMAIL = 'demo@finance-maison.local';
-const DEMO_PASSWORD = 'DemoFinanceMaison2026!';
 
 async function setRlsContext(tx: Prisma.TransactionClient, userId: string, householdId: string) {
   await tx.$executeRaw`SELECT set_config('app.current_user_id', ${userId}, true)`;
@@ -25,7 +25,16 @@ async function main() {
     return;
   }
 
-  const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 12);
+  // Code personnel à 6 chiffres du compte démo, fourni par l'environnement
+  // (jamais dans Git). Sans lui, aucun compte démo n'est créé — le déploiement
+  // continue normalement (environnement où la démo existe déjà : rien à faire).
+  const demoPin = process.env.SEED_DEMO_PIN ?? '';
+  if (!PIN_PATTERN.test(demoPin) || isTrivialPin(demoPin)) {
+    // eslint-disable-next-line no-console
+    console.log('SEED_DEMO_PIN absent ou invalide (6 chiffres non triviaux) — compte démo non créé.');
+    return;
+  }
+  const passwordHash = await bcrypt.hash(demoPin, 12);
 
   await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
@@ -35,6 +44,7 @@ async function main() {
         firstName: 'Lamiaa',
         lastName: 'Demo',
         emailVerifiedAt: new Date(),
+        pinSetAt: new Date(),
       },
     });
 
@@ -51,8 +61,8 @@ async function main() {
 
     await seedBaselineHouseholdData(tx, { householdId: household.id, userId: user.id });
 
+    // Jamais le code dans les journaux.
     // eslint-disable-next-line no-console
-    // Jamais le mot de passe dans les journaux.
     console.log('Seed Finance Maison créé :', { email: DEMO_EMAIL, householdId: household.id });
   });
 }

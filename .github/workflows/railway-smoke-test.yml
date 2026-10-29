@@ -1,4 +1,4 @@
-name: Railway PROD — Smoke test bascule rôle (auth réelle + RLS + isolation)
+name: "[OBSOLÈTE — neutralisé] Railway PROD — Smoke test bascule rôle"
 
 # S0 (bascule rôle runtime) : smoke test à exécuter APRÈS avoir basculé la
 # variable Railway DATABASE_URL du service backend vers depenses_runtime.
@@ -73,6 +73,16 @@ jobs:
     if: github.event.inputs.phase == 'signup'
     runs-on: ubuntu-latest
     steps:
+      - name: Workflow obsolète — neutralisé en attente de suppression
+        # Neutralisé le 2026-10-29 (branche auth-pin-v1) : ne doit plus jamais
+        # s'exécuter. Il cible PROD via DATABASE_URL_PROD (secret interdit),
+        # appelle des routes supprimées au reset Finance Maison (/expenses,
+        # /charge-plans, /accounts/transfers) et un mot de passe alphanumérique
+        # incompatible avec le code à 6 chiffres. Remplacé par railway-verify.yml.
+        working-directory: .
+        run: |
+          echo "::error::railway-smoke-test.yml est obsolète et neutralisé (voir commentaire) — utiliser railway-verify.yml."
+          exit 1
       - name: Signup réel — foyer A
         run: |
           set -o pipefail
@@ -96,6 +106,16 @@ jobs:
       run:
         working-directory: backend
     steps:
+      - name: Workflow obsolète — neutralisé en attente de suppression
+        # Neutralisé le 2026-10-29 (branche auth-pin-v1) : ne doit plus jamais
+        # s'exécuter. Il cible PROD via DATABASE_URL_PROD (secret interdit),
+        # appelle des routes supprimées au reset Finance Maison (/expenses,
+        # /charge-plans, /accounts/transfers) et un mot de passe alphanumérique
+        # incompatible avec le code à 6 chiffres. Remplacé par railway-verify.yml.
+        working-directory: .
+        run: |
+          echo "::error::railway-smoke-test.yml est obsolète et neutralisé (voir commentaire) — utiliser railway-verify.yml."
+          exit 1
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -243,6 +263,16 @@ jobs:
       run:
         working-directory: backend
     steps:
+      - name: Workflow obsolète — neutralisé en attente de suppression
+        # Neutralisé le 2026-10-29 (branche auth-pin-v1) : ne doit plus jamais
+        # s'exécuter. Il cible PROD via DATABASE_URL_PROD (secret interdit),
+        # appelle des routes supprimées au reset Finance Maison (/expenses,
+        # /charge-plans, /accounts/transfers) et un mot de passe alphanumérique
+        # incompatible avec le code à 6 chiffres. Remplacé par railway-verify.yml.
+        working-directory: .
+        run: |
+          echo "::error::railway-smoke-test.yml est obsolète et neutralisé (voir commentaire) — utiliser railway-verify.yml."
+          exit 1
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:

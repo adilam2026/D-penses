@@ -84,9 +84,9 @@ jobs:
         # Idempotent : si le code E2E_PIN fonctionne déjà, rien n'est modifié.
         # Aucun corps de réponse (jetons) ni aucun credential n'est affiché.
         env:
-          # Ancien mot de passe du compte démo, déjà public (backend/prisma/seed.ts)
-          # et inutilisable dès que le code est défini.
-          DEMO_LEGACY_PASSWORD: DemoFinanceMaison2026!
+          # Secret TEMPORAIRE : ancien mot de passe du compte démo, utilisé
+          # uniquement pour cette transition initiale ; à supprimer ensuite.
+          DEMO_LEGACY_PASSWORD: ${{ secrets.E2E_LEGACY_PASSWORD }}
         run: |
           set -o pipefail
           API="${{ github.event.inputs.api_url }}"
@@ -100,6 +100,10 @@ jobs:
             exit 0
           fi
 
+          if [ -z "$DEMO_LEGACY_PASSWORD" ]; then
+            echo "::error::Transition requise mais le secret temporaire E2E_LEGACY_PASSWORD est absent."
+            exit 1
+          fi
           code=$(curl -sS -o legacy-login.json -w "%{http_code}" -X POST "$API/auth/login" -H "Content-Type: application/json" -d "$(body "$DEMO_LEGACY_PASSWORD")")
           echo "Connexion avec l'ancien mot de passe : HTTP $code"
           test "$code" = "200"
@@ -116,7 +120,7 @@ jobs:
           test "$code" = "200"
           test "$(field pin-login.json mustSetPin)" = "false"
           rm -f pin-login.json legacy-login.json set-pin.json
-          echo "Compte démo passé au code à 6 chiffres (ancien mot de passe désormais refusé)."
+          echo "Compte démo passé au code à 6 chiffres (ancien mot de passe désormais refusé) — le secret E2E_LEGACY_PASSWORD peut être supprimé."
 
       - name: Login compte de démonstration Finance Maison (prouve seed + schéma + auth)
         # Code à 6 chiffres du secret E2E_PIN. Les tokens JWT retournés ne sont
