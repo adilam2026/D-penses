@@ -15,7 +15,6 @@ import { PlannedOperationActionFlow } from './PlanningScreen';
 
 const TOAST_DURATION_MS = 1800;
 const UNASSIGNED_KEY = '__unassigned__';
-const DONE_KEY = '__done__';
 
 /** "2026-10" → "octobre" (minuscule — "✓ Tout est fait pour octobre"). */
 function monthNameLower(monthKey: string): string {
@@ -43,9 +42,9 @@ function occurrenceFromAction(action: api.TodoActionApi): api.PlanningSingleOccu
     kind: action.kind,
     responsibleMemberId: action.responsibleMemberId,
     expectedDate: action.expectedDate,
-    // "À faire" n'affiche jamais le détail d'une action déjà réalisée (la
-    // section "Effectué" reste informative, jamais tappable) — cette
-    // reconstruction n'est donc appelée que sur des actions PENDING.
+    // "À faire" n'affiche jamais le détail d'une action déjà réalisée (le
+    // bloc PAYÉ reste informatif, jamais tappable) — cette reconstruction
+    // n'est donc appelée que sur des actions PENDING.
     realizedOperationId: null,
   };
 }
@@ -68,10 +67,10 @@ export function TodoScreen() {
   const [categories, setCategories] = useState<api.CategoryApi[]>([]);
   const [members, setMembers] = useState<api.HouseholdMembershipApi[]>([]);
   const [loading, setLoading] = useState(true);
-  // §29-34 — un accordéon par section (un par membre + Non attribué si
-  // nécessaire + Effectué) ; toutes ouvertes par défaut SAUF Effectué, état
-  // conservé pendant la navigation tant que l'écran reste monté.
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set([DONE_KEY]));
+  // §29-33 — une carte repliable par responsable (+ Non attribué si
+  // nécessaire), toutes ouvertes par défaut ; état conservé pendant la
+  // navigation tant que l'écran reste monté.
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   function toggleSection(key: string) {
     setCollapsedSections((prev) => {
       const next = new Set(prev);
@@ -126,22 +125,33 @@ export function TodoScreen() {
   const totalRemaining = data.pending.reduce((sum, a) => sum + a.remaining, 0);
   const nothingEverPlanned = data.pending.length === 0 && data.done.length === 0;
 
-  // §29-33 — regroupement PAR RESPONSABLE : un bucket par membre du foyer
-  // (dans l'ordre du foyer, jamais un ordre arbitraire/codé en dur), un
-  // bucket "Non attribué" distinct — affiché UNIQUEMENT s'il contient au
-  // moins une échéance (§32), jamais pour repérer une anomalie masquée.
-  const pendingByMember = new Map<string, api.TodoActionApi[]>();
-  const unassigned: api.TodoActionApi[] = [];
-  for (const action of data.pending) {
-    if (action.responsibleMemberId) {
-      const list = pendingByMember.get(action.responsibleMemberId) ?? [];
-      list.push(action);
-      pendingByMember.set(action.responsibleMemberId, list);
-    } else {
-      unassigned.push(action);
+  // §29-33 — regroupement PAR RESPONSABLE : une carte par membre du foyer
+  // (dans l'ordre du foyer, jamais un ordre arbitraire/codé en dur), une
+  // carte "Non attribué" distincte — affichée UNIQUEMENT si elle contient au
+  // moins une opération (§32). Chaque carte porte son À FAIRE (restes des
+  // échéances PENDING) et son PAYÉ (échéances réalisées + part déjà payée
+  // d'un paiement partiel, dont le solde reste dans À FAIRE : jamais compté
+  // deux fois).
+  const byResponsible = new Map<string, ResponsibleBucket>();
+  function bucketOf(action: api.TodoActionApi): ResponsibleBucket {
+    const key = action.responsibleMemberId ?? UNASSIGNED_KEY;
+    let bucket = byResponsible.get(key);
+    if (!bucket) {
+      bucket = { pending: [], paid: [] };
+      byResponsible.set(key, bucket);
     }
+    return bucket;
   }
-  const doneTotal = data.done.reduce((sum, a) => sum + (a.realizedAmount ?? a.expectedAmount), 0);
+  for (const action of data.done) bucketOf(action).paid.push({ action, amount: action.realizedAmount ?? action.expectedAmount, partial: false });
+  for (const action of data.pending) {
+    const bucket = bucketOf(action);
+    bucket.pending.push(action);
+    if ((action.realizedAmount ?? 0) > 0) bucket.paid.push({ action, amount: action.realizedAmount as number, partial: true });
+  }
+  const sections: { key: string; title: string; bucket: ResponsibleBucket }[] = [
+    ...members.filter((m) => byResponsible.has(m.id)).map((m) => ({ key: m.id, title: m.user.firstName, bucket: byResponsible.get(m.id)! })),
+    ...(byResponsible.has(UNASSIGNED_KEY) ? [{ key: UNASSIGNED_KEY, title: 'Non attribué', bucket: byResponsible.get(UNASSIGNED_KEY)! }] : []),
+  ];
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -193,72 +203,19 @@ export function TodoScreen() {
           <Text style={styles.emptyText} testID="todo-all-done">
             ✓ Tout est fait pour {monthNameLower(data.month)}
           </Text>
-        ) : (
-          <>
-            {members.map((m) => {
-              const list = pendingByMember.get(m.id);
-              if (!list || list.length === 0) return null;
-              return (
-                <TodoSection
-                  key={m.id}
-                  sectionKey={m.id}
-                  title={m.user.firstName}
-                  icon="person-circle-outline"
-                  actions={list}
-                  isCollapsed={collapsedSections.has(m.id)}
-                  onToggle={() => toggleSection(m.id)}
-                  onPressAction={(action) => setActionTarget({ occurrence: occurrenceFromAction(action), rowLabel: action.label })}
-                />
-              );
-            })}
-            {unassigned.length > 0 && (
-              <TodoSection
-                sectionKey={UNASSIGNED_KEY}
-                title="Non attribué"
-                icon="help-circle-outline"
-                actions={unassigned}
-                isCollapsed={collapsedSections.has(UNASSIGNED_KEY)}
-                onToggle={() => toggleSection(UNASSIGNED_KEY)}
-                onPressAction={(action) => setActionTarget({ occurrence: occurrenceFromAction(action), rowLabel: action.label })}
-                neutral
-              />
-            )}
-          </>
-        )}
-
-        {/* §34 — "Effectué" : accordéon global fermé par défaut, informatif uniquement. */}
-        <View style={styles.sectionCard} testID="todo-section-done">
-          <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(DONE_KEY)} testID="todo-done-toggle">
-            <View style={[styles.sectionIconCircle, { backgroundColor: colors.successLight }]}>
-              <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-            </View>
-            <Text style={styles.sectionTitle} numberOfLines={1}>
-              Effectué
-            </Text>
-            <Text style={styles.sectionMeta} numberOfLines={1}>
-              {data.done.length} échéance{data.done.length > 1 ? 's' : ''}
-              {data.done.length > 0 ? ` · ${formatDh(doneTotal)}` : ''}
-            </Text>
-            <Ionicons name={collapsedSections.has(DONE_KEY) ? 'chevron-forward' : 'chevron-down'} size={16} color={colors.textSecondary} />
-          </TouchableOpacity>
-          {!collapsedSections.has(DONE_KEY) && (
-            <View style={styles.sectionBody}>
-              {data.done.length === 0 ? (
-                <Text style={styles.emptyText}>Aucune action réalisée ce mois-ci.</Text>
-              ) : (
-                data.done.map((action) => (
-                  <View key={action.plannedOperationId} style={styles.doneRow} testID={`todo-done-row-${action.plannedOperationId}`}>
-                    <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-                    <Text style={[styles.rowLabel, { marginLeft: spacing.sm }]} numberOfLines={2}>
-                      {action.label}
-                    </Text>
-                    <Text style={styles.rowAmount}>{formatDh(action.realizedAmount ?? action.expectedAmount)}</Text>
-                  </View>
-                ))
-              )}
-            </View>
-          )}
-        </View>
+        ) : null}
+        {sections.map((section) => (
+          <TodoSection
+            key={section.key}
+            sectionKey={section.key}
+            title={section.title}
+            pending={section.bucket.pending}
+            paid={section.bucket.paid}
+            isCollapsed={collapsedSections.has(section.key)}
+            onToggle={() => toggleSection(section.key)}
+            onPressAction={(action) => setActionTarget({ occurrence: occurrenceFromAction(action), rowLabel: action.label })}
+          />
+        ))}
       </ScrollView>
 
       <PlannedOperationActionFlow
@@ -279,76 +236,117 @@ export function TodoScreen() {
   );
 }
 
+interface PaidEntry {
+  action: api.TodoActionApi;
+  /** Montant déjà exécuté : totalité pour une échéance réalisée, part payée pour un paiement partiel. */
+  amount: number;
+  partial: boolean;
+}
+
+interface ResponsibleBucket {
+  pending: api.TodoActionApi[];
+  paid: PaidEntry[];
+}
+
 /**
- * Accordéon "À faire" par responsable (§30-32) — header : icône + nom +
- * nombre d'échéances + montant restant total + chevron. Contenu : lignes
- * compactes (§35), chacune ouvrant l'ActionSheet au tap.
+ * Carte "À faire" d'un responsable (proposition 3 validée) :
+ *   Prénom · total du mois (= À FAIRE + PAYÉ, ne baisse pas quand on paie)
+ *   bandeau À FAIRE · reste  → DÉPENSES puis VERSEMENTS (titres seuls, sans sous-total)
+ *   bandeau PAYÉ · exécuté   → ✓ réalisées, ◐ part payée d'un partiel
+ * Une ligne À FAIRE ouvre l'ActionSheet ; une ligne PAYÉ est informative.
  */
 function TodoSection({
   sectionKey,
   title,
-  icon,
-  actions,
+  pending,
+  paid,
   isCollapsed,
   onToggle,
   onPressAction,
-  neutral,
 }: {
   sectionKey: string;
   title: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  actions: api.TodoActionApi[];
+  pending: api.TodoActionApi[];
+  paid: PaidEntry[];
   isCollapsed: boolean;
   onToggle: () => void;
   onPressAction: (action: api.TodoActionApi) => void;
-  /** "Non attribué" (§32) — couleur neutre/orange très clair, jamais la même teinte qu'un membre réel. */
-  neutral?: boolean;
 }) {
-  const total = actions.reduce((sum, a) => sum + a.remaining, 0);
+  const totalToDo = pending.reduce((sum, a) => sum + a.remaining, 0);
+  const totalPaid = paid.reduce((sum, p) => sum + p.amount, 0);
   const groups = [
     // Même identité que les blocs du Planning : DÉPENSES = danger, VERSEMENTS = secondary.
-    { key: 'depenses', title: 'DÉPENSES', color: colors.danger, actions: actions.filter((a) => a.kind !== 'SAVINGS_CONTRIBUTION') },
-    { key: 'versements', title: 'VERSEMENTS', color: colors.secondary, actions: actions.filter((a) => a.kind === 'SAVINGS_CONTRIBUTION') },
+    { key: 'depenses', title: 'DÉPENSES', color: colors.danger, actions: pending.filter((a) => a.kind !== 'SAVINGS_CONTRIBUTION') },
+    { key: 'versements', title: 'VERSEMENTS', color: colors.secondary, actions: pending.filter((a) => a.kind === 'SAVINGS_CONTRIBUTION') },
   ].filter((g) => g.actions.length > 0);
   return (
     <View style={styles.sectionCard} testID={`todo-section-${sectionKey}`}>
       <TouchableOpacity style={styles.sectionHeader} onPress={onToggle} testID={`todo-section-${sectionKey}-toggle`}>
-        <View style={[styles.sectionIconCircle, { backgroundColor: neutral ? colors.warningLight : colors.surfaceActive }]}>
-          <Ionicons name={icon} size={16} color={neutral ? colors.warning : colors.primary} />
-        </View>
         <Text style={styles.sectionTitle} numberOfLines={1}>
           {title}
         </Text>
-        <Text style={styles.sectionMeta} numberOfLines={1}>
-          {actions.length} échéance{actions.length > 1 ? 's' : ''} · {formatDh(total)}
+        <Text style={styles.sectionTotal} numberOfLines={1} testID={`todo-section-${sectionKey}-total`}>
+          {formatDh(totalToDo + totalPaid)}
         </Text>
         <Ionicons name={isCollapsed ? 'chevron-forward' : 'chevron-down'} size={16} color={colors.textSecondary} />
       </TouchableOpacity>
       {!isCollapsed && (
-        <View style={styles.sectionBody}>
-          {/* Dépenses puis versements, séparés par un simple petit libellé —
-              un groupe vide n'est jamais affiché. */}
-          {groups.map((group, idx) => (
-            <View key={group.key} testID={`todo-section-${sectionKey}-group-${group.key}`}>
-              <Text style={[styles.groupLabel, { color: group.color }, idx > 0 && styles.groupLabelSeparated]} testID={`todo-section-${sectionKey}-group-${group.key}-label`}>
-                {group.title}
+        <>
+          {pending.length > 0 && (
+            <>
+              <Text style={[styles.band, styles.bandToDo]} testID={`todo-section-${sectionKey}-todo-band`}>
+                À FAIRE · {formatDh(totalToDo)}
               </Text>
-              {group.actions.map((action) => (
-                // Vue synthétique : libellé + montant restant uniquement. Le
-                // détail (prévu, déjà payé, source, destination…) reste dans
-                // l'ActionSheet ouvert au tap.
-                <TouchableOpacity key={action.plannedOperationId} style={styles.row} onPress={() => onPressAction(action)} testID={`todo-row-${action.plannedOperationId}`}>
-                  <Text style={styles.rowLabel} numberOfLines={2} testID={`todo-row-${action.plannedOperationId}-label`}>
-                    {action.label}
+              {/* Dépenses puis versements — un groupe vide n'est jamais affiché. */}
+              {groups.map((group, idx) => (
+                <View key={group.key} style={[styles.group, idx > 0 && styles.groupSeparated]} testID={`todo-section-${sectionKey}-group-${group.key}`}>
+                  <Text style={[styles.groupLabel, { color: group.color }]} testID={`todo-section-${sectionKey}-group-${group.key}-label`}>
+                    {group.title}
                   </Text>
-                  <Text style={styles.rowAmount} testID={`todo-row-${action.plannedOperationId}-amount`}>
-                    {formatDh(action.remaining)}
-                  </Text>
-                </TouchableOpacity>
+                  {group.actions.map((action) => (
+                    // Libellé + montant restant uniquement ; le détail (prévu,
+                    // déjà payé, source, destination…) reste dans l'ActionSheet.
+                    <TouchableOpacity key={action.plannedOperationId} style={styles.row} onPress={() => onPressAction(action)} testID={`todo-row-${action.plannedOperationId}`}>
+                      <Text style={styles.rowLabel} numberOfLines={2} testID={`todo-row-${action.plannedOperationId}-label`}>
+                        {action.label}
+                      </Text>
+                      <Text style={styles.rowAmount} testID={`todo-row-${action.plannedOperationId}-amount`}>
+                        {formatDh(action.remaining)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               ))}
-            </View>
-          ))}
-        </View>
+            </>
+          )}
+          {paid.length > 0 && (
+            <>
+              <Text style={[styles.band, styles.bandPaid]} testID={`todo-section-${sectionKey}-paid-band`}>
+                PAYÉ · {formatDh(totalPaid)}
+              </Text>
+              <View style={styles.paidList}>
+                {paid.map(({ action, amount, partial }) => (
+                  <View key={action.plannedOperationId} style={styles.row} testID={`todo-paid-row-${action.plannedOperationId}`}>
+                    <Ionicons
+                      name={partial ? 'contrast' : 'checkmark-circle'}
+                      size={15}
+                      color={colors.success}
+                      style={styles.paidIcon}
+                      accessibilityLabel={partial ? 'Payé partiellement' : 'Payé'}
+                      testID={`todo-paid-row-${action.plannedOperationId}-${partial ? 'partial' : 'full'}`}
+                    />
+                    <Text style={styles.rowLabel} numberOfLines={2}>
+                      {action.label}
+                    </Text>
+                    <Text style={styles.rowAmount} testID={`todo-paid-row-${action.plannedOperationId}-amount`}>
+                      {formatDh(amount)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
+        </>
       )}
     </View>
   );
@@ -364,28 +362,26 @@ const styles = StyleSheet.create({
   syntheseCount: { ...typography.body, fontWeight: '700' },
   syntheseAmount: { ...typography.body, fontWeight: '700', color: colors.primaryDark },
   emptyText: { ...typography.bodySecondary, paddingVertical: spacing.lg, textAlign: 'center' },
-  // Accordéon par responsable (§30-34) — même langage visuel que les accordéons Planning.
+  // Carte par responsable (proposition 3) — même carte blanche que les accordéons Planning.
   sectionCard: { backgroundColor: colors.surface, borderRadius: radius.lg, marginTop: spacing.md, overflow: 'hidden', ...elevation.card },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', padding: spacing.md },
-  sectionIconCircle: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginRight: spacing.sm },
-  sectionTitle: { ...typography.body, fontWeight: '800', flex: 1 },
-  sectionMeta: { ...typography.caption, fontWeight: '700', color: colors.textSecondary, marginRight: spacing.sm },
-  sectionBody: { paddingHorizontal: spacing.sm, paddingBottom: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
-  // Petit libellé de groupe (DÉPENSES / VERSEMENTS) — jamais une carte ni un bloc coloré.
-  groupLabel: { fontSize: 10.5, fontWeight: '800', letterSpacing: 0.5, paddingHorizontal: spacing.xs, paddingTop: spacing.sm, paddingBottom: 2 },
-  groupLabelSeparated: { marginTop: spacing.xs, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
-  // Une échéance = une ligne : libellé à gauche (2 lignes max si très long),
-  // montant en gras à droite, jamais rétréci. Pas d'alignItems 'flex-start'
-  // sur le conteneur : Android donnerait une largeur nulle au libellé.
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 7,
-    paddingHorizontal: spacing.xs,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.divider,
-  },
-  rowLabel: { ...typography.body, fontWeight: '600', flexGrow: 1, flexShrink: 1, flexBasis: 'auto', marginRight: spacing.md },
-  rowAmount: { ...typography.body, fontWeight: '800', flexShrink: 0 },
-  doneRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: spacing.xs },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', minHeight: 54, paddingVertical: spacing.md, paddingHorizontal: spacing.lg - 2, gap: spacing.sm },
+  sectionTitle: { ...typography.body, fontSize: 15, fontWeight: '800', flex: 1 },
+  sectionTotal: { ...typography.body, fontSize: 15, fontWeight: '700' },
+  // Bandeaux À FAIRE / PAYÉ : fond à peine teinté sur toute la largeur, sans bordure ni arrondi (jamais l'air d'un bouton).
+  band: { fontSize: 12, fontWeight: '800', letterSpacing: 0.6, paddingVertical: 9, paddingHorizontal: spacing.lg - 2 },
+  bandToDo: { backgroundColor: colors.surfaceMuted, color: colors.textPrimary },
+  bandPaid: { backgroundColor: colors.successSoft, color: colors.successDark },
+  // Sous-catégorie DÉPENSES / VERSEMENTS : petit titre coloré, sans sous-total ; un filet fin sépare les deux groupes.
+  group: { paddingHorizontal: spacing.lg - 2, paddingTop: spacing.md, paddingBottom: spacing.md + 2 },
+  groupSeparated: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
+  groupLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.6, marginBottom: spacing.xs },
+  paidList: { paddingHorizontal: spacing.lg - 2, paddingTop: spacing.sm, paddingBottom: spacing.md },
+  paidIcon: { marginRight: spacing.sm },
+  // Une opération = une ligne : libellé à gauche (2 lignes max si très long),
+  // montant à droite, jamais rétréci, sans filet entre les lignes. Pas
+  // d'alignItems 'flex-start' sur le conteneur : Android donnerait une
+  // largeur nulle au libellé.
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6 },
+  rowLabel: { ...typography.body, flexGrow: 1, flexShrink: 1, flexBasis: 'auto', marginRight: spacing.md },
+  rowAmount: { ...typography.body, fontWeight: '600', flexShrink: 0 },
 });

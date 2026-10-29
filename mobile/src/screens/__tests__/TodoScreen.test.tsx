@@ -10,7 +10,8 @@ import { shiftMonthKey } from '../../ui/monthKey';
 /**
  * Lot "refonte Planning/À faire" §28-39 — "À faire" structuré en accordéons
  * PAR RESPONSABLE (plus de filtres Tous/Adil/Lamiaa) : un bucket par membre
- * du foyer, "Non attribué" uniquement si nécessaire, "Effectué" en dernier.
+ * du foyer, "Non attribué" uniquement si nécessaire ; chaque carte porte son
+ * À FAIRE et son PAYÉ (plus de bloc global "Effectué").
  */
 
 const mockNavigate = jest.fn();
@@ -195,13 +196,16 @@ it("le cas documenté « Courses » responsable Adil apparaît bien sous la sect
   expect(within(unassigned).queryByTestId('todo-row-po-courses')).toBeNull();
 });
 
-it('section responsable : header affiche nombre d\'échéances + montant restant total, ligne compacte (§35)', async () => {
+it('carte responsable : prénom + total du mois (À FAIRE + PAYÉ), bandeaux À FAIRE et PAYÉ', async () => {
   renderWithSafeArea(<TodoScreen />);
   await waitFor(() => screen.getByTestId('todo-section-m-lamiaa'));
 
   const section = screen.getByTestId('todo-section-m-lamiaa');
   expect(within(section).getByText('Lamiaa')).toBeTruthy();
-  expect(within(section).getByText(/1 échéance · 500 DH/)).toBeTruthy();
+  // Carburant : 800 prévus, 300 déjà payés -> À FAIRE 500 + PAYÉ 300 = 800.
+  expect(textContent(screen.getByTestId('todo-section-m-lamiaa-total') as unknown as HostNode)).toBe(formatDh(800).replace(/\s+/g, ' '));
+  expect(textContent(screen.getByTestId('todo-section-m-lamiaa-todo-band') as unknown as HostNode)).toBe(`À FAIRE · ${formatDh(500)}`.replace(/\s+/g, ' '));
+  expect(textContent(screen.getByTestId('todo-section-m-lamiaa-paid-band') as unknown as HostNode)).toBe(`PAYÉ · ${formatDh(300)}`.replace(/\s+/g, ' '));
 
   expect(screen.queryByText('DÉPENSE')).toBeNull();
 });
@@ -296,8 +300,11 @@ it('regroupement Adil / Lamiaa inchangé : chaque échéance sous son responsabl
   expect(within(adil).queryByTestId('todo-row-po-carburant')).toBeNull();
   expect(within(lamiaa).getByTestId('todo-row-po-carburant')).toBeTruthy();
   expect(within(lamiaa).getByTestId('todo-row-po-courses-l')).toBeTruthy();
-  expect(within(adil).getByText(/1 échéance · 300 DH/)).toBeTruthy();
-  expect(within(lamiaa).getByText(/2 échéances · 700 DH/)).toBeTruthy();
+  const text = (id: string) => textContent(screen.getByTestId(id) as unknown as HostNode);
+  expect(text('todo-section-m-adil-total')).toBe(formatDh(300).replace(/\s+/g, ' '));
+  expect(text('todo-section-m-adil-todo-band')).toBe(`À FAIRE · ${formatDh(300)}`.replace(/\s+/g, ' '));
+  expect(text('todo-section-m-lamiaa-todo-band')).toBe(`À FAIRE · ${formatDh(700)}`.replace(/\s+/g, ' '));
+  expect(text('todo-section-m-lamiaa-total')).toBe(formatDh(1000).replace(/\s+/g, ' '));
   expect(mockGetTodo).toHaveBeenCalledWith(0);
 });
 
@@ -553,22 +560,31 @@ it('toucher le mois central ouvre "Choisir une période" ; juillet 2027 affiche 
   await waitFor(() => expect(mockGetTodo).toHaveBeenLastCalledWith(10));
 });
 
-it('section Effectué (§34) : repliée par défaut, affiche nombre + montant total, dépliable sur demande', async () => {
+it('plus de bloc global « Effectué » : une échéance réalisée est dans le PAYÉ de son responsable, visible par défaut', async () => {
   mockGetTodo.mockResolvedValue({
     month: '2026-10',
-    pending: [],
+    pending: [actionAdil],
     done: [{ ...actionDepensePartielleRetard, status: 'REALIZED' as const, realizedAmount: 800, remaining: 0 }],
-    pendingCount: 0,
-    totalRemaining: 0,
+    pendingCount: 1,
+    totalRemaining: 300,
   });
   renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-section-m-lamiaa'));
 
-  await waitFor(() => screen.getByTestId('todo-done-toggle'));
-  expect(within(screen.getByTestId('todo-section-done')).getByText(/1 échéance · 800 DH/)).toBeTruthy();
-  expect(screen.queryByTestId('todo-done-row-po-carburant')).toBeNull();
-
-  fireEvent.press(screen.getByTestId('todo-done-toggle'));
-  await waitFor(() => expect(screen.getByTestId('todo-done-row-po-carburant')).toBeTruthy());
+  expect(screen.queryByTestId('todo-section-done')).toBeNull();
+  expect(screen.queryByText('Effectué')).toBeNull();
+  const lamiaa = screen.getByTestId('todo-section-m-lamiaa');
+  // Ouvert sans action : rien à replier séparément.
+  expect(within(lamiaa).getByTestId('todo-paid-row-po-carburant')).toBeTruthy();
+  expect(within(lamiaa).getByTestId('todo-paid-row-po-carburant-full')).toBeTruthy();
+  expect(textContent(screen.getByTestId('todo-paid-row-po-carburant-amount') as unknown as HostNode)).toBe(formatDh(800).replace(/\s+/g, ' '));
+  // Rien à faire pour Lamiaa : pas de bandeau À FAIRE vide.
+  expect(within(lamiaa).queryByTestId('todo-section-m-lamiaa-todo-band')).toBeNull();
+  // Jamais rangée chez un autre responsable.
+  expect(within(screen.getByTestId('todo-section-m-adil')).queryByTestId('todo-paid-row-po-carburant')).toBeNull();
+  // Ligne PAYÉ informative : aucun ActionSheet au tap.
+  await fireEvent.press(screen.getByTestId('todo-paid-row-po-carburant'));
+  expect(screen.queryByTestId('action-sheet-pay')).toBeNull();
 });
 
 it('états vides : "aucune action prévue" vs "tout est fait pour octobre"', async () => {
@@ -578,7 +594,7 @@ it('états vides : "aucune action prévue" vs "tout est fait pour octobre"', asy
   expect(screen.getByText('Aucune action prévue ce mois-ci.')).toBeTruthy();
 });
 
-it('tout est fait : section vide affiche "✓ Tout est fait pour octobre", Effectué reste consultable', async () => {
+it('tout est fait : "✓ Tout est fait pour octobre", le PAYÉ de chacun reste consultable', async () => {
   mockGetTodo.mockResolvedValue({
     month: '2026-10',
     pending: [],
@@ -589,7 +605,8 @@ it('tout est fait : section vide affiche "✓ Tout est fait pour octobre", Effec
   renderWithSafeArea(<TodoScreen />);
   await waitFor(() => screen.getByTestId('todo-all-done'));
   expect(screen.getByText('✓ Tout est fait pour octobre')).toBeTruthy();
-  expect(within(screen.getByTestId('todo-section-done')).getByText(/1 échéance/)).toBeTruthy();
+  expect(within(screen.getByTestId('todo-section-m-lamiaa')).getByTestId('todo-paid-row-po-carburant')).toBeTruthy();
+  expect(textContent(screen.getByTestId('todo-section-m-lamiaa-paid-band') as unknown as HostNode)).toBe(`PAYÉ · ${formatDh(800)}`.replace(/\s+/g, ' '));
 });
 
 // ---------------------------------------------------------------------------
@@ -622,8 +639,10 @@ it('par responsable : DÉPENSES puis VERSEMENTS, chaque échéance dans son grou
   expect(groupLabels('m-adil')).toEqual(['DÉPENSES', 'VERSEMENTS']);
   expect(rowIdsIn('todo-section-m-adil-group-depenses')).toEqual(['po-courses', 'po-gsm']);
   expect(rowIdsIn('todo-section-m-adil-group-versements')).toEqual(['po-voyage', 'po-voiture']);
-  // Totaux de l'accordéon et total général : identiques à avant (somme des restes).
-  expect(within(screen.getByTestId('todo-section-m-adil')).getByText(/4 échéances · 2 550 DH/)).toBeTruthy();
+  // À FAIRE = somme des restes ; ni DÉPENSES ni VERSEMENTS n'affichent de sous-total.
+  expect(textContent(screen.getByTestId('todo-section-m-adil-todo-band') as unknown as HostNode)).toBe(`À FAIRE · ${formatDh(2550)}`.replace(/\s+/g, ' '));
+  expect(textContent(screen.getByTestId('todo-section-m-adil-group-depenses-label') as unknown as HostNode)).toBe('DÉPENSES');
+  expect(textContent(screen.getByTestId('todo-section-m-adil-group-versements-label') as unknown as HostNode)).toBe('VERSEMENTS');
   // Lignes compactes inchangées : libellé + montant.
   expect(rowText('po-voyage', 'label')).toBe('Voyage');
   expect(rowText('po-voyage', 'amount')).toBe(formatDh(1500).replace(/\s+/g, ' '));
@@ -639,22 +658,37 @@ it('aucun groupe vide : un responsable sans versement n’affiche que DÉPENSES,
   expect(screen.queryByTestId('todo-section-m-lamiaa-group-depenses')).toBeNull();
 });
 
-it('séparateur discret : petit libellé + trait fin, jamais une carte ni un fond coloré', async () => {
-  mockGetTodo.mockResolvedValue({ month: '2026-10', pending: [actionAdil, versementAdil], done: [], pendingCount: 2, totalRemaining: 1800 });
+it('hiérarchie validée : bandeaux à peine teintés sans bordure, sous-catégories sur fond blanc séparées par un filet fin', async () => {
+  mockGetTodo.mockResolvedValue({ month: '2026-10', pending: [actionAdil, versementAdil], done: [{ ...depenseAdil2, status: 'REALIZED' as const, realizedAmount: 350, remaining: 0 }], pendingCount: 2, totalRemaining: 1800 });
   renderWithSafeArea(<TodoScreen />);
   await waitFor(() => screen.getByTestId('todo-section-m-adil'));
-  const [dep, ver] = within(screen.getByTestId('todo-section-m-adil')).getAllByText(/^(DÉPENSES|VERSEMENTS)$/);
-  const depStyle = StyleSheet.flatten(dep.props.style);
-  const verStyle = StyleSheet.flatten(ver.props.style);
-  expect(depStyle.fontSize).toBeLessThan(12);
-  expect(depStyle.backgroundColor).toBeUndefined();
-  expect(depStyle.borderTopWidth).toBeUndefined();
-  expect(verStyle.borderTopWidth).toBe(StyleSheet.hairlineWidth);
-  for (const id of ['todo-section-m-adil-group-depenses', 'todo-section-m-adil-group-versements']) {
-    const style = StyleSheet.flatten(screen.getByTestId(id).props.style) ?? {};
-    expect(style.backgroundColor).toBeUndefined();
-    expect(style.elevation).toBeUndefined();
+  const style = (id: string) => StyleSheet.flatten(screen.getByTestId(id).props.style) ?? {};
+
+  const todoBand = style('todo-section-m-adil-todo-band');
+  const paidBand = style('todo-section-m-adil-paid-band');
+  expect(todoBand.backgroundColor).toBe(colors.surfaceMuted);
+  expect(paidBand.backgroundColor).toBe(colors.successSoft);
+  for (const band of [todoBand, paidBand]) {
+    expect(band.borderWidth).toBeUndefined();
+    expect(band.borderRadius).toBeUndefined();
   }
+  // Sous-catégories : petit titre coloré, fond blanc, filet fin uniquement entre DÉPENSES et VERSEMENTS.
+  expect(style('todo-section-m-adil-group-depenses-label').fontSize).toBeLessThan(12);
+  expect(style('todo-section-m-adil-group-depenses').backgroundColor).toBeUndefined();
+  expect(style('todo-section-m-adil-group-depenses').borderTopWidth).toBeUndefined();
+  expect(style('todo-section-m-adil-group-versements').borderTopWidth).toBe(StyleSheet.hairlineWidth);
+  // Aucun filet entre les opérations.
+  expect(style('todo-row-po-courses').borderBottomWidth).toBeUndefined();
+  expect(style('todo-paid-row-po-gsm').borderBottomWidth).toBeUndefined();
+  // Montants des opérations : noirs, même taille, À FAIRE comme PAYÉ.
+  const todoAmount = style('todo-row-po-courses-amount');
+  const paidAmount = style('todo-paid-row-po-gsm-amount');
+  expect(todoAmount.color).toBe(colors.textPrimary);
+  expect(paidAmount.color).toBe(colors.textPrimary);
+  expect(paidAmount.fontSize).toBe(todoAmount.fontSize);
+  expect(style('todo-row-po-voyage-amount').fontSize).toBe(todoAmount.fontSize);
+  // Total de la carte : taille raisonnable, à peine plus grand que les lignes.
+  expect(style('todo-section-m-adil-total').fontSize).toBeLessThanOrEqual((todoAmount.fontSize as number) + 1);
 });
 
 it('tap sur une ligne d’un groupe : même ActionSheet qu’avant (versement → « Virer »)', async () => {
@@ -689,4 +723,57 @@ it('titres de groupe colorés dans TOUS les accordéons : DÉPENSES = identité 
   expect(StyleSheet.flatten(unassignedVersement[0].props.style).color).toBe(colors.secondary);
   // Présentation inchangée : ni fond, ni icône ajoutée.
   expect(StyleSheet.flatten(screen.getByTestId('todo-section-m-adil-group-depenses-label').props.style).backgroundColor).toBeUndefined();
+});
+
+it('paiement partiel : solde dans À FAIRE, part payée dans PAYÉ (◐), total = prévu, jamais compté deux fois', async () => {
+  const coursesPartielle = { ...actionAdil, expectedAmount: 1000, realizedAmount: 400, remaining: 600 };
+  mockGetTodo.mockResolvedValue({ month: '2026-10', pending: [coursesPartielle], done: [], pendingCount: 1, totalRemaining: 600 });
+  renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-section-m-adil'));
+  const text = (id: string) => textContent(screen.getByTestId(id) as unknown as HostNode);
+
+  expect(text('todo-row-po-courses-amount')).toBe(formatDh(600).replace(/\s+/g, ' '));
+  expect(text('todo-paid-row-po-courses-amount')).toBe(formatDh(400).replace(/\s+/g, ' '));
+  expect(screen.getByTestId('todo-paid-row-po-courses-partial')).toBeTruthy();
+  expect(text('todo-section-m-adil-todo-band')).toBe(`À FAIRE · ${formatDh(600)}`.replace(/\s+/g, ' '));
+  expect(text('todo-section-m-adil-paid-band')).toBe(`PAYÉ · ${formatDh(400)}`.replace(/\s+/g, ' '));
+  expect(text('todo-section-m-adil-total')).toBe(formatDh(1000).replace(/\s+/g, ' '));
+  // Résumé du haut inchangé : uniquement ce qui reste à exécuter.
+  expect(text('todo-synthese-count')).toBe('1 action restante');
+  expect(text('todo-synthese-amount')).toBe(`${formatDh(600)} à exécuter`.replace(/\s+/g, ' '));
+});
+
+it('le total du responsable ne baisse pas quand une échéance est payée : il passe de À FAIRE à PAYÉ', async () => {
+  mockGetTodo.mockResolvedValue({ month: '2026-10', pending: [actionAdil, depenseAdil2], done: [], pendingCount: 2, totalRemaining: 650 });
+  const before = await renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-section-m-adil'));
+  expect(textContent(screen.getByTestId('todo-section-m-adil-total') as unknown as HostNode)).toBe(formatDh(650).replace(/\s+/g, ' '));
+  expect(screen.queryByTestId('todo-section-m-adil-paid-band')).toBeNull();
+  await before.unmount();
+
+  mockGetTodo.mockResolvedValue({ month: '2026-10', pending: [actionAdil], done: [{ ...depenseAdil2, status: 'REALIZED' as const, realizedAmount: 350, remaining: 0 }], pendingCount: 1, totalRemaining: 300 });
+  renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-section-m-adil-paid-band'));
+  expect(textContent(screen.getByTestId('todo-section-m-adil-total') as unknown as HostNode)).toBe(formatDh(650).replace(/\s+/g, ' '));
+  expect(textContent(screen.getByTestId('todo-section-m-adil-todo-band') as unknown as HostNode)).toBe(`À FAIRE · ${formatDh(300)}`.replace(/\s+/g, ' '));
+  expect(textContent(screen.getByTestId('todo-section-m-adil-paid-band') as unknown as HostNode)).toBe(`PAYÉ · ${formatDh(350)}`.replace(/\s+/g, ' '));
+});
+
+it('« Non attribué » : même structure (total, À FAIRE, PAYÉ), affiché uniquement s’il contient des opérations', async () => {
+  const payeeSansResponsable = { ...actionVersementSansResponsable, plannedOperationId: 'po-epargne-2', label: 'Épargne auto', status: 'REALIZED' as const, realizedAmount: 500, remaining: 0 };
+  mockGetTodo.mockResolvedValue({ month: '2026-10', pending: [actionVersementSansResponsable], done: [payeeSansResponsable], pendingCount: 1, totalRemaining: 1000 });
+  const first = await renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-section-__unassigned__'));
+  const text = (id: string) => textContent(screen.getByTestId(id) as unknown as HostNode);
+  expect(text('todo-section-__unassigned__-total')).toBe(formatDh(1500).replace(/\s+/g, ' '));
+  expect(text('todo-section-__unassigned__-todo-band')).toBe(`À FAIRE · ${formatDh(1000)}`.replace(/\s+/g, ' '));
+  expect(text('todo-section-__unassigned__-paid-band')).toBe(`PAYÉ · ${formatDh(500)}`.replace(/\s+/g, ' '));
+  expect(screen.queryByTestId('todo-section-m-adil')).toBeNull();
+  expect(screen.queryByTestId('todo-section-m-lamiaa')).toBeNull();
+  await first.unmount();
+
+  mockGetTodo.mockResolvedValue({ month: '2026-10', pending: [actionAdil], done: [], pendingCount: 1, totalRemaining: 300 });
+  renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-section-m-adil'));
+  expect(screen.queryByTestId('todo-section-__unassigned__')).toBeNull();
 });

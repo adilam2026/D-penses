@@ -22,6 +22,10 @@ export const colors = {
 
   success: '#5C8A3A',
   successLight: '#E9F1DF',
+  // Bandeau « PAYÉ » d'À faire : fond vert à peine teinté + texte assez
+  // foncé pour rester lisible dessus.
+  successSoft: '#EEF4E8',
+  successDark: '#47702B',
   danger: '#C14343',
   dangerLight: '#FBE7E3',
   warning: '#C98A12',
@@ -40,6 +44,8 @@ export const colors = {
   background: '#FBF7F0',
   surface: '#FFFFFF',
   surfaceSecondary: '#F2ECE0',
+  // Fond taupe très léger (bandeau « À FAIRE » d'À faire) — plus discret que surfaceSecondary.
+  surfaceMuted: '#F5F0E7',
   // Teinte terracotta douce — utilisée uniquement pour des états
   // actifs/sélectionnés, jamais comme fond passif.
   surfaceActive: '#FBE4DA',
