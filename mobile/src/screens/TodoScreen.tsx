@@ -290,7 +290,10 @@ function TodoSection({
         </Text>
         {/* « payé / total du mois » : le premier montant monte au fil des paiements (part réellement payée d'un partiel comprise), le total reste stable. */}
         <Text style={styles.sectionTotal} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} testID={`todo-section-${sectionKey}-total`}>
-          {`${Math.round(totalPaid).toLocaleString('fr-FR')} / ${formatDh(totalToDo + totalPaid)}`}
+          <Text style={styles.sectionPaid} testID={`todo-section-${sectionKey}-total-paid`}>
+            {Math.round(totalPaid).toLocaleString('fr-FR')}
+          </Text>
+          {` / ${formatDh(totalToDo + totalPaid)}`}
         </Text>
         <Ionicons name={isCollapsed ? 'chevron-forward' : 'chevron-down'} size={16} color={colors.textSecondary} />
       </TouchableOpacity>
@@ -371,6 +374,8 @@ const styles = StyleSheet.create({
   sectionHeader: { flexDirection: 'row', alignItems: 'center', minHeight: 54, paddingVertical: spacing.md, paddingHorizontal: spacing.lg - 2, gap: spacing.sm },
   sectionTitle: { ...typography.body, fontSize: 15, fontWeight: '800', flex: 1 },
   sectionTotal: { ...typography.body, fontSize: 15, fontWeight: '700' },
+  // Montant payé de l'en-tête : même vert que le bandeau PAYÉ, rien d'autre ne change.
+  sectionPaid: { color: colors.successDark },
   // Bandeaux À FAIRE / PAYÉ : fond à peine teinté sur toute la largeur, sans bordure ni arrondi (jamais l'air d'un bouton).
   band: { fontSize: 12, fontWeight: '800', letterSpacing: 0.6, paddingVertical: 9, paddingHorizontal: spacing.lg - 2 },
   bandToDo: { backgroundColor: colors.surfaceMuted, color: colors.textPrimary },

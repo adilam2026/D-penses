@@ -826,3 +826,18 @@ it('en-tête « payé / total » : 0 / total tant que rien n’est payé, tient 
   expect(textContent(header as unknown as HostNode)).not.toMatch(/pay|%/i);
   expect(StyleSheet.flatten(header.props.style).color).toBe(colors.textPrimary);
 });
+
+it('en-tête : seul le montant payé est vert (même vert que PAYÉ), « / total DH » reste noir, taille et poids inchangés', async () => {
+  await renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-section-m-lamiaa-total'));
+  const header = screen.getByTestId('todo-section-m-lamiaa-total');
+  const paid = screen.getByTestId('todo-section-m-lamiaa-total-paid');
+  expect(textContent(paid as unknown as HostNode)).toBe('300');
+  expect(textContent(header as unknown as HostNode)).toBe(headerAmount(300, 800));
+  const paidStyle = StyleSheet.flatten(paid.props.style);
+  const headerStyle = StyleSheet.flatten(header.props.style);
+  expect(paidStyle.color).toBe(StyleSheet.flatten(screen.getByTestId('todo-section-m-lamiaa-paid-band').props.style).color);
+  expect(headerStyle.color).toBe(colors.textPrimary);
+  expect(paidStyle.fontSize).toBeUndefined();
+  expect(paidStyle.fontWeight).toBeUndefined();
+});
