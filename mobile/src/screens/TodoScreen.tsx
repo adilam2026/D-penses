@@ -251,7 +251,7 @@ interface ResponsibleBucket {
 
 /**
  * Carte "À faire" d'un responsable (proposition 3 validée) :
- *   Prénom · total du mois (= À FAIRE + PAYÉ, ne baisse pas quand on paie)
+ *   Prénom · payé / total du mois (total = À FAIRE + PAYÉ, ne baisse pas quand on paie)
  *   bandeau À FAIRE · reste  → DÉPENSES puis VERSEMENTS (titres seuls, sans sous-total)
  *   bandeau PAYÉ · exécuté   → ✓ réalisées, ◐ part payée d'un partiel
  * Toute ligne ouvre l'ActionSheet de Planning : menu "à payer" pour une
@@ -288,8 +288,9 @@ function TodoSection({
         <Text style={styles.sectionTitle} numberOfLines={1}>
           {title}
         </Text>
-        <Text style={styles.sectionTotal} numberOfLines={1} testID={`todo-section-${sectionKey}-total`}>
-          {formatDh(totalToDo + totalPaid)}
+        {/* « payé / total du mois » : le premier montant monte au fil des paiements (part réellement payée d'un partiel comprise), le total reste stable. */}
+        <Text style={styles.sectionTotal} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} testID={`todo-section-${sectionKey}-total`}>
+          {`${Math.round(totalPaid).toLocaleString('fr-FR')} / ${formatDh(totalToDo + totalPaid)}`}
         </Text>
         <Ionicons name={isCollapsed ? 'chevron-forward' : 'chevron-down'} size={16} color={colors.textSecondary} />
       </TouchableOpacity>
