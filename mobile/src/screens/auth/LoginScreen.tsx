@@ -4,11 +4,12 @@ import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../auth/AuthContext';
 import { ApiError } from '../../api/client';
 import { PinDots, PinPad } from '../../ui/PinPad';
+import { PIN_LENGTH } from '../../auth/pinRules';
 import { authStyles } from './authStyles';
 
-/** Code à 6 chiffres, ou ancien mot de passe 8/9 chiffres tant que la transition n'est pas faite. */
-const CREDENTIAL_MIN = 6;
-const CREDENTIAL_MAX = 12;
+/** Ancien mot de passe numérique (8/9 chiffres) — uniquement pour la transition. */
+const LEGACY_MIN = 6;
+const LEGACY_MAX = 12;
 
 /**
  * Première connexion sur l'appareil (ou « Autre compte ») : email, puis code
@@ -19,16 +20,19 @@ export function LoginScreen() {
   const { signIn, profiles, switchUser } = useAuth();
   const navigation = useNavigation<any>();
   const [step, setStep] = useState<'email' | 'credential'>('email');
+  // 'pin' (fonctionnement normal) : validation automatique au 6e chiffre.
+  // 'legacy' (transition) : ancien mot de passe de longueur variable + « Se connecter ».
+  const [mode, setMode] = useState<'pin' | 'legacy'>('pin');
   const [email, setEmail] = useState('');
   const [credential, setCredential] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function onSubmit() {
+  async function submit(value: string) {
     setError(null);
     setLoading(true);
     try {
-      await signIn(email.trim(), credential);
+      await signIn(email.trim(), value);
     } catch (err) {
       setError(err instanceof ApiError && err.status < 500 ? err.message : 'Connexion impossible');
     } finally {
@@ -78,23 +82,55 @@ export function LoginScreen() {
           </View>
         ) : (
           <View>
-            <Text style={authStyles.prompt}>Saisissez votre code</Text>
-            <PinDots length={Math.max(CREDENTIAL_MIN, credential.length)} filled={credential.length} />
+            <Text style={authStyles.prompt}>{mode === 'pin' ? 'Saisissez votre code' : 'Saisissez votre ancien mot de passe'}</Text>
+            <PinDots
+              length={mode === 'pin' ? PIN_LENGTH : Math.max(LEGACY_MIN, credential.length)}
+              filled={credential.length}
+            />
             {error ? (
               <Text style={authStyles.error} testID="login-error">
                 {error}
               </Text>
             ) : null}
-            <PinPad value={credential} onChange={setCredential} maxLength={CREDENTIAL_MAX} disabled={loading} />
-            <TouchableOpacity
-              style={[authStyles.button, credential.length < CREDENTIAL_MIN && authStyles.buttonDisabled]}
-              onPress={onSubmit}
-              disabled={loading || credential.length < CREDENTIAL_MIN}
-              testID="login-submit"
-            >
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={authStyles.buttonText}>Se connecter</Text>}
-            </TouchableOpacity>
+            {mode === 'pin' ? (
+              loading ? (
+                <ActivityIndicator style={{ marginVertical: 24 }} />
+              ) : (
+                <PinPad
+                  value={credential}
+                  onChange={(next) => {
+                    setCredential(next);
+                    if (next.length === PIN_LENGTH) submit(next);
+                  }}
+                  maxLength={PIN_LENGTH}
+                />
+              )
+            ) : (
+              <>
+                <PinPad value={credential} onChange={setCredential} maxLength={LEGACY_MAX} disabled={loading} />
+                <TouchableOpacity
+                  style={[authStyles.button, credential.length < LEGACY_MIN && authStyles.buttonDisabled]}
+                  onPress={() => submit(credential)}
+                  disabled={loading || credential.length < LEGACY_MIN}
+                  testID="login-submit"
+                >
+                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={authStyles.buttonText}>Se connecter</Text>}
+                </TouchableOpacity>
+              </>
+            )}
             <View style={authStyles.links}>
+              <TouchableOpacity
+                onPress={() => {
+                  setCredential('');
+                  setError(null);
+                  setMode(mode === 'pin' ? 'legacy' : 'pin');
+                }}
+                testID="login-toggle-legacy"
+              >
+                <Text style={authStyles.linkMuted}>
+                  {mode === 'pin' ? 'Première connexion avec votre ancien mot de passe ?' : 'Utiliser mon code à 6 chiffres'}
+                </Text>
+              </TouchableOpacity>
               <TouchableOpacity onPress={() => navigation.navigate('ForgotPin', { email: email.trim() })} testID="login-forgot">
                 <Text style={authStyles.link}>Code oublié ?</Text>
               </TouchableOpacity>

@@ -1,0 +1,29 @@
+appId: com.depenses.mobile
+---
+# Parcours 23 — Application fermée puis rouverte
+# Toujours verrouillée au redémarrage (prénom du dernier utilisateur, sans
+# email), déverrouillage par le code, puis navigation normale.
+- runFlow: common/login.yaml
+- stopApp
+- launchApp:
+    clearState: false
+- assertVisible:
+    id: "lock-screen"
+- assertVisible:
+    id: "lock-name"
+- assertNotVisible:
+    id: "login-email"
+- assertNotVisible:
+    text: "${E2E_EMAIL}"
+- runFlow:
+    file: common/enter-digits.yaml
+    env:
+      DIGITS: ${E2E_PIN}
+- assertVisible:
+    text: "MES COMPTES"
+- tapOn: "Planning"
+- assertVisible:
+    text: "Planning"
+- tapOn: "À faire"
+- assertVisible:
+    text: "À faire"

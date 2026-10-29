@@ -1,10 +1,12 @@
 appId: com.depenses.mobile
 ---
-# Sous-flow réutilisable (appelé via runFlow) : connexion avec le compte de
-# démonstration E2E (${E2E_EMAIL} / ${E2E_PASSWORD}, injectés par le workflow
-# GitHub Actions android-e2e.yml). clearState garantit que chaque flow
-# top-level qui l'appelle repart d'une app fraîchement installée (pas de
-# session persistée d'un flow précédent), pour rester rejouable isolément.
+# Sous-flow réutilisable (appelé via runFlow) : première connexion sur un
+# appareil vierge avec le compte de démonstration E2E — email, puis code à
+# 6 chiffres sur le pavé numérique (validation automatique au 6e chiffre).
+# ${E2E_EMAIL} / ${E2E_PIN} sont injectés par le workflow android-e2e.yml
+# (E2E_PIN = secret GitHub, jamais dans Git). clearState garantit que chaque
+# flow top-level repart d'une app fraîchement installée (aucune session ni
+# profil mémorisé d'un flow précédent), pour rester rejouable isolément.
 - launchApp:
     clearState: true
 - takeScreenshot: common-login-post-launch
@@ -13,11 +15,18 @@ appId: com.depenses.mobile
 - tapOn:
     id: "login-email"
 - inputText: "${E2E_EMAIL}"
-- tapOn:
-    id: "login-password"
-- inputText: "${E2E_PASSWORD}"
 - hideKeyboard
 - tapOn:
-    id: "login-submit"
+    id: "login-continue"
+- assertVisible:
+    id: "pin-pad"
+- runFlow:
+    file: enter-digits.yaml
+    env:
+      DIGITS: ${E2E_PIN}
+- runFlow:
+    file: pin-setup-if-required.yaml
+    env:
+      NEW_PIN: ${E2E_PIN}
 - assertVisible:
     text: "MES COMPTES"

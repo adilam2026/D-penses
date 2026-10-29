@@ -1,6 +1,9 @@
 appId: com.depenses.mobile
 ---
 # Parcours 21 — Déconnexion puis reconnexion
+# Après déconnexion, la personne déjà connue de l'appareil est proposée par
+# son prénom : son écran de code s'affiche (prénom, jamais l'email), code à
+# 6 chiffres, retour à l'application.
 - runFlow: common/login.yaml
 - tapOn:
     id: "app-shell-menu-button"
@@ -9,13 +12,16 @@ appId: com.depenses.mobile
 - assertVisible:
     id: "login-email"
 - tapOn:
-    id: "login-email"
-- inputText: "${E2E_EMAIL}"
-- tapOn:
-    id: "login-password"
-- inputText: "${E2E_PASSWORD}"
-- hideKeyboard
-- tapOn:
-    id: "login-submit"
+    text: "Continuer en tant que .*"
+- assertVisible:
+    id: "lock-screen"
+- assertVisible:
+    id: "lock-name"
+- assertNotVisible:
+    text: "${E2E_EMAIL}"
+- runFlow:
+    file: common/enter-digits.yaml
+    env:
+      DIGITS: ${E2E_PIN}
 - assertVisible:
     text: "MES COMPTES"

@@ -17,7 +17,7 @@ export class EmailDeliveryError extends Error {}
  * (RESEND_API_KEY / EMAIL_FROM) plutôt que du SMTP direct : Railway, sur son
  * plan actuel, bloque le SMTP sortant (confirmé — timeout de connexion sur
  * smtp.gmail.com:587). Tant que RESEND_API_KEY n'est pas renseigné (dev
- * local, CI, tests), le code est journalisé au lieu d'être envoyé.
+ * local, CI, tests), rien n'est envoyé et le code n'est JAMAIS journalisé.
  */
 @Injectable()
 export class MailerService {
@@ -28,12 +28,9 @@ export class MailerService {
   async sendOtpEmail(email: string, code: string, purpose: OtpPurpose = 'EMAIL_VERIFICATION'): Promise<void> {
     const apiKey = this.config.get<string>('RESEND_API_KEY');
     if (!apiKey) {
-      // Un code de réinitialisation du code personnel n'est JAMAIS journalisé.
-      this.logger.warn(
-        purpose === 'PIN_RESET'
-          ? `RESEND_API_KEY non configuré — code de réinitialisation pour ${email} non envoyé`
-          : `RESEND_API_KEY non configuré — code OTP pour ${email} (journalisé, non envoyé) : ${code}`,
-      );
+      // Aucun code (confirmation d'inscription ou réinitialisation) n'est
+      // JAMAIS journalisé, même sans fournisseur d'email configuré.
+      this.logger.warn(`RESEND_API_KEY non configuré — email ${purpose} pour ${email} non envoyé (code non journalisé)`);
       return;
     }
     const content =

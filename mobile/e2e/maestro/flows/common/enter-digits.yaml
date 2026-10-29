@@ -1,0 +1,13 @@
+appId: com.depenses.mobile
+---
+# Sous-flow : saisit ${DIGITS} chiffre par chiffre sur le pavé numérique de
+# l'application (testID pin-key-0..9) — jamais via le clavier système, qui
+# n'existe plus pour le code. Longueur quelconque (code à 6 chiffres ou
+# ancien mot de passe numérique 8/9 chiffres pour la transition).
+- evalScript: ${output.digitIndex = 0}
+- repeat:
+    times: ${DIGITS.length}
+    commands:
+      - tapOn:
+          id: "pin-key-${DIGITS.charAt(output.digitIndex)}"
+      - evalScript: ${output.digitIndex = output.digitIndex + 1}

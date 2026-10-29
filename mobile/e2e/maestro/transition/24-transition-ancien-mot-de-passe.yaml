@@ -1,0 +1,35 @@
+appId: com.depenses.mobile
+---
+# Parcours 24 — Transition ancien mot de passe numérique -> code à 6 chiffres
+#
+# HORS SUITE STANDARD (dossier transition/, jamais lancé par
+# `maestro test .../flows`) : ce parcours REMPLACE le credential du compte
+# utilisé. À lancer uniquement explicitement, avec un compte de test dédié
+# dont l'ancien mot de passe est numérique :
+#   maestro test mobile/e2e/maestro/transition/24-transition-ancien-mot-de-passe.yaml \
+#     -e E2E_TRANSITION_EMAIL=... -e E2E_LEGACY_PASSWORD=... -e E2E_NEW_PIN=...
+# Les valeurs viennent de secrets — jamais de Git.
+- launchApp:
+    clearState: true
+- tapOn:
+    id: "login-email"
+- inputText: "${E2E_TRANSITION_EMAIL}"
+- hideKeyboard
+- tapOn:
+    id: "login-continue"
+- tapOn:
+    id: "login-toggle-legacy"
+- runFlow:
+    file: ../flows/common/enter-digits.yaml
+    env:
+      DIGITS: ${E2E_LEGACY_PASSWORD}
+- tapOn:
+    id: "login-submit"
+- assertVisible:
+    id: "create-pin-create"
+- runFlow:
+    file: ../flows/common/pin-setup-if-required.yaml
+    env:
+      NEW_PIN: ${E2E_NEW_PIN}
+- assertVisible:
+    text: "MES COMPTES"

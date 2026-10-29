@@ -22,7 +22,9 @@ env:
   # backend/src/e2e/e2e-seed-data.util.ts) — même foyer que POST /e2e/reset
   # réinitialise et reseed avant chaque campagne.
   E2E_EMAIL: demo@finance-maison.local
-  E2E_PASSWORD: DemoFinanceMaison2026!
+  # Code personnel à 6 chiffres du compte démo : secret GitHub, jamais dans Git
+  # (cf. mobile/e2e/maestro/README.md, « Compte démo et code à 6 chiffres »).
+  E2E_PIN: ${{ secrets.E2E_PIN }}
 
 jobs:
   build-and-test:
@@ -122,6 +124,15 @@ jobs:
       # android-emulator-runner) et doit rester la plus simple suite de
       # commandes possible, sans if/fi/find/test qui s'y sont avérés mal
       # interprétés (runs précédents : "Syntax error: end of file unexpected").
+      - name: Vérifier le secret E2E_PIN (code du compte démo)
+        shell: bash
+        run: |
+          if ! [[ "$E2E_PIN" =~ ^[0-9]{6}$ ]]; then
+            echo "::error::Le secret GitHub E2E_PIN est absent ou n'est pas un code à 6 chiffres — voir mobile/e2e/maestro/README.md."
+            exit 1
+          fi
+          echo "E2E_PIN présent (valeur masquée)."
+
       - name: Résoudre le chemin APK (avant l'émulateur)
         shell: bash
         run: |
@@ -158,43 +169,48 @@ jobs:
             adb install -r "$APK_PATH"
             export PATH="$HOME/.maestro/bin:$PATH"
             mkdir -p mobile/e2e/maestro-report/debug
+            echo "=== AUTHENTIFICATION : connexion, deconnexion/reconnexion, verrouillage 15 s, redemarrage verrouille ==="
+            maestro test mobile/e2e/maestro/flows/01-login.yaml -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PIN="$E2E_PIN" 2>&1 | tee mobile/e2e/maestro-report/auth-01-login-run.log
+            maestro test mobile/e2e/maestro/flows/21-logout-login.yaml -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PIN="$E2E_PIN" 2>&1 | tee mobile/e2e/maestro-report/auth-21-logout-login-run.log
+            maestro test mobile/e2e/maestro/flows/22-verrouillage-arriere-plan.yaml -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PIN="$E2E_PIN" 2>&1 | tee mobile/e2e/maestro-report/auth-22-verrouillage-run.log
+            maestro test mobile/e2e/maestro/flows/23-redemarrage-verrouille.yaml -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PIN="$E2E_PIN" 2>&1 | tee mobile/e2e/maestro-report/auth-23-redemarrage-run.log
             echo "=== CAMPAGNE CIBLEE (animations reactivees, PAS de campagne complete 21 flows) : CAS 1 DATEPICKER ==="
-            maestro test mobile/e2e/maestro/diagnostics/93-diagnostic-datepicker-anim.yaml -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PASSWORD="$E2E_PASSWORD" --debug-output mobile/e2e/maestro-report/debug/cible-datepicker 2>&1 | tee mobile/e2e/maestro-report/cible-datepicker-run.log
+            maestro test mobile/e2e/maestro/diagnostics/93-diagnostic-datepicker-anim.yaml -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PIN="$E2E_PIN" --debug-output mobile/e2e/maestro-report/debug/cible-datepicker 2>&1 | tee mobile/e2e/maestro-report/cible-datepicker-run.log
             adb shell uiautomator dump /sdcard/window_dump_cible_datepicker.xml
             adb pull /sdcard/window_dump_cible_datepicker.xml mobile/e2e/maestro-report/debug/cible-datepicker-ui-hierarchy.xml
             adb exec-out screencap -p > mobile/e2e/maestro-report/debug/cible-datepicker-adb-screenshot.png
             echo "=== CAS 1 DATEPICKER : resume hierarchie UI ==="
             python3 mobile/e2e/scripts/dump-ui-summary.py mobile/e2e/maestro-report/debug/cible-datepicker-ui-hierarchy.xml
             echo "=== CAS 2 SOUS-COMPTE / CIH ==="
-            maestro test mobile/e2e/maestro/diagnostics/92-diagnostic-subcompte-cih-select.yaml -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PASSWORD="$E2E_PASSWORD" --debug-output mobile/e2e/maestro-report/debug/cible-subcompte 2>&1 | tee mobile/e2e/maestro-report/cible-subcompte-run.log
+            maestro test mobile/e2e/maestro/diagnostics/92-diagnostic-subcompte-cih-select.yaml -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PIN="$E2E_PIN" --debug-output mobile/e2e/maestro-report/debug/cible-subcompte 2>&1 | tee mobile/e2e/maestro-report/cible-subcompte-run.log
             adb shell uiautomator dump /sdcard/window_dump_cible_subcompte.xml
             adb pull /sdcard/window_dump_cible_subcompte.xml mobile/e2e/maestro-report/debug/cible-subcompte-ui-hierarchy.xml
             adb exec-out screencap -p > mobile/e2e/maestro-report/debug/cible-subcompte-adb-screenshot.png
             echo "=== CAS 2 SOUS-COMPTE : resume hierarchie UI ==="
             python3 mobile/e2e/scripts/dump-ui-summary.py mobile/e2e/maestro-report/debug/cible-subcompte-ui-hierarchy.xml
             echo "=== CAS 3 PLANNING : etat AVANT action ==="
-            maestro test mobile/e2e/maestro/diagnostics/91-diagnostic-planning-avant.yaml -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PASSWORD="$E2E_PASSWORD" --debug-output mobile/e2e/maestro-report/debug/cible-planning-avant 2>&1 | tee mobile/e2e/maestro-report/cible-planning-avant-run.log
+            maestro test mobile/e2e/maestro/diagnostics/91-diagnostic-planning-avant.yaml -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PIN="$E2E_PIN" --debug-output mobile/e2e/maestro-report/debug/cible-planning-avant 2>&1 | tee mobile/e2e/maestro-report/cible-planning-avant-run.log
             adb shell uiautomator dump /sdcard/window_dump_cible_planning_avant.xml
             adb pull /sdcard/window_dump_cible_planning_avant.xml mobile/e2e/maestro-report/debug/cible-planning-avant-ui-hierarchy.xml
             adb exec-out screencap -p > mobile/e2e/maestro-report/debug/cible-planning-avant-adb-screenshot.png
             echo "=== CAS 3 PLANNING AVANT : resume hierarchie UI ==="
             python3 mobile/e2e/scripts/dump-ui-summary.py mobile/e2e/maestro-report/debug/cible-planning-avant-ui-hierarchy.xml planning-cell-voyage
             echo "=== CAS 3 PLANNING : etat JUSTE APRES action ==="
-            maestro test mobile/e2e/maestro/diagnostics/90-diagnostic-planning-juste-apres.yaml -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PASSWORD="$E2E_PASSWORD" --debug-output mobile/e2e/maestro-report/debug/cible-planning-juste-apres 2>&1 | tee mobile/e2e/maestro-report/cible-planning-juste-apres-run.log
+            maestro test mobile/e2e/maestro/diagnostics/90-diagnostic-planning-juste-apres.yaml -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PIN="$E2E_PIN" --debug-output mobile/e2e/maestro-report/debug/cible-planning-juste-apres 2>&1 | tee mobile/e2e/maestro-report/cible-planning-juste-apres-run.log
             adb shell uiautomator dump /sdcard/window_dump_cible_planning_juste_apres.xml
             adb pull /sdcard/window_dump_cible_planning_juste_apres.xml mobile/e2e/maestro-report/debug/cible-planning-juste-apres-ui-hierarchy.xml
             adb exec-out screencap -p > mobile/e2e/maestro-report/debug/cible-planning-juste-apres-adb-screenshot.png
             echo "=== CAS 3 PLANNING JUSTE APRES : resume hierarchie UI ==="
             python3 mobile/e2e/scripts/dump-ui-summary.py mobile/e2e/maestro-report/debug/cible-planning-juste-apres-ui-hierarchy.xml planning-cell-voyage
             echo "=== CAS 3 PLANNING : etat APRES attente reseau ==="
-            maestro test mobile/e2e/maestro/diagnostics/95-diagnostic-planning-realiser.yaml -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PASSWORD="$E2E_PASSWORD" --debug-output mobile/e2e/maestro-report/debug/cible-planning-apres-attente 2>&1 | tee mobile/e2e/maestro-report/cible-planning-apres-attente-run.log
+            maestro test mobile/e2e/maestro/diagnostics/95-diagnostic-planning-realiser.yaml -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PIN="$E2E_PIN" --debug-output mobile/e2e/maestro-report/debug/cible-planning-apres-attente 2>&1 | tee mobile/e2e/maestro-report/cible-planning-apres-attente-run.log
             adb shell uiautomator dump /sdcard/window_dump_cible_planning_apres_attente.xml
             adb pull /sdcard/window_dump_cible_planning_apres_attente.xml mobile/e2e/maestro-report/debug/cible-planning-apres-attente-ui-hierarchy.xml
             adb exec-out screencap -p > mobile/e2e/maestro-report/debug/cible-planning-apres-attente-adb-screenshot.png
             echo "=== CAS 3 PLANNING APRES ATTENTE : resume hierarchie UI ==="
             python3 mobile/e2e/scripts/dump-ui-summary.py mobile/e2e/maestro-report/debug/cible-planning-apres-attente-ui-hierarchy.xml planning-cell-voyage
             echo "=== CAS 4 OBJECTIFS ==="
-            maestro test mobile/e2e/maestro/diagnostics/88-diagnostic-objectif-fresh.yaml -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PASSWORD="$E2E_PASSWORD" --debug-output mobile/e2e/maestro-report/debug/cible-objectif 2>&1 | tee mobile/e2e/maestro-report/cible-objectif-run.log
+            maestro test mobile/e2e/maestro/diagnostics/88-diagnostic-objectif-fresh.yaml -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PIN="$E2E_PIN" --debug-output mobile/e2e/maestro-report/debug/cible-objectif 2>&1 | tee mobile/e2e/maestro-report/cible-objectif-run.log
             adb shell uiautomator dump /sdcard/window_dump_cible_objectif.xml
             adb pull /sdcard/window_dump_cible_objectif.xml mobile/e2e/maestro-report/debug/cible-objectif-ui-hierarchy.xml
             adb exec-out screencap -p > mobile/e2e/maestro-report/debug/cible-objectif-adb-screenshot.png

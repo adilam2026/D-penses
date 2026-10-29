@@ -9,6 +9,20 @@ on:
       api_url:
         description: "URL HTTPS publique du backend (sans slash final), ex. https://d-penses-production.up.railway.app"
         required: true
+      demo_pin_transition:
+        description: >
+          UNE SEULE FOIS, après le déploiement du code à 6 chiffres : fait passer
+          demo@finance-maison.local de son ancien mot de passe au code du secret
+          E2E_PIN via le parcours applicatif normal (POST /auth/login puis
+          POST /auth/pin). Sans effet si le compte utilise déjà ce code.
+        required: false
+        type: boolean
+        default: false
+
+env:
+  DEMO_EMAIL: demo@finance-maison.local
+  # Code personnel à 6 chiffres du compte démo : secret GitHub, jamais dans Git.
+  E2E_PIN: ${{ secrets.E2E_PIN }}
 
 jobs:
   verify:
@@ -28,9 +42,11 @@ jobs:
           set -o pipefail
           email="railway-smoke+$(date +%s)@example.com"
           echo "Email de test jetable : $email"
+          # Compte jetable jamais confirmé : code aléatoire non trivial, non journalisé.
+          pin=$(node -e "let p;do{p=String(require('crypto').randomInt(0,1e6)).padStart(6,'0')}while(/^(\d)\1{5}$/.test(p)||'01234567890'.includes(p)||'98765432109'.includes(p));process.stdout.write(p)")
           code=$(curl -sS -o signup.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/auth/signup" \
             -H "Content-Type: application/json" \
-            -d "{\"email\":\"$email\",\"password\":\"password123\",\"firstName\":\"Smoke\",\"lastName\":\"Test\"}")
+            -d "{\"email\":\"$email\",\"password\":\"$pin\",\"firstName\":\"Smoke\",\"lastName\":\"Test\"}")
           echo "HTTP $code"
           cat signup.json
           echo
@@ -41,9 +57,10 @@ jobs:
         run: |
           set -o pipefail
           email="railway-smoke+$(date +%s)-b@example.com"
+          pin=$(node -e "let p;do{p=String(require('crypto').randomInt(0,1e6)).padStart(6,'0')}while(/^(\d)\1{5}$/.test(p)||'01234567890'.includes(p)||'98765432109'.includes(p));process.stdout.write(p)")
           curl -sS -o /dev/null -w "signup: %{http_code}\n" -X POST "${{ github.event.inputs.api_url }}/auth/signup" \
             -H "Content-Type: application/json" \
-            -d "{\"email\":\"$email\",\"password\":\"password123\",\"firstName\":\"Smoke\",\"lastName\":\"Test\"}"
+            -d "{\"email\":\"$email\",\"password\":\"$pin\",\"firstName\":\"Smoke\",\"lastName\":\"Test\"}"
           code=$(curl -sS -o verify.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/auth/verify-email-otp" \
             -H "Content-Type: application/json" \
             -d "{\"email\":\"$email\",\"code\":\"000000\"}")
@@ -53,18 +70,68 @@ jobs:
           test "$code" = "400"
           grep -q "invalide ou a expiré" verify.json
 
-      - name: Login compte de démonstration Finance Maison (prouve seed + schéma + auth)
-        # Les tokens JWT retournés ne sont jamais affichés dans les logs (grep -c
-        # au lieu de cat) — seule leur présence est vérifiée.
+      - name: Vérifier le secret E2E_PIN (code du compte démo)
+        run: |
+          if ! [[ "$E2E_PIN" =~ ^[0-9]{6}$ ]]; then
+            echo "::error::Le secret GitHub E2E_PIN est absent ou n'est pas un code à 6 chiffres."
+            exit 1
+          fi
+          echo "E2E_PIN présent (valeur masquée)."
+
+      - name: Compte démo — passage au code à 6 chiffres (une seule fois, via /auth/login + /auth/pin)
+        if: ${{ github.event.inputs.demo_pin_transition == 'true' }}
+        # Parcours applicatif normal, jamais d'écriture directe de password_hash.
+        # Idempotent : si le code E2E_PIN fonctionne déjà, rien n'est modifié.
+        # Aucun corps de réponse (jetons) ni aucun credential n'est affiché.
+        env:
+          # Ancien mot de passe du compte démo, déjà public (backend/prisma/seed.ts)
+          # et inutilisable dès que le code est défini.
+          DEMO_LEGACY_PASSWORD: DemoFinanceMaison2026!
         run: |
           set -o pipefail
+          API="${{ github.event.inputs.api_url }}"
+          body() { node -e "process.stdout.write(JSON.stringify({email:process.env.DEMO_EMAIL,password:process.argv[1]}))" "$1"; }
+          field() { node -e "const d=JSON.parse(require('fs').readFileSync('$1','utf8'));process.stdout.write(String(d['$2']))"; }
+
+          code=$(curl -sS -o pin-login.json -w "%{http_code}" -X POST "$API/auth/login" -H "Content-Type: application/json" -d "$(body "$E2E_PIN")")
+          if [ "$code" = "200" ] && [ "$(field pin-login.json mustSetPin)" = "false" ]; then
+            rm -f pin-login.json
+            echo "Le compte démo utilise déjà le code E2E_PIN — aucune modification."
+            exit 0
+          fi
+
+          code=$(curl -sS -o legacy-login.json -w "%{http_code}" -X POST "$API/auth/login" -H "Content-Type: application/json" -d "$(body "$DEMO_LEGACY_PASSWORD")")
+          echo "Connexion avec l'ancien mot de passe : HTTP $code"
+          test "$code" = "200"
+          test "$(field legacy-login.json mustSetPin)" = "true"
+          TOKEN=$(field legacy-login.json accessToken)
+
+          payload=$(node -e "process.stdout.write(JSON.stringify({currentCredential:process.env.DEMO_LEGACY_PASSWORD,newPin:process.env.E2E_PIN}))")
+          code=$(curl -sS -o set-pin.json -w "%{http_code}" -X POST "$API/auth/pin" -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" -d "$payload")
+          echo "POST /auth/pin : HTTP $code"
+          test "$code" = "200"
+
+          code=$(curl -sS -o pin-login.json -w "%{http_code}" -X POST "$API/auth/login" -H "Content-Type: application/json" -d "$(body "$E2E_PIN")")
+          echo "Connexion avec le nouveau code : HTTP $code"
+          test "$code" = "200"
+          test "$(field pin-login.json mustSetPin)" = "false"
+          rm -f pin-login.json legacy-login.json set-pin.json
+          echo "Compte démo passé au code à 6 chiffres (ancien mot de passe désormais refusé)."
+
+      - name: Login compte de démonstration Finance Maison (prouve seed + schéma + auth)
+        # Code à 6 chiffres du secret E2E_PIN. Les tokens JWT retournés ne sont
+        # jamais affichés dans les logs — seule leur présence est vérifiée.
+        run: |
+          set -o pipefail
+          payload=$(node -e "process.stdout.write(JSON.stringify({email:process.env.DEMO_EMAIL,password:process.env.E2E_PIN}))")
           code=$(curl -sS -o login.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/auth/login" \
             -H "Content-Type: application/json" \
-            -d '{"email":"demo@finance-maison.local","password":"DemoFinanceMaison2026!"}')
+            -d "$payload")
           echo "HTTP $code"
           test "$code" = "201" || test "$code" = "200"
           grep -q '"accessToken"' login.json
           grep -q '"refreshToken"' login.json
+          grep -q '"mustSetPin":false' login.json
           echo "Login démo OK — accessToken/refreshToken présents (valeurs non journalisées)"
 
       - name: /planning et /todo répondent sans erreur (migrations responsible_source appliquées)

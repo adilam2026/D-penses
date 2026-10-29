@@ -1,0 +1,20 @@
+appId: com.depenses.mobile
+---
+# Sous-flow : si le serveur exige le passage au code à 6 chiffres
+# (ancien mot de passe), « Créez votre code » puis « Confirmez votre code »
+# avec ${NEW_PIN}. Sans effet sinon.
+- runFlow:
+    when:
+      visible:
+        id: "create-pin-create"
+    commands:
+      - runFlow:
+          file: enter-digits.yaml
+          env:
+            DIGITS: ${NEW_PIN}
+      - assertVisible:
+          id: "create-pin-confirm"
+      - runFlow:
+          file: enter-digits.yaml
+          env:
+            DIGITS: ${NEW_PIN}

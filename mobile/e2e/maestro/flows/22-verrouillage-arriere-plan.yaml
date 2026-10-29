@@ -1,0 +1,43 @@
+appId: com.depenses.mobile
+---
+# Parcours 22 — Verrouillage après passage en arrière-plan
+# Retour après 15 s ou plus : écran verrouillé (prénom, code), puis
+# déverrouillage par le code. Retour avant 15 s : aucun code demandé.
+- runFlow: common/login.yaml
+
+# Plus de 15 s en arrière-plan -> code obligatoire.
+- pressKey: Home
+- extendedWaitUntil:
+    visible:
+      id: "element-inexistant-attente-17s"
+    timeout: 17000
+    optional: true
+- launchApp:
+    stopApp: false
+- assertVisible:
+    id: "lock-screen"
+- assertVisible:
+    id: "lock-name"
+- assertVisible:
+    text: "Code oublié ?"
+- assertVisible:
+    text: "Changer d'utilisateur"
+- assertNotVisible:
+    text: "${E2E_EMAIL}"
+- runFlow:
+    file: common/enter-digits.yaml
+    env:
+      DIGITS: ${E2E_PIN}
+- assertNotVisible:
+    id: "lock-screen"
+- assertVisible:
+    text: "MES COMPTES"
+
+# Retour immédiat (moins de 15 s) -> pas de code.
+- pressKey: Home
+- launchApp:
+    stopApp: false
+- assertNotVisible:
+    id: "lock-screen"
+- assertVisible:
+    text: "MES COMPTES"

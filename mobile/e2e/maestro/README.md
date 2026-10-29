@@ -43,14 +43,37 @@ dans l'ordre du cahier des charges de la recette :
 | `18-plans-financiers.yaml` | Plans financiers — création + ajout d'un poste |
 | `19-objectifs.yaml` | Objectifs (défini depuis une carte Épargne) |
 | `20-drawer-navigation.yaml` | Menu ☰ / navigation |
-| `21-logout-login.yaml` | Déconnexion puis reconnexion |
+| `21-logout-login.yaml` | Déconnexion puis reconnexion (personne connue : prénom + code) |
+| `22-verrouillage-arriere-plan.yaml` | Arrière-plan ≥ 15 s -> code ; < 15 s -> pas de code |
+| `23-redemarrage-verrouille.yaml` | Application fermée puis rouverte -> verrouillée, code, navigation |
+
+Hors suite standard : `transition/24-transition-ancien-mot-de-passe.yaml`
+(ancien mot de passe numérique -> code à 6 chiffres). Il REMPLACE le
+credential du compte utilisé : à lancer uniquement explicitement, avec un
+compte de test dédié (`E2E_TRANSITION_EMAIL`, `E2E_LEGACY_PASSWORD`,
+`E2E_NEW_PIN` fournis par des secrets).
 
 `flows/common/login.yaml` est un sous-flow réutilisable (appelé via
-`runFlow` par chaque flow ci-dessus) : `launchApp: clearState: true` puis
-connexion avec `${E2E_EMAIL}` / `${E2E_PASSWORD}` (fournis en variables
-d'environnement Maestro par le workflow CI — voir plus bas). `clearState`
-garantit que chaque flow repart d'une app fraîchement installée, donc reste
+`runFlow` par chaque flow ci-dessus) : `launchApp: clearState: true`, email
+`${E2E_EMAIL}`, puis code à 6 chiffres `${E2E_PIN}` saisi sur le pavé
+numérique de l'application (`flows/common/enter-digits.yaml`, touche par
+touche `pin-key-0..9` — jamais de champ mot de passe ni de clavier système).
+Validation automatique au 6e chiffre. Si le serveur exige la création du
+code (ancien mot de passe), `flows/common/pin-setup-if-required.yaml` crée
+et confirme le code. `clearState` garantit que chaque flow repart d'une app
+fraîchement installée (aucune session ni personne mémorisée), donc reste
 rejouable isolément (pas de dépendance entre flows).
+
+### Compte démo et code à 6 chiffres
+
+- `E2E_EMAIL` : `demo@finance-maison.local` (fixé dans le workflow).
+- `E2E_PIN` : code à 6 chiffres du compte démo, **secret GitHub** (jamais
+  dans Git), lu par `android-e2e.yml` et `railway-verify.yml`.
+- Passage initial du compte démo à son code (une seule fois, après le
+  déploiement du code à 6 chiffres) : `railway-verify.yml` avec l'entrée
+  `demo_pin_transition = true` — parcours applicatif normal
+  (`POST /auth/login` avec l'ancien mot de passe puis `POST /auth/pin`),
+  jamais d'écriture directe de `password_hash`, idempotent.
 
 ### Sélecteurs utilisés
 
@@ -60,7 +83,13 @@ strictement plus fiable (ex. nom de compte, libellé de catégorie fixe du
 jeu de données de démonstration). Les testID ajoutés spécifiquement pour
 cette recette (aucun impact visuel, aucune modification de design) :
 
-- `login-email` / `login-password` / `login-submit` / `login-signup-link`
+- connexion : `login-email`, `login-continue`, `login-toggle-legacy`
+  (ancien mot de passe 8/9 chiffres, transition uniquement), `login-submit`
+  (uniquement dans ce mode transition), `login-signup-link`, `login-forgot`
+- pavé numérique : `pin-pad`, `pin-key-0` … `pin-key-9`, `pin-key-del`,
+  `pin-dots` ; création du code : `create-pin-create`, `create-pin-confirm`
+- écran verrouillé : `lock-screen`, `lock-name`, `lock-forgot`,
+  `lock-switch-user`
 - `menu-row-<slug>` (une entrée par ligne du menu ☰, ex. `menu-row-comptes`,
   `menu-row-deconnexion`) et `menu-close`
 - `transaction-row-<slug(libellé)>` sur les lignes d'historique de compte et
@@ -172,5 +201,6 @@ L'échec attendu des parcours 6/7 ne bloque jamais l'upload des artifacts
 ```bash
 # Manuellement, depuis GitHub Actions → Android E2E (Maestro — recette staging) → Run workflow
 # ou en local, avec un émulateur déjà démarré :
-maestro test mobile/e2e/maestro/flows -e E2E_EMAIL=demo@finance-maison.local -e E2E_PASSWORD=DemoFinanceMaison2026!
+# (E2E_PIN = code du compte démo, à ne jamais écrire dans Git ni dans l'historique du shell partagé)
+maestro test mobile/e2e/maestro/flows -e E2E_EMAIL=demo@finance-maison.local -e E2E_PIN="$E2E_PIN"
 ```

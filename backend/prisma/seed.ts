@@ -52,7 +52,8 @@ async function main() {
     await seedBaselineHouseholdData(tx, { householdId: household.id, userId: user.id });
 
     // eslint-disable-next-line no-console
-    console.log('Seed Finance Maison créé :', { email: DEMO_EMAIL, password: DEMO_PASSWORD, householdId: household.id });
+    // Jamais le mot de passe dans les journaux.
+    console.log('Seed Finance Maison créé :', { email: DEMO_EMAIL, householdId: household.id });
   });
 }
 

@@ -9,7 +9,6 @@ import {
 } from '@nestjs/common';
 import { OtpPurpose, Prisma } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
-import * as crypto from 'node:crypto';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RlsContextService } from '../common/prisma/rls-context.service';
 import { TokenService } from './token.service';
@@ -18,6 +17,7 @@ import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { LoginAttemptsService } from './login-attempts.service';
 import { isTrivialPin, PIN_PATTERN } from './pin.util';
+import { otpCodes } from './otp-code.util';
 
 export interface AuthTokens {
   accessToken: string;
@@ -50,9 +50,6 @@ const OTP_MAX_ATTEMPTS = 5;
 const PIN_RESET_WINDOW_MS = 10 * 60 * 1000;
 const BCRYPT_COST = 12;
 
-function generateOtpCode(): string {
-  return crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
-}
 
 @Injectable()
 export class AuthService {
@@ -229,7 +226,7 @@ export class AuthService {
     // silencieusement les précédents du même usage.
     await this.prisma.emailOtp.updateMany({ where: { userId, purpose, consumedAt: null }, data: { consumedAt: new Date() } });
 
-    const code = generateOtpCode();
+    const code = otpCodes.generate();
     const codeHash = await bcrypt.hash(code, 10);
     await this.prisma.emailOtp.create({
       data: { userId, purpose, codeHash, expiresAt: new Date(Date.now() + OTP_TTL_MS) },

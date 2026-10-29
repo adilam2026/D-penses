@@ -343,6 +343,15 @@ describe('changer d’utilisateur', () => {
     await waitFor(() => expect(status()).toBe('signedIn'));
     expect(mocked.login).toHaveBeenCalledWith(LAMIAA.email, '205819');
     expect(mocked.unlock).not.toHaveBeenCalled();
+    // Cache d'Adil vidé AVANT toute connexion de Lamiaa, puis de nouveau avant
+    // le chargement de ses données (getMe) : jamais de donnée de l'un chez l'autre.
+    const cacheClears = (clearCache as jest.Mock).mock.invocationCallOrder;
+    const lamiaaLogin = mocked.login.mock.invocationCallOrder[0];
+    const lamiaaData = mocked.getMe.mock.invocationCallOrder[mocked.getMe.mock.invocationCallOrder.length - 1];
+    expect(cacheClears.some((order) => order < lamiaaLogin)).toBe(true);
+    expect(cacheClears.some((order) => order > lamiaaLogin && order < lamiaaData)).toBe(true);
+    // Aucun code de Lamiaa ni d'Adil conservé sur l'appareil.
+    expect([...secureStore.values()].join('|')).not.toContain('205819');
   });
 
   it('personne inconnue de l’appareil : « Autre compte » -> parcours avec email', async () => {
