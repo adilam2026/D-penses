@@ -582,9 +582,39 @@ it('plus de bloc global « Effectué » : une échéance réalisée est dans le 
   expect(within(lamiaa).queryByTestId('todo-section-m-lamiaa-todo-band')).toBeNull();
   // Jamais rangée chez un autre responsable.
   expect(within(screen.getByTestId('todo-section-m-adil')).queryByTestId('todo-paid-row-po-carburant')).toBeNull();
-  // Ligne PAYÉ informative : aucun ActionSheet au tap.
+});
+
+it('ligne PAYÉ cliquable : ouvre l’ActionSheet existant d’une échéance réalisée (Annuler le paiement…)', async () => {
+  mockUnrealizePlannedOperation.mockResolvedValue({});
+  mockGetTodo.mockResolvedValue({
+    month: '2026-10',
+    pending: [],
+    done: [{ ...actionDepensePartielleRetard, status: 'REALIZED' as const, realizedAmount: 800, remaining: 0 }],
+    pendingCount: 0,
+    totalRemaining: 0,
+  });
+  renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-paid-row-po-carburant'));
   await fireEvent.press(screen.getByTestId('todo-paid-row-po-carburant'));
+
+  await waitFor(() => screen.getByTestId('action-sheet-paid-full'));
   expect(screen.queryByTestId('action-sheet-pay')).toBeNull();
+  expect(screen.getByTestId('action-sheet-edit-paid')).toBeTruthy();
+  expect(screen.getByTestId('action-sheet-cancel-paid')).toBeTruthy();
+  // /todo ne fournit pas l'opération réelle liée : règle existante, pas de « Voir la transaction ».
+  expect(screen.queryByTestId('action-sheet-view-transaction')).toBeNull();
+
+  await fireEvent.press(screen.getByTestId('action-sheet-unrealize'));
+  await waitFor(() => expect(mockUnrealizePlannedOperation).toHaveBeenCalledWith('po-carburant'));
+});
+
+it('ligne PAYÉ ◐ d’un partiel : ouvre le même ActionSheet que sa ligne À FAIRE (déjà payé / reste)', async () => {
+  renderWithSafeArea(<TodoScreen />);
+  await waitFor(() => screen.getByTestId('todo-paid-row-po-carburant'));
+  await fireEvent.press(screen.getByTestId('todo-paid-row-po-carburant'));
+  await waitFor(() => screen.getByTestId('action-sheet-deja-paye'));
+  expect(textContent(screen.getByTestId('action-sheet-deja-paye') as unknown as HostNode)).toBe(formatDh(300).replace(/\s+/g, ' '));
+  expect(textContent(screen.getByTestId('action-sheet-reste') as unknown as HostNode)).toBe(formatDh(500).replace(/\s+/g, ' '));
 });
 
 it('états vides : "aucune action prévue" vs "tout est fait pour octobre"', async () => {

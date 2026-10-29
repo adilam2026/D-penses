@@ -42,9 +42,10 @@ function occurrenceFromAction(action: api.TodoActionApi): api.PlanningSingleOccu
     kind: action.kind,
     responsibleMemberId: action.responsibleMemberId,
     expectedDate: action.expectedDate,
-    // "À faire" n'affiche jamais le détail d'une action déjà réalisée (le
-    // bloc PAYÉ reste informatif, jamais tappable) — cette reconstruction
-    // n'est donc appelée que sur des actions PENDING.
+    // /todo n'expose pas l'opération réelle liée : sur une ligne PAYÉ,
+    // l'ActionSheet n'affiche donc pas « Voir la transaction » (sa règle
+    // existante quand l'identifiant est absent) mais garde « Annuler le
+    // paiement », « Modifier » et « Annuler l'échéance ».
     realizedOperationId: null,
   };
 }
@@ -253,7 +254,9 @@ interface ResponsibleBucket {
  *   Prénom · total du mois (= À FAIRE + PAYÉ, ne baisse pas quand on paie)
  *   bandeau À FAIRE · reste  → DÉPENSES puis VERSEMENTS (titres seuls, sans sous-total)
  *   bandeau PAYÉ · exécuté   → ✓ réalisées, ◐ part payée d'un partiel
- * Une ligne À FAIRE ouvre l'ActionSheet ; une ligne PAYÉ est informative.
+ * Toute ligne ouvre l'ActionSheet de Planning : menu "à payer" pour une
+ * échéance PENDING (y compris la ligne ◐ d'un partiel), menu "payée" pour
+ * une échéance réalisée.
  */
 function TodoSection({
   sectionKey,
@@ -326,7 +329,7 @@ function TodoSection({
               </Text>
               <View style={styles.paidList}>
                 {paid.map(({ action, amount, partial }) => (
-                  <View key={action.plannedOperationId} style={styles.row} testID={`todo-paid-row-${action.plannedOperationId}`}>
+                  <TouchableOpacity key={action.plannedOperationId} style={styles.row} onPress={() => onPressAction(action)} testID={`todo-paid-row-${action.plannedOperationId}`}>
                     <Ionicons
                       name={partial ? 'contrast' : 'checkmark-circle'}
                       size={15}
@@ -341,7 +344,7 @@ function TodoSection({
                     <Text style={styles.rowAmount} testID={`todo-paid-row-${action.plannedOperationId}-amount`}>
                       {formatDh(amount)}
                     </Text>
-                  </View>
+                  </TouchableOpacity>
                 ))}
               </View>
             </>
