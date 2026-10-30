@@ -172,8 +172,11 @@ action manuelle côté Railway (hors de portée de cette session) — voir
 
 ## Workflow CI (`.github/workflows/android-e2e.yml`)
 
-Déclenché manuellement (`workflow_dispatch`) et automatiquement sur chaque
-push vers `claude/finance-maison-v1`. Étapes : checkout → install → typecheck
+Déclenché manuellement (`workflow_dispatch`) ou par
+`.github/workflows/staging-post-deploy.yml` après chaque push vers
+`claude/finance-maison-v1` — et alors UNIQUEMENT une fois STAGING déployé
+sur ce commit (migrations appliquées), le compte démo passé à `E2E_PIN` et
+`railway-verify.yml` vert. Plus de déclenchement direct sur push. Étapes : checkout → install → typecheck
 mobile → build APK Release (`EXPO_PUBLIC_API_URL` = staging, jamais
 paramétrable autrement) → émulateur Android (API 34, x86_64, profil
 `pixel_6`, portrait) → installation de l'APK → `POST /e2e/reset` sur

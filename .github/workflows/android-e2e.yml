@@ -9,11 +9,19 @@ name: Android E2E (Maestro — recette staging)
 # de simples tests React/Jest). Ce workflow ne touche jamais PROD : l'URL
 # backend est fixée ci-dessous sur le service staging Railway, jamais
 # paramétrable via une entrée du workflow.
+#
+# Plus de déclenchement automatique sur push : lancé par
+# staging-post-deploy.yml UNIQUEMENT après déploiement STAGING terminé,
+# migrations appliquées, compte démo sur E2E_PIN et railway-verify vert —
+# ou manuellement (workflow_dispatch).
 on:
   workflow_dispatch: {}
-  push:
-    branches:
-      - claude/finance-maison-v1
+  workflow_call:
+    secrets:
+      E2E_PIN:
+        required: true
+      E2E_RESET_TOKEN:
+        required: true
 
 env:
   # Backend de test — staging uniquement (jamais PROD, jamais paramétrable).

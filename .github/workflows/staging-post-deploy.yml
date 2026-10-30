@@ -1,0 +1,37 @@
+name: STAGING — Après déploiement (attente version → vérification → Android E2E)
+
+# Séquence garantie après chaque push sur claude/finance-maison-v1 (qui
+# déclenche le déploiement Railway STAGING) :
+#   1) railway-verify attend que STAGING serve CE commit (/health) — donc
+#      déploiement terminé et `prisma migrate deploy` appliqué (deploy:start
+#      migre avant de démarrer le serveur) ;
+#   2) passage du compte démo au code E2E_PIN si nécessaire (idempotent :
+#      sans effet dès que E2E_PIN fonctionne ; E2E_LEGACY_PASSWORD n'est lu
+#      que si la transition est réellement requise) ;
+#   3) vérifications railway-verify (santé, auth, Planning, À faire…) ;
+#   4) SEULEMENT si tout est vert : android-e2e (build APK + Maestro).
+# Ne touche jamais PROD : l'URL est fixée sur le backend STAGING.
+on:
+  push:
+    branches:
+      - claude/finance-maison-v1
+  workflow_dispatch: {}
+
+# Un nouveau push remplace la séquence en cours (seule la dernière version compte).
+concurrency:
+  group: staging-post-deploy
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    uses: ./.github/workflows/railway-verify.yml
+    with:
+      api_url: https://finance-maison-backend-production.up.railway.app
+      demo_pin_transition: true
+      expected_commit: ${{ github.sha }}
+    secrets: inherit
+
+  android-e2e:
+    needs: verify
+    uses: ./.github/workflows/android-e2e.yml
+    secrets: inherit

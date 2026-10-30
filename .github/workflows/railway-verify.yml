@@ -3,7 +3,27 @@ name: Railway — Vérification publique (health + smoke test OTP)
 # Exécuté depuis un runner GitHub Actions (accès réseau normal, contrairement
 # au bac à sable) pour prouver que le backend est réellement joignable
 # publiquement — jamais depuis localhost/le conteneur lui-même.
+# Lançable à la main (workflow_dispatch) OU appelé par
+# staging-post-deploy.yml (workflow_call) après chaque push sur
+# claude/finance-maison-v1, avant android-e2e.
 on:
+  workflow_call:
+    inputs:
+      api_url:
+        type: string
+        required: true
+      demo_pin_transition:
+        type: boolean
+        default: false
+      expected_commit:
+        description: "Commit attendu sur le backend (champ commit de /health) avant toute vérification."
+        type: string
+        default: ""
+    secrets:
+      E2E_PIN:
+        required: true
+      E2E_LEGACY_PASSWORD:
+        required: false
   workflow_dispatch:
     inputs:
       api_url:
@@ -18,6 +38,10 @@ on:
         required: false
         type: boolean
         default: false
+      expected_commit:
+        description: "Optionnel : commit attendu sur le backend (/health) — la vérification attend qu'il soit déployé."
+        required: false
+        default: ""
 
 env:
   DEMO_EMAIL: demo@finance-maison.local
@@ -28,10 +52,30 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
+      - name: Attendre que le backend serve le commit attendu (déploiement + migrations terminés)
+        if: ${{ inputs.expected_commit != '' }}
+        # deploy:start exécute `prisma migrate deploy` AVANT de démarrer le
+        # serveur : si /health répond avec ce commit, la migration est appliquée.
+        env:
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+        run: |
+          deadline=$(( $(date +%s) + 30 * 60 ))
+          while true; do
+            served=$(curl -sS --max-time 10 "${{ inputs.api_url }}/health" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{process.stdout.write(String(JSON.parse(d).commit))}catch{process.stdout.write('indisponible')}})" || true)
+            echo "Commit servi : ${served:-indisponible} — attendu : $EXPECTED_COMMIT"
+            [ "$served" = "$EXPECTED_COMMIT" ] && break
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::Le backend ne sert pas le commit attendu après 30 min (déploiement Railway en échec, migration bloquante, ou RAILWAY_GIT_COMMIT_SHA absent)."
+              exit 1
+            fi
+            sleep 20
+          done
+          echo "Déploiement STAGING terminé (migrations appliquées) pour $EXPECTED_COMMIT."
+
       - name: GET /health
         run: |
           set -o pipefail
-          code=$(curl -sS -o body.json -w "%{http_code}" "${{ github.event.inputs.api_url }}/health")
+          code=$(curl -sS -o body.json -w "%{http_code}" "${{ inputs.api_url }}/health")
           echo "HTTP $code"
           cat body.json
           echo
@@ -44,7 +88,7 @@ jobs:
           echo "Email de test jetable : $email"
           # Compte jetable jamais confirmé : code aléatoire non trivial, non journalisé.
           pin=$(node -e "let p;do{p=String(require('crypto').randomInt(0,1e6)).padStart(6,'0')}while(/^(\d)\1{5}$/.test(p)||'01234567890'.includes(p)||'98765432109'.includes(p));process.stdout.write(p)")
-          code=$(curl -sS -o signup.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/auth/signup" \
+          code=$(curl -sS -o signup.json -w "%{http_code}" -X POST "${{ inputs.api_url }}/auth/signup" \
             -H "Content-Type: application/json" \
             -d "{\"email\":\"$email\",\"password\":\"$pin\",\"firstName\":\"Smoke\",\"lastName\":\"Test\"}")
           echo "HTTP $code"
@@ -58,10 +102,10 @@ jobs:
           set -o pipefail
           email="railway-smoke+$(date +%s)-b@example.com"
           pin=$(node -e "let p;do{p=String(require('crypto').randomInt(0,1e6)).padStart(6,'0')}while(/^(\d)\1{5}$/.test(p)||'01234567890'.includes(p)||'98765432109'.includes(p));process.stdout.write(p)")
-          curl -sS -o /dev/null -w "signup: %{http_code}\n" -X POST "${{ github.event.inputs.api_url }}/auth/signup" \
+          curl -sS -o /dev/null -w "signup: %{http_code}\n" -X POST "${{ inputs.api_url }}/auth/signup" \
             -H "Content-Type: application/json" \
             -d "{\"email\":\"$email\",\"password\":\"$pin\",\"firstName\":\"Smoke\",\"lastName\":\"Test\"}"
-          code=$(curl -sS -o verify.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/auth/verify-email-otp" \
+          code=$(curl -sS -o verify.json -w "%{http_code}" -X POST "${{ inputs.api_url }}/auth/verify-email-otp" \
             -H "Content-Type: application/json" \
             -d "{\"email\":\"$email\",\"code\":\"000000\"}")
           echo "HTTP $code"
@@ -79,7 +123,7 @@ jobs:
           echo "E2E_PIN présent (valeur masquée)."
 
       - name: Compte démo — passage au code à 6 chiffres (une seule fois, via /auth/login + /auth/pin)
-        if: ${{ github.event.inputs.demo_pin_transition == 'true' }}
+        if: ${{ inputs.demo_pin_transition }}
         # Parcours applicatif normal, jamais d'écriture directe de password_hash.
         # Idempotent : si le code E2E_PIN fonctionne déjà, rien n'est modifié.
         # Aucun corps de réponse (jetons) ni aucun credential n'est affiché.
@@ -89,7 +133,7 @@ jobs:
           DEMO_LEGACY_PASSWORD: ${{ secrets.E2E_LEGACY_PASSWORD }}
         run: |
           set -o pipefail
-          API="${{ github.event.inputs.api_url }}"
+          API="${{ inputs.api_url }}"
           body() { node -e "process.stdout.write(JSON.stringify({email:process.env.DEMO_EMAIL,password:process.argv[1]}))" "$1"; }
           field() { node -e "const d=JSON.parse(require('fs').readFileSync('$1','utf8'));process.stdout.write(String(d['$2']))"; }
 
@@ -128,7 +172,7 @@ jobs:
         run: |
           set -o pipefail
           payload=$(node -e "process.stdout.write(JSON.stringify({email:process.env.DEMO_EMAIL,password:process.env.E2E_PIN}))")
-          code=$(curl -sS -o login.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/auth/login" \
+          code=$(curl -sS -o login.json -w "%{http_code}" -X POST "${{ inputs.api_url }}/auth/login" \
             -H "Content-Type: application/json" \
             -d "$payload")
           echo "HTTP $code"
@@ -149,13 +193,13 @@ jobs:
           set -o pipefail
           TOKEN=$(node -e "console.log(JSON.parse(require('fs').readFileSync('login.json','utf8')).accessToken)")
 
-          code=$(curl -sS -o planning.json -w "%{http_code}" "${{ github.event.inputs.api_url }}/planning?months=6" \
+          code=$(curl -sS -o planning.json -w "%{http_code}" "${{ inputs.api_url }}/planning?months=6" \
             -H "Authorization: Bearer $TOKEN")
           echo "GET /planning HTTP $code"
           test "$code" = "200"
           node -e "const d=JSON.parse(require('fs').readFileSync('planning.json','utf8')); console.log('planning OK, clefs top-niveau :', Object.keys(d));"
 
-          code=$(curl -sS -o todo.json -w "%{http_code}" "${{ github.event.inputs.api_url }}/todo" \
+          code=$(curl -sS -o todo.json -w "%{http_code}" "${{ inputs.api_url }}/todo" \
             -H "Authorization: Bearer $TOKEN")
           echo "GET /todo HTTP $code"
           test "$code" = "200"
@@ -178,14 +222,14 @@ jobs:
           TODAY=$(date +%F)
 
           echo "--- GET /accounts (choisir un compte du foyer démo) ---"
-          code=$(curl -sS -o accounts.json -w "%{http_code}" "${{ github.event.inputs.api_url }}/accounts" "${AUTH[@]}")
+          code=$(curl -sS -o accounts.json -w "%{http_code}" "${{ inputs.api_url }}/accounts" "${AUTH[@]}")
           echo "HTTP $code"
           test "$code" = "200"
           ACC=$(node -e "const a=JSON.parse(require('fs').readFileSync('accounts.json','utf8')); if(!a.length) throw new Error('aucun compte dans le foyer démo'); console.log(a[0].id)")
           echo "Compte utilisé : $ACC"
 
           echo "--- POST /planned-operations (échéance non payée, PENDING) ---"
-          code=$(curl -sS -o created.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/planned-operations" "${AUTH[@]}" \
+          code=$(curl -sS -o created.json -w "%{http_code}" -X POST "${{ inputs.api_url }}/planned-operations" "${AUTH[@]}" \
             -H "Content-Type: application/json" \
             -d "{\"kind\":\"EXPENSE\",\"label\":\"CI Smoke Test\",\"expectedDate\":\"$TODAY\",\"expectedAmount\":\"1000\",\"sourceAccountId\":\"$ACC\"}")
           echo "HTTP $code"
@@ -196,13 +240,13 @@ jobs:
           echo "Échéance de test : $PID"
 
           echo "--- POST /planned-operations/$PID/partial-realize (paiement partiel 400/1000) ---"
-          code=$(curl -sS -o partial.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/planned-operations/$PID/partial-realize" "${AUTH[@]}" \
+          code=$(curl -sS -o partial.json -w "%{http_code}" -X POST "${{ inputs.api_url }}/planned-operations/$PID/partial-realize" "${AUTH[@]}" \
             -H "Content-Type: application/json" -d '{"actualAmount":"400"}')
           echo "HTTP $code"
           test "$code" = "201"
 
           echo "--- GET /planning : vérifie le reste 600 DH (paiement partiel conservé) ---"
-          code=$(curl -sS -o planning2.json -w "%{http_code}" "${{ github.event.inputs.api_url }}/planning?months=1" "${AUTH[@]}")
+          code=$(curl -sS -o planning2.json -w "%{http_code}" "${{ inputs.api_url }}/planning?months=1" "${AUTH[@]}")
           test "$code" = "200"
           node -e "
             const d=JSON.parse(require('fs').readFileSync('planning2.json','utf8'));
@@ -215,13 +259,13 @@ jobs:
           "
 
           echo "--- POST /planned-operations/$PID/realize (solde le reste, 600, échéance ENTIÈREMENT payée) ---"
-          code=$(curl -sS -o realized.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/planned-operations/$PID/realize" "${AUTH[@]}" \
+          code=$(curl -sS -o realized.json -w "%{http_code}" -X POST "${{ inputs.api_url }}/planned-operations/$PID/realize" "${AUTH[@]}" \
             -H "Content-Type: application/json" -d '{"actualAmount":"600"}')
           echo "HTTP $code"
           test "$code" = "201"
 
           echo "--- GET /planning : vérifie REALIZED, aucune erreur liée à REALIZED ---"
-          code=$(curl -sS -o planning3.json -w "%{http_code}" "${{ github.event.inputs.api_url }}/planning?months=1" "${AUTH[@]}")
+          code=$(curl -sS -o planning3.json -w "%{http_code}" "${{ inputs.api_url }}/planning?months=1" "${AUTH[@]}")
           test "$code" = "200"
           node -e "
             const d=JSON.parse(require('fs').readFileSync('planning3.json','utf8'));
@@ -233,7 +277,7 @@ jobs:
           "
 
           echo "--- PATCH /planned-operations/$PID (modifier une échéance PAYÉE, SANS unrealize préalable — §20/§40) ---"
-          code=$(curl -sS -o modified.json -w "%{http_code}" -X PATCH "${{ github.event.inputs.api_url }}/planned-operations/$PID" "${AUTH[@]}" \
+          code=$(curl -sS -o modified.json -w "%{http_code}" -X PATCH "${{ inputs.api_url }}/planned-operations/$PID" "${AUTH[@]}" \
             -H "Content-Type: application/json" -d '{"expectedAmount":"1500"}')
           echo "HTTP $code"
           cat modified.json; echo
@@ -246,7 +290,7 @@ jobs:
           "
 
           echo "--- GET /planning : vérifie que le paiement de 1000 DH déjà effectué est CONSERVÉ (jamais renversé) ---"
-          code=$(curl -sS -o planning4.json -w "%{http_code}" "${{ github.event.inputs.api_url }}/planning?months=1" "${AUTH[@]}")
+          code=$(curl -sS -o planning4.json -w "%{http_code}" "${{ inputs.api_url }}/planning?months=1" "${AUTH[@]}")
           test "$code" = "200"
           node -e "
             const d=JSON.parse(require('fs').readFileSync('planning4.json','utf8'));
@@ -258,12 +302,12 @@ jobs:
           "
 
           echo "--- Nettoyage : annule l'échéance de test (foyer démo uniquement) ---"
-          code=$(curl -sS -o /dev/null -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/planned-operations/$PID/cancel" "${AUTH[@]}")
+          code=$(curl -sS -o /dev/null -w "%{http_code}" -X POST "${{ inputs.api_url }}/planned-operations/$PID/cancel" "${AUTH[@]}")
           echo "cancel HTTP $code"
           test "$code" = "201"
 
           echo "--- Récurrence : création + vérification responsibleSource (aucune erreur liée aux récurrences) ---"
-          code=$(curl -sS -o rule.json -w "%{http_code}" -X POST "${{ github.event.inputs.api_url }}/recurrence-rules" "${AUTH[@]}" \
+          code=$(curl -sS -o rule.json -w "%{http_code}" -X POST "${{ inputs.api_url }}/recurrence-rules" "${AUTH[@]}" \
             -H "Content-Type: application/json" \
             -d "{\"frequency\":\"MONTHLY\",\"anchorDate\":\"$TODAY\",\"kind\":\"EXPENSE\",\"label\":\"CI Smoke Recurrence\",\"expectedAmount\":\"50\",\"sourceAccountId\":\"$ACC\"}")
           echo "HTTP $code"
@@ -274,7 +318,7 @@ jobs:
           echo "Règle de test : $RULE_ID"
 
           echo "--- Nettoyage : désactive la règle de récurrence de test ---"
-          code=$(curl -sS -o /dev/null -w "%{http_code}" -X PATCH "${{ github.event.inputs.api_url }}/recurrence-rules/$RULE_ID" "${AUTH[@]}" \
+          code=$(curl -sS -o /dev/null -w "%{http_code}" -X PATCH "${{ inputs.api_url }}/recurrence-rules/$RULE_ID" "${AUTH[@]}" \
             -H "Content-Type: application/json" -d "{\"applyFrom\":\"THIS_OCCURRENCE\",\"fromDate\":\"$TODAY\",\"active\":false}")
           echo "deactivate HTTP $code"
           test "$code" = "200"
@@ -286,7 +330,7 @@ jobs:
         # mois, sélecteur de période, À faire direct) avec une règle de test
         # créée puis arrêtée dans le seul foyer de démonstration.
         env:
-          API_URL: ${{ github.event.inputs.api_url }}
+          API_URL: ${{ inputs.api_url }}
           RUN_ID: ${{ github.run_id }}
         run: |
           node <<'EOF'
