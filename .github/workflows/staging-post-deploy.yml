@@ -29,9 +29,13 @@ jobs:
       api_url: https://finance-maison-backend-production.up.railway.app
       demo_pin_transition: true
       expected_commit: ${{ github.sha }}
-    secrets: inherit
+    secrets:
+      E2E_PIN: ${{ secrets.E2E_PIN }}
+      E2E_LEGACY_PASSWORD: ${{ secrets.E2E_LEGACY_PASSWORD }}
 
   android-e2e:
     needs: verify
     uses: ./.github/workflows/android-e2e.yml
-    secrets: inherit
+    secrets:
+      E2E_PIN: ${{ secrets.E2E_PIN }}
+      E2E_RESET_TOKEN: ${{ secrets.E2E_RESET_TOKEN }}
