@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fontFamily, spacing } from './theme';
 
@@ -7,7 +7,7 @@ import { colors, fontFamily, spacing } from './theme';
  * Saisie d'un code chiffré : ronds ○○○○○○ + pavé numérique dessiné par
  * l'application (jamais le clavier système, donc aucune lettre possible).
  * Les chiffres saisis ne sont jamais affichés, seulement le nombre de ronds
- * remplis.
+ * remplis (corail). Touches rondes à fond doux, corail clair pendant l'appui.
  */
 export function PinDots({ length, filled, testID = 'pin-dots' }: { length: number; filled: number; testID?: string }) {
   return (
@@ -43,9 +43,9 @@ export function PinPad({
         key === '' ? (
           <View key={i} style={styles.key} />
         ) : (
-          <TouchableOpacity
+          <Pressable
             key={i}
-            style={styles.key}
+            style={({ pressed }) => [styles.key, key === 'del' ? styles.keyDelete : styles.keyDigit, pressed && styles.keyPressed, disabled && styles.keyDisabled]}
             onPress={() => press(key)}
             disabled={disabled}
             accessibilityRole="button"
@@ -53,22 +53,39 @@ export function PinPad({
             testID={`pin-key-${key}`}
           >
             {key === 'del' ? (
-              <Ionicons name="backspace-outline" size={24} color={colors.textPrimary} />
+              <Ionicons name="backspace-outline" size={24} color={colors.textSecondary} />
             ) : (
               <Text style={styles.keyText}>{key}</Text>
             )}
-          </TouchableOpacity>
+          </Pressable>
         ),
       )}
     </View>
   );
 }
 
+// Pavé compact : 3 colonnes de touches rondes de 66 px (écart 22 px) et
+// 4 rangées (écart 12 px) — environ 290 px de haut, pour tenir sans défiler.
+const KEY_SIZE = 66;
+const COLUMN_GAP = 22;
+const ROW_GAP = 12;
+
 const styles = StyleSheet.create({
-  dots: { flexDirection: 'row', justifyContent: 'center', gap: spacing.md, marginVertical: spacing.lg },
-  dot: { width: 14, height: 14, borderRadius: 7, borderWidth: 1.5, borderColor: colors.textSecondary },
-  dotFilled: { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary },
-  pad: { flexDirection: 'row', flexWrap: 'wrap', width: 270, alignSelf: 'center' },
-  key: { width: 90, height: 64, alignItems: 'center', justifyContent: 'center' },
-  keyText: { fontSize: 26, fontFamily: fontFamily.sansMedium, color: colors.textPrimary },
+  dots: { flexDirection: 'row', justifyContent: 'center', gap: 14, marginVertical: spacing.lg },
+  dot: { width: 14, height: 14, borderRadius: 7, borderWidth: 1.5, borderColor: colors.borderStrong, backgroundColor: colors.surface },
+  dotFilled: { backgroundColor: colors.primary, borderColor: colors.primary },
+  pad: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    width: KEY_SIZE * 3 + COLUMN_GAP * 2,
+    columnGap: COLUMN_GAP,
+    rowGap: ROW_GAP,
+    alignSelf: 'center',
+  },
+  key: { width: KEY_SIZE, height: KEY_SIZE, borderRadius: KEY_SIZE / 2, alignItems: 'center', justifyContent: 'center' },
+  keyDigit: { backgroundColor: colors.surfaceMuted },
+  keyDelete: { backgroundColor: 'transparent' },
+  keyPressed: { backgroundColor: colors.primaryLight },
+  keyDisabled: { opacity: 0.5 },
+  keyText: { fontSize: 26, lineHeight: 32, fontFamily: fontFamily.sansSemiBold, color: colors.textPrimary, textAlign: 'center', includeFontPadding: false },
 });

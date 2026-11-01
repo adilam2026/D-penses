@@ -1,9 +1,13 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../auth/AuthContext';
 import { ApiError } from '../../api/client';
+import { colors, spacing, typography } from '../../ui/theme';
+import { AuthHeader } from './AuthHeader';
 import { CreatePinSteps } from './CreatePinSteps';
+import { authStyles } from './authStyles';
 
 /**
  * Corrections UI/UX finales §17 (bug bloquant) — jamais "Erreur interne du
@@ -49,12 +53,12 @@ export function SignupScreen() {
 
   if (step === 'pin') {
     return (
-      <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.brand}>Finance Maison</Text>
-        <Text style={styles.title}>Votre code personnel</Text>
-        {loading ? <ActivityIndicator /> : <CreatePinSteps onDone={onPin} />}
-        <TouchableOpacity onPress={() => setStep('info')} testID="signup-back">
-          <Text style={styles.link}>Retour</Text>
+      <ScrollView contentContainerStyle={authStyles.screen} keyboardShouldPersistTaps="handled">
+        <AuthHeader compact />
+        <Text style={styles.stepTitle}>Votre code personnel</Text>
+        {loading ? <ActivityIndicator style={authStyles.busy} color={colors.primary} /> : <CreatePinSteps onDone={onPin} />}
+        <TouchableOpacity onPress={() => setStep('info')} testID="signup-back" style={authStyles.links}>
+          <Text style={authStyles.linkMuted}>Retour</Text>
         </TouchableOpacity>
       </ScrollView>
     );
@@ -63,57 +67,55 @@ export function SignupScreen() {
   const canContinue = firstName.trim().length > 0 && lastName.trim().length > 0 && email.trim().length > 0;
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Text style={styles.brand}>Finance Maison</Text>
-      <Text style={styles.title}>Créer un compte</Text>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={authStyles.screen} keyboardShouldPersistTaps="handled">
+        <AuthHeader />
+        <View style={authStyles.card}>
+          <Text style={authStyles.cardTitle}>Créer un compte</Text>
+          <Text style={authStyles.cardSubtitle}>Quelques informations pour commencer</Text>
 
-      <TextInput style={styles.input} placeholder="Prénom" value={firstName} onChangeText={setFirstName} />
-      <TextInput style={styles.input} placeholder="Nom" value={lastName} onChangeText={setLastName} />
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        autoCapitalize="none"
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-      />
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+          <Text style={authStyles.fieldLabel}>PRÉNOM</Text>
+          <TextInput style={authStyles.input} placeholder="Prénom" placeholderTextColor={colors.textSecondary} value={firstName} onChangeText={setFirstName} />
+          <Text style={authStyles.fieldLabel}>NOM</Text>
+          <TextInput style={authStyles.input} placeholder="Nom" placeholderTextColor={colors.textSecondary} value={lastName} onChangeText={setLastName} />
+          <Text style={authStyles.fieldLabel}>ADRESSE EMAIL</Text>
+          <View style={authStyles.inputRow}>
+            <Ionicons name="mail-outline" size={18} color={colors.textSecondary} />
+            <TextInput
+              style={authStyles.inputInRow}
+              placeholder="Email"
+              placeholderTextColor={colors.textSecondary}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              value={email}
+              onChangeText={setEmail}
+            />
+          </View>
+          {error ? <Text style={authStyles.error}>{error}</Text> : null}
 
-      <TouchableOpacity
-        style={[styles.button, !canContinue && { opacity: 0.4 }]}
-        onPress={() => {
-          setError(null);
-          setStep('pin');
-        }}
-        disabled={!canContinue}
-        testID="signup-continue"
-      >
-        <Text style={styles.buttonText}>Continuer</Text>
-      </TouchableOpacity>
+          <TouchableOpacity
+            style={[authStyles.button, !canContinue && authStyles.buttonDisabled]}
+            onPress={() => {
+              setError(null);
+              setStep('pin');
+            }}
+            disabled={!canContinue}
+            testID="signup-continue"
+          >
+            <Text style={authStyles.buttonText}>Continuer</Text>
+          </TouchableOpacity>
+        </View>
 
-      <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-        <Text style={styles.link}>Déjà un compte ? Se connecter</Text>
-      </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate('Login')} style={authStyles.links}>
+          <Text style={authStyles.linkMuted}>
+            Déjà un compte ? <Text style={authStyles.linkStrong}>Se connecter</Text>
+          </Text>
+        </TouchableOpacity>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, justifyContent: 'center', padding: 24, backgroundColor: '#F6F5F2' },
-  brand: { fontSize: 14, fontWeight: '700', color: '#03155C', textAlign: 'center', marginBottom: 8 },
-  title: { fontSize: 22, fontWeight: '700', color: '#172436', textAlign: 'center', marginBottom: 24 },
-  input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 12,
-    fontSize: 15,
-    borderWidth: 1,
-    borderColor: '#E3E1DC',
-  },
-  button: { backgroundColor: '#172436', borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  link: { color: '#172436', textAlign: 'center', marginTop: 20, fontSize: 13 },
-  error: { color: '#B3261E', fontSize: 13, marginBottom: 8 },
+  stepTitle: { ...typography.sectionTitle, fontSize: 18, textAlign: 'center', marginBottom: spacing.md },
 });

@@ -1,7 +1,8 @@
 import React from 'react';
-import { ScrollView, Text } from 'react-native';
+import { ScrollView } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { ForgotPinFlow } from './ForgotPinFlow';
+import { AuthHeader } from './AuthHeader';
 import { authStyles } from './authStyles';
 
 /** « Code oublié ? » depuis l'écran de connexion (email saisi, ou à saisir). */
@@ -10,8 +11,8 @@ export function ForgotPinScreen() {
   const route = useRoute<any>();
   const email: string | undefined = route.params?.email || undefined;
   return (
-    <ScrollView contentContainerStyle={[authStyles.screen, { flexGrow: 1 }]} keyboardShouldPersistTaps="handled">
-      <Text style={authStyles.brand}>Finance Maison</Text>
+    <ScrollView contentContainerStyle={authStyles.screen} keyboardShouldPersistTaps="handled">
+      <AuthHeader compact />
       <ForgotPinFlow initialEmail={email} onCancel={() => navigation.goBack()} />
     </ScrollView>
   );

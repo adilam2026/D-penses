@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../auth/AuthContext';
 import { ApiError } from '../../api/client';
 import { PinDots, PinPad } from '../../ui/PinPad';
 import { CreatePinSteps } from './CreatePinSteps';
-import { authStyles } from './authStyles';
+import { colors, fontFamily, spacing } from '../../ui/theme';
+import { AuthHeader } from './AuthHeader';
+import { authStyles, initialOf } from './authStyles';
 
 const CURRENT_MAX_LENGTH = 12;
 
@@ -36,15 +38,26 @@ export function PinSetupScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={[authStyles.screen, { flexGrow: 1 }]} testID="pin-setup-screen">
-      <Text style={authStyles.brand}>Finance Maison</Text>
-      <Text style={authStyles.name}>{profile?.firstName ?? ''}</Text>
+    <ScrollView contentContainerStyle={authStyles.screen} testID="pin-setup-screen">
+      <AuthHeader compact />
+      {profile?.firstName ? (
+        <View style={styles.person}>
+          <View style={authStyles.avatarSmall}>
+            <Text style={authStyles.avatarSmallText}>{initialOf(profile.firstName)}</Text>
+          </View>
+          <Text style={styles.personName}>{profile.firstName}</Text>
+        </View>
+      ) : null}
       {askCurrent ? (
         <View testID="pin-setup-current">
-          <Text style={authStyles.prompt}>Saisissez votre mot de passe actuel</Text>
-          <PinDots length={Math.max(6, current.length)} filled={current.length} />
-          {error ? <Text style={authStyles.error}>{error}</Text> : null}
-          <PinPad value={current} onChange={setCurrent} maxLength={CURRENT_MAX_LENGTH} />
+          <View style={[authStyles.card, authStyles.cardCentered]}>
+            <Text style={authStyles.prompt}>Saisissez votre mot de passe actuel</Text>
+            <PinDots length={Math.max(6, current.length)} filled={current.length} />
+            {error ? <Text style={authStyles.error}>{error}</Text> : null}
+          </View>
+          <View style={authStyles.padArea}>
+            <PinPad value={current} onChange={setCurrent} maxLength={CURRENT_MAX_LENGTH} />
+          </View>
           <TouchableOpacity
             style={[authStyles.button, current.length < 6 && authStyles.buttonDisabled]}
             disabled={current.length < 6}
@@ -68,3 +81,8 @@ export function PinSetupScreen() {
     </ScrollView>
   );
 }
+
+const styles = StyleSheet.create({
+  person: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, marginBottom: spacing.lg },
+  personName: { fontSize: 20, fontFamily: fontFamily.displayBold, color: colors.textPrimary },
+});

@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../auth/AuthContext';
 import { ApiError } from '../../api/client';
 import { PinDots, PinPad } from '../../ui/PinPad';
 import { PIN_LENGTH } from '../../auth/pinRules';
-import { authStyles } from './authStyles';
+import { colors, fontFamily, spacing } from '../../ui/theme';
+import { AuthHeader } from './AuthHeader';
+import { authStyles, initialOf } from './authStyles';
 
 /** Ancien mot de passe numérique (8/9 chiffres) — uniquement pour la transition. */
 const LEGACY_MIN = 6;
@@ -43,82 +46,139 @@ export function LoginScreen() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={[authStyles.screen, { flexGrow: 1 }]} keyboardShouldPersistTaps="handled">
-        <Text style={authStyles.brand}>Finance Maison</Text>
-        <Text style={authStyles.name}>Connexion</Text>
+      <ScrollView contentContainerStyle={authStyles.screen} keyboardShouldPersistTaps="handled">
+        <AuthHeader />
 
         {step === 'email' ? (
-          <View style={{ marginTop: 24 }}>
-            <TextInput
-              style={authStyles.input}
-              placeholder="Email"
-              autoCapitalize="none"
-              keyboardType="email-address"
-              value={email}
-              onChangeText={setEmail}
-              testID="login-email"
-            />
-            <TouchableOpacity
-              style={[authStyles.button, !email.trim() && authStyles.buttonDisabled]}
-              disabled={!email.trim()}
-              onPress={() => {
-                setError(null);
-                setStep('credential');
-              }}
-              testID="login-continue"
-            >
-              <Text style={authStyles.buttonText}>Continuer</Text>
-            </TouchableOpacity>
-            <View style={authStyles.links}>
-              {profiles.map((p) => (
-                <TouchableOpacity key={p.userId} onPress={() => switchUser(p)} testID={`login-profile-${p.userId}`}>
-                  <Text style={authStyles.link}>Continuer en tant que {p.firstName}</Text>
-                </TouchableOpacity>
-              ))}
-              <TouchableOpacity onPress={() => navigation.navigate('Signup')} testID="login-signup-link">
-                <Text style={authStyles.linkMuted}>Pas encore de compte ? Créer un compte</Text>
+          <View>
+            {profiles.length > 0 ? (
+              <>
+                <View style={authStyles.personCard}>
+                  {profiles.map((p, i) => (
+                    <TouchableOpacity
+                      key={p.userId}
+                      style={[authStyles.personRow, i < profiles.length - 1 && authStyles.personRowBorder]}
+                      onPress={() => switchUser(p)}
+                      testID={`login-profile-${p.userId}`}
+                    >
+                      <View style={authStyles.avatarSmall}>
+                        <Text style={authStyles.avatarSmallText}>{initialOf(p.firstName)}</Text>
+                      </View>
+                      <Text style={authStyles.personText}>
+                        Continuer en tant que <Text style={authStyles.personName}>{p.firstName}</Text>
+                      </Text>
+                      <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={authStyles.separatorRow}>
+                  <View style={authStyles.separatorLine} />
+                  <Text style={authStyles.separatorText}>ou</Text>
+                  <View style={authStyles.separatorLine} />
+                </View>
+              </>
+            ) : null}
+
+            <View style={authStyles.card}>
+              <Text style={authStyles.cardTitle}>Bon retour</Text>
+              <Text style={authStyles.cardSubtitle}>Connectez-vous à votre foyer</Text>
+              <Text style={authStyles.fieldLabel}>ADRESSE EMAIL</Text>
+              <View style={authStyles.inputRow}>
+                <Ionicons name="mail-outline" size={18} color={colors.textSecondary} />
+                <TextInput
+                  style={authStyles.inputInRow}
+                  placeholder="vous@exemple.com"
+                  placeholderTextColor={colors.textSecondary}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  value={email}
+                  onChangeText={setEmail}
+                  testID="login-email"
+                />
+              </View>
+              <TouchableOpacity
+                style={[authStyles.button, !email.trim() && authStyles.buttonDisabled]}
+                disabled={!email.trim()}
+                onPress={() => {
+                  setError(null);
+                  setStep('credential');
+                }}
+                testID="login-continue"
+              >
+                <Text style={authStyles.buttonText}>Continuer</Text>
               </TouchableOpacity>
             </View>
+
+            <TouchableOpacity onPress={() => navigation.navigate('Signup')} testID="login-signup-link" style={authStyles.links}>
+              <Text style={authStyles.linkMuted}>
+                Pas encore de compte ? <Text style={authStyles.linkStrong}>Créer un compte</Text>
+              </Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <View>
-            <Text style={authStyles.prompt}>{mode === 'pin' ? 'Saisissez votre code' : 'Saisissez votre ancien mot de passe'}</Text>
-            <PinDots
-              length={mode === 'pin' ? PIN_LENGTH : Math.max(LEGACY_MIN, credential.length)}
-              filled={credential.length}
-            />
-            {error ? (
-              <Text style={authStyles.error} testID="login-error">
-                {error}
-              </Text>
-            ) : null}
-            {mode === 'pin' ? (
-              loading ? (
-                <ActivityIndicator style={{ marginVertical: 24 }} />
-              ) : (
-                <PinPad
-                  value={credential}
-                  onChange={(next) => {
-                    setCredential(next);
-                    if (next.length === PIN_LENGTH) submit(next);
-                  }}
-                  maxLength={PIN_LENGTH}
-                />
-              )
-            ) : (
-              <>
-                <PinPad value={credential} onChange={setCredential} maxLength={LEGACY_MAX} disabled={loading} />
+            <View style={[authStyles.card, authStyles.cardCentered]}>
+              <Text style={authStyles.cardTitle}>{mode === 'pin' ? 'Votre code' : 'Ancien mot de passe'}</Text>
+              <View style={styles.emailRow}>
+                <Text style={styles.emailText} numberOfLines={1}>
+                  {email.trim()}
+                </Text>
                 <TouchableOpacity
-                  style={[authStyles.button, credential.length < LEGACY_MIN && authStyles.buttonDisabled]}
-                  onPress={() => submit(credential)}
-                  disabled={loading || credential.length < LEGACY_MIN}
-                  testID="login-submit"
+                  onPress={() => {
+                    setCredential('');
+                    setError(null);
+                    setStep('email');
+                  }}
+                  testID="login-change-email"
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={authStyles.buttonText}>Se connecter</Text>}
+                  <Text style={styles.changeEmail}>Modifier</Text>
                 </TouchableOpacity>
-              </>
-            )}
+              </View>
+              <PinDots
+                length={mode === 'pin' ? PIN_LENGTH : Math.max(LEGACY_MIN, credential.length)}
+                filled={credential.length}
+              />
+              {error ? (
+                <Text style={authStyles.error} testID="login-error">
+                  {error}
+                </Text>
+              ) : null}
+            </View>
+
+            <View style={authStyles.padArea}>
+              {mode === 'pin' ? (
+                loading ? (
+                  <ActivityIndicator style={authStyles.busy} color={colors.primary} />
+                ) : (
+                  <PinPad
+                    value={credential}
+                    onChange={(next) => {
+                      setCredential(next);
+                      if (next.length === PIN_LENGTH) submit(next);
+                    }}
+                    maxLength={PIN_LENGTH}
+                  />
+                )
+              ) : (
+                <>
+                  <PinPad value={credential} onChange={setCredential} maxLength={LEGACY_MAX} disabled={loading} />
+                  <TouchableOpacity
+                    style={[authStyles.button, credential.length < LEGACY_MIN && authStyles.buttonDisabled]}
+                    onPress={() => submit(credential)}
+                    disabled={loading || credential.length < LEGACY_MIN}
+                    testID="login-submit"
+                  >
+                    {loading ? <ActivityIndicator color={colors.textOnPrimary} /> : <Text style={authStyles.buttonText}>Se connecter</Text>}
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+
             <View style={authStyles.links}>
+              <TouchableOpacity onPress={() => navigation.navigate('ForgotPin', { email: email.trim() })} testID="login-forgot">
+                <Text style={authStyles.link}>Code oublié ?</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => {
                   setCredential('');
@@ -127,22 +187,9 @@ export function LoginScreen() {
                 }}
                 testID="login-toggle-legacy"
               >
-                <Text style={authStyles.linkMuted}>
+                <Text style={authStyles.linkSubtle}>
                   {mode === 'pin' ? 'Première connexion avec votre ancien mot de passe ?' : 'Utiliser mon code à 6 chiffres'}
                 </Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => navigation.navigate('ForgotPin', { email: email.trim() })} testID="login-forgot">
-                <Text style={authStyles.link}>Code oublié ?</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  setCredential('');
-                  setError(null);
-                  setStep('email');
-                }}
-                testID="login-change-email"
-              >
-                <Text style={authStyles.linkMuted}>Modifier l'adresse email</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -151,3 +198,9 @@ export function LoginScreen() {
     </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  emailRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs, maxWidth: '100%' },
+  emailText: { flexShrink: 1, fontSize: 13, fontFamily: fontFamily.sans, color: colors.textSecondary },
+  changeEmail: { fontSize: 13, fontFamily: fontFamily.sansBold, color: colors.primary },
+});
