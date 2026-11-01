@@ -13,6 +13,7 @@ import { AccountCard } from '../ui/AccountCard';
 import { accountLabelFor } from '../ui/accountLabel';
 import { PLANNED_OPERATION_KIND_VISUALS } from '../ui/plannedOperationVisuals';
 import { useTopInset } from '../ui/useTopInset';
+import { useAuth } from '../auth/AuthContext';
 
 interface ActionItem {
   key: string;
@@ -37,7 +38,9 @@ const UPCOMING_PREVIEW_COUNT = 5;
 export function AccueilScreen() {
   const navigation = useNavigation<any>();
   const topInset = useTopInset();
-  const [household, setHousehold] = useState<{ name: string } | null>(null);
+  // Prénom de la personne connectée (renvoyé par le serveur à la connexion) —
+  // jamais le nom du foyer, qui reste affiché dans la barre du haut.
+  const firstName = useAuth().profile?.firstName?.trim() || null;
   const [accounts, setAccounts] = useState<api.AccountApi[] | null>(null);
   const [plannedOps, setPlannedOps] = useState<api.PlannedOperationApi[]>([]);
   const [claims, setClaims] = useState<api.MedicalClaimApi[]>([]);
@@ -47,14 +50,12 @@ export function AccueilScreen() {
   const [transactionTarget, setTransactionTarget] = useState<api.PlannedOperationApi | null>(null);
 
   const load = useCallback(async (force = false) => {
-    const [householdData, accountsData, planned, claimsData, plansData] = await Promise.all([
-      cached('household', () => api.getMyHousehold(), 60_000, force),
+    const [accountsData, planned, claimsData, plansData] = await Promise.all([
       cached('accounts', () => api.listAccounts(), 60_000, force),
       cached('planned-operations', () => api.listPlannedOperations(), 60_000, force),
       cached('medical-claims:all', () => api.listMedicalClaims(), 60_000, force),
       cached('financial-plans', () => api.listFinancialPlans(), 60_000, force),
     ]);
-    setHousehold(householdData);
     setAccounts(accountsData);
     setPlannedOps(planned);
     setClaims(claimsData);
@@ -160,8 +161,14 @@ export function AccueilScreen() {
     >
       <View style={styles.header}>
         <View>
-          <Text style={styles.greeting}>Bonjour,</Text>
-          <Text style={styles.title}>{household?.name ?? 'Votre foyer'}</Text>
+          <Text style={styles.greeting} testID="accueil-greeting">
+            {firstName ? 'Bonjour,' : 'Bonjour'}
+          </Text>
+          {firstName ? (
+            <Text style={styles.title} testID="accueil-greeting-name">
+              {firstName}
+            </Text>
+          ) : null}
         </View>
         <HelpButton
           title="Accueil"

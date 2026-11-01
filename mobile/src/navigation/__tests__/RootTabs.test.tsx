@@ -7,6 +7,11 @@ import { clearCache } from '../../state/cache';
 
 const mockGetTodo = jest.fn();
 
+// En production, RootTabs est toujours monté sous AuthProvider (App.tsx) : l'Accueil y lit le prénom connecté.
+jest.mock('../../auth/AuthContext', () => ({
+  useAuth: () => ({ profile: { userId: 'u-adil', firstName: 'Adil', email: 'adil@example.com' } }),
+}));
+
 jest.mock('../../api/client', () => ({
   listAccounts: () => Promise.resolve([]),
   listPlannedOperations: () => Promise.resolve([]),

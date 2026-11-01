@@ -32,6 +32,11 @@ jest.mock('../../api/client', () => ({
   cancelPlannedOperation: (...args: unknown[]) => mockCancelPlannedOperation(...args),
 }));
 
+let mockProfile: { userId: string; firstName: string; email: string } | null = null;
+jest.mock('../../auth/AuthContext', () => ({
+  useAuth: () => ({ profile: mockProfile }),
+}));
+
 const TEST_INSET_METRICS = {
   frame: { x: 0, y: 0, width: 390, height: 844 },
   insets: { top: 47, left: 0, right: 0, bottom: 34 },
@@ -44,6 +49,7 @@ function renderWithSafeArea(ui: React.ReactElement) {
 beforeEach(() => {
   jest.clearAllMocks();
   clearCache();
+  mockProfile = { userId: 'u-adil', firstName: 'Adil', email: 'adil@example.com' };
   mockGetMyHousehold.mockResolvedValue({ name: 'Foyer Test' });
   mockListPlannedOperations.mockResolvedValue([]);
   mockListMedicalClaims.mockResolvedValue([]);
@@ -67,7 +73,7 @@ it("n'affiche aucune métrique globale inventée, mais les comptes avec leurs so
     },
   ]);
 
-  renderWithSafeArea(<AccueilScreen />);
+  await renderWithSafeArea(<AccueilScreen />);
 
   await waitFor(() => expect(screen.getByText('CIH')).toBeTruthy());
   expect(screen.getByText('BP Lamiaa')).toBeTruthy();
@@ -84,7 +90,7 @@ it('pastille compte (lot correctif §E) : affiche le sigle de la banque quand il
     { id: 'scolarite', name: 'Scolarité', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, balance: 3000, nonAffecte: 3000, subaccounts: [] },
   ]);
 
-  renderWithSafeArea(<AccueilScreen />);
+  await renderWithSafeArea(<AccueilScreen />);
   await waitFor(() => screen.getByTestId('accueil-account-adil'));
 
   // Avec banque renseignée : le sigle réel du compte dans LA PASTILLE (scope sur
@@ -97,7 +103,7 @@ it('pastille compte (lot correctif §E) : affiche le sigle de la banque quand il
 
 it('état vide : aucun compte -> écran de bienvenue première utilisation (§2), jamais un dashboard vide', async () => {
   mockListAccounts.mockResolvedValue([]);
-  renderWithSafeArea(<AccueilScreen />);
+  await renderWithSafeArea(<AccueilScreen />);
   await waitFor(() => expect(screen.getByText('Bienvenue dans Finance Maison')).toBeTruthy());
   expect(screen.getByTestId('accueil-welcome-add-account')).toBeTruthy();
   expect(screen.getByTestId('accueil-welcome-discover')).toBeTruthy();
@@ -107,7 +113,7 @@ it('tap sur un compte -> navigue vers AccountDetail', async () => {
   mockListAccounts.mockResolvedValue([
     { id: 'bp', name: 'BP Lamiaa', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, balance: 25000, nonAffecte: 25000, subaccounts: [] },
   ]);
-  renderWithSafeArea(<AccueilScreen />);
+  await renderWithSafeArea(<AccueilScreen />);
   await waitFor(() => screen.getByTestId('accueil-account-bp'));
   fireEvent.press(screen.getByTestId('accueil-account-bp'));
   expect(mockNavigate).toHaveBeenCalledWith('AccountDetail', { id: 'bp' });
@@ -120,7 +126,7 @@ it('tap sur le sous-compte Santé -> navigue directement vers Health (jamais Sub
       subaccounts: [{ id: 'sante', accountId: 'cih', name: 'CIH-Santé', balance: 3000 }],
     },
   ]);
-  renderWithSafeArea(<AccueilScreen />);
+  await renderWithSafeArea(<AccueilScreen />);
   await waitFor(() => screen.getByTestId('accueil-subaccount-sante'));
   fireEvent.press(screen.getByTestId('accueil-subaccount-sante'));
   expect(mockNavigate).toHaveBeenCalledWith('Health', { id: 'sante' });
@@ -136,7 +142,7 @@ it("Item 3 : chaque sous-compte affiche une pastille de couleur (légende) — N
       ],
     },
   ]);
-  renderWithSafeArea(<AccueilScreen />);
+  await renderWithSafeArea(<AccueilScreen />);
   await waitFor(() => screen.getByTestId('accueil-subaccount-voiture'));
   expect(screen.getByTestId('accueil-subaccount-dot-voiture')).toBeTruthy();
   expect(screen.getByTestId('accueil-subaccount-dot-voyage')).toBeTruthy();
@@ -149,7 +155,7 @@ it('tap sur un sous-compte non-Santé -> navigue vers SubaccountDetail', async (
       subaccounts: [{ id: 'voiture', accountId: 'cih', name: 'CIH-Voiture', balance: 5000 }],
     },
   ]);
-  renderWithSafeArea(<AccueilScreen />);
+  await renderWithSafeArea(<AccueilScreen />);
   await waitFor(() => screen.getByTestId('accueil-subaccount-voiture'));
   fireEvent.press(screen.getByTestId('accueil-subaccount-voiture'));
   expect(mockNavigate).toHaveBeenCalledWith('SubaccountDetail', { id: 'voiture' });
@@ -164,7 +170,7 @@ it('section "Prochaines transactions" : échéance prévue en attente -> tap ouv
   ]);
   mockRealizePlannedOperation.mockResolvedValue({});
 
-  renderWithSafeArea(<AccueilScreen />);
+  await renderWithSafeArea(<AccueilScreen />);
   await waitFor(() => screen.getByText('Voyage Été'));
   fireEvent.press(screen.getByTestId('accueil-upcoming-p1'));
 
@@ -188,7 +194,7 @@ it('section "Prochaines transactions" : "Annuler la transaction" appelle cancelP
   ]);
   mockCancelPlannedOperation.mockResolvedValue({});
 
-  renderWithSafeArea(<AccueilScreen />);
+  await renderWithSafeArea(<AccueilScreen />);
   await waitFor(() => screen.getByText('Voyage Été'));
   fireEvent.press(screen.getByTestId('accueil-upcoming-p1'));
 
@@ -208,7 +214,7 @@ it('section "Autres actions" : dossier santé en attente -> carte "Voir" qui nav
     { id: 'claim1', sourceOperationId: 'op1', subaccountId: 'sante', label: 'Consultation', amountEngaged: 700, amountReimbursed: 0, reste: 700, status: 'PENDING', closedAt: null, createdAt: '2026-01-01', reimbursements: [] },
   ]);
 
-  renderWithSafeArea(<AccueilScreen />);
+  await renderWithSafeArea(<AccueilScreen />);
   await waitFor(() => screen.getByText('Consultation'));
   fireEvent.press(screen.getByTestId('accueil-action-claim-claim1'));
   expect(mockNavigate).toHaveBeenCalledWith('Health', { id: 'sante' });
@@ -241,10 +247,48 @@ it('§18/test M : "Autres actions" ne remonte que les actions utiles (échéance
     },
   ]);
 
-  renderWithSafeArea(<AccueilScreen />);
+  await renderWithSafeArea(<AccueilScreen />);
   await waitFor(() => screen.getByText(/Voyage — Été/));
   expect(screen.queryByText(/Scolarité — Janvier/)).toBeNull();
 
   fireEvent.press(screen.getByTestId('accueil-action-plan-plan-voyage'));
   expect(mockNavigate).toHaveBeenCalledWith('FinancialPlanDetail', { id: 'plan-voyage' });
+});
+
+describe('« Bonjour » : prénom de la personne connectée, jamais le nom du foyer', () => {
+  const ACCOUNTS = [
+    { id: 'cih', name: 'CIH', bank: null, type: 'COURANT', ownerMemberId: null, ownerLabel: null, balance: 1000, nonAffecte: 1000, subaccounts: [] },
+  ];
+  async function greeting() {
+    await waitFor(() => screen.getByText('CIH'));
+    const parts = [screen.getByTestId('accueil-greeting'), screen.queryByTestId('accueil-greeting-name')];
+    return parts.map((p) => (p ? String(p.props.children) : '')).join(' ').trim();
+  }
+
+  beforeEach(() => {
+    mockGetMyHousehold.mockResolvedValue({ name: 'AdiLam' });
+    mockListAccounts.mockResolvedValue(ACCOUNTS);
+  });
+
+  it('Lamiaa connectée -> « Bonjour, Lamiaa »', async () => {
+    mockProfile = { userId: 'u-lamiaa', firstName: 'Lamiaa', email: 'lamiaa@example.com' };
+    await renderWithSafeArea(<AccueilScreen />);
+    expect(await greeting()).toBe('Bonjour, Lamiaa');
+    expect(screen.queryByText('AdiLam')).toBeNull();
+  });
+
+  it('Adil connecté -> « Bonjour, Adil »', async () => {
+    mockProfile = { userId: 'u-adil', firstName: 'Adil', email: 'adil@example.com' };
+    await renderWithSafeArea(<AccueilScreen />);
+    expect(await greeting()).toBe('Bonjour, Adil');
+    expect(screen.queryByText('AdiLam')).toBeNull();
+  });
+
+  it('prénom indisponible : « Bonjour » seul, jamais le nom du foyer à la place', async () => {
+    mockProfile = null;
+    await renderWithSafeArea(<AccueilScreen />);
+    expect(await greeting()).toBe('Bonjour');
+    expect(screen.queryByText('AdiLam')).toBeNull();
+    expect(screen.queryByText('Votre foyer')).toBeNull();
+  });
 });
