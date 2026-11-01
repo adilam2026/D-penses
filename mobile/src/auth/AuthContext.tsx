@@ -153,6 +153,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => api.onPinSetupRequired(null);
   }, [requirePinSetup]);
 
+  // Session définitivement invalide pendant l'utilisation (jetons déjà effacés
+  // par le client API) : on quitte l'application, la personne reste connue.
+  // Écran verrouillé -> le code refait /auth/login avec l'email mémorisé.
+  // Pendant la transition, retour à la connexion : le pavé à 6 chiffres du
+  // verrou ne permet pas de saisir l'ancien mot de passe.
+  useEffect(() => {
+    api.onSessionExpired(() => {
+      const current = statusRef.current;
+      if (current === 'loading' || current === 'locked' || current === 'signedOut') return;
+      clearCache();
+      pendingCredential.current = null;
+      setHouseholdId(null);
+      setRelocked(false);
+      setStatus(current !== 'mustSetPin' && profileRef.current ? 'locked' : 'signedOut');
+    });
+    return () => api.onSessionExpired(null);
+  }, []);
+
   // Verrouillage après passage en arrière-plan : heure RÉELLE de départ
   // (Date.now()), comparée au retour — aucun minuteur, donc juste même si
   // Android suspend l'application. Processus tué -> démarrage verrouillé.

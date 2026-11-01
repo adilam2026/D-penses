@@ -12,10 +12,12 @@ export async function loadStoredTokens(): Promise<{ accessToken: string | null; 
   const stored = await readTokens();
   accessToken = stored.accessToken;
   refreshToken = stored.refreshToken;
+  sessionExpired = false;
   return { accessToken, refreshToken };
 }
 
 export async function setTokens(tokens: { accessToken: string; refreshToken: string }): Promise<void> {
+  sessionExpired = false;
   accessToken = tokens.accessToken;
   refreshToken = tokens.refreshToken;
   await writeTokens(tokens);
@@ -45,6 +47,27 @@ export class ApiError extends Error {
 let pinSetupRequiredHandler: (() => void) | null = null;
 export function onPinSetupRequired(handler: (() => void) | null): void {
   pinSetupRequiredHandler = handler;
+}
+
+/**
+ * La session est définitivement invalide (refresh refusé en 401, ou 401 sans
+ * refresh token disponible) : l'AuthProvider s'y abonne pour revenir à
+ * l'écran verrouillé (ou de connexion) en gardant la personne connue.
+ */
+let sessionExpiredHandler: (() => void) | null = null;
+export function onSessionExpired(handler: (() => void) | null): void {
+  sessionExpiredHandler = handler;
+}
+
+// Vrai dès l'expiration constatée, jusqu'aux prochains jetons valides : un seul
+// nettoyage et un seul signal, même si plusieurs requêtes échouent en même temps.
+let sessionExpired = false;
+
+async function expireSession(): Promise<void> {
+  if (sessionExpired) return;
+  sessionExpired = true;
+  await clearTokens();
+  sessionExpiredHandler?.();
 }
 
 async function rawFetch(path: string, options: { method?: string; body?: unknown; withAuth?: boolean } = {}) {
@@ -92,6 +115,14 @@ function refreshTokens(): Promise<{ accessToken: string; refreshToken: string }>
         const tokens = await rawFetch('/auth/refresh', { method: 'POST', body: { refreshToken: tokenAtStart }, withAuth: false });
         await setTokens(tokens);
         return tokens;
+      } catch (err) {
+        // 401 = refresh token expiré/révoqué : jamais réessayé, effacé partout.
+        // Réseau ou 5xx : erreur transitoire, les jetons restent intacts.
+        if (err instanceof ApiError && err.status === 401) {
+          await expireSession();
+          throw new ApiError(401, err.message, 'SESSION_INVALID');
+        }
+        throw err;
       } finally {
         refreshPromise = null;
       }
@@ -107,9 +138,14 @@ async function apiFetch(path: string, options: { method?: string; body?: unknown
   } catch (err) {
     // Seul un 401 SANS code métier signifie « jeton d'accès expiré » : un mauvais
     // code (INVALID_CREDENTIAL…) n'est jamais rejoué, ce qui compterait deux échecs.
-    if (err instanceof ApiError && err.status === 401 && !err.code && options.withAuth !== false && refreshToken) {
-      await refreshTokens();
-      return rawFetch(path, options);
+    if (err instanceof ApiError && err.status === 401 && !err.code && options.withAuth !== false) {
+      if (refreshToken) {
+        await refreshTokens();
+        return rawFetch(path, options);
+      }
+      // Jeton d'accès refusé et aucun refresh token : rien à renouveler.
+      await expireSession();
+      throw new ApiError(401, err.message, 'SESSION_INVALID');
     }
     throw err;
   }

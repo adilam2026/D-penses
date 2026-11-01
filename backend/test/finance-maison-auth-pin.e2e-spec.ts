@@ -1,5 +1,6 @@
 import request from 'supertest';
 import * as bcrypt from 'bcryptjs';
+import * as crypto from 'node:crypto';
 import { INestApplication, Logger } from '@nestjs/common';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { MailerService } from '../src/auth/mailer.service';
@@ -188,6 +189,74 @@ describe('Finance Maison — code personnel à 6 chiffres', () => {
     it('email inconnu : réponse générique, aucune erreur', async () => {
       const res = await login(uniqueEmail('inconnu'), PIN).expect(401);
       expect(res.body.message).toBe('Identifiants invalides');
+    });
+  });
+
+  describe('expiration de session (refresh token : 30 jours glissants)', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    /** Vieillit la session d'un refresh token (base de test uniquement) — même empreinte que TokenService. */
+    async function ageSession(refreshToken: string, days: number) {
+      const refreshTokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+      const { count } = await prisma.session.updateMany({ where: { refreshTokenHash }, data: { createdAt: new Date(Date.now() - days * DAY_MS) } });
+      expect(count).toBe(1);
+    }
+
+    it('session de plus de 30 jours : refresh et déverrouillage refusés (SESSION_INVALID), reconnexion par code possible', async () => {
+      const { email } = await pinUser('expired');
+      const { body } = await login(email, PIN).expect(200);
+      await ageSession(body.refreshToken, 31);
+
+      expect((await http.post('/auth/refresh').send({ refreshToken: body.refreshToken }).expect(401)).body.code).toBe('SESSION_INVALID');
+      expect((await http.post('/auth/unlock').send({ refreshToken: body.refreshToken, pin: PIN }).expect(401)).body.code).toBe('SESSION_INVALID');
+      const relogged = await login(email, PIN).expect(200);
+      await http.get('/me').set(bearer(relogged.body.accessToken)).expect(200);
+    });
+
+    it('glissant : renouvelée au 29e jour, la nouvelle session repart de zéro et reste valable au-delà des 30 jours initiaux', async () => {
+      const { email } = await pinUser('sliding');
+      const { body } = await login(email, PIN).expect(200);
+      await ageSession(body.refreshToken, 29);
+      const renewed = await http.post('/auth/refresh').send({ refreshToken: body.refreshToken }).expect(200);
+      expect(renewed.body.refreshToken).not.toBe(body.refreshToken);
+
+      // 3 jours plus tard : 32 jours après la première connexion, 3 jours après le renouvellement.
+      await ageSession(renewed.body.refreshToken, 3);
+      const again = await http.post('/auth/refresh').send({ refreshToken: renewed.body.refreshToken }).expect(200);
+      await http.get('/me').set(bearer(again.body.accessToken)).expect(200);
+      // L'ancien refresh token, lui, ne sert plus jamais (rotation).
+      expect((await http.post('/auth/refresh').send({ refreshToken: body.refreshToken }).expect(401)).body.code).toBe('SESSION_INVALID');
+    });
+
+    it('déverrouillage par code : renouvelle aussi la session (glissant)', async () => {
+      const { email } = await pinUser('unlock-sliding');
+      const { body } = await login(email, PIN).expect(200);
+      await ageSession(body.refreshToken, 29);
+      const unlocked = await http.post('/auth/unlock').send({ refreshToken: body.refreshToken, pin: PIN }).expect(200);
+      await ageSession(unlocked.body.refreshToken, 3);
+      await http.post('/auth/refresh').send({ refreshToken: unlocked.body.refreshToken }).expect(200);
+    });
+
+    it('session révoquée (changement de code sur un autre appareil, déconnexion) : refresh refusé avec SESSION_INVALID', async () => {
+      const { email } = await pinUser('revoked');
+      const phoneA = (await login(email, PIN).expect(200)).body;
+      const phoneB = (await login(email, PIN).expect(200)).body;
+
+      await http.post('/auth/pin').set(bearer(phoneA.accessToken)).send({ currentCredential: PIN, newPin: NEW_PIN }).expect(200);
+      expect((await http.post('/auth/refresh').send({ refreshToken: phoneB.refreshToken }).expect(401)).body.code).toBe('SESSION_INVALID');
+      expect((await http.post('/auth/refresh').send({ refreshToken: phoneA.refreshToken }).expect(401)).body.code).toBe('SESSION_INVALID');
+
+      const phoneC = (await login(email, NEW_PIN).expect(200)).body;
+      await http.post('/auth/logout').send({ refreshToken: phoneC.refreshToken }).expect(204);
+      expect((await http.post('/auth/refresh').send({ refreshToken: phoneC.refreshToken }).expect(401)).body.code).toBe('SESSION_INVALID');
+    });
+
+    it('session révoquée par « Code oublié ? » : refresh refusé avec SESSION_INVALID', async () => {
+      const { email } = await pinUser('revoked-reset');
+      const { body } = await login(email, PIN).expect(200);
+      await http.post('/auth/pin-reset/request').send({ email }).expect(200);
+      const verified = await http.post('/auth/pin-reset/verify').send({ email, code: mailer.lastCodeFor(email) }).expect(200);
+      await http.post('/auth/pin-reset/complete').send({ resetToken: verified.body.resetToken, newPin: NEW_PIN }).expect(200);
+      expect((await http.post('/auth/refresh').send({ refreshToken: body.refreshToken }).expect(401)).body.code).toBe('SESSION_INVALID');
     });
   });
 

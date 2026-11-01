@@ -36,6 +36,7 @@ jest.mock('../../api/client', () => {
     setTokens: jest.fn(async () => undefined),
     currentRefreshToken: jest.fn(),
     onPinSetupRequired: jest.fn(),
+    onSessionExpired: jest.fn(),
     requestPinReset: jest.fn(),
     verifyPinReset: jest.fn(),
     completePinReset: jest.fn(),
@@ -406,4 +407,73 @@ it('aucun code ni mot de passe dans le stockage sécurisé après les parcours',
   const stored = [...secureStore.values()].join('|');
   expect(stored).not.toContain('730518');
   expect(stored).not.toContain('87654321');
+});
+
+describe('session devenue invalide pendant l’utilisation', () => {
+  // Le client API a déjà effacé les jetons et appelle le gestionnaire enregistré.
+  function expireSession() {
+    const handler = mocked.onSessionExpired.mock.calls.map(([h]) => h).filter(Boolean).pop() as () => void;
+    mocked.currentRefreshToken.mockReturnValue(null);
+    return act(async () => handler());
+  }
+
+  async function unlockedApp() {
+    await rememberProfile(ADIL);
+    mocked.loadStoredTokens.mockResolvedValue({ accessToken: 'a', refreshToken: 'r' });
+    mocked.getAuthSession.mockResolvedValue({ ...ADIL, mustSetPin: false });
+    mocked.currentRefreshToken.mockReturnValue('refresh-adil');
+    mocked.unlock.mockResolvedValue(tokens());
+    await start();
+    await waitFor(() => screen.getByTestId('lock-gate'));
+    await typeDigits('730518');
+    await waitFor(() => expect(status()).toBe('signedIn'));
+    [mocked.unlock, mocked.login, mocked.setTokens, clearCache as jest.Mock].forEach((m) => m.mockClear());
+  }
+
+  it('application ouverte : retour immédiat à l’écran verrouillé au prénom, données démontées, cache vidé', async () => {
+    await unlockedApp();
+    await expireSession();
+    expect(status()).toBe('locked');
+    expect(screen.getByTestId('lock-gate')).toBeTruthy();
+    expect(screen.getByTestId('lock-name').props.children).toBe('Adil');
+    expect(screen.queryByText(/adil\.taha@gmail\.com/)).toBeNull();
+    expect(screen.queryByTestId('app-content', { includeHiddenElements: true })).toBeNull();
+    expect(clearCache).toHaveBeenCalled();
+    // L'identité connue reste mémorisée sur l'appareil.
+    expect((await readProfiles()).map((p) => p.userId)).toEqual([ADIL.userId]);
+  });
+
+  it('code saisi ensuite : /auth/login avec l’email mémorisé (jamais /auth/unlock ni l’email redemandé), puis application', async () => {
+    await unlockedApp();
+    await expireSession();
+    mocked.login.mockResolvedValue(tokens());
+    await typeDigits('730518');
+    await waitFor(() => expect(status()).toBe('signedIn'));
+    expect(mocked.unlock).not.toHaveBeenCalled();
+    expect(mocked.login).toHaveBeenCalledWith(ADIL.email, '730518');
+    expect(mocked.setTokens).toHaveBeenCalledWith(tokens());
+    expect(screen.queryByTestId('login-email')).toBeNull();
+  });
+
+  it('pendant la création du code (mustSetPin) : retour à l’écran de connexion, jamais au verrou à 6 chiffres', async () => {
+    mocked.loadStoredTokens.mockResolvedValue({ accessToken: 'a', refreshToken: 'r' });
+    mocked.getAuthSession.mockResolvedValue({ ...ADIL, mustSetPin: true });
+    await start();
+    await waitFor(() => expect(status()).toBe('mustSetPin'));
+    await expireSession();
+    expect(status()).toBe('signedOut');
+    expect(screen.queryByTestId('lock-gate')).toBeNull();
+    expect(screen.queryByTestId('pin-setup-screen')).toBeNull();
+  });
+
+  it('écran déjà verrouillé : signal ignoré (aucun changement d’état)', async () => {
+    await rememberProfile(ADIL);
+    mocked.loadStoredTokens.mockResolvedValue({ accessToken: 'a', refreshToken: 'r' });
+    mocked.getAuthSession.mockResolvedValue({ ...ADIL, mustSetPin: false });
+    await start();
+    await waitFor(() => expect(status()).toBe('locked'));
+    await expireSession();
+    expect(status()).toBe('locked');
+    expect(screen.getByTestId('lock-name').props.children).toBe('Adil');
+  });
 });
