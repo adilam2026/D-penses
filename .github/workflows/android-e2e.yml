@@ -69,6 +69,19 @@ jobs:
         working-directory: mobile
         run: npx expo prebuild --platform android --no-install
 
+      - name: "Augmenter la mémoire JVM Gradle (OutOfMemoryError Metaspace observé après ajout de react-native-svg + polices Google)"
+        # expo prebuild régénère gradle.properties avec des valeurs par défaut
+        # (-Xmx2048m -XX:MaxMetaspaceSize=512m) insuffisantes depuis l'ajout de
+        # react-native-svg (codegen/Kotlin natif supplémentaire) et des deux
+        # packages de polices — un run a saturé le Metaspace puis est resté
+        # bloqué plus d'une heure sur des exceptions OOM répétées au lieu
+        # d'échouer proprement. Valeurs doublées, toujours confortables sur un
+        # runner ubuntu-latest standard (7 Go de RAM).
+        working-directory: mobile/android
+        run: |
+          sed -i 's/^org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=1024m/' gradle.properties
+          grep '^org.gradle.jvmargs=' gradle.properties
+
       - name: Build APK RELEASE (bundle JS embarqué, EXPO_PUBLIC_API_URL = staging)
         working-directory: mobile/android
         env:
